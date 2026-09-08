@@ -1,0 +1,63 @@
+*.log
+.DS_Store
+Thumbs.db
+
+# Environment and secrets (keep .env.example)
+.env
+.env.*
+!.env.example
+/auth.json
+*.pem
+*.key
+!storage/framework/.gitignore
+id_rsa
+id_ed25519
+*.p12
+*.pfx
+
+# Dependencies and build
+/node_modules
+/vendor
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+
+# Laravel runtime / cache / logs
+/storage/*.key
+/storage/pail
+/storage/logs/*
+!/storage/logs/.gitignore
+/bootstrap/cache/*.php
+!/bootstrap/cache/.gitignore
+
+# Local databases
+*.sqlite
+*.sqlite-journal
+/database/*.sqlite*
+
+# IDE / editor / agent tooling
+.phpactor.json
+.phpunit.result.cache
+/.phpunit.cache
+/.codex
+/.cursor/
+/.claude/
+/.idea
+/.nova
+/.vscode
+/.zed
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+
+# Uploads and temp
+/storage/app/public/*
+!/storage/app/public/.gitignore
+/storage/app/private/*
+!/storage/app/private/.gitignore
+*.tmp
+*.temp
+*.bak
+*.swp
+*~

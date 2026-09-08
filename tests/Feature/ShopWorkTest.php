@@ -1,0 +1,440 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Enums\ProjectKind;
+use App\Enums\UserRole;
+use App\Enums\WorkUnit;
+use App\Models\Project;
+use App\Models\User;
+use App\Models\WorkActivity;
+use App\Models\WorkActivityCategory;
+use App\Models\Worker;
+use App\Models\WorkerAssignment;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\TestCase;
+
+class ShopWorkTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_guest_is_redirected_from_new_winkelwerk(): void
+    {
+        $this->get(route('projects.winkel.create'))->assertRedirect(route('login'));
+        $this->post(route('projects.winkel.store'), [])->assertRedirect(route('login'));
+    }
+
+    public function test_uitvoerder_cannot_open_or_create_winkelwerk(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+
+        $this->actingAs($user)->get(route('projects.winkel.create'))->assertForbidden();
+        $this->actingAs($user)->post(route('projects.winkel.store'), $this->payload())->assertForbidden();
+    }
+
+    public function test_create_form_shows_catalog_checkboxes_and_hides_disabled_items(): void
+    {
+        $user = User::factory()->create();
+        $horren = $this->addActivity('Horren', 'overig');
+        $this->activity('anders')->update(['is_active' => false]);
+
+        $this->actingAs($user)
+            ->get(route('projects.winkel.create'))
+            ->assertOk()
+            ->assertSee('Werkzaamheden')
+            ->assertSee('PVC')
+            ->assertSee('Screens')
+            ->assertSee('Gordijnen')
+            ->assertSee('Montage')
+            ->assertSee('Horren')
+            ->assertDontSee('>Anders</span>', false)
+            ->assertSee('Aantal')
+            ->assertSee('>m²</option>', false)
+            ->assertSee('>stuks</option>', false);
+
+        $this->assertTrue($horren->is_active);
+    }
+
+    public function test_planner_creates_winkelwerk_with_multiple_activities_notes_and_attachments(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $screens = $this->activity('screens');
+        $rolluiken = $this->activity('rolluiken');
+        $montage = $this->activity('montage');
+        $photo = UploadedFile::fake()->image('achterzijde.jpg', 40, 30);
+        $drawing = UploadedFile::fake()->image('tekening.png', 40, 30);
+
+        $response = $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'address' => 'Kerkstraat 12',
+            'postal_code' => '7551 AA',
+            'work_description' => 'Screens en rolluiken plaatsen, elektrisch aansluiten.',
+            'work_activity_ids' => [$screens->id, $rolluiken->id, $montage->id],
+            'activity_notes' => [
+                $screens->id => '4 stuks plaatsen achterzijde woning',
+                $rolluiken->id => '2 stuks slaapkamer',
+                $montage->id => 'elektrisch aansluiten en afstellen',
+            ],
+            'attachments' => [$photo, $drawing],
+            'start_year' => 2026,
+            'start_week' => 37,
+            'klaar_year' => 2026,
+            'klaar_week' => 37,
+        ]);
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $response->assertRedirect(route('projects.show', $project));
+
+        $this->assertSame('Jansen - Hengelo', $project->name);
+        $this->assertSame('Hengelo', $project->city);
+        $this->assertSame('Screens en rolluiken plaatsen, elektrisch aansluiten.', $project->work_description);
+        $this->assertSame(['Screens', 'Rolluiken', 'Montage'], $project->workActivities()->pluck('name')->all());
+        $this->assertSame('4 stuks plaatsen achterzijde woning', $project->workActivities()->where('slug', 'screens')->first()?->pivot?->notes);
+        $this->assertSame(3, $project->workItems()->count());
+        $this->assertSame(2, $project->documents()->where('document_type', 'bijlage')->count());
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('WINKEL')
+            ->assertSee('Jansen - Hengelo')
+            ->assertSee('Zonwering · Screens + Rolluiken + Montage')
+            ->assertSee('4 stuks plaatsen achterzijde woning')
+            ->assertSee('achterzijde.jpg')
+            ->assertSee('Open planning');
+    }
+
+    public function test_rejects_winkelwerk_without_selected_activities(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), [
+                'customer_name' => 'Jansen',
+                'city' => 'Hengelo',
+            ])
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['work_activity_ids']);
+
+        $this->assertSame(0, Project::query()->count());
+    }
+
+    public function test_planner_saves_activity_quantity_in_square_meters_or_pieces(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc');
+        $screens = $this->activity('screens');
+
+        $response = $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$pvc->id, $screens->id],
+            'activity_notes' => [
+                $pvc->id => 'woonkamer',
+                $screens->id => 'achterzijde woning',
+            ],
+            'activity_quantities' => [
+                $pvc->id => '40,5',
+                $screens->id => '4',
+            ],
+            'activity_units' => [
+                $pvc->id => WorkUnit::SquareMeter->value,
+                $screens->id => WorkUnit::Pieces->value,
+            ],
+        ]);
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $response->assertRedirect(route('projects.show', $project));
+
+        $pvcPivot = $project->workActivities()->where('slug', 'pvc')->first()?->pivot;
+        $screensPivot = $project->workActivities()->where('slug', 'screens')->first()?->pivot;
+        $this->assertSame(40.5, (float) $pvcPivot?->quantity);
+        $this->assertSame(WorkUnit::SquareMeter, $pvcPivot?->unit);
+        $this->assertSame(4.0, (float) $screensPivot?->quantity);
+        $this->assertSame(WorkUnit::Pieces, $screensPivot?->unit);
+
+        $pvcItem = $project->workItems()->where('name', 'PVC')->first();
+        $screensItem = $project->workItems()->where('name', 'Screens')->first();
+        $this->assertSame(WorkUnit::SquareMeter, $pvcItem?->unit);
+        $this->assertSame(40.5, (float) $pvcItem?->ordered_quantity);
+        $this->assertSame(WorkUnit::Pieces, $screensItem?->unit);
+        $this->assertSame(4.0, (float) $screensItem?->ordered_quantity);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('40,50 m²')
+            ->assertSee('4 stuks')
+            ->assertSee('woonkamer');
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('40,50 m²')
+            ->assertSee('4 stuks');
+    }
+
+    public function test_rejects_winkelwerk_when_activity_unit_is_not_square_meters_or_pieces(): void
+    {
+        $user = User::factory()->create();
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), [
+                'customer_name' => 'Jansen',
+                'city' => 'Hengelo',
+                'work_activity_ids' => [$screens->id],
+                'activity_quantities' => [$screens->id => '4'],
+                'activity_units' => [$screens->id => WorkUnit::Hours->value],
+            ])
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['activity_units.'.$screens->id => 'Kies m² of stuks.']);
+
+        $this->assertSame(0, Project::query()->count());
+    }
+
+    public function test_planning_shows_winkel_badge_and_allows_assigning_a_person(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Albert',
+            'employment_type' => 'eigen',
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+        $pvc = $this->activity('pvc');
+        $egaliseren = $this->activity('egaliseren');
+        $plinten = $this->activity('plinten');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'De Vries',
+            'city' => 'Enschede',
+            'work_activity_ids' => [$pvc->id, $egaliseren->id, $plinten->id],
+            'start_year' => 2026,
+            'start_week' => 37,
+            'klaar_year' => 2026,
+            'klaar_week' => 37,
+        ])->assertRedirect();
+
+        $project = Project::query()->first();
+        $this->assertNotNull($project);
+        $screensItem = $project->workItems()->where('name', 'PVC')->first();
+        $this->assertNotNull($screensItem);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('WINKEL')
+            ->assertSee('De Vries - Enschede')
+            ->assertSee('Vloeren · PVC + Egaliseren + Plinten')
+            ->assertSee('PVC')
+            ->assertSee('Egaliseren')
+            ->assertSee('Plinten');
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $screensItem->id,
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-08',
+                'people_count' => 1,
+            ])
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertDatabaseHas('worker_assignments', [
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $screensItem->id,
+        ]);
+        $this->assertSame(1, WorkerAssignment::query()->count());
+    }
+
+    public function test_winkel_assignment_to_pvc_renders_on_the_pvc_row(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Kees Jansen',
+            'employment_type' => 'zzp',
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+        $pvc = $this->activity('pvc');
+        $marmoleum = $this->activity('marmoleum');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Eric Wesselink',
+            'city' => 'Keijenborg',
+            'work_activity_ids' => [$pvc->id, $marmoleum->id],
+            'activity_quantities' => [$pvc->id => '1', $marmoleum->id => '1'],
+            'activity_units' => [
+                $pvc->id => WorkUnit::Pieces->value,
+                $marmoleum->id => WorkUnit::Pieces->value,
+            ],
+            'start_year' => 2026,
+            'start_week' => 38,
+            'klaar_year' => 2026,
+            'klaar_week' => 38,
+        ])->assertRedirect();
+
+        $project = Project::query()->first();
+        $this->assertNotNull($project);
+        $pvcItem = $project->workItems()->where('name', 'PVC')->first();
+        $marmItem = $project->workItems()->where('name', 'Marmoleum')->first();
+        $this->assertNotNull($pvcItem);
+        $this->assertNotNull($marmItem);
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $pvcItem->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-14',
+                'people_count' => 1,
+            ])
+            ->assertOk();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-14', 'project_id' => $project->id]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/data-work-item-id="'.$pvcItem->id.'"[^>]*>[\s\S]*?class="person-bar[\s\S]*?top: 4px/',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/data-work-item-id="'.$marmItem->id.'"[^>]*>[\s\S]*?class="person-bar/',
+            $html
+        );
+    }
+
+    public function test_planner_updates_winkelwerk_activities_and_description(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $screens = $this->activity('screens');
+        $rolluiken = $this->activity('rolluiken');
+        $gordijnen = $this->activity('gordijnen');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$screens->id, $rolluiken->id],
+            'activity_notes' => [$screens->id => '4 stuks achterzijde'],
+            'activity_quantities' => [$screens->id => '4'],
+            'activity_units' => [$screens->id => WorkUnit::Pieces->value],
+        ])->assertRedirect();
+
+        $project = Project::query()->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)->patch(route('projects.winkel.update', $project), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_description' => 'Raambekleding nagekomen.',
+            'work_activity_ids' => [$screens->id, $gordijnen->id],
+            'activity_notes' => [
+                $screens->id => '3 stuks achterzijde',
+                $gordijnen->id => 'woonkamer',
+            ],
+            'activity_quantities' => [
+                $screens->id => '3',
+                $gordijnen->id => '8',
+            ],
+            'activity_units' => [
+                $screens->id => WorkUnit::Pieces->value,
+                $gordijnen->id => WorkUnit::Pieces->value,
+            ],
+        ])->assertRedirect(route('projects.show', $project));
+
+        $project->refresh();
+        $this->assertSame('Raambekleding nagekomen.', $project->work_description);
+        $this->assertSame(['Gordijnen', 'Screens'], $project->workActivities()->pluck('name')->all());
+        $this->assertSame('3 stuks achterzijde', $project->workActivities()->where('slug', 'screens')->first()?->pivot?->notes);
+        $this->assertSame(3.0, (float) $project->workActivities()->where('slug', 'screens')->first()?->pivot?->quantity);
+        $this->assertSame(8.0, (float) $project->workActivities()->where('slug', 'gordijnen')->first()?->pivot?->quantity);
+        $this->assertSame(['Gordijnen', 'Screens'], $project->workItems()->orderBy('sort_order')->pluck('name')->all());
+        $this->assertSame(3.0, (float) $project->workItems()->where('name', 'Screens')->first()?->ordered_quantity);
+        $this->assertSame('Raambekleding + Zonwering · Gordijnen + Screens', $project->fresh(['workActivities.category'])->shopWorkLine());
+    }
+
+    public function test_construction_project_does_not_show_winkel_badge_on_planning(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)->post(route('projects.store'), [
+            'name' => 'Laakse Tuinen',
+            'customer_name' => 'Gemeente Amersfoort',
+            'city' => 'Amersfoort',
+        ])->assertRedirect();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertDontSee('plan-winkel-badge', false)
+            ->assertSee('Laakse Tuinen');
+    }
+
+    #[DataProvider('rolesThatMayCreate')]
+    public function test_roles_that_may_create_winkelwerk(UserRole $role): void
+    {
+        $user = User::factory()->create(['role' => $role]);
+
+        $this->actingAs($user)->get(route('projects.winkel.create'))->assertOk();
+    }
+
+    /** @return array<string, array{0: UserRole}> */
+    public static function rolesThatMayCreate(): array
+    {
+        return [
+            'admin' => [UserRole::Admin],
+            'planner' => [UserRole::Planner],
+            'projectleider' => [UserRole::Projectleider],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payload(): array
+    {
+        return [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$this->activity('screens')->id],
+        ];
+    }
+
+    private function activity(string $slug): WorkActivity
+    {
+        return WorkActivity::query()->where('slug', $slug)->firstOrFail();
+    }
+
+    private function addActivity(string $name, string $categorySlug): WorkActivity
+    {
+        $category = WorkActivityCategory::query()->where('slug', $categorySlug)->firstOrFail();
+
+        return WorkActivity::query()->create([
+            'work_activity_category_id' => $category->id,
+            'name' => $name,
+            'slug' => Str::slug($name),
+            'sort_order' => 99,
+            'is_active' => true,
+        ]);
+    }
+}
