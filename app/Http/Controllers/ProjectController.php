@@ -173,9 +173,11 @@ class ProjectController extends Controller
         }
 
         $setup->ensureProject($project);
-        $workers = Worker::query()->where('active', true)->orderBy('name')->get();
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
+        $progressWorkers = $project->plannedWorkers();
+        $workers = Worker::query()->where('active', true)->orderBy('name')->get();
         if ($scheduledWorkerId !== null) {
+            $progressWorkers = $progressWorkers->where('id', $scheduledWorkerId)->values();
             $workers = $workers->where('id', $scheduledWorkerId)->values();
         }
         $payload = $board->payload($project);
@@ -243,6 +245,7 @@ class ProjectController extends Controller
         return view('projects.show', [
             'project' => $project,
             'workers' => $workers,
+            'progressWorkers' => $progressWorkers,
             'orderTypes' => WorkOrderType::cases(),
             'board' => $payload,
             'selectedAreaId' => $firstArea?->id,

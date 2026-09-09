@@ -340,6 +340,8 @@ class ProgressApprovalTest extends TestCase
         ]);
         app(RoomWorkSetup::class)->ensureProject($project);
 
+        $this->assignWorker($worker, $project);
+
         return [$project->fresh(), $area->fresh(['tasks.workItem']), $worker];
     }
 

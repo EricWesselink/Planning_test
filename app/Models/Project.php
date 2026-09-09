@@ -154,6 +154,18 @@ class Project extends Model
         return $this->hasMany(WorkerAssignment::class);
     }
 
+    /**
+     * @return Collection<int, Worker>
+     */
+    public function plannedWorkers(): Collection
+    {
+        return Worker::query()
+            ->where('active', true)
+            ->whereHas('assignments', fn ($query) => $query->where('project_id', $this->id))
+            ->orderBy('name')
+            ->get();
+    }
+
     public function workOrders(): HasMany
     {
         return $this->hasMany(WorkOrder::class);

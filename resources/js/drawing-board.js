@@ -308,12 +308,49 @@ function boot() {
         return `${area.number || ''} ${area.name || ''}`.trim() || area.label || area.marker?.label_text || '';
     }
 
-    function areaMatchesWork(area) {
+    function selectedFloorName() {
+        const option = pageSelect?.selectedOptions[0];
+        if (option?.dataset.floor) {
+            return option.dataset.floor;
+        }
+        const text = option?.textContent || '';
+        const match = text.match(/^(.*)\s+\(\d+\/\d+\)$/);
+        if (match && !text.startsWith('Pagina ')) {
+            return match[1].trim();
+        }
+
+        return '';
+    }
+
+    function rowWorkKeys(row) {
+        const fromRow = (row.dataset.works || '').split(',').map((key) => key.trim()).filter(Boolean);
+        if (fromRow.length) {
+            return fromRow;
+        }
+
+        return (areaById(Number(row.dataset.areaId))?.works || []).map((work) => work.key);
+    }
+
+    function areaMatchesWork(area, row = null) {
         if (!workFilterKey) {
             return true;
         }
+        if (row) {
+            return rowWorkKeys(row).includes(workFilterKey);
+        }
 
         return (area?.works || []).some((work) => work.key === workFilterKey);
+    }
+
+    function areaOnSelectedFloor(area, row = null) {
+        const floor = selectedFloorName();
+        if (floor) {
+            const rowFloor = row?.dataset.floor || area?.floor || '';
+
+            return rowFloor === floor;
+        }
+
+        return areaOnCurrentPage(area);
     }
 
     function areaOnCurrentPage(area) {
@@ -324,7 +361,7 @@ function boot() {
         if (areaPage != null && areaPage !== '') {
             return Number(areaPage) === Number(page);
         }
-        const floor = pageSelect?.selectedOptions[0]?.dataset.floor || '';
+        const floor = selectedFloorName();
 
         return floor !== '' && (area.floor || '') === floor;
     }
@@ -333,15 +370,29 @@ function boot() {
         return Boolean(workFilterKey) && !areaMatchesWork(area);
     }
 
+    function matchingAreas() {
+        return areas.filter((area) => {
+            if (!areaMatchesWork(area)) {
+                return false;
+            }
+            if (!workFilterKey) {
+                return true;
+            }
+
+            return areaOnSelectedFloor(area);
+        });
+    }
+
     function applyRoomFilters(options = {}) {
         const tone = document.querySelector('.room-filter.is-on')?.dataset.filter || 'all';
         document.querySelectorAll('.room-row').forEach((row) => {
             const area = areaById(Number(row.dataset.areaId));
             const toneOk = tone === 'all' || row.dataset.tone === tone;
-            const workOk = areaMatchesWork(area);
-            const pageOk = !workFilterKey || areaOnCurrentPage(area);
-            row.style.display = toneOk && workOk && pageOk ? '' : 'none';
+            const workOk = areaMatchesWork(area, row);
+            const floorOk = !workFilterKey || areaOnSelectedFloor(area, row);
+            row.style.display = toneOk && workOk && floorOk ? '' : 'none';
         });
+        prunePickedToFilter();
         document.querySelectorAll('.floor-head').forEach((head) => {
             let any = false;
             let el = head.nextElementSibling;
@@ -354,12 +405,45 @@ function boot() {
             }
             head.style.display = any ? '' : 'none';
         });
+        document.querySelectorAll('.floor-pick').forEach((button) => {
+            button.classList.toggle('hidden', Boolean(workFilterKey));
+        });
+        const pickAll = document.getElementById('pick-all-rooms');
+        if (pickAll) {
+            pickAll.textContent = workFilterKey ? 'Alles aanvinken' : 'Hele werk';
+        }
+        document.querySelector('.board-left')?.classList.toggle('is-work-filter', Boolean(workFilterKey));
         if (pickWorkRoomsBtn) {
             pickWorkRoomsBtn.classList.toggle('hidden', !workFilterKey);
         }
+        refreshFilterCounts();
         if (!options.skipMarkers) {
             renderMarkers();
         }
+    }
+
+    function prunePickedToFilter() {
+        if (!workFilterKey) {
+            return;
+        }
+        const visible = new Set(visibleRoomIds());
+        const next = [...pickedIds].filter((id) => visible.has(id));
+        if (next.length === pickedIds.size && next.every((id) => pickedIds.has(id))) {
+            return;
+        }
+        if (next.length === 0) {
+            pickedIds = new Set();
+            selectedId = 0;
+            root.dataset.selected = '';
+            highlightList();
+            return;
+        }
+        pickedIds = new Set(next);
+        if (!pickedIds.has(selectedId)) {
+            selectedId = next[0];
+            root.dataset.selected = String(selectedId);
+        }
+        highlightList();
     }
 
     function pickWorkGroup() {
@@ -591,6 +675,9 @@ function boot() {
             pageSelect.append(option);
         }
         pageSelect.value = String(page);
+        if (workFilterKey) {
+            applyRoomFilters({ skipMarkers: true });
+        }
     }
 
     function hideTip() {
@@ -759,6 +846,12 @@ function boot() {
             row.classList.toggle('is-picked', pickedIds.has(id));
             if (area) {
                 row.dataset.tone = area.tone;
+                if (Array.isArray(area.works)) {
+                    row.dataset.works = area.works.map((work) => work.key).join(',');
+                }
+                if (area.page != null) {
+                    row.dataset.page = String(area.page);
+                }
                 if (area.material_color) {
                     row.style.setProperty('--material-color', area.material_color);
                     if (area.material_color_soft) {
@@ -2146,7 +2239,9 @@ function boot() {
         if (workFilterKey) {
             pickWorkGroup();
             const label = workSelect.selectedOptions[0]?.textContent || 'onderdeel';
-            setHint(`Alleen ruimtes met ${label} op deze verdieping. Kies een ruimte of Alle zichtbare.`);
+            setHint(`Alleen ruimtes met ${label} op deze verdieping. Tik een ruimte aan, of Alles aanvinken.`);
+            document.querySelector('.board-left')?.classList.add('is-open');
+            document.querySelector('.board-right')?.classList.remove('is-open');
         }
     });
     pickWorkRoomsBtn?.addEventListener('click', () => {
@@ -2304,6 +2399,10 @@ function boot() {
             return;
         }
         event.preventDefault();
+        if (workFilterKey && data.canEnterProgress) {
+            togglePickedRoom(row.dataset.areaId);
+            return;
+        }
         if (event.target.closest('.status-pill') && data.canEnterProgress) {
             togglePickedRoom(row.dataset.areaId);
             return;
@@ -2482,13 +2581,18 @@ function boot() {
     }
 
     function refreshFilterCounts() {
+        const pool = matchingAreas();
         const counts = {
-            all: areas.length,
-            open: areas.filter((area) => area.tone === 'open').length,
-            partial: areas.filter((area) => area.tone === 'partial').length,
-            pending: areas.filter((area) => area.tone === 'pending').length,
-            done: areas.filter((area) => area.tone === 'done').length,
+            all: pool.length,
+            open: pool.filter((area) => area.tone === 'open').length,
+            partial: pool.filter((area) => area.tone === 'partial').length,
+            pending: pool.filter((area) => area.tone === 'pending').length,
+            done: pool.filter((area) => area.tone === 'done').length,
         };
+        const countLabel = document.getElementById('room-count-label');
+        if (countLabel) {
+            countLabel.textContent = `${counts.all} ruimtes`;
+        }
         document.querySelectorAll('.room-filter').forEach((button) => {
             const key = button.dataset.filter;
             const labels = {

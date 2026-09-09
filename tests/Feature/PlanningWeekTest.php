@@ -207,16 +207,23 @@ class PlanningWeekTest extends TestCase
         $css = file_get_contents(resource_path('css/app.css'));
 
         $this->assertMatchesRegularExpression(
-            '/\.plan-board\s*\{[^}]*--plan-frozen:\s*360px/',
+            '/:root\s*\{[^}]*--planning-sidebar-width:\s*360px/',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-board\s*\{[^}]*--planning-sidebar-width:\s*360px/',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-line\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*var\(--planning-sidebar-width\)\)/',
             $css
         );
         $this->assertStringContainsString('--plan-col-opdracht: 55px', $css);
         $this->assertStringContainsString('--plan-col-gereed: 45px', $css);
         $this->assertStringContainsString('--plan-col-rest: 45px', $css);
         $this->assertStringContainsString('--plan-col-pct: 26px', $css);
-        $this->assertStringNotContainsString('--plan-frozen: 400px', $css);
-        $this->assertStringNotContainsString('--plan-frozen: 520px', $css);
-        $this->assertStringNotContainsString('--plan-frozen: 600px', $css);
+        $this->assertStringNotContainsString('--plan-frozen', $css);
+        $this->assertDoesNotMatchRegularExpression('/\.plan-board\s*\{[^}]*--planning-sidebar-width:\s*(400|520|560|600)px/', $css);
         $this->assertMatchesRegularExpression(
             '/\.plan-project-title\s*\{[^}]*-webkit-line-clamp:\s*2/',
             $css

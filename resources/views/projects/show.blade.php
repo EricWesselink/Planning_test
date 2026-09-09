@@ -110,7 +110,7 @@
         <aside class="board-left">
             <div class="px-3 pt-3 pb-2">
                 <div class="flex items-center justify-between gap-2">
-                    <div class="text-xs text-nicon-muted">{{ $counts['all'] }} ruimtes<span id="picked-count" hidden></span></div>
+                    <div class="text-xs text-nicon-muted"><span id="room-count-label">{{ $counts['all'] }} ruimtes</span><span id="picked-count" hidden></span></div>
                     @if ($canEnterProgress)
                         <button type="button" id="pick-all-rooms" class="room-pick-btn">Hele werk</button>
                     @endif
@@ -132,7 +132,7 @@
                         @endif
                     </div>
                     @foreach ($floorAreas as $area)
-                        <button type="button" class="room-row {{ (int) $selectedAreaId === (int) $area['id'] ? 'is-on is-picked' : '' }}" data-area-id="{{ $area['id'] }}" data-tone="{{ $area['tone'] }}" data-floor="{{ $floorName }}" style="--material-color: {{ $area['material_color'] ?? '#9ca3af' }}; --material-color-soft: {{ $area['material_color_soft'] ?? 'rgba(156, 163, 175, 0.14)' }};" title="{{ $area['number'] }} {{ $area['unique_name'] ?? $area['name'] }} · {{ $area['m2_label'] }} · {{ $area['status_label'] }}">
+                        <button type="button" class="room-row {{ (int) $selectedAreaId === (int) $area['id'] ? 'is-on is-picked' : '' }}" data-area-id="{{ $area['id'] }}" data-tone="{{ $area['tone'] }}" data-floor="{{ $floorName }}" data-page="{{ $area['page'] ?? '' }}" data-works="{{ collect($area['works'] ?? [])->pluck('key')->implode(',') }}" style="--material-color: {{ $area['material_color'] ?? '#9ca3af' }}; --material-color-soft: {{ $area['material_color_soft'] ?? 'rgba(156, 163, 175, 0.14)' }};" title="{{ $area['number'] }} {{ $area['unique_name'] ?? $area['name'] }} · {{ $area['m2_label'] }} · {{ $area['status_label'] }}">
                             <span class="room-num">{{ $area['number'] ?: '—' }}</span>
                             <span class="room-name">{{ $area['unique_name'] ?? $area['name'] }}</span>
                             <span class="room-m2">{{ $area['m2_label'] }}</span>
@@ -339,10 +339,12 @@
                     <div class="text-xs font-medium" id="complete-task-name">Kies een of meer werkzaamheden</div>
                     <p class="text-[11px] text-nicon-muted" id="complete-hint">@if ($lockedWorkerId)Klaar blijft voorlopig tot de projectleider akkoord geeft. Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.@elseif ($canApproveProgress)Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype. Voorlopig klaar: klik en geef akkoord. Definitief gereed kun je uitzetten.@else Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype. Klik op Gereed om het weer open te zetten.@endif</p>
                     <div class="grid grid-cols-2 gap-2">
-                        <select name="worker_id" id="complete-worker" class="border border-nicon-line px-2 py-1" @disabled($lockedWorkerId)>
-                            @foreach ($workers as $worker)
+                        <select name="worker_id" id="complete-worker" class="border border-nicon-line px-2 py-1" @disabled($lockedWorkerId || $progressWorkers->isEmpty())>
+                            @forelse ($progressWorkers as $worker)
                                 <option value="{{ $worker->id }}" @selected($lockedWorkerId === $worker->id)>{{ $worker->planName() }}</option>
-                            @endforeach
+                            @empty
+                                <option value="" disabled selected>Niemand ingepland op dit werk</option>
+                            @endforelse
                         </select>
                         <input type="date" name="date" id="complete-date" value="{{ now()->toDateString() }}" class="border border-nicon-line px-2 py-1">
                     </div>

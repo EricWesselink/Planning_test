@@ -14,6 +14,7 @@ use App\Models\ProjectDocument;
 use App\Models\ProjectFloor;
 use App\Models\User;
 use App\Models\Worker;
+use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Services\RoomMarkerMatcher;
 use App\Services\RoomWorkSetup;
@@ -71,6 +72,7 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Alle onderdelen')
             ->assertSee('Alle zichtbare')
             ->assertSee('id="pick-work-rooms"', false)
+            ->assertSee('id="room-count-label"', false)
             ->assertSee('id="snag-status"', false)
             ->assertSee('for="snag-status"', false)
             ->assertSee('Annuleren')
@@ -159,6 +161,13 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Alle zichtbare')
             ->getContent();
 
+        $this->assertStringContainsString('data-works=', $html);
+        $this->assertStringContainsString('id="room-count-label"', $html);
+        $this->assertTrue(
+            (bool) preg_match('/data-works="[^"]*ondergrond[^"]*"/', $html),
+            'Elke ruimte moet haar onderdelen in de lijst zetten zodat het filter ze kan verbergen.',
+        );
+
         $this->assertSame(1, preg_match('/id="draw-work"[^>]*>.*?<\/select>/s', $html, $select));
         $this->assertStringContainsString('Primen &amp; Egaliseren', $select[0]);
         $this->assertStringContainsString('Coating', $select[0]);
@@ -193,22 +202,29 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('function applyRoomFilters', $js);
         $this->assertStringContainsString('function pickWorkGroup', $js);
         $this->assertStringContainsString('function areaMatchesWork', $js);
+        $this->assertStringContainsString('function selectedFloorName', $js);
+        $this->assertStringContainsString('function matchingAreas', $js);
+        $this->assertStringContainsString('function prunePickedToFilter', $js);
+        $this->assertStringContainsString('Alles aanvinken', $js);
+        $this->assertStringContainsString('is-work-filter', $js);
         $this->assertStringContainsString('is-filtered-out', $js);
         $this->assertStringContainsString('.room-name-overlay.is-filtered-out', $css);
         $this->assertStringContainsString('.status-badge.is-filtered-out', $css);
+        $this->assertStringContainsString('.board-left.is-work-filter', $css);
     }
 
     public function test_progress_form_shows_the_team_name_instead_of_the_company(): void
     {
         Storage::fake('local');
         [$user, $project] = $this->makeProject();
-        Worker::query()->create([
+        $team = Worker::query()->create([
             'name' => 'Team Wespro',
             'employment_type' => 'zzp',
             'company' => 'Harm Wesselink',
             'people_count' => 2,
             'active' => true,
         ]);
+        $this->assignToProject($project, $team);
 
         $html = $this->actingAs($user)
             ->get(route('projects.show', $project))
@@ -218,12 +234,60 @@ class DrawingBoardTest extends TestCase
         $this->assertSame(1, preg_match('/id="complete-worker"[^>]*>.*?<\/select>/s', $html, $select));
         $this->assertStringContainsString('>Team Wespro</option>', $select[0]);
         $this->assertStringNotContainsString('>Harm Wesselink</option>', $select[0]);
+    }
 
-        $this->assertSame(1, preg_match('/id="board-data">([^<]*)<\/script>/', $html, $matches));
-        $board = json_decode($matches[1], true);
-        $names = collect($board['workers'] ?? [])->pluck('name')->all();
-        $this->assertContains('Team Wespro', $names);
-        $this->assertNotContains('Harm Wesselink', $names);
+    public function test_progress_form_lists_only_workers_planned_on_the_project(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        $team = Worker::query()->create([
+            'name' => 'Wepro',
+            'employment_type' => 'zzp',
+            'company' => 'Wepro Bouw',
+            'active' => true,
+        ]);
+        $this->assignToProject($project, $team);
+        Worker::query()->create([
+            'name' => 'Piet de Vries',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+
+        $html = $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertSame(1, preg_match('/id="complete-worker"[^>]*>.*?<\/select>/s', $html, $select));
+        $this->assertStringContainsString('>Albert</option>', $select[0]);
+        $this->assertStringContainsString('>Wepro</option>', $select[0]);
+        $this->assertStringNotContainsString('>Piet de Vries</option>', $select[0]);
+        $this->assertStringNotContainsString('Niemand ingepland op dit werk', $select[0]);
+    }
+
+    public function test_progress_rejects_a_worker_who_is_not_planned_on_the_project(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        app(RoomWorkSetup::class)->ensureProject($project);
+        $area = $project->areas()->where('area_number', '0.07')->first();
+        $outsider = Worker::query()->create([
+            'name' => 'Piet de Vries',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        $task = $area->tasks()->first();
+
+        $this->actingAs($user)
+            ->postJson(route('projects.areas.process', [$project, $area]), [
+                'task_ids' => [$task->id],
+                'worker_id' => $outsider->id,
+                'date' => '2026-09-09',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('worker_id');
+
+        $this->assertNull($task->fresh()->completed_by);
     }
 
     public function test_completed_work_shows_the_team_name(): void
@@ -236,6 +300,7 @@ class DrawingBoardTest extends TestCase
             'company' => 'Harm Wesselink',
             'active' => true,
         ]);
+        $this->assignToProject($project, $team);
         app(RoomWorkSetup::class)->ensureProject($project);
         $area = $project->areas()->where('area_number', '0.07')->first();
 
@@ -1560,9 +1625,22 @@ class DrawingBoardTest extends TestCase
             'parse_status' => 'none',
             'uploaded_by' => $user->id,
         ]);
+        $this->assignToProject($project, $worker, $work);
         $project->load('documents');
 
         return [$user, $project->fresh(['areas', 'documents']), $worker];
+    }
+
+    private function assignToProject(Project $project, Worker $worker, ?WorkItem $item = null): void
+    {
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item?->id ?? $project->workItems()->value('id'),
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-30',
+            'hours_per_day' => 8,
+        ]);
     }
 
     private function markerFor(Project $project, string $number): AreaDrawingMarker

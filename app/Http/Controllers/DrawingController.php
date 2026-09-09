@@ -16,6 +16,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 class DrawingController extends Controller
 {
@@ -182,14 +184,14 @@ class DrawingController extends Controller
 
         $data = $request->validate([
             'group' => ['required', 'string', 'in:ondergrond,vloer,plinten,overige'],
-            'worker_id' => $this->workerIdRules($request),
+            'worker_id' => $this->workerIdRules($request, $project),
             'date' => ['required', 'date'],
             'hours' => ['nullable', 'numeric', 'min:0'],
             'note' => ['nullable', 'string'],
         ]);
 
         $area->load(['tasks.workItem', 'project.workItems']);
-        $worker = $this->progressWorker($request, $data['worker_id'] ?? null);
+        $worker = $this->progressWorker($request, $project, $data['worker_id'] ?? null);
         $tasks = $area->tasks->filter(fn ($task) => $task->phase()->group() === $data['group']);
 
         if ($tasks->isEmpty()) {
@@ -232,7 +234,7 @@ class DrawingController extends Controller
         $data = $request->validate([
             'task_ids' => ['required', 'array', 'min:1'],
             'task_ids.*' => ['integer'],
-            'worker_id' => $this->workerIdRules($request),
+            'worker_id' => $this->workerIdRules($request, $project),
             'date' => ['required', 'date'],
             'quantity' => ['nullable', 'numeric', 'min:0'],
             'hours' => ['nullable', 'numeric', 'min:0'],
@@ -252,7 +254,7 @@ class DrawingController extends Controller
             return response()->json(['message' => 'Selecteer minimaal één open werkzaamheid.'], 422);
         }
 
-        $worker = $this->progressWorker($request, $data['worker_id'] ?? null);
+        $worker = $this->progressWorker($request, $project, $data['worker_id'] ?? null);
         $sharedQuantity = $open->count() === 1 && array_key_exists('quantity', $data) && $data['quantity'] !== null && (float) $data['quantity'] > 0
             ? (float) $data['quantity']
             : null;
@@ -364,7 +366,7 @@ class DrawingController extends Controller
         $data = $request->validate([
             'task_ids' => ['required', 'array', 'min:1'],
             'task_ids.*' => ['integer'],
-            'worker_id' => $this->workerIdRules($request),
+            'worker_id' => $this->workerIdRules($request, $project),
             'date' => ['required', 'date'],
             'quantity' => ['nullable', 'numeric', 'min:0'],
             'hours' => ['nullable', 'numeric', 'min:0'],
@@ -381,7 +383,7 @@ class DrawingController extends Controller
             return response()->json(['message' => 'Selecteer minimaal één open werkzaamheid.'], 422);
         }
 
-        $worker = $this->progressWorker($request, $data['worker_id'] ?? null);
+        $worker = $this->progressWorker($request, $project, $data['worker_id'] ?? null);
         $sharedQuantity = $open->count() === 1 && array_key_exists('quantity', $data) && $data['quantity'] !== null && (float) $data['quantity'] > 0
             ? (float) $data['quantity']
             : null;
@@ -512,20 +514,30 @@ class DrawingController extends Controller
     }
 
     /**
-     * @return list<string>
+     * @return list<string|Exists>
      */
-    private function workerIdRules(Request $request): array
+    private function workerIdRules(Request $request, Project $project): array
     {
+        if ($request->user()?->scheduledWorkerId() !== null) {
+            return ['nullable', 'integer'];
+        }
+
         return [
-            $request->user()?->scheduledWorkerId() === null ? 'required' : 'nullable',
-            'exists:workers,id',
+            'required',
+            'integer',
+            Rule::exists('worker_assignments', 'worker_id')->where('project_id', $project->id),
         ];
     }
 
-    private function progressWorker(Request $request, mixed $postedWorkerId): Worker
+    private function progressWorker(Request $request, Project $project, mixed $postedWorkerId): Worker
     {
         $id = $request->user()?->scheduledWorkerId() ?? (is_numeric($postedWorkerId) ? (int) $postedWorkerId : null);
         abort_unless($id !== null && $id > 0, 422, 'Kies een vakman.');
+        abort_unless(
+            $project->assignments()->where('worker_id', $id)->exists(),
+            422,
+            'Deze vakman of dit team is niet ingepland op dit werk.',
+        );
 
         return Worker::query()->findOrFail($id);
     }
