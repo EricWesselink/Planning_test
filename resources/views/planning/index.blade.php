@@ -188,6 +188,7 @@
                             <div class="plan-cell plan-cell--num">Opdracht</div>
                             <div class="plan-cell plan-cell--num">Gereed</div>
                             <div class="plan-cell plan-cell--num">Rest</div>
+                            <div class="plan-cell plan-cell--num">%</div>
                         </div>
                         <div class="plan-days plan-days--head{{ $weeks > 1 ? ' plan-days--multi' : '' }}">
                             @foreach ($weekBands as $band)
@@ -215,6 +216,7 @@
                             <div class="plan-line plan-line--section" role="separator" aria-label="{{ $projectRow['title'] }}">
                                 <div class="plan-frozen">
                                     <div class="plan-cell plan-cell--werk plan-cell--section">{{ $projectRow['title'] }}</div>
+                                    <div class="plan-cell plan-cell--num"></div>
                                     <div class="plan-cell plan-cell--num"></div>
                                     <div class="plan-cell plan-cell--num"></div>
                                     <div class="plan-cell plan-cell--num"></div>
@@ -271,9 +273,7 @@
                                         <span class="plan-missing-craftsman" title="Geen vakman ingepland" aria-label="Geen vakman ingepland">⚠</span>
                                     @endif
                                 </div>
-                                <div class="plan-cell plan-cell--num"></div>
-                                <div class="plan-cell plan-cell--num"></div>
-                                <div class="plan-cell plan-cell--num"></div>
+                                @include('planning.partials.qty-cells', ['row' => $projectRow])
                             </div>
                             @include('planning.partials.plan-days', [
                                 'projectId' => $projectRow['id'],
@@ -301,21 +301,7 @@
                                             @endif
                                         </div>
                                     </div>
-                                    <div class="plan-cell plan-cell--num">
-                                        @if ($work['ordered'] !== null)
-                                            {{ \App\Support\Format::qty($work['ordered'], $work['ordered_decimals'] ?? 0) }} {{ $work['unit'] }}
-                                        @endif
-                                    </div>
-                                    <div class="plan-cell plan-cell--num">
-                                        @if ($work['completed'] !== null)
-                                            {{ \App\Support\Format::qty($work['completed']) }}
-                                        @endif
-                                    </div>
-                                    <div class="plan-cell plan-cell--num">
-                                        @if ($work['remaining'] !== null)
-                                            {{ \App\Support\Format::qty($work['remaining']) }}
-                                        @endif
-                                    </div>
+                                    @include('planning.partials.qty-cells', ['row' => $work])
                                 </div>
                                 @include('planning.partials.plan-days', [
                                     'projectId' => $projectRow['id'],

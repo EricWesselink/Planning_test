@@ -49,6 +49,7 @@ class PlanningPdfTest extends TestCase
             ->assertSee('Primen & Egaliseren')
             ->assertSee('Week 37')
             ->assertSee('Voor de opdrachtgever: zonder namen.')
+            ->assertSee('0%')
             ->assertDontSee('Albert')
             ->assertDontSee('>Wie</th>', false)
             ->assertDontSee('School Zwolle')

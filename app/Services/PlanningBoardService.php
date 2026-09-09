@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
 use App\Enums\WorkPhase;
+use App\Enums\WorkUnit;
 use App\Models\Project;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
@@ -193,6 +194,7 @@ class PlanningBoardService
                         'ordered' => $ordered,
                         'completed' => $done,
                         'remaining' => $rest,
+                        'percent' => $this->progressPercent($done, $ordered),
                         'who' => $who,
                         'bar' => $this->bar($starts->min(), $ends->max(), $days),
                         'person_bars' => $personBars,
@@ -234,6 +236,7 @@ class PlanningBoardService
             $startWeek = $project->planned_start_date
                 ? $project->planned_start_date->copy()->startOfWeek(Carbon::MONDAY)->toDateString()
                 : null;
+            $quantities = $this->projectQuantities($workRows);
 
             $rows[] = [
                 'type' => 'project',
@@ -261,6 +264,11 @@ class PlanningBoardService
                 'person_bars' => $leftoverBars,
                 'bar_count' => count($leftoverBars),
                 'warnings' => array_unique($projectWarnings),
+                'ordered' => $quantities['ordered'],
+                'completed' => $quantities['completed'],
+                'remaining' => $quantities['remaining'],
+                'percent' => $quantities['percent'],
+                'unit' => $quantities['unit'],
                 'children' => $workRows,
             ];
         }
@@ -509,6 +517,55 @@ class PlanningBoardService
         return $first === $last ? 'Week '.$first : 'Week '.$first.'–'.$last;
     }
 
+    /**
+     * @param  list<array<string, mixed>>  $workRows
+     * @return array{ordered: ?float, completed: ?float, remaining: ?float, percent: ?int, unit: string}
+     */
+    private function projectQuantities(array $workRows): array
+    {
+        $rows = collect($workRows)->filter(
+            fn (array $row): bool => $row['ordered'] !== null && $row['completed'] !== null
+        );
+
+        if ($rows->isEmpty()) {
+            return [
+                'ordered' => null,
+                'completed' => null,
+                'remaining' => null,
+                'percent' => null,
+                'unit' => '',
+            ];
+        }
+
+        $squareMeters = $rows->filter(
+            fn (array $row): bool => ($row['unit'] ?? '') === WorkUnit::SquareMeter->label()
+        );
+        $source = $squareMeters->isNotEmpty() ? $squareMeters : $rows;
+        $unit = (string) ($source->first()['unit'] ?? '');
+        $source = $source->filter(fn (array $row): bool => ($row['unit'] ?? '') === $unit);
+
+        $ordered = (float) $source->sum('ordered');
+        $completed = (float) $source->sum('completed');
+        $remaining = (float) $source->sum(fn (array $row): float => (float) ($row['remaining'] ?? 0));
+
+        return [
+            'ordered' => $ordered,
+            'completed' => $completed,
+            'remaining' => $remaining,
+            'percent' => $this->progressPercent($completed, $ordered),
+            'unit' => $unit,
+        ];
+    }
+
+    private function progressPercent(?float $completed, ?float $ordered): ?int
+    {
+        if ($completed === null || $ordered === null || $ordered <= 0.0001) {
+            return null;
+        }
+
+        return (int) round(min(100, max(0, $completed / $ordered * 100)));
+    }
+
     private function primaryWorkItem(Collection $items): WorkItem
     {
         $preferred = [
@@ -691,6 +748,7 @@ class PlanningBoardService
                 'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
                 'completed' => null,
                 'remaining' => null,
+                'percent' => null,
                 'who' => collect(),
                 'bar' => $this->bar($item->planned_start_date, $item->planned_end_date, $days),
                 'person_bars' => $personBars,

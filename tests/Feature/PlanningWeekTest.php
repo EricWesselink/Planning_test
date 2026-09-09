@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\WorkItem;
+use App\Models\WorkProgressEntry;
 use App\Services\PlanningBoardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
@@ -110,7 +111,7 @@ class PlanningWeekTest extends TestCase
             ->getContent();
 
         $this->assertMatchesRegularExpression(
-            '/planning-page[\s\S]*planning-controls[\s\S]*planning-scroll-area[\s\S]*plan-line plan-line--head sticky-head[\s\S]*Werk[\s\S]*Opdracht[\s\S]*Gereed[\s\S]*Rest[\s\S]*08:00[\s\S]*10:00[\s\S]*12:00[\s\S]*14:00/',
+            '/planning-page[\s\S]*planning-controls[\s\S]*planning-scroll-area[\s\S]*plan-line plan-line--head sticky-head[\s\S]*Werk[\s\S]*Opdracht[\s\S]*Gereed[\s\S]*Rest[\s\S]*%[\s\S]*08:00[\s\S]*10:00[\s\S]*12:00[\s\S]*14:00/',
             $html
         );
         $this->assertStringNotContainsString('>16:00</span>', $html);
@@ -199,5 +200,84 @@ class PlanningWeekTest extends TestCase
         $this->assertStringContainsString('plan-line plan-line--work', $html);
         $this->assertStringContainsString('min-height: 28px', $html);
         $this->assertStringNotContainsString('min-height: 36px', $html);
+    }
+
+    public function test_planning_shows_percent_complete_per_part_and_for_the_whole_work(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'Gemeente Dronten']);
+        $project = Project::query()->create([
+            'project_number' => '251100081',
+            'customer_id' => $customer->id,
+            'name' => 'Nieuwbouw Almere college WWL+',
+            'city' => 'Dronten',
+            'status' => 'in_uitvoering',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ]);
+        $primen = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Primen & Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 1100,
+            'status' => 'in_uitvoering',
+        ]);
+        $linoleum = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 1100,
+            'status' => 'in_uitvoering',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plinten',
+            'unit' => 'm1',
+            'ordered_quantity' => 50,
+            'status' => 'gepland',
+        ]);
+        WorkProgressEntry::query()->create([
+            'project_id' => $project->id,
+            'work_item_id' => $primen->id,
+            'date' => '2026-09-08',
+            'completed_quantity' => 117,
+            'unit' => 'm2',
+        ]);
+        WorkProgressEntry::query()->create([
+            'project_id' => $project->id,
+            'work_item_id' => $linoleum->id,
+            'date' => '2026-09-08',
+            'completed_quantity' => 53,
+            'unit' => 'm2',
+        ]);
+
+        $request = Request::create('/planning', 'GET', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]);
+        $request->setUserResolver(fn () => $user);
+        $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
+            ->firstWhere('id', $project->id);
+
+        $this->assertSame(2200.0, $row['ordered']);
+        $this->assertSame(170.0, $row['completed']);
+        $this->assertSame(2030.0, $row['remaining']);
+        $this->assertSame(8, $row['percent']);
+        $this->assertSame('m²', $row['unit']);
+
+        $byTitle = collect($row['children'])->keyBy('title');
+        $this->assertSame(11, $byTitle['Primen & Egaliseren']['percent']);
+        $this->assertSame(5, $byTitle['Linoleum']['percent']);
+        $this->assertSame(0, $byTitle['Plinten']['percent']);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('11%')
+            ->assertSee('5%')
+            ->assertSee('8%')
+            ->assertSee('0%')
+            ->assertSee('2.200 m²')
+            ->assertSee('1.100 m²');
     }
 }

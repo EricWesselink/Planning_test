@@ -96,7 +96,7 @@
             white-space: nowrap;
         }
         .col-werk { width: 28%; text-align: left; padding: 7px 10px; }
-        .col-num { width: 8%; text-align: right; padding: 7px 8px; font-variant-numeric: tabular-nums; }
+        .col-num { width: 7%; text-align: right; padding: 7px 8px; font-variant-numeric: tabular-nums; }
         .col-days { width: auto; }
         .project-row td { background: var(--sand); font-weight: 600; }
         .section-row td {
@@ -304,6 +304,7 @@
                     <th class="col-num">Opdracht</th>
                     <th class="col-num">Gereed</th>
                     <th class="col-num">Rest</th>
+                    <th class="col-num">%</th>
                     <th class="col-days">
                         <div class="week-band">
                             @foreach ($weekBands as $band)
@@ -325,7 +326,7 @@
                 @foreach ($rows as $projectRow)
                     @if (($projectRow['type'] ?? '') === 'section')
                         <tr class="section-row">
-                            <td class="col-werk section-label" colspan="5">{{ $projectRow['title'] }}</td>
+                            <td class="col-werk section-label" colspan="6">{{ $projectRow['title'] }}</td>
                         </tr>
                         @continue
                     @endif
@@ -354,9 +355,26 @@
                                 <div class="city">{{ $projectRow['city'] }}</div>
                             @endif
                         </td>
-                        <td class="col-num"></td>
-                        <td class="col-num"></td>
-                        <td class="col-num"></td>
+                        <td class="col-num">
+                            @if (($projectRow['ordered'] ?? null) !== null)
+                                {{ \App\Support\Format::qty($projectRow['ordered'], $projectRow['ordered_decimals'] ?? 0) }}{{ ! empty($projectRow['unit']) ? ' '.$projectRow['unit'] : '' }}
+                            @endif
+                        </td>
+                        <td class="col-num">
+                            @if (($projectRow['completed'] ?? null) !== null)
+                                {{ \App\Support\Format::qty($projectRow['completed']) }}
+                            @endif
+                        </td>
+                        <td class="col-num">
+                            @if (($projectRow['remaining'] ?? null) !== null)
+                                {{ \App\Support\Format::qty($projectRow['remaining']) }}
+                            @endif
+                        </td>
+                        <td class="col-num">
+                            @if (($projectRow['percent'] ?? null) !== null)
+                                {{ $projectRow['percent'] }}%
+                            @endif
+                        </td>
                         <td class="col-days">
                             @include('planning.partials.pdf-bars', [
                                 'personBars' => $projectBars,
@@ -391,6 +409,11 @@
                             <td class="col-num">
                                 @if ($work['remaining'] !== null)
                                     {{ \App\Support\Format::qty($work['remaining']) }}
+                                @endif
+                            </td>
+                            <td class="col-num">
+                                @if (($work['percent'] ?? null) !== null)
+                                    {{ $work['percent'] }}%
                                 @endif
                             </td>
                             <td class="col-days">

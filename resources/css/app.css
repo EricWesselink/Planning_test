@@ -462,7 +462,7 @@ body {
 }
 
 .plan-board {
-    --plan-frozen: 560px;
+    --plan-frozen: 600px;
     min-height: 100%;
     border: 0;
     border-top: 0;
@@ -531,7 +531,7 @@ body {
     left: 0;
     z-index: 3;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 96px 72px 64px;
+    grid-template-columns: minmax(0, 1fr) 88px 64px 56px 44px;
     background: inherit;
     border-right: 2px solid #9f998f;
 }
@@ -1027,10 +1027,10 @@ a.plan-missing-craftsman:hover {
 
 @media (max-width: 900px) {
     .plan-board {
-        --plan-frozen: 320px;
+        --plan-frozen: 360px;
     }
     .plan-frozen {
-        grid-template-columns: minmax(0, 1fr) 80px 56px 52px;
+        grid-template-columns: minmax(0, 1fr) 72px 48px 44px 36px;
     }
     .plan-cell {
         padding: 2px 6px;
