@@ -242,10 +242,10 @@
                                             @if (! empty($projectRow['badge']))
                                                 <span class="plan-winkel-badge">{{ $projectRow['badge'] }}</span>
                                             @endif
-                                            @if (! empty($projectRow['numbers_label']))
-                                                <span class="block whitespace-nowrap">{{ $projectRow['numbers_label'] }}</span>
+                                            @if (! empty($projectRow['numbers_short']))
+                                                <span class="plan-project-numbers">{{ $projectRow['numbers_short'] }}</span>
                                             @endif
-                                            <span class="block">{{ $projectRow['title'] }}</span>
+                                            <span class="plan-project-title">{{ $projectRow['title'] }}</span>
                                         </a>
                                         @if (! empty($projectRow['subtitle']))
                                             <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['subtitle'] }}</div>

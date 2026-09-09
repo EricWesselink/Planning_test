@@ -67,6 +67,10 @@ class DrawingBoardTest extends TestCase
             ->assertDontSee('Gevonden kamernamen')
             ->assertSee('Voortgang')
             ->assertSee('Opleverpunten')
+            ->assertSee('id="draw-work"', false)
+            ->assertSee('Alle onderdelen')
+            ->assertSee('Alle zichtbare')
+            ->assertSee('id="pick-work-rooms"', false)
             ->assertSee('id="snag-status"', false)
             ->assertSee('for="snag-status"', false)
             ->assertSee('Annuleren')
@@ -88,6 +92,8 @@ class DrawingBoardTest extends TestCase
             ->assertSee('is-readonly', false)
             ->assertSee('Alleen ter inzage')
             ->assertSee('Primen & Egaliseren')
+            ->assertSee('id="draw-work"', false)
+            ->assertSee('Alle onderdelen')
             ->assertDontSee('id="complete-form"', false)
             ->assertDontSee('id="complete-worker"', false)
             ->assertDontSee('id="complete-submit"', false)
@@ -97,6 +103,8 @@ class DrawingBoardTest extends TestCase
             ->assertDontSee('Hele werk')
             ->assertDontSee('Deze verdieping')
             ->assertDontSee('id="pick-all-rooms"', false)
+            ->assertDontSee('id="pick-work-rooms"', false)
+            ->assertDontSee('Alle zichtbare')
             ->assertDontSee('placeholder="Aantal"', false)
             ->assertDontSee('Zelfde vakman? Vink extra ruimtes en onderdelen aan.')
             ->assertDontSee('Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.')
@@ -119,6 +127,75 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Deze verdieping')
             ->assertDontSee('Alleen ter inzage')
             ->assertDontSee('is-readonly', false);
+    }
+
+    public function test_drawing_toolbar_lists_work_types_per_room(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        app(RoomWorkSetup::class)->ensureProject($project);
+        $area = $project->areas()->where('area_number', '0.07')->first();
+        $coating = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PU Coating',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'gepland',
+            'sort_order' => 20,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $coating->id,
+            'ordered_quantity' => 10,
+            'unit' => 'm2',
+            'status' => 'niet_gestart',
+        ]);
+
+        $html = $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('id="draw-work"', false)
+            ->assertSee('Alle onderdelen')
+            ->assertSee('Alle zichtbare')
+            ->getContent();
+
+        $this->assertSame(1, preg_match('/id="draw-work"[^>]*>.*?<\/select>/s', $html, $select));
+        $this->assertStringContainsString('Primen &amp; Egaliseren', $select[0]);
+        $this->assertStringContainsString('Coating', $select[0]);
+
+        $this->assertSame(1, preg_match('/id="board-data">([^<]*)<\/script>/', $html, $matches));
+        $board = json_decode($matches[1], true);
+        $filters = collect($board['work_filters'] ?? []);
+        $this->assertTrue($filters->contains(fn (array $work) => $work['key'] === 'ondergrond' && $work['label'] === 'Primen & Egaliseren'));
+        $this->assertTrue($filters->contains(fn (array $work) => str_contains(mb_strtolower($work['label']), 'coating')));
+        $this->assertSame('ondergrond', $filters->first()['key'] ?? null);
+
+        $first = collect($board['areas'])->firstWhere('number', '0.07');
+        $second = collect($board['areas'])->firstWhere('number', '0.09');
+        $this->assertNotNull($first);
+        $this->assertNotNull($second);
+        $firstKeys = collect($first['works'] ?? [])->pluck('key');
+        $secondKeys = collect($second['works'] ?? [])->pluck('key');
+        $this->assertTrue($firstKeys->contains('ondergrond'));
+        $this->assertTrue($secondKeys->contains('ondergrond'));
+        $this->assertTrue($firstKeys->contains(fn (string $key) => str_contains($key, 'vloer')));
+        $coatingKey = $firstKeys->first(fn (string $key) => str_contains(mb_strtolower($key), 'coating'));
+        $this->assertNotNull($coatingKey);
+        $this->assertFalse($secondKeys->contains($coatingKey));
+    }
+
+    public function test_drawing_filters_rooms_by_floor_and_onderdeel(): void
+    {
+        $js = file_get_contents(resource_path('js/drawing-board.js'));
+        $css = file_get_contents(resource_path('css/app.css'));
+
+        $this->assertStringContainsString("getElementById('draw-work')", $js);
+        $this->assertStringContainsString('function applyRoomFilters', $js);
+        $this->assertStringContainsString('function pickWorkGroup', $js);
+        $this->assertStringContainsString('function areaMatchesWork', $js);
+        $this->assertStringContainsString('is-filtered-out', $js);
+        $this->assertStringContainsString('.room-name-overlay.is-filtered-out', $css);
+        $this->assertStringContainsString('.status-badge.is-filtered-out', $css);
     }
 
     public function test_progress_form_shows_the_team_name_instead_of_the_company(): void

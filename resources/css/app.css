@@ -462,7 +462,11 @@ body {
 }
 
 .plan-board {
-    --plan-frozen: 520px;
+    --plan-frozen: 360px;
+    --plan-col-opdracht: 55px;
+    --plan-col-gereed: 45px;
+    --plan-col-rest: 45px;
+    --plan-col-pct: 26px;
     min-height: 100%;
     border: 0;
     border-top: 0;
@@ -530,8 +534,18 @@ body {
     position: sticky;
     left: 0;
     z-index: 3;
+    box-sizing: border-box;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 88px 64px 56px 44px;
+    grid-template-columns:
+        minmax(0, 1fr)
+        var(--plan-col-opdracht)
+        var(--plan-col-gereed)
+        var(--plan-col-rest)
+        var(--plan-col-pct);
+    min-width: 0;
+    width: var(--plan-frozen);
+    max-width: var(--plan-frozen);
+    overflow: hidden;
     background: inherit;
     border-right: 2px solid #9f998f;
 }
@@ -593,7 +607,19 @@ a.plan-missing-craftsman:hover {
 }
 
 .plan-cell--werk .plan-project-numbers {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.plan-project-title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
 }
 
 .plan-cell--indent {
@@ -603,10 +629,17 @@ a.plan-missing-craftsman:hover {
 .plan-cell--num {
     justify-content: flex-end;
     text-align: right;
+    overflow: hidden;
+    font-size: 0.6875rem;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    padding-left: 6px;
-    padding-right: 10px;
+    padding-left: 2px;
+    padding-right: 3px;
+}
+
+.plan-frozen > .plan-cell--num:last-child {
+    padding-left: 1px;
+    padding-right: 2px;
 }
 
 .plan-days {
@@ -994,6 +1027,12 @@ a.plan-missing-craftsman:hover {
     font-size: 11px;
 }
 
+.sticky-head .plan-cell--num {
+    letter-spacing: 0;
+    font-size: 9px;
+    font-weight: 650;
+}
+
 .sticky-head .plan-days,
 .sticky-head .plan-day,
 .sticky-head .plan-week {
@@ -1026,17 +1065,15 @@ a.plan-missing-craftsman:hover {
 }
 
 @media (max-width: 900px) {
-    .plan-board {
-        --plan-frozen: 360px;
-    }
-    .plan-frozen {
-        grid-template-columns: minmax(0, 1fr) 72px 48px 44px 36px;
-    }
     .plan-cell {
         padding: 2px 6px;
     }
     .plan-cell--indent {
         padding-left: 1rem;
+    }
+    .plan-cell--num {
+        padding-left: 2px;
+        padding-right: 2px;
     }
 }
 
@@ -1492,6 +1529,16 @@ a.plan-missing-craftsman:hover {
     z-index: 7;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
     transform-origin: center bottom;
+}
+
+.room-name-overlay.is-filtered-out,
+.status-badge.is-filtered-out {
+    opacity: 0.2;
+    pointer-events: none;
+}
+
+.room-label.is-filtered-out {
+    pointer-events: none;
 }
 
 .room-name-overlay.is-on {

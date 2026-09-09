@@ -42,6 +42,7 @@ class ProjectBoardService
         ]);
 
         $drawing = $project->plattegrond();
+        $areas = $this->areaSummaries($project->areas, $drawing);
 
         return [
             'project' => [
@@ -57,7 +58,8 @@ class ProjectBoardService
                 'pdf' => $drawing->isPdf(),
                 'image' => $drawing->isImage(),
             ] : null,
-            'areas' => $this->areaSummaries($project->areas, $drawing),
+            'areas' => $areas,
+            'work_filters' => $this->workFilters($areas),
             'snags' => $project->snags->map(fn (SnagItem $snag) => $this->snagSummary($snag))->values()->all(),
             'next_snag_number' => (int) $project->snags->max('number') + 1,
             'production' => $this->production($project),
@@ -196,6 +198,7 @@ class ProjectBoardService
                 'vloer' => $area->showsVloer() ? $area->groupIsDone('vloer') : null,
                 'plinten' => $area->showsPlinten() ? $area->groupIsDone('plinten') : null,
             ],
+            'works' => $this->areaWorks($area),
             'dots' => $this->statusDots($area),
             'marker' => $marker?->toBoardArray(),
         ];
@@ -230,6 +233,78 @@ class ProjectBoardService
     private function markerHasPosition(?AreaDrawingMarker $marker): bool
     {
         return $marker?->hasPosition() ?? false;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $areas
+     * @return list<array{key: string, label: string, color_key: string}>
+     */
+    private function workFilters(array $areas): array
+    {
+        $seen = [];
+        foreach ($areas as $area) {
+            foreach ($area['works'] ?? [] as $work) {
+                $key = (string) ($work['key'] ?? '');
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = [
+                    'key' => $key,
+                    'label' => (string) ($work['label'] ?? $key),
+                    'color_key' => (string) ($work['color_key'] ?? 'overige'),
+                ];
+            }
+        }
+
+        $filters = array_values($seen);
+        usort($filters, fn (array $left, array $right): int => [$this->workFilterRank($left['key']), $left['label']]
+            <=> [$this->workFilterRank($right['key']), $right['label']]);
+
+        return $filters;
+    }
+
+    private function workFilterRank(string $key): int
+    {
+        if ($key === 'ondergrond' || str_starts_with($key, 'ondergrond')) {
+            return 0;
+        }
+        if (str_starts_with($key, 'vloer')) {
+            return 1;
+        }
+        if (str_starts_with($key, 'plinten')) {
+            return 2;
+        }
+
+        return 3;
+    }
+
+    /**
+     * @return list<array{key: string, label: string, color_key: string, done: bool}>
+     */
+    private function areaWorks(ProjectArea $area): array
+    {
+        return $area->groupedTasks()
+            ->map(function (array $group) {
+                $tasks = collect($group['tasks']);
+                if ($tasks->isEmpty()) {
+                    return null;
+                }
+                $typeLabel = $tasks
+                    ->map(fn (AreaTask $task) => $task->workItem?->typeLabel())
+                    ->filter()
+                    ->unique()
+                    ->first();
+
+                return [
+                    'key' => $group['key'],
+                    'label' => $group['label'],
+                    'color_key' => WorkColor::key($group['key'], $typeLabel, $group['label']),
+                    'done' => $tasks->every(fn (AreaTask $task) => $task->isDone()),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /** @return list<array{key: string, label: string, provisional: bool}> */

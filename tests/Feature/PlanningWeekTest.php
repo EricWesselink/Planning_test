@@ -207,10 +207,53 @@ class PlanningWeekTest extends TestCase
         $css = file_get_contents(resource_path('css/app.css'));
 
         $this->assertMatchesRegularExpression(
-            '/\.plan-board\s*\{[^}]*--plan-frozen:\s*520px/',
+            '/\.plan-board\s*\{[^}]*--plan-frozen:\s*360px/',
             $css
         );
+        $this->assertStringContainsString('--plan-col-opdracht: 55px', $css);
+        $this->assertStringContainsString('--plan-col-gereed: 45px', $css);
+        $this->assertStringContainsString('--plan-col-rest: 45px', $css);
+        $this->assertStringContainsString('--plan-col-pct: 26px', $css);
+        $this->assertStringNotContainsString('--plan-frozen: 400px', $css);
+        $this->assertStringNotContainsString('--plan-frozen: 520px', $css);
         $this->assertStringNotContainsString('--plan-frozen: 600px', $css);
+        $this->assertMatchesRegularExpression(
+            '/\.plan-project-title\s*\{[^}]*-webkit-line-clamp:\s*2/',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-cell--werk \.plan-project-numbers\s*\{[^}]*white-space:\s*nowrap/s',
+            $css
+        );
+    }
+
+    public function test_planning_board_shows_compact_project_numbers(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'Gemeente Dronten']);
+        $project = Project::query()->create([
+            'project_number' => '251100081',
+            'customer_id' => $customer->id,
+            'name' => '11P240897 Nieuwbouw Almere college WWL+',
+            'city' => 'Dronten',
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 100,
+            'status' => 'gepland',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('plan-project-numbers', false)
+            ->assertSee('plan-project-title', false)
+            ->assertSee('11P240897 · 251100081', false);
     }
 
     public function test_planning_shows_percent_complete_per_part_and_for_the_whole_work(): void

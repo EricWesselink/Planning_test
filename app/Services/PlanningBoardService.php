@@ -246,6 +246,10 @@ class PlanningBoardService
                 'number' => $project->project_number,
                 'work_code' => $project->isWinkel() ? null : $project->workCode(),
                 'numbers_label' => $project->isWinkel() ? '' : $project->labeledNumbersLine(),
+                'numbers_short' => $project->isWinkel() ? '' : implode(' · ', array_values(array_filter([
+                    $project->workCode(),
+                    $project->workNumber() !== '' ? $project->workNumber() : null,
+                ]))),
                 'title' => $project->displayTitle(),
                 'subtitle' => $project->isWinkel() ? $project->shopWorkLine() : null,
                 'customer' => $project->customer?->name,

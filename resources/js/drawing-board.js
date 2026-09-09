@@ -55,6 +55,8 @@ function boot() {
     const markersEl = document.getElementById('draw-markers');
     const tipEl = document.getElementById('draw-tip');
     const pageSelect = document.getElementById('draw-page');
+    const workSelect = document.getElementById('draw-work');
+    const pickWorkRoomsBtn = document.getElementById('pick-work-rooms');
     const hint = document.getElementById('draw-hint');
     const groupsEl = document.getElementById('room-groups');
     const completeForm = document.getElementById('complete-form');
@@ -95,6 +97,7 @@ function boot() {
     let pdfRenderGeneration = 0;
     let page = 1;
     let pageCount = 1;
+    let workFilterKey = '';
     let scale = 1;
     const MIN_ZOOM = 0.4;
     const MAX_ZOOM = 4;
@@ -305,9 +308,84 @@ function boot() {
         return `${area.number || ''} ${area.name || ''}`.trim() || area.label || area.marker?.label_text || '';
     }
 
+    function areaMatchesWork(area) {
+        if (!workFilterKey) {
+            return true;
+        }
+
+        return (area?.works || []).some((work) => work.key === workFilterKey);
+    }
+
+    function areaOnCurrentPage(area) {
+        if (!area) {
+            return false;
+        }
+        const areaPage = area.marker?.page ?? area.page;
+        if (areaPage != null && areaPage !== '') {
+            return Number(areaPage) === Number(page);
+        }
+        const floor = pageSelect?.selectedOptions[0]?.dataset.floor || '';
+
+        return floor !== '' && (area.floor || '') === floor;
+    }
+
+    function areaIsFilteredOut(area) {
+        return Boolean(workFilterKey) && !areaMatchesWork(area);
+    }
+
+    function applyRoomFilters(options = {}) {
+        const tone = document.querySelector('.room-filter.is-on')?.dataset.filter || 'all';
+        document.querySelectorAll('.room-row').forEach((row) => {
+            const area = areaById(Number(row.dataset.areaId));
+            const toneOk = tone === 'all' || row.dataset.tone === tone;
+            const workOk = areaMatchesWork(area);
+            const pageOk = !workFilterKey || areaOnCurrentPage(area);
+            row.style.display = toneOk && workOk && pageOk ? '' : 'none';
+        });
+        document.querySelectorAll('.floor-head').forEach((head) => {
+            let any = false;
+            let el = head.nextElementSibling;
+            while (el && !el.classList.contains('floor-head')) {
+                if (el.classList.contains('room-row') && el.style.display !== 'none') {
+                    any = true;
+                    break;
+                }
+                el = el.nextElementSibling;
+            }
+            head.style.display = any ? '' : 'none';
+        });
+        if (pickWorkRoomsBtn) {
+            pickWorkRoomsBtn.classList.toggle('hidden', !workFilterKey);
+        }
+        if (!options.skipMarkers) {
+            renderMarkers();
+        }
+    }
+
+    function pickWorkGroup() {
+        if (!data.canEnterProgress || !workFilterKey || !groupsEl) {
+            return;
+        }
+        groupsEl.querySelectorAll('.work-group').forEach((card) => {
+            const key = card.querySelector('.group-head')?.dataset.group;
+            const shouldPick = key === workFilterKey && !card.classList.contains('is-done');
+            if (shouldPick && !card.classList.contains('is-picked')) {
+                card.classList.add('is-picked');
+                const check = card.querySelector('.task-check');
+                if (check) {
+                    check.textContent = '✓';
+                }
+                updateCardStatus(card);
+            } else if (!shouldPick && card.classList.contains('is-picked')) {
+                unpickCard(card);
+            }
+        });
+        refreshCompleteForm();
+    }
+
     function appendSelectionMark(area, box) {
         const areaId = Number(area.id);
-        if ((!pickedIds.has(areaId) && areaId !== selectedId) || !box) {
+        if (areaIsFilteredOut(area) || (!pickedIds.has(areaId) && areaId !== selectedId) || !box) {
             return;
         }
         if (storedJumpTarget(area)) {
@@ -338,6 +416,9 @@ function boot() {
         const mark = document.createElement('button');
         mark.type = 'button';
         mark.className = 'room-name-overlay';
+        if (areaIsFilteredOut(area)) {
+            mark.classList.add('is-filtered-out');
+        }
         if (areaId === selectedId) {
             mark.classList.add('is-on');
         } else if (pickedIds.has(areaId)) {
@@ -371,7 +452,8 @@ function boot() {
         rect.setAttribute('y', String(box.y));
         rect.setAttribute('width', String(box.w));
         rect.setAttribute('height', String(box.h));
-        rect.setAttribute('class', `room-label${extraClass}`);
+        const filtered = areaIsFilteredOut(area) ? ' is-filtered-out' : '';
+        rect.setAttribute('class', `room-label${extraClass}${filtered}`);
         rect.dataset.areaId = String(area.id);
         rect.addEventListener('mouseenter', (event) => showTip(area, event));
         rect.addEventListener('mousemove', (event) => showTip(area, event));
@@ -400,7 +482,7 @@ function boot() {
         const visual = labelVisualBox(box, text);
         const wrap = document.createElement('button');
         wrap.type = 'button';
-        wrap.className = `status-badge${Number(area.id) === selectedId ? ' is-selected' : ''}${pickedIds.has(Number(area.id)) ? ' is-picked' : ''}`;
+        wrap.className = `status-badge${Number(area.id) === selectedId ? ' is-selected' : ''}${pickedIds.has(Number(area.id)) ? ' is-picked' : ''}${areaIsFilteredOut(area) ? ' is-filtered-out' : ''}`;
         wrap.style.left = `${(visual.x + visual.w / 2) * 100}%`;
         wrap.style.top = `calc(${(visual.y + visual.h) * 100}% + 1px)`;
         wrap.style.transform = badgeTransform();
@@ -461,7 +543,7 @@ function boot() {
         const fromText = new Set();
         textHits.filter((hit) => Number(hit.page) === page).forEach((hit) => {
             const area = areaForLabelHit(hit);
-            if (!area) {
+            if (!area || areaIsFilteredOut(area)) {
                 return;
             }
             const box = clickBox(area, hitAsMarker(hit));
@@ -472,7 +554,7 @@ function boot() {
             fromText.add(area.id);
         });
         uniqueAreasOnPage(areas, page).forEach((area) => {
-            if (fromText.has(area.id)) {
+            if (fromText.has(area.id) || areaIsFilteredOut(area)) {
                 return;
             }
             const box = clickBox(area);
@@ -503,6 +585,9 @@ function boot() {
             option.textContent = floors.length
                 ? `${floors[0][0]} (${n}/${pageCount})`
                 : `Pagina ${n}/${pageCount}`;
+            if (floors.length) {
+                option.dataset.floor = floors[0][0];
+            }
             pageSelect.append(option);
         }
         pageSelect.value = String(page);
@@ -1451,6 +1536,7 @@ function boot() {
         paintPanelFromSummary(area);
         groupsEl.innerHTML = (detail.groups || []).map((group) => groupCardHtml(group)).join('');
         bindTaskCards();
+        pickWorkGroup();
         refreshCompleteForm();
         renderWorkLegend(detail.groups || []);
     }
@@ -1607,8 +1693,12 @@ function boot() {
             document.querySelector('.board-right')?.classList.add('is-open');
             document.querySelector('.board-left')?.classList.remove('is-open');
         }
-        const scope = floor ? floor : 'hele werk';
-        setHint(`${ids.length} ruimtes aangevinkt (${scope}). Kies egaliseren of een vloertype.`);
+        const scope = floor
+            ? floor
+            : (workFilterKey ? (workSelect?.selectedOptions[0]?.textContent || 'onderdeel') : 'hele werk');
+        setHint(workFilterKey
+            ? `${ids.length} ruimtes aangevinkt (${scope}). Onderdeel staat klaar om op te slaan.`
+            : `${ids.length} ruimtes aangevinkt (${scope}). Kies egaliseren of een vloertype.`);
     }
 
     function renderPickedPanel() {
@@ -1629,6 +1719,7 @@ function boot() {
         const groups = mergeGroupDetails(ids);
         groupsEl.innerHTML = groups.map((group) => groupCardHtml(group)).join('');
         bindTaskCards();
+        pickWorkGroup();
         refreshCompleteForm();
         renderWorkLegend(groups);
     }
@@ -2042,11 +2133,24 @@ function boot() {
     });
     pageSelect.addEventListener('change', async () => {
         page = Number(pageSelect.value);
+        applyRoomFilters({ skipMarkers: true });
         if (pdfDoc) {
             await renderPdfPage();
         } else {
             renderMarkers();
         }
+    });
+    workSelect?.addEventListener('change', () => {
+        workFilterKey = workSelect.value;
+        applyRoomFilters();
+        if (workFilterKey) {
+            pickWorkGroup();
+            const label = workSelect.selectedOptions[0]?.textContent || 'onderdeel';
+            setHint(`Alleen ruimtes met ${label} op deze verdieping. Kies een ruimte of Alle zichtbare.`);
+        }
+    });
+    pickWorkRoomsBtn?.addEventListener('click', () => {
+        pickVisibleRooms();
     });
 
     document.querySelectorAll('.layer-btn').forEach((button) => {
@@ -2210,10 +2314,7 @@ function boot() {
     document.querySelectorAll('.room-filter').forEach((button) => {
         button.addEventListener('click', () => {
             document.querySelectorAll('.room-filter').forEach((item) => item.classList.toggle('is-on', item === button));
-            const filter = button.dataset.filter;
-            document.querySelectorAll('.room-row').forEach((row) => {
-                row.style.display = filter === 'all' || row.dataset.tone === filter ? '' : 'none';
-            });
+            applyRoomFilters({ skipMarkers: true });
         });
     });
 
@@ -2341,7 +2442,7 @@ function boot() {
         });
         highlightList();
         refreshFilterCounts();
-        renderMarkers();
+        applyRoomFilters();
         renderPickedPanel();
         const note = document.getElementById('complete-note');
         if (note) {
@@ -2363,7 +2464,7 @@ function boot() {
         }
         highlightList();
         refreshFilterCounts();
-        renderMarkers();
+        applyRoomFilters();
         renderPanel(detail);
         const note = document.getElementById('complete-note');
         if (note) {

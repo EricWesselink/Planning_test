@@ -145,9 +145,20 @@
 
         <section class="board-mid">
             <div class="draw-toolbar">
-                <select id="draw-page" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-40">
-                    <option value="1">Pagina 1</option>
-                </select>
+                <div class="flex items-center gap-1 min-w-0">
+                    <select id="draw-page" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-40">
+                        <option value="1">Pagina 1</option>
+                    </select>
+                    <select id="draw-work" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-44" aria-label="Onderdeel">
+                        <option value="">Alle onderdelen</option>
+                        @foreach (($board['work_filters'] ?? []) as $work)
+                            <option value="{{ $work['key'] }}">{{ $work['label'] }}</option>
+                        @endforeach
+                    </select>
+                    @if ($canEnterProgress)
+                        <button type="button" id="pick-work-rooms" class="room-pick-btn hidden">Alle zichtbare</button>
+                    @endif
+                </div>
                 <div class="flex items-center gap-1">
                     <button type="button" id="draw-hand" class="tool-btn is-on" title="Verschuiven">✋</button>
                     <button type="button" id="draw-select" class="tool-btn" title="Selecteren">➤</button>
