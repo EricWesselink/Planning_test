@@ -93,6 +93,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/projecten/{project}/documenten/{document}', [ProjectController::class, 'document'])->name('projects.documents.show');
     Route::post('/projecten/{project}/opdrachten', [ProjectController::class, 'storeOrder'])->name('projects.orders.store');
     Route::post('/projecten/{project}/taken/{areaTask}/gereed', [AreaTaskController::class, 'complete'])->name('projects.tasks.complete');
+    Route::post('/projecten/{project}/ruimtes/details', [DrawingController::class, 'details'])->name('projects.areas.details');
     Route::post('/projecten/{project}/ruimtes/{area}/afvinken', [AreaTaskController::class, 'tick'])->name('projects.areas.tick');
     Route::get('/projecten/{project}/ruimtes/{area}', [DrawingController::class, 'area'])->name('projects.areas.show');
     Route::post('/projecten/{project}/ruimtes/{area}/onderdeel', [DrawingController::class, 'completeGroup'])->name('projects.areas.group');

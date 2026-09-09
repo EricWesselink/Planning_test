@@ -195,6 +195,7 @@ class ProjectController extends Controller
         $payload['canManuallyLinkRooms'] = $request->user()?->canManuallyLinkRooms() ?? false;
         $payload['routes'] = [
             'area' => route('projects.areas.show', [$project, '__AREA__']),
+            'areas' => route('projects.areas.details', $project),
             'complete' => route('projects.tasks.complete', [$project, '__TASK__']),
             'group' => route('projects.areas.group', [$project, '__AREA__']),
             'process' => route('projects.areas.process', [$project, '__AREA__']),

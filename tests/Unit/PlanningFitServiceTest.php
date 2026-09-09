@@ -6,6 +6,7 @@ use App\Models\CrewMember;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\SpecialtyOption;
+use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
@@ -143,6 +144,28 @@ class PlanningFitServiceTest extends TestCase
         $this->assertSame('Jan heeft geen vakkennis voor Linoleum.', $message);
     }
 
+    public function test_omits_a_team_without_a_login(): void
+    {
+        $this->makeWorker('Wepro', 'Linoleum');
+        Worker::query()->create([
+            'name' => 'Kees Jansen',
+            'employment_type' => 'eigen',
+            'specialty' => 'Linoleum',
+            'active' => true,
+        ]);
+        $item = $this->makeWorkItem('Linoleum');
+
+        $payload = app(PlanningFitService::class)->candidates(
+            $item,
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-07'),
+            '08:00:00',
+            '16:00:00',
+        );
+
+        $this->assertSame(['Wepro'], collect($payload['workers'])->pluck('name')->all());
+    }
+
     /**
      * @param  list<string>  $names
      */
@@ -153,7 +176,7 @@ class PlanningFitServiceTest extends TestCase
             $members[] = ['name' => $member, 'phone' => ''];
         }
 
-        return Worker::query()->create([
+        $worker = Worker::query()->create([
             'name' => $name,
             'employment_type' => 'eigen',
             'people_count' => $names === [] ? 1 : count($names),
@@ -161,6 +184,9 @@ class PlanningFitServiceTest extends TestCase
             'specialty' => $specialty,
             'active' => true,
         ]);
+        User::factory()->vakman($worker->id)->create(['name' => $name]);
+
+        return $worker;
     }
 
     private function makeWorkItem(string $name): WorkItem

@@ -393,6 +393,7 @@ class WorkerProfileTest extends TestCase
             'people_count' => 2,
             'active' => true,
         ]);
+        $this->giveLogin($worker);
 
         $this->actingAs($user)
             ->get(route('planning'))
@@ -583,6 +584,7 @@ class WorkerProfileTest extends TestCase
             'people_count' => 2,
             'active' => true,
         ]);
+        $this->giveLogin($worker);
         $customer = Customer::query()->create(['name' => 'TMZ']);
         $project = Project::query()->create([
             'project_number' => '2024-118',

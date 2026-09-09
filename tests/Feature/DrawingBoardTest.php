@@ -44,7 +44,9 @@ class DrawingBoardTest extends TestCase
             ->assertDontSee('Primeren')
             ->assertSee('Marmoleum')
             ->assertSee('Linoleum')
-            ->assertSee('Zelfde vakman? Vink extra ruimtes en onderdelen aan.')
+            ->assertSee('Hele werk')
+            ->assertSee('Deze verdieping')
+            ->assertSee('Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.')
             ->assertSee('tik om extra aan te vinken')
             ->assertDontSee('id="draw-link"', false)
             ->assertSee('Positie aanpassen')
@@ -92,8 +94,12 @@ class DrawingBoardTest extends TestCase
             ->assertDontSee('id="select-all-tasks"', false)
             ->assertDontSee('Opslaan en verwerken')
             ->assertDontSee('Alles aanvinken')
+            ->assertDontSee('Hele werk')
+            ->assertDontSee('Deze verdieping')
+            ->assertDontSee('id="pick-all-rooms"', false)
             ->assertDontSee('placeholder="Aantal"', false)
             ->assertDontSee('Zelfde vakman? Vink extra ruimtes en onderdelen aan.')
+            ->assertDontSee('Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.')
             ->assertDontSee('tik om extra aan te vinken');
     }
 
@@ -109,6 +115,8 @@ class DrawingBoardTest extends TestCase
             ->assertSee('id="complete-form"', false)
             ->assertSee('Opslaan en verwerken')
             ->assertSee('Alles aanvinken')
+            ->assertSee('Hele werk')
+            ->assertSee('Deze verdieping')
             ->assertDontSee('Alleen ter inzage')
             ->assertDontSee('is-readonly', false);
     }
@@ -680,6 +688,64 @@ class DrawingBoardTest extends TestCase
             'task_ids' => [1],
             'worker_id' => $worker->id,
             'date' => '2026-09-02',
+        ])->assertUnauthorized();
+    }
+
+    public function test_board_loads_work_groups_for_multiple_rooms_in_one_request(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        app(RoomWorkSetup::class)->ensureProject($project);
+        $first = $project->areas()->where('area_number', '0.07')->first();
+        $second = $project->areas()->where('area_number', '0.09')->first();
+
+        $this->actingAs($user)
+            ->postJson(route('projects.areas.details', $project), [
+                'area_ids' => [$first->id, $second->id],
+            ])
+            ->assertOk()
+            ->assertJsonCount(2, 'areas')
+            ->assertJsonPath('areas.0.area.id', $first->id)
+            ->assertJsonPath('areas.1.area.id', $second->id)
+            ->assertJsonPath('areas.0.groups.0.label', 'Primen & Egaliseren')
+            ->assertJsonPath('areas.1.groups.0.label', 'Primen & Egaliseren');
+    }
+
+    public function test_room_details_batch_rejects_rooms_from_another_project(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        $own = $project->areas()->where('area_number', '0.07')->first();
+        $other = Project::query()->create([
+            'project_number' => '260200091',
+            'customer_id' => $project->customer_id,
+            'name' => 'Ander project',
+            'status' => 'gepland',
+        ]);
+        $foreign = ProjectArea::query()->create([
+            'project_id' => $other->id,
+            'area_number' => '9.99',
+            'name' => 'vreemde ruimte',
+            'square_meters' => 10,
+            'status' => 'niet_gestart',
+        ]);
+
+        $this->actingAs($user)
+            ->postJson(route('projects.areas.details', $project), [
+                'area_ids' => [$own->id, $foreign->id],
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Een of meer ruimtes horen niet bij dit project.');
+    }
+
+    public function test_unauthenticated_room_details_batch_returns_401(): void
+    {
+        Storage::fake('local');
+        [, $project] = $this->makeProject();
+        $area = $project->areas()->where('area_number', '0.07')->first();
+
+        $this->postJson(route('projects.areas.details', $project), [
+            'area_ids' => [$area->id],
         ])->assertUnauthorized();
     }
 

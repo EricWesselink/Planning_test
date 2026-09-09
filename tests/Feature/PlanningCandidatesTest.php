@@ -180,14 +180,62 @@ class PlanningCandidatesTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_candidates_omit_teams_without_a_login(): void
+    {
+        $user = User::factory()->create();
+        $this->makeWorker('Wepro', 'Linoleum');
+        Worker::query()->create([
+            'name' => 'Kees Jansen',
+            'employment_type' => 'eigen',
+            'specialty' => 'Linoleum',
+            'active' => true,
+        ]);
+        $item = $this->makeWorkItem('Linoleum');
+
+        $this->actingAs($user)
+            ->getJson(route('planning.candidates', [
+                'work_item_id' => $item->id,
+                'start_date' => '2026-09-07',
+                'end_date' => '2026-09-07',
+                'start_time' => '08:00',
+                'end_time' => '16:00',
+            ]))
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Wepro'])
+            ->assertJsonMissing(['name' => 'Kees Jansen']);
+    }
+
+    public function test_planning_picker_omits_teams_without_a_login(): void
+    {
+        $user = User::factory()->create();
+        $listed = $this->makeWorker('Wepro', 'Linoleum');
+        $hidden = Worker::query()->create([
+            'name' => 'Kees Jansen',
+            'employment_type' => 'eigen',
+            'specialty' => 'Linoleum',
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('value="worker:'.$listed->id.'"', false)
+            ->assertSee('>Wepro</option>', false)
+            ->assertDontSee('value="worker:'.$hidden->id.'"', false)
+            ->assertDontSee('>Kees Jansen</option>', false);
+    }
+
     private function makeWorker(string $name, string $specialty): Worker
     {
-        return Worker::query()->create([
+        $worker = Worker::query()->create([
             'name' => $name,
             'employment_type' => 'eigen',
             'specialty' => $specialty,
             'active' => true,
         ]);
+        User::factory()->vakman($worker->id)->create(['name' => $name]);
+
+        return $worker;
     }
 
     private function makeWorkItem(string $name, ?Project $project = null): WorkItem

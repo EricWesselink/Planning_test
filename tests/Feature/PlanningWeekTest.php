@@ -202,6 +202,17 @@ class PlanningWeekTest extends TestCase
         $this->assertStringNotContainsString('min-height: 36px', $html);
     }
 
+    public function test_planning_frozen_columns_leave_room_for_the_day_grid(): void
+    {
+        $css = file_get_contents(resource_path('css/app.css'));
+
+        $this->assertMatchesRegularExpression(
+            '/\.plan-board\s*\{[^}]*--plan-frozen:\s*520px/',
+            $css
+        );
+        $this->assertStringNotContainsString('--plan-frozen: 600px', $css);
+    }
+
     public function test_planning_shows_percent_complete_per_part_and_for_the_whole_work(): void
     {
         $user = User::factory()->create();

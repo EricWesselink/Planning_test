@@ -34,6 +34,7 @@ class PlanningFitService
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
         $workers = Worker::query()
             ->where('active', true)
+            ->withLogin()
             ->with(['crewPeople', 'availabilities'])
             ->orderBy('name')
             ->orderBy('id')

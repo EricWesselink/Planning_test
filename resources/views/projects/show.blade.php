@@ -109,7 +109,12 @@
 
         <aside class="board-left">
             <div class="px-3 pt-3 pb-2">
-                <div class="text-xs text-nicon-muted">{{ $counts['all'] }} ruimtes<span id="picked-count" hidden></span></div>
+                <div class="flex items-center justify-between gap-2">
+                    <div class="text-xs text-nicon-muted">{{ $counts['all'] }} ruimtes<span id="picked-count" hidden></span></div>
+                    @if ($canEnterProgress)
+                        <button type="button" id="pick-all-rooms" class="room-pick-btn">Hele werk</button>
+                    @endif
+                </div>
                 <div class="mt-2 flex flex-wrap gap-1 text-xs" id="room-filters">
                     <button type="button" data-filter="all" class="room-filter is-on">Alles ({{ $counts['all'] }})</button>
                     <button type="button" data-filter="open" class="room-filter">Open ({{ $counts['open'] }})</button>
@@ -120,9 +125,14 @@
             </div>
             <div class="overflow-auto flex-1">
                 @foreach ($floors as $floorName => $floorAreas)
-                    <div class="px-3 py-1.5 text-[11px] uppercase tracking-wide text-nicon-muted bg-nicon-sand sticky top-0">{{ $floorName }}</div>
+                    <div class="floor-head sticky top-0">
+                        <span>{{ $floorName }}</span>
+                        @if ($canEnterProgress)
+                            <button type="button" class="room-pick-btn floor-pick" data-floor="{{ $floorName }}">Deze verdieping</button>
+                        @endif
+                    </div>
                     @foreach ($floorAreas as $area)
-                        <button type="button" class="room-row {{ (int) $selectedAreaId === (int) $area['id'] ? 'is-on is-picked' : '' }}" data-area-id="{{ $area['id'] }}" data-tone="{{ $area['tone'] }}" data-floor="{{ $area['floor'] }}" style="--material-color: {{ $area['material_color'] ?? '#9ca3af' }}; --material-color-soft: {{ $area['material_color_soft'] ?? 'rgba(156, 163, 175, 0.14)' }};" title="{{ $area['number'] }} {{ $area['unique_name'] ?? $area['name'] }} · {{ $area['m2_label'] }} · {{ $area['status_label'] }}">
+                        <button type="button" class="room-row {{ (int) $selectedAreaId === (int) $area['id'] ? 'is-on is-picked' : '' }}" data-area-id="{{ $area['id'] }}" data-tone="{{ $area['tone'] }}" data-floor="{{ $floorName }}" style="--material-color: {{ $area['material_color'] ?? '#9ca3af' }}; --material-color-soft: {{ $area['material_color_soft'] ?? 'rgba(156, 163, 175, 0.14)' }};" title="{{ $area['number'] }} {{ $area['unique_name'] ?? $area['name'] }} · {{ $area['m2_label'] }} · {{ $area['status_label'] }}">
                             <span class="room-num">{{ $area['number'] ?: '—' }}</span>
                             <span class="room-name">{{ $area['unique_name'] ?? $area['name'] }}</span>
                             <span class="room-m2">{{ $area['m2_label'] }}</span>
@@ -316,7 +326,7 @@
             @if ($canEnterProgress)
                 <form id="complete-form" class="border-t border-nicon-line p-3 space-y-2 text-sm bg-white">
                     <div class="text-xs font-medium" id="complete-task-name">Kies een of meer werkzaamheden</div>
-                    <p class="text-[11px] text-nicon-muted" id="complete-hint">@if ($lockedWorkerId)Klaar blijft voorlopig tot de projectleider akkoord geeft.@elseif ($canApproveProgress)Zelfde vakman? Vink extra ruimtes en onderdelen aan. Voorlopig klaar: klik en geef akkoord. Definitief gereed kun je uitzetten.@else Zelfde vakman? Vink extra ruimtes en onderdelen aan. Klik op Gereed om het weer open te zetten.@endif</p>
+                    <p class="text-[11px] text-nicon-muted" id="complete-hint">@if ($lockedWorkerId)Klaar blijft voorlopig tot de projectleider akkoord geeft. Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.@elseif ($canApproveProgress)Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype. Voorlopig klaar: klik en geef akkoord. Definitief gereed kun je uitzetten.@else Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype. Klik op Gereed om het weer open te zetten.@endif</p>
                     <div class="grid grid-cols-2 gap-2">
                         <select name="worker_id" id="complete-worker" class="border border-nicon-line px-2 py-1" @disabled($lockedWorkerId)>
                             @foreach ($workers as $worker)

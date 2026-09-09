@@ -462,7 +462,7 @@ body {
 }
 
 .plan-board {
-    --plan-frozen: 600px;
+    --plan-frozen: 520px;
     min-height: 100%;
     border: 0;
     border-top: 0;
@@ -1400,6 +1400,33 @@ a.plan-missing-craftsman:hover {
 .lg-snag-progress { background: #ca8a04; }
 .lg-snag-wait { background: #1d4ed8; }
 .lg-snag-done { background: var(--color-nicon-ok); }
+
+.floor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0.35rem 0.75rem;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-nicon-muted);
+    background: var(--color-nicon-sand);
+}
+
+.room-pick-btn {
+    flex-shrink: 0;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    padding: 0.15rem 0.45rem;
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-nicon-ink);
+}
 
 .room-row {
     display: grid;

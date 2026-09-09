@@ -151,6 +151,7 @@ function boot() {
     function route(name, id) {
         const map = {
             area: ['__AREA__', routes.area],
+            areas: [null, routes.areas],
             complete: ['__TASK__', routes.complete],
             group: ['__AREA__', routes.group],
             process: ['__AREA__', routes.process],
@@ -1412,6 +1413,36 @@ function boot() {
         return detail;
     }
 
+    async function fetchAreas(ids) {
+        const wanted = ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0);
+        if (wanted.length === 0) {
+            return [];
+        }
+        if (wanted.length === 1) {
+            const detail = await fetchArea(wanted[0]);
+            return detail ? [detail] : [];
+        }
+        const response = await fetch(route('areas'), {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ area_ids: wanted }),
+        });
+        if (!response.ok) {
+            throw new Error('Ruimtes niet gevonden');
+        }
+        const payload = await response.json();
+        const details = Array.isArray(payload.areas) ? payload.areas : [];
+        details.forEach((detail) => {
+            const areaId = Number(detail.area?.id);
+            if (!areaId) {
+                return;
+            }
+            areaDetails[areaId] = detail;
+            applyAreaSummary(areaId, detail.area);
+        });
+        return details;
+    }
+
     function renderPanel(detail) {
         const area = detail.area;
         if (!area || Number(area.id) !== selectedId) {
@@ -1510,8 +1541,74 @@ function boot() {
     async function ensurePickedDetails() {
         const token = ++pickedToken;
         const missing = pickedList().filter((id) => !areaDetails[id]);
-        await Promise.all(missing.map((id) => fetchArea(id).catch(() => null)));
+        if (missing.length === 0) {
+            return token === pickedToken;
+        }
+        try {
+            await fetchAreas(missing);
+        } catch (error) {
+            setHint('Kon de werkzaamheden van deze ruimtes niet laden.');
+            return false;
+        }
         return token === pickedToken;
+    }
+
+    function visibleRoomIds(floor = null) {
+        return [...document.querySelectorAll('.room-row')]
+            .filter((row) => {
+                if (row.style.display === 'none') {
+                    return false;
+                }
+                if (floor !== null && (row.dataset.floor || '') !== floor) {
+                    return false;
+                }
+                return Number(row.dataset.areaId) > 0;
+            })
+            .map((row) => Number(row.dataset.areaId));
+    }
+
+    async function pickVisibleRooms(floor = null) {
+        if (!data.canEnterProgress) {
+            return;
+        }
+        const ids = visibleRoomIds(floor);
+        if (ids.length === 0) {
+            return;
+        }
+        const allPicked = ids.every((id) => pickedIds.has(id));
+        if (allPicked) {
+            const keep = ids.includes(selectedId) ? selectedId : ids[0];
+            pickedIds = new Set([keep]);
+            selectedId = keep;
+            root.dataset.selected = String(keep);
+            highlightList();
+            renderMarkers();
+            const detail = areaDetails[keep];
+            if (detail) {
+                renderPanel(detail);
+            } else {
+                await selectArea(keep);
+            }
+            setHint('Selectie losgemaakt.');
+            return;
+        }
+        pickedIds = new Set(ids);
+        if (!ids.includes(selectedId)) {
+            selectedId = ids[0];
+            root.dataset.selected = String(selectedId);
+        }
+        highlightList();
+        renderMarkers();
+        if (! (await ensurePickedDetails())) {
+            return;
+        }
+        renderPickedPanel();
+        if (ids.length > 1 && window.matchMedia('(max-width: 1100px)').matches) {
+            document.querySelector('.board-right')?.classList.add('is-open');
+            document.querySelector('.board-left')?.classList.remove('is-open');
+        }
+        const scope = floor ? floor : 'hele werk';
+        setHint(`${ids.length} ruimtes aangevinkt (${scope}). Kies egaliseren of een vloertype.`);
     }
 
     function renderPickedPanel() {
@@ -2087,6 +2184,17 @@ function boot() {
     });
 
     document.querySelector('.board-left')?.addEventListener('click', (event) => {
+        if (event.target.closest('#pick-all-rooms')) {
+            event.preventDefault();
+            pickVisibleRooms();
+            return;
+        }
+        const floorBtn = event.target.closest('.floor-pick');
+        if (floorBtn) {
+            event.preventDefault();
+            pickVisibleRooms(floorBtn.dataset.floor || '');
+            return;
+        }
         const row = event.target.closest('.room-row');
         if (!row) {
             return;

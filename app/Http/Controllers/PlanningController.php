@@ -32,6 +32,7 @@ class PlanningController extends Controller
                 ->get(),
             'workers' => Worker::query()
                 ->where('active', true)
+                ->withLogin()
                 ->when($scheduledWorkerId, fn ($q) => $q->whereKey($scheduledWorkerId))
                 ->with('crewPeople')
                 ->orderBy('name')

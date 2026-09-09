@@ -70,6 +70,39 @@ class DrawingController extends Controller
         return response()->json($board->areaDetail($area));
     }
 
+    public function details(Request $request, Project $project, ProjectBoardService $board): JsonResponse
+    {
+        Gate::authorize('view', $project);
+
+        $data = $request->validate([
+            'area_ids' => ['required', 'array', 'min:1', 'max:250'],
+            'area_ids.*' => ['integer'],
+        ]);
+
+        $wanted = collect($data['area_ids'])->map(fn ($id) => (int) $id)->unique()->filter()->values();
+        $areas = ProjectArea::query()
+            ->where('project_id', $project->id)
+            ->whereIn('id', $wanted->all())
+            ->with([
+                'tasks.workItem',
+                'tasks.completedByWorker',
+                'floor',
+                'markers',
+                'project.documents',
+                'project.workItems',
+            ])
+            ->orderBy('id')
+            ->get();
+
+        if ($areas->count() !== $wanted->count()) {
+            return response()->json(['message' => 'Een of meer ruimtes horen niet bij dit project.'], 422);
+        }
+
+        return response()->json([
+            'areas' => $areas->map(fn (ProjectArea $area) => $board->areaDetail($area))->values()->all(),
+        ]);
+    }
+
     public function place(Request $request, Project $project, ProjectArea $area): JsonResponse
     {
         abort_unless((int) $area->project_id === (int) $project->id, 404);
