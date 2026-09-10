@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AreaStatus;
 use App\Enums\SnagPhotoType;
 use App\Enums\WorkPhase;
+use App\Enums\WorkUnit;
 use App\Models\AreaDrawingMarker;
 use App\Models\AreaTask;
 use App\Models\Project;
@@ -15,6 +16,7 @@ use App\Support\Format;
 use App\Support\MaterialColor;
 use App\Support\RoomUniqueName;
 use App\Support\WorkColor;
+use Illuminate\Support\Collection;
 
 class ProjectBoardService
 {
@@ -279,7 +281,7 @@ class ProjectBoardService
     }
 
     /**
-     * @return list<array{key: string, label: string, color_key: string, done: bool}>
+     * @return list<array{key: string, label: string, color_key: string, done: bool, quantity: float, unit: string}>
      */
     private function areaWorks(ProjectArea $area): array
     {
@@ -294,17 +296,36 @@ class ProjectBoardService
                     ->filter()
                     ->unique()
                     ->first();
+                $measured = $this->workGroupMeasure($tasks);
 
                 return [
                     'key' => $group['key'],
                     'label' => $group['label'],
                     'color_key' => WorkColor::key($group['key'], $typeLabel, $group['label']),
                     'done' => $tasks->every(fn (AreaTask $task) => $task->isDone()),
+                    'quantity' => $measured['quantity'],
+                    'unit' => $measured['unit'],
                 ];
             })
             ->filter()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  Collection<int, AreaTask>  $tasks
+     * @return array{quantity: float, unit: string}
+     */
+    private function workGroupMeasure(Collection $tasks): array
+    {
+        $square = $tasks->filter(fn (AreaTask $task) => $task->unit === WorkUnit::SquareMeter);
+        $measured = $square->isNotEmpty() ? $square : $tasks;
+        $unit = $measured->first()?->unit ?? WorkUnit::SquareMeter;
+
+        return [
+            'quantity' => round((float) $measured->sum(fn (AreaTask $task) => (float) $task->ordered_quantity), 2),
+            'unit' => $unit->value,
+        ];
     }
 
     /** @return list<array{key: string, label: string, provisional: bool}> */

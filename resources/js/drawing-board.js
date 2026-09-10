@@ -2580,6 +2580,55 @@ function boot() {
         setHint(`${prefix} ${area?.progress || ''} · ${area?.status_label || ''}. ${markerNote}.`.trim());
     }
 
+    function formatBoardQty(value) {
+        return String((Math.round((Number(value) || 0) * 100) / 100).toFixed(2)).replace('.', ',');
+    }
+
+    function workUnitLabel(unit) {
+        if (unit === 'm1') {
+            return 'm¹';
+        }
+        if (unit === 'm2' || !unit) {
+            return 'm²';
+        }
+
+        return unit;
+    }
+
+    function selectedWorkMeasure() {
+        const pool = matchingAreas();
+        let total = 0;
+        let unit = 'm2';
+        pool.forEach((area) => {
+            const work = (area.works || []).find((item) => item.key === workFilterKey);
+            if (work && work.quantity != null && work.quantity !== '') {
+                total += Number(work.quantity) || 0;
+                if (work.unit) {
+                    unit = work.unit;
+                }
+
+                return;
+            }
+            if ((Number(area.m2) || 0) > 0) {
+                total += Number(area.m2);
+            }
+        });
+
+        return {
+            total: Math.round(total * 100) / 100,
+            unit,
+            label: `${formatBoardQty(total)} ${workUnitLabel(unit)}`,
+        };
+    }
+
+    function refreshWorkQuantity() {
+        const label = workFilterKey ? selectedWorkMeasure().label : '';
+        document.querySelectorAll('.draw-work-qty').forEach((el) => {
+            el.textContent = label;
+            el.classList.toggle('is-on', Boolean(workFilterKey));
+        });
+    }
+
     function refreshFilterCounts() {
         const pool = matchingAreas();
         const counts = {
@@ -2606,6 +2655,7 @@ function boot() {
                 button.textContent = labels[key];
             }
         });
+        refreshWorkQuantity();
     }
 
     async function handleDrawingTap(event) {

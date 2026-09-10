@@ -110,7 +110,11 @@
         <aside class="board-left">
             <div class="px-3 pt-3 pb-2">
                 <div class="flex items-center justify-between gap-2">
-                    <div class="text-xs text-nicon-muted"><span id="room-count-label">{{ $counts['all'] }} ruimtes</span><span id="picked-count" hidden></span></div>
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span id="room-count-label" class="text-xs text-nicon-muted">{{ $counts['all'] }} ruimtes</span>
+                        <span id="room-work-qty" class="draw-work-qty" title="Totaal van dit onderdeel op deze verdieping"></span>
+                        <span id="picked-count" hidden></span>
+                    </div>
                     @if ($canEnterProgress)
                         <button type="button" id="pick-all-rooms" class="room-pick-btn">Hele werk</button>
                     @endif
@@ -155,6 +159,7 @@
                             <option value="{{ $work['key'] }}">{{ $work['label'] }}</option>
                         @endforeach
                     </select>
+                    <span id="draw-work-qty" class="draw-work-qty" aria-live="polite" title="Totaal van dit onderdeel op deze verdieping"></span>
                     @if ($canEnterProgress)
                         <button type="button" id="pick-work-rooms" class="room-pick-btn hidden">Alle zichtbare</button>
                     @endif

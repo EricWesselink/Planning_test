@@ -1158,6 +1158,23 @@ a.plan-missing-craftsman:hover {
     z-index: 30;
 }
 
+.draw-work-qty {
+    display: none;
+    background: #dc2626;
+    color: #fff;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.draw-work-qty.is-on {
+    display: inline-block;
+}
+
 .draw-stage {
     position: relative;
     flex: 1;

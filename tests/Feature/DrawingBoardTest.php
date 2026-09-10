@@ -163,6 +163,9 @@ class DrawingBoardTest extends TestCase
 
         $this->assertStringContainsString('data-works=', $html);
         $this->assertStringContainsString('id="room-count-label"', $html);
+        $this->assertStringContainsString('id="draw-work-qty"', $html);
+        $this->assertStringContainsString('id="room-work-qty"', $html);
+        $this->assertStringContainsString('class="draw-work-qty"', $html);
         $this->assertTrue(
             (bool) preg_match('/data-works="[^"]*ondergrond[^"]*"/', $html),
             'Elke ruimte moet haar onderdelen in de lijst zetten zodat het filter ze kan verbergen.',
@@ -191,6 +194,14 @@ class DrawingBoardTest extends TestCase
         $coatingKey = $firstKeys->first(fn (string $key) => str_contains(mb_strtolower($key), 'coating'));
         $this->assertNotNull($coatingKey);
         $this->assertFalse($secondKeys->contains($coatingKey));
+        $ondergrond = collect($first['works'] ?? [])->firstWhere('key', 'ondergrond');
+        $secondOndergrond = collect($second['works'] ?? [])->firstWhere('key', 'ondergrond');
+        $coatingWork = collect($first['works'] ?? [])->firstWhere('key', $coatingKey);
+        $this->assertSame(50.97, (float) ($ondergrond['quantity'] ?? 0));
+        $this->assertSame('m2', $ondergrond['unit'] ?? null);
+        $this->assertSame(59.0, (float) ($secondOndergrond['quantity'] ?? 0));
+        $this->assertSame(10.0, (float) ($coatingWork['quantity'] ?? 0));
+        $this->assertSame('m2', $coatingWork['unit'] ?? null);
     }
 
     public function test_drawing_filters_rooms_by_floor_and_onderdeel(): void
@@ -204,6 +215,9 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('function areaMatchesWork', $js);
         $this->assertStringContainsString('function selectedFloorName', $js);
         $this->assertStringContainsString('function matchingAreas', $js);
+        $this->assertStringContainsString('function selectedWorkMeasure', $js);
+        $this->assertStringContainsString('function refreshWorkQuantity', $js);
+        $this->assertStringContainsString("querySelectorAll('.draw-work-qty')", $js);
         $this->assertStringContainsString('function prunePickedToFilter', $js);
         $this->assertStringContainsString('Alles aanvinken', $js);
         $this->assertStringContainsString('is-work-filter', $js);
@@ -211,6 +225,8 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('.room-name-overlay.is-filtered-out', $css);
         $this->assertStringContainsString('.status-badge.is-filtered-out', $css);
         $this->assertStringContainsString('.board-left.is-work-filter', $css);
+        $this->assertStringContainsString('.draw-work-qty', $css);
+        $this->assertStringContainsString('#dc2626', $css);
     }
 
     public function test_progress_form_shows_the_team_name_instead_of_the_company(): void
