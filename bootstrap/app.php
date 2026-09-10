@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureFirstRunSetup;
 use App\Http\Middleware\EnsureProjectAccess;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->alias([
+            'first-run' => EnsureFirstRunSetup::class,
             'project.access' => EnsureProjectAccess::class,
         ]);
     })

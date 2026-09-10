@@ -13,6 +13,12 @@
         <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
         <h1 class="mt-2 text-2xl font-semibold">Planning</h1>
         <p class="mt-2 text-sm text-nicon-muted">Log in om projecten, vakmensen en de balkenplanning te openen.</p>
+        @if ($needsSetup)
+            <div class="mt-6 border border-nicon-line p-4">
+                <p class="text-sm">Er is nog geen beheerdersaccount ingesteld.</p>
+                <a href="{{ route('setup.create') }}" class="mt-3 flex w-full items-center justify-center bg-nicon-orange text-white py-2.5 font-medium hover:bg-nicon-orange-dark">Beheerdersaccount aanmaken</a>
+            </div>
+        @endif
         <form method="POST" action="{{ url('/login') }}" class="mt-6 space-y-4">
             @csrf
             <div>

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AreaTaskController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\SetupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DrawingController;
 use App\Http\Controllers\MeetstaatImportController;
@@ -35,6 +36,11 @@ Route::get('/', function () {
 Route::get('/login', [LoginController::class, 'create'])->name('login')->middleware('guest');
 Route::post('/login', [LoginController::class, 'store'])->middleware(['guest', 'throttle:login']);
 Route::post('/logout', [LoginController::class, 'destroy'])->name('logout')->middleware('auth');
+
+Route::middleware(['first-run', 'guest'])->group(function () {
+    Route::get('/setup', [SetupController::class, 'create'])->name('setup.create');
+    Route::post('/setup', [SetupController::class, 'store'])->middleware('throttle:setup')->name('setup.store');
+});
 
 Route::middleware('throttle:public-snag')->group(function () {
     Route::get('/oplever/{token}', [PublicSnagController::class, 'show'])->name('snags.public.show');
