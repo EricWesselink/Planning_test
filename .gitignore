@@ -19,7 +19,6 @@ id_ed25519
 /node_modules
 /vendor
 /public/build
-/public/fonts-manifest.dev.json
 /public/hot
 /public/storage
 
