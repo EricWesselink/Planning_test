@@ -176,3 +176,13 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 # Project: narrow tests (token budget)
 
 Follow `.cursor/rules/narrow-tests.mdc`. Never run the full PHPUnit suite or large batches of unrelated test files unless the user explicitly asks. Prefer one file or `--filter=…`, summarize results instead of dumping output, and stop once that narrow run is green.
+
+# Project: server-related problems
+
+Follow `.cursor/rules/server-problems.mdc`.
+
+- A runtime, hosting, or deployment error is never by itself proof that application code must change. Change app code only when concrete error information shows the cause is in the source.
+- Do not work around server, hosting, DNS, SSL/TLS, Plesk, nginx, Apache, PHP-FPM, database, filesystem, permission, or deployment problems in application code. Say when it is outside the app and leave that infrastructure alone.
+- Do not add temporary/diagnostic scripts, debug endpoints, or extra files when existing tooling or a simple check is enough.
+- Never patch generated output (`public/build`, compiled views, caches, dependencies, build artifacts). Change source files only.
+- Minimize token use: read only what the task needs, skip broad searches and large plans for simple changes, make the smallest correct change, and stop. No speculative fixes or extra abstractions “just in case”.
