@@ -28,10 +28,13 @@
             </div>
         @endif
         @foreach ($personBars as $index => $personBar)
-            <div class="bar"
+            <div class="bar{{ ! empty($personBar['has_budget_overrun']) ? ' is-over' : '' }}"
                  style="background: {{ $personBar['color'] }}; top: {{ 4 + ($index * 20) }}px; width: calc(({{ $personBar['bar']['span'] }} - {{ $personBar['bar']['start_offset'] ?? 0 }} - (1 - {{ $personBar['bar']['end_offset'] ?? 1 }})) * 100% / {{ $dayCount }} - 2px); left: calc(({{ $personBar['bar']['start'] }} + {{ $personBar['bar']['start_offset'] ?? 0 }}) * 100% / {{ $dayCount }} + 1px);">
+                @if (! empty($personBar['has_budget_overrun']))
+                    <span class="bar-overrun" style="left: {{ $personBar['overrun_from'] ?? '100%' }}"></span>
+                @endif
                 @if (! empty($showNames))
-                    {{ $personBar['label'] }}
+                    <span class="bar-name">{{ $personBar['label'] }}</span>
                 @endif
             </div>
         @endforeach

@@ -9,6 +9,7 @@ enum ImportDocumentType: string
     case Materialenstaat = 'materialenstaat';
     case Snijmaten = 'snijmaten';
     case Plattegrond = 'plattegrond';
+    case Calculatie = 'calculatie';
     case Overig = 'overig';
 
     public function label(): string
@@ -19,6 +20,7 @@ enum ImportDocumentType: string
             self::Materialenstaat => 'Materialenstaat',
             self::Snijmaten => 'Snijmaten',
             self::Plattegrond => 'Plattegrond',
+            self::Calculatie => 'Calculatie',
             self::Overig => 'Overig',
         };
     }

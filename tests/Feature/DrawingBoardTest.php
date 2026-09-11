@@ -191,17 +191,94 @@ class DrawingBoardTest extends TestCase
         $this->assertTrue($firstKeys->contains('ondergrond'));
         $this->assertTrue($secondKeys->contains('ondergrond'));
         $this->assertTrue($firstKeys->contains(fn (string $key) => str_contains($key, 'vloer')));
-        $coatingKey = $firstKeys->first(fn (string $key) => str_contains(mb_strtolower($key), 'coating'));
-        $this->assertNotNull($coatingKey);
+        $coatingWork = collect($first['works'] ?? [])->first(
+            fn (array $work) => str_contains(mb_strtolower((string) ($work['label'] ?? '')), 'coating')
+        );
+        $this->assertNotNull($coatingWork);
+        $coatingKey = $coatingWork['key'] ?? null;
         $this->assertFalse($secondKeys->contains($coatingKey));
         $ondergrond = collect($first['works'] ?? [])->firstWhere('key', 'ondergrond');
         $secondOndergrond = collect($second['works'] ?? [])->firstWhere('key', 'ondergrond');
-        $coatingWork = collect($first['works'] ?? [])->firstWhere('key', $coatingKey);
         $this->assertSame(50.97, (float) ($ondergrond['quantity'] ?? 0));
         $this->assertSame('m2', $ondergrond['unit'] ?? null);
         $this->assertSame(59.0, (float) ($secondOndergrond['quantity'] ?? 0));
         $this->assertSame(10.0, (float) ($coatingWork['quantity'] ?? 0));
         $this->assertSame('m2', $coatingWork['unit'] ?? null);
+    }
+
+    public function test_drawing_lists_each_pvc_product_as_its_own_onderdeel(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        $floor = $project->floors()->first();
+        $taraflex = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Taraflex multi-use, 6350 light cherry 6,3 mm, n.t.b., PVC / Vinyl',
+            'unit' => 'm2',
+            'ordered_quantity' => 110.37,
+            'status' => 'gepland',
+            'sort_order' => 20,
+        ]);
+        $chapman = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'IVC Ultimo Chapman Oak, 24245, PVC - LVT',
+            'unit' => 'm2',
+            'ordered_quantity' => 32.65,
+            'status' => 'gepland',
+            'sort_order' => 21,
+        ]);
+        $oefen = ProjectArea::query()->create([
+            'project_id' => $project->id,
+            'project_floor_id' => $floor->id,
+            'area_number' => '1.62',
+            'name' => 'oefenruimte',
+            'square_meters' => 83.65,
+            'status' => 'niet_gestart',
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $oefen->id,
+            'work_item_id' => $taraflex->id,
+            'ordered_quantity' => 83.65,
+            'unit' => 'm2',
+            'status' => 'niet_gestart',
+        ]);
+        $podo = ProjectArea::query()->create([
+            'project_id' => $project->id,
+            'project_floor_id' => $floor->id,
+            'area_number' => '1.56',
+            'name' => 'podo therapie',
+            'square_meters' => 26.43,
+            'status' => 'niet_gestart',
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $podo->id,
+            'work_item_id' => $chapman->id,
+            'ordered_quantity' => 26.43,
+            'unit' => 'm2',
+            'status' => 'niet_gestart',
+        ]);
+
+        $html = $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Taraflex')
+            ->assertSee('Chapman Oak')
+            ->getContent();
+
+        $this->assertSame(1, preg_match('/id="board-data">([^<]*)<\/script>/', $html, $matches));
+        $board = json_decode($matches[1], true);
+        $labels = collect($board['work_filters'] ?? [])->pluck('label');
+        $this->assertTrue($labels->contains(fn (string $label) => str_contains($label, 'Taraflex')));
+        $this->assertTrue($labels->contains(fn (string $label) => str_contains($label, 'Chapman Oak')));
+        $taraflexKey = collect($board['areas'])
+            ->firstWhere('number', '1.62')['works'] ?? [];
+        $chapmanKey = collect($board['areas'])
+            ->firstWhere('number', '1.56')['works'] ?? [];
+        $taraflexWork = collect($taraflexKey)->first(fn (array $work) => str_contains((string) ($work['label'] ?? ''), 'Taraflex'));
+        $chapmanWork = collect($chapmanKey)->first(fn (array $work) => str_contains((string) ($work['label'] ?? ''), 'Chapman'));
+        $this->assertNotNull($taraflexWork);
+        $this->assertNotNull($chapmanWork);
+        $this->assertNotSame($taraflexWork['key'] ?? null, $chapmanWork['key'] ?? null);
     }
 
     public function test_drawing_filters_rooms_by_floor_and_onderdeel(): void

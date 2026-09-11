@@ -32,10 +32,67 @@ class ProjectArea extends Model
             ->filter()
             ->first(fn (WorkItem $item) => ! in_array($item->packageKey(), ['ondergrond', 'plinten'], true));
 
-        return MaterialColor::resolve(
-            $this->fill_color ?? $floorItem?->display_color,
-            $floorItem?->name ?? $this->name,
-        );
+        $name = $floorItem?->name ?? $this->name;
+        $forbidden = $this->plintDisplayColors();
+        $fill = $this->trustedFloorHex($this->fill_color, $forbidden);
+        $workHex = $this->trustedFloorHex($floorItem?->display_color, $forbidden);
+
+        if ($workHex === null && MaterialColor::fromProductName($name) !== null) {
+            return MaterialColor::resolve(null, $name);
+        }
+
+        return MaterialColor::resolve($fill ?? $workHex, $name);
+    }
+
+    /**
+     * Meest voorkomende plintkleur(en) op het project: de legendakleur, niet een
+     * per ongeluk overgenomen tapijt- of vloerkleur op één plintregel.
+     *
+     * @return list<string>
+     */
+    public function plintDisplayColors(): array
+    {
+        $this->loadMissing('project.workItems');
+        $counts = [];
+        foreach ($this->project?->workItems ?? [] as $item) {
+            if ($item->packageKey() !== 'plinten') {
+                continue;
+            }
+            $hex = MaterialColor::normalizeHex($item->display_color);
+            if ($hex === null) {
+                continue;
+            }
+            $counts[$hex] = ($counts[$hex] ?? 0) + 1;
+        }
+        if ($counts === []) {
+            return [];
+        }
+        $max = max($counts);
+
+        return array_keys(array_filter($counts, fn (int $count): bool => $count === $max));
+    }
+
+    public function plintLegendColor(): ?string
+    {
+        return $this->plintDisplayColors()[0] ?? null;
+    }
+
+    /**
+     * @param  list<string>  $forbidden
+     */
+    private function trustedFloorHex(?string $hex, array $forbidden): ?string
+    {
+        $normalized = MaterialColor::normalizeHex($hex);
+        if ($normalized === null) {
+            return null;
+        }
+        foreach ($forbidden as $plintHex) {
+            if (MaterialColor::hexesMatch($normalized, $plintHex, 8)) {
+                return null;
+            }
+        }
+
+        return $normalized;
     }
 
     public function project(): BelongsTo
@@ -105,9 +162,6 @@ class ProjectArea extends Model
         }
 
         $item = $task->workItem;
-        if ($group === 'vloer') {
-            return 'vloer|'.($item?->typeKey() ?? 'task-'.$task->id);
-        }
 
         return $group.'|'.($item?->id ?? 'task-'.$task->id);
     }

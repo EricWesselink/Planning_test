@@ -29,6 +29,9 @@
     @if ($project->shopWorkLine())
         <p class="mt-1 text-sm text-nicon-muted">{{ $project->shopWorkLine() }}</p>
     @endif
+    @if (auth()->user()?->canViewLaborCosts())
+        @include('projects.partials.labor-summary', ['labor' => $labor])
+    @endif
     @if (session('status'))
         <p class="mt-3 text-sm text-nicon-ok">{{ session('status') }}</p>
     @endif
@@ -91,6 +94,15 @@
                 'klaarYear' => $project->planningEndYear(),
                 'klaarWeek' => $project->planningEndWeek(),
             ])
+
+            @if (auth()->user()?->canViewLaborCosts())
+                @can('update', $project)
+                    <div>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Basis uurtarief (€)</label>
+                        <input id="basis_uurtarief" name="basis_uurtarief" value="{{ old('basis_uurtarief', $project->basis_uurtarief) }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="45,00">
+                    </div>
+                @endcan
+            @endif
 
             @can('update', $project)
                 <button class="bg-nicon-ink text-white px-5 py-3 font-medium">Winkelwerk opslaan</button>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\ImportDecision;
 use App\Enums\ImportDocumentType;
 use App\Models\Project;
+use App\Services\CalculationImportService;
 use App\Services\Meetstaat\ImportClosureEvaluator;
 use App\Services\Meetstaat\ImportPreviewBuilder;
 use App\Services\Meetstaat\RoomImportAssembler;
@@ -29,6 +30,7 @@ class MeetstaatImportController extends Controller
         ScreenExcelImportController $screens,
         ScannedDimensionsImportController $afmetingen,
         ScannedDimensionsImportService $afmetingenService,
+        CalculationImportService $calculationImport,
     ): RedirectResponse {
         Gate::authorize('create', Project::class);
         $maxKilobytes = $this->projectFileMaxKilobytes();
@@ -36,7 +38,7 @@ class MeetstaatImportController extends Controller
             'files' => ['nullable', 'array', 'max:20'],
             'files.*' => ['file', 'max:'.$maxKilobytes, 'mimes:pdf,csv,txt,xlsx,xlsm,xls', 'extensions:pdf,csv,txt,xlsx,xlsm,xls'],
             'types' => ['nullable', 'array'],
-            'types.*' => ['nullable', 'string', 'in:meetstaat,afmetingen,materialenstaat,snijmaten,plattegrond,overig,unknown'],
+            'types.*' => ['nullable', 'string', 'in:'.implode(',', [...ImportDocumentType::values(), 'unknown'])],
             'meetstaat' => ['nullable', 'file', 'max:'.$maxKilobytes, 'mimes:pdf', 'extensions:pdf'],
             'plattegrond' => ['nullable', 'file', 'max:'.$maxKilobytes, 'mimes:pdf', 'extensions:pdf'],
             'work_type' => ['nullable', 'string', 'max:120'],
@@ -44,6 +46,8 @@ class MeetstaatImportController extends Controller
         ], $this->uploadMessages());
 
         $uploads = $this->incomingUploads($request);
+        $extracted = $calculationImport->extract($uploads);
+        $uploads = $extracted['remaining'];
 
         if ($screens->findScreenUpload($uploads) !== null) {
             return $screens->startPreview($uploads);
@@ -61,7 +65,9 @@ class MeetstaatImportController extends Controller
         }
 
         try {
-            $built = $builder->build($uploads);
+            $built = $uploads === [] && $extracted['files'] !== []
+                ? $builder->build([])
+                : $builder->build($uploads);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors([$this->uploadErrorKey($request) => $e->getMessage()]);
         }
@@ -72,9 +78,11 @@ class MeetstaatImportController extends Controller
 
         $token = (string) Str::uuid();
         $stored = $this->storePreviewUploads($token, $built['classified']);
+        $stored = $this->storeCalculationUploads($token, $stored, $extracted['files']);
+        $preview = $calculationImport->attach($built['preview'], $extracted['files']);
 
         Cache::put('meetstaat.'.$token, [
-            'preview' => $built['preview'],
+            'preview' => $preview,
             'file' => $stored['meetstaat'],
             'original' => $stored['meetstaat_original'],
             'plattegrond' => $stored['plattegrond'],
@@ -102,7 +110,7 @@ class MeetstaatImportController extends Controller
         ]);
     }
 
-    public function import(Request $request, string $token, ProjectIntakeService $intake, RoomImportAssembler $assembler): RedirectResponse
+    public function import(Request $request, string $token, ProjectIntakeService $intake, RoomImportAssembler $assembler, CalculationImportService $calculationImport): RedirectResponse
     {
         Gate::authorize('create', Project::class);
         $payload = Cache::get('meetstaat.'.$token);
@@ -135,6 +143,8 @@ class MeetstaatImportController extends Controller
             'areas.*.tasks.*.unit' => ['nullable', 'string', 'max:16'],
             'areas.*.tasks.*.perimeter' => ['nullable', 'string', 'max:32'],
             'areas.*.tasks.*.seams' => ['nullable', 'string', 'max:32'],
+            'calculation_labor' => ['nullable', 'array'],
+            'calculation_labor.*.work_name' => ['nullable', 'string', 'max:255'],
         ], array_merge($this->uploadMessages(), PlanningWeek::messages()));
         $validator->after(fn ($weekValidator) => PlanningWeek::validateOrder($weekValidator));
         $data = PlanningWeek::applyTo($validator->validate(), $request->input('date'));
@@ -163,6 +173,7 @@ class MeetstaatImportController extends Controller
         $preview['header']['city'] = $data['city'] ?? $preview['header']['city'] ?? null;
         $preview['header']['planned_start_date'] = $data['planned_start_date'] ?? null;
         $preview['header']['planned_end_date'] = $data['planned_end_date'] ?? null;
+        $preview = $calculationImport->applyReview($preview, $data['calculation_labor'] ?? []);
 
         $cachedReady = (bool) ($payload['preview']['import_closure']['ready'] ?? false)
             || (($payload['preview']['import_closure']['decision'] ?? '') === ImportDecision::ReadyAutomatic->value);
@@ -197,6 +208,19 @@ class MeetstaatImportController extends Controller
         }
 
         $closure = is_array($preview['import_closure'] ?? null) ? $preview['import_closure'] : [];
+        if ($calculationImport->hasOpenMatches($preview)) {
+            $payload['preview'] = $preview;
+            Cache::put('meetstaat.'.$token, $payload, now()->addHour());
+
+            return redirect()
+                ->route('projects.review', $token)
+                ->withInput()
+                ->with('status', 'Koppel onzekere arbeidsregels voordat je importeert')
+                ->withErrors([
+                    'calculation_labor' => 'Er staan nog arbeidsregels op Controleren. Kies per regel de juiste werkzaamheid.',
+                ]);
+        }
+
         if (! ($closure['ready'] ?? false)) {
             // Nooit een lossy/incomplete review terug in de cache zetten wanneer de eerdere preview al klaar was.
             if (! $cachedReady) {
@@ -308,6 +332,56 @@ class MeetstaatImportController extends Controller
             'uploads' => $uploads,
             'extra' => $extra,
         ];
+    }
+
+    /**
+     * @param  array{
+     *     meetstaat: ?string,
+     *     meetstaat_original: ?string,
+     *     plattegrond: ?string,
+     *     plattegrond_original: ?string,
+     *     uploads: list<array<string, mixed>>,
+     *     extra: list<array{path: string, type: string, original: string}>
+     * }  $stored
+     * @param  list<array{file: UploadedFile, parsed: array<string, mixed>}>  $files
+     * @return array{
+     *     meetstaat: ?string,
+     *     meetstaat_original: ?string,
+     *     plattegrond: ?string,
+     *     plattegrond_original: ?string,
+     *     uploads: list<array<string, mixed>>,
+     *     extra: list<array{path: string, type: string, original: string}>
+     * }
+     */
+    private function storeCalculationUploads(string $token, array $stored, array $files): array
+    {
+        foreach ($files as $index => $item) {
+            $file = $item['file'];
+            $extension = strtolower($file->getClientOriginalExtension() ?: 'xlsx');
+            $path = $file->storeAs(
+                'meetstaat-previews/'.$token,
+                'calculatie-'.$index.'.'.$extension,
+                'local'
+            );
+            $original = $file->getClientOriginalName();
+            $stored['uploads'][] = [
+                'original' => $original,
+                'type' => ImportDocumentType::Calculatie->value,
+                'label' => ImportDocumentType::Calculatie->label(),
+                'type_label' => ImportDocumentType::Calculatie->label(),
+                'roles' => [],
+                'roles_label' => 'Arbeidsuren',
+                'usable_data' => 'uren + tarief',
+                'reliability_label' => 'Excel-calculatie',
+            ];
+            $stored['extra'][] = [
+                'path' => $path,
+                'type' => ImportDocumentType::Calculatie->value,
+                'original' => $original,
+            ];
+        }
+
+        return $stored;
     }
 
     /**

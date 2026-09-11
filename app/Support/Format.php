@@ -28,6 +28,19 @@ class Format
         return '€ '.number_format((float) $value, 2, ',', '.');
     }
 
+    public static function euro(float|int|string|null $value, int $decimals = 2): string
+    {
+        return '€'.number_format((float) $value, $decimals, ',', '.');
+    }
+
+    public static function euroWhole(float|int|string|null $value): string
+    {
+        $number = round((float) $value, 2);
+        $decimals = abs($number - round($number)) < 0.001 ? 0 : 2;
+
+        return self::euro($number, $decimals);
+    }
+
     public static function bonOrdinal(int $number): string
     {
         return $number.'e bon';

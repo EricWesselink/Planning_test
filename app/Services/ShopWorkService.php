@@ -58,6 +58,7 @@ class ShopWorkService
                 'status' => ProjectStatus::Gepland,
                 'kind' => ProjectKind::Winkel,
                 'work_description' => $data['work_description'] ?? null,
+                'basis_uurtarief' => $data['basis_uurtarief'] ?? null,
             ]);
 
             $this->syncActivities(
@@ -97,14 +98,18 @@ class ShopWorkService
                 ['city' => $data['city'] ?? null]
             );
 
-            $project->update([
+            $attributes = [
                 'customer_id' => $customer->id,
                 'name' => $this->headline($data['customer_name'], $data['city'] ?? null),
                 'address' => $data['address'] ?? null,
                 'postal_code' => $data['postal_code'] ?? null,
                 'city' => $data['city'] ?? null,
                 'work_description' => $data['work_description'] ?? null,
-            ]);
+            ];
+            if (array_key_exists('basis_uurtarief', $data)) {
+                $attributes['basis_uurtarief'] = $data['basis_uurtarief'];
+            }
+            $project->update($attributes);
 
             if (array_key_exists('planned_start_date', $data) || array_key_exists('planned_end_date', $data)) {
                 $project->forceFill([

@@ -97,6 +97,8 @@
         }
         .col-werk { width: 28%; text-align: left; padding: 7px 10px; }
         .col-num { width: 7%; text-align: right; padding: 7px 8px; font-variant-numeric: tabular-nums; }
+        .col-num.over { color: #b42318; font-weight: 700; }
+        .col-num.ok { color: #3f6212; font-weight: 650; }
         .col-days { width: auto; }
         .project-row td { background: var(--sand); font-weight: 600; }
         .section-row td {
@@ -111,6 +113,15 @@
         .work-row td { font-size: 11px; }
         .indent { padding-left: 22px; }
         .city { font-weight: 400; color: var(--muted); font-size: 11px; }
+        .plan-labor { margin-top: 2px; font-size: 10px; font-weight: 500; color: var(--muted); }
+        .plan-labor--over { color: #b91c1c; font-weight: 700; }
+        .plan-labor--warn { color: #b45309; }
+        .plan-hour-bar { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+        .plan-hour-bar-track { display: block; flex: 1; height: 4px; background: var(--line); overflow: hidden; }
+        .plan-hour-bar-fill { display: block; height: 100%; background: #3f6212; }
+        .plan-hour-bar--warn .plan-hour-bar-fill { background: #b45309; }
+        .plan-hour-bar--over .plan-hour-bar-fill { background: #b91c1c; }
+        .plan-hour-bar-label { font-size: 9px; color: var(--muted); white-space: nowrap; }
         .badge { display: inline-block; background: var(--ink); color: white; font-size: 9px; letter-spacing: .12em; font-weight: 700; padding: 1px 6px; margin-bottom: 2px; }
         .steps { color: var(--muted); font-size: 10px; font-weight: 400; }
         .days {
@@ -136,9 +147,26 @@
             color: white;
             font-size: 10px;
             line-height: 18px;
-            padding: 0 6px;
+            padding: 0;
             overflow: hidden;
             white-space: nowrap;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
+        .bar-name {
+            position: relative;
+            z-index: 2;
+            display: block;
+            padding: 0 6px;
+        }
+        .bar-overrun {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1;
+            background: repeating-linear-gradient(-45deg, rgba(185, 28, 28, 0.62), rgba(185, 28, 28, 0.62) 3px, rgba(255, 255, 255, 0.18) 3px, rgba(255, 255, 255, 0.18) 7px);
+            box-shadow: inset 1px 0 0 rgba(185, 28, 28, 0.85);
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
         }
@@ -305,6 +333,16 @@
                     <th class="col-num">Gereed</th>
                     <th class="col-num">Rest</th>
                     <th class="col-num">%</th>
+                    @if ($canViewLaborCosts ?? false)
+                        <th class="col-num">Begroot uren</th>
+                        <th class="col-num">Ingepland uren</th>
+                        <th class="col-num">Gemaakt uren</th>
+                        <th class="col-num">Budget over</th>
+                        <th class="col-num">Verschil</th>
+                        <th class="col-num">Begroot €/m²</th>
+                        <th class="col-num">Werkelijk €/m²</th>
+                        <th class="col-num">Verschil €/m²</th>
+                    @endif
                     <th class="col-days">
                         <div class="week-band">
                             @foreach ($weekBands as $band)
@@ -326,7 +364,7 @@
                 @foreach ($rows as $projectRow)
                     @if (($projectRow['type'] ?? '') === 'section')
                         <tr class="section-row">
-                            <td class="col-werk section-label" colspan="6">{{ $projectRow['title'] }}</td>
+                            <td class="col-werk section-label" colspan="{{ ($canViewLaborCosts ?? false) ? 14 : 6 }}">{{ $projectRow['title'] }}</td>
                         </tr>
                         @continue
                     @endif
@@ -375,6 +413,9 @@
                                 {{ $projectRow['percent'] }}%
                             @endif
                         </td>
+                        @if ($canViewLaborCosts ?? false)
+                            @include('planning.partials.pdf-labor-cells', ['row' => $projectRow])
+                        @endif
                         <td class="col-days">
                             @include('planning.partials.pdf-bars', [
                                 'personBars' => $projectBars,
@@ -388,7 +429,9 @@
                         </td>
                     </tr>
                     @foreach ($projectRow['children'] as $work)
-                        @php $workHeight = max(28, 8 + (count($work['person_bars']) * 20)); @endphp
+                        @php
+                            $workHeight = max(28, 8 + (count($work['person_bars']) * 20));
+                        @endphp
                         <tr class="work-row">
                             <td class="col-werk indent">
                                 {{ $work['title'] }}
@@ -416,6 +459,9 @@
                                     {{ $work['percent'] }}%
                                 @endif
                             </td>
+                            @if ($canViewLaborCosts ?? false)
+                                @include('planning.partials.pdf-labor-cells', ['row' => $work])
+                            @endif
                             <td class="col-days">
                                 @include('planning.partials.pdf-bars', [
                                     'personBars' => $work['person_bars'],

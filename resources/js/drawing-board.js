@@ -510,6 +510,7 @@ function boot() {
         }
         mark.textContent = text;
         mark.dataset.areaId = String(area.id);
+        paintNameOverlay(mark, area, areaId === selectedId);
         mark.style.left = `${((Number(box.x) || 0) + (Number(box.w) || 0) / 2) * 100}%`;
         mark.style.top = `${(Number(box.y) || 0) * 100}%`;
         mark.style.transform = nameOverlayTransform();
@@ -528,6 +529,36 @@ function boot() {
         mark.addEventListener('mousemove', (event) => showTip(area, event));
         mark.addEventListener('mouseleave', hideTip);
         markersEl.append(mark);
+    }
+
+    function paintNameOverlay(mark, area, selected) {
+        const hex = area.material_color;
+        if (!hex) {
+            return;
+        }
+        const contrast = overlayContrast(hex);
+        mark.style.background = contrast.bg;
+        mark.style.color = contrast.fg;
+        mark.style.borderColor = selected ? '#1c1917' : 'transparent';
+        mark.style.boxShadow = selected
+            ? '0 0 0 1px #fff, 0 0 0 3px #1c1917'
+            : '0 1px 2px rgba(0, 0, 0, 0.16)';
+    }
+
+    function overlayContrast(hex) {
+        const value = String(hex || '').replace('#', '');
+        if (!/^[0-9a-f]{6}$/i.test(value)) {
+            return { bg: hex, fg: '#1c1917' };
+        }
+        const red = parseInt(value.slice(0, 2), 16);
+        const green = parseInt(value.slice(2, 4), 16);
+        const blue = parseInt(value.slice(4, 6), 16);
+        const luma = ((0.299 * red) + (0.587 * green) + (0.114 * blue)) / 255;
+
+        return {
+            bg: `#${value}`,
+            fg: luma > 0.62 ? '#1c1917' : '#fff',
+        };
     }
 
     function appendLabelRect(area, box, extraClass = '') {
@@ -1931,16 +1962,13 @@ function boot() {
         if (!legend) {
             return;
         }
-        const seen = new Map();
-        groups.forEach((group) => {
+        legend.innerHTML = (groups || []).map((group) => {
             const key = group.color_key || 'overige';
-            if (!seen.has(key)) {
-                seen.set(key, group.color_label || group.type_label || group.label || key);
-            }
-        });
-        legend.innerHTML = [...seen.entries()].map(([key, label]) => (
-            `<span data-kind="${escapeHtml(key)}"><i></i>${escapeHtml(label)}</span>`
-        )).join('');
+            const label = group.label || group.color_label || group.type_label || key;
+            const color = group.display_color || '#9ca3af';
+
+            return `<span data-kind="${escapeHtml(key)}" style="--work-accent: ${escapeHtml(color)}"><i></i>${escapeHtml(label)}</span>`;
+        }).join('');
     }
 
     function bindTaskCards() {

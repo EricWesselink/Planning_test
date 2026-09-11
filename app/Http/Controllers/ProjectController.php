@@ -7,10 +7,13 @@ use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\WorkActivityCategory;
 use App\Models\Worker;
+use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Services\ProjectBoardService;
 use App\Services\ProjectIntakeService;
+use App\Services\ProjectLaborCalculator;
 use App\Services\RoomWorkSetup;
+use App\Support\Format;
 use App\Support\PlanningWeek;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -82,12 +85,31 @@ class ProjectController extends Controller
     public function update(Request $request, Project $project): RedirectResponse
     {
         Gate::authorize('update', $project);
+        if ($request->exists('basis_uurtarief')) {
+            $value = Format::decimalInput($request->input('basis_uurtarief'));
+            $request->merge([
+                'basis_uurtarief' => $value === '' ? null : $value,
+            ]);
+        }
+        $this->normalizeWorkItemBudgets($request);
         $validator = Validator::make($request->all(), [
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'city' => ['nullable', 'string', 'max:255'],
+            'basis_uurtarief' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999.99'],
+            'work_items' => ['sometimes', 'array'],
+            'work_items.*.begrote_uren' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'work_items.*.begrote_hoeveelheid' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'work_items.*.uurtarief' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
             ...PlanningWeek::rules(),
-        ], PlanningWeek::messages());
+        ], array_merge(PlanningWeek::messages(), [
+            'basis_uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
+            'basis_uurtarief.numeric' => 'Vul een geldig uurtarief in.',
+            'work_items.*.begrote_uren.min' => 'Begrote uren kunnen niet lager zijn dan 0.',
+            'work_items.*.begrote_uren.numeric' => 'Vul geldige begrote uren in.',
+            'work_items.*.begrote_hoeveelheid.min' => 'Begrote hoeveelheid kan niet lager zijn dan 0.',
+            'work_items.*.uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
+        ]));
         $validator->after(fn ($weekValidator) => PlanningWeek::validateOrder(
             $weekValidator,
             $project->planned_start_date,
@@ -95,7 +117,16 @@ class ProjectController extends Controller
         ));
         $data = $validator->validate();
 
-        $project->update(collect($data)->only(['address', 'postal_code', 'city'])->all());
+        $fields = ['address', 'postal_code', 'city'];
+        $canViewLabor = $request->user()?->canViewLaborCosts() ?? false;
+        if ($canViewLabor && $request->exists('basis_uurtarief')) {
+            $fields[] = 'basis_uurtarief';
+        }
+        $project->update(collect($data)->only($fields)->all());
+
+        if ($canViewLabor && isset($data['work_items']) && is_array($data['work_items'])) {
+            $this->saveWorkItemBudgets($project, $data['work_items']);
+        }
 
         if ($request->hasAny(['start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'])) {
             $project->applyPlanningWindow($data);
@@ -156,7 +187,7 @@ class ProjectController extends Controller
             ->with('warnings', $result['warnings']);
     }
 
-    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup): View
+    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor): View
     {
         Gate::authorize('view', $project);
 
@@ -165,6 +196,7 @@ class ProjectController extends Controller
 
             return view('projects.winkel', [
                 'project' => $project,
+                'labor' => $labor->for($project),
                 'categories' => WorkActivityCategory::formCatalog(
                     $project->workActivities->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()
                 ),
@@ -173,6 +205,9 @@ class ProjectController extends Controller
         }
 
         $setup->ensureProject($project);
+        if ($request->user()?->canViewLaborCosts()) {
+            $project->load(['calculationLines.workItem']);
+        }
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         $progressWorkers = $project->plannedWorkers();
         $workers = Worker::query()->where('active', true)->orderBy('name')->get();
@@ -244,6 +279,7 @@ class ProjectController extends Controller
 
         return view('projects.show', [
             'project' => $project,
+            'labor' => $labor->for($project),
             'workers' => $workers,
             'progressWorkers' => $progressWorkers,
             'orderTypes' => WorkOrderType::cases(),
@@ -289,11 +325,14 @@ class ProjectController extends Controller
         return back()->with('status', 'Plattegrond opgeslagen.');
     }
 
-    public function document(Project $project, ProjectDocument $document): StreamedResponse
+    public function document(Request $request, Project $project, ProjectDocument $document): StreamedResponse
     {
         Gate::authorize('view', $project);
         abort_unless($document->project_id === $project->id, 404);
         abort_unless(Storage::disk('local')->exists($document->file_path), 404);
+        if ($document->document_type === 'calculatie') {
+            abort_unless($request->user()?->canViewLaborCosts() ?? false, 403);
+        }
 
         return Storage::disk('local')->response(
             $document->file_path,
@@ -351,5 +390,58 @@ class ProjectController extends Controller
         ]);
 
         return back()->with('status', 'Opdracht gekoppeld.');
+    }
+
+    private function normalizeWorkItemBudgets(Request $request): void
+    {
+        $items = $request->input('work_items');
+        if (! is_array($items)) {
+            return;
+        }
+
+        foreach ($items as $id => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            foreach (['begrote_uren', 'begrote_hoeveelheid', 'uurtarief'] as $field) {
+                if (! array_key_exists($field, $row)) {
+                    continue;
+                }
+                $value = Format::decimalInput($row[$field]);
+                $items[$id][$field] = $value === '' ? null : $value;
+            }
+        }
+
+        $request->merge(['work_items' => $items]);
+    }
+
+    /**
+     * @param  array<int|string, array<string, mixed>>  $rows
+     */
+    private function saveWorkItemBudgets(Project $project, array $rows): void
+    {
+        $allowed = $project->workItems()->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+
+        foreach ($rows as $id => $row) {
+            $itemId = (int) $id;
+            if ($itemId < 1 || ! in_array($itemId, $allowed, true) || ! is_array($row)) {
+                continue;
+            }
+
+            $update = [];
+            foreach (['begrote_uren', 'begrote_hoeveelheid', 'uurtarief'] as $field) {
+                if (array_key_exists($field, $row)) {
+                    $update[$field] = $row[$field];
+                }
+            }
+            if ($update === []) {
+                continue;
+            }
+
+            WorkItem::query()
+                ->whereKey($itemId)
+                ->where('project_id', $project->id)
+                ->update($update);
+        }
     }
 }

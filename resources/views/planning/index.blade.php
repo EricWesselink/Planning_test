@@ -170,7 +170,24 @@
         </div>
 
         <div class="planning-scroll-area" id="plan-scroller">
-            <div class="plan-board" id="plan-board"
+            @php
+                $workItemsByProject = $projects->mapWithKeys(function ($project) {
+                    $items = $project->workItems
+                        ->filter(fn ($item) => (float) $item->ordered_quantity > 0.0001 || $item->work_activity_id !== null)
+                        ->map(fn ($item) => [
+                            'id' => $item->id,
+                            'name' => $item->productLabel() ?: (\App\Support\WorkType::looksLikeRoom($item->name) ? $item->typeLabel() : $item->name),
+                            'group' => $item->typeLabel(),
+                            'project_id' => $project->id,
+                            'project' => $project->displayTitle(),
+                        ])
+                        ->values();
+
+                    return [$project->id => $items];
+                });
+            @endphp
+            <div class="plan-board{{ $canViewLaborCosts ? ' plan-board--labor' : '' }}" id="plan-board"
+                 @if ($canViewLaborCosts) data-labor-fold-key="nicon.planning.laborFolded" @endif
                  data-shift-url="{{ route('planning.shift') }}"
                  data-move-url="{{ route('planning.assignments.move') }}"
                  data-store-url="{{ route('planning.assignments.store') }}"
@@ -178,8 +195,20 @@
                  data-assignment-url="{{ url('/planning/assignments') }}"
                  data-readonly="{{ $canManagePlanning ? '0' : '1' }}"
                  data-crews='@json($workers->mapWithKeys(fn ($worker) => [$worker->id => $worker->crewPeople->map(fn ($person) => ['id' => $person->id, 'name' => $person->label()])->values()]))'
-                 data-work-items='@json($projects->mapWithKeys(fn ($project) => [$project->id => $project->workItems->filter(fn ($item) => (float) $item->ordered_quantity > 0.0001 || $item->work_activity_id !== null)->map(fn ($item) => ['id' => $item->id, 'name' => $item->productLabel() ?: (\App\Support\WorkType::looksLikeRoom($item->name) ? $item->typeLabel() : $item->name), 'group' => $item->typeLabel()])->values()]))'
+                 data-work-items='@json($workItemsByProject)'
                  style="--plan-days: {{ $dayCount }}; --plan-day-min: {{ $dayMin }}px">
+                @if ($canViewLaborCosts)
+                    <script>
+                        (function () {
+                            var board = document.getElementById('plan-board');
+                            try {
+                                if (board && localStorage.getItem(board.getAttribute('data-labor-fold-key')) === '1') {
+                                    board.classList.add('plan-board--labor-collapsed');
+                                }
+                            } catch (e) {}
+                        })();
+                    </script>
+                @endif
                 <div class="plan-table">
                     <div class="plan-line plan-line--head sticky-head">
                         <div class="plan-frozen plan-frozen--head">
@@ -189,6 +218,21 @@
                             <div class="plan-cell plan-cell--num">Gereed</div>
                             <div class="plan-cell plan-cell--num">Rest</div>
                             <div class="plan-cell plan-cell--num">%</div>
+                            @if ($canViewLaborCosts)
+                                <button type="button" class="plan-labor-toggle plan-labor-toggle--open" data-labor-fold aria-expanded="true" title="Urenkolommen tonen">›</button>
+                                <div class="plan-labor-block">
+                                    <div class="plan-labor-block-inner">
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Begrote uren uit calculatie">Begroot</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Ingepland via het planbord">Gepland</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Geregistreerde uren">Gemaakt</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Begroot minus gemaakt">Rest</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Begrote arbeidsprijs per eenheid">Begroot €/m²</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Werkelijke arbeidsprijs per eenheid">Werkelijk €/m²</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Werkelijk minus begroot">Verschil</div>
+                                    </div>
+                                </div>
+                                <button type="button" class="plan-labor-toggle plan-labor-toggle--close" data-labor-fold aria-expanded="true" title="Urenkolommen invouwen">‹</button>
+                            @endif
                         </div>
                         <div class="plan-days plan-days--head{{ $weeks > 1 ? ' plan-days--multi' : '' }}">
                             @foreach ($weekBands as $band)
@@ -220,6 +264,21 @@
                                     <div class="plan-cell plan-cell--num"></div>
                                     <div class="plan-cell plan-cell--num"></div>
                                     <div class="plan-cell plan-cell--num"></div>
+                                    @if ($canViewLaborCosts)
+                                        <div class="plan-labor-toggle plan-labor-toggle--open" aria-hidden="true"></div>
+                                        <div class="plan-labor-block">
+                                            <div class="plan-labor-block-inner">
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                            </div>
+                                        </div>
+                                        <div class="plan-labor-toggle plan-labor-toggle--close" aria-hidden="true"></div>
+                                    @endif
                                 </div>
                                 <div class="plan-days plan-days--section" aria-hidden="true">
                                     @foreach ($days as $day)
@@ -233,8 +292,9 @@
                             $projectHasPeriod = $projectRow['bar'] || $projectRow['start_marker'] || $projectRow['end_marker'];
                             $projectBarOffset = $projectHasPeriod ? 16 : 4;
                             $projectHeight = max(28, $projectBarOffset + 4 + ($projectRow['bar_count'] * 24));
+                            $projectOver = $canViewLaborCosts && ! empty($projectRow['labor']['hours_over']);
                         @endphp
-                        <div class="plan-line plan-line--project" style="min-height: {{ $projectHeight }}px">
+                        <div class="plan-line plan-line--project{{ $projectOver ? ' plan-line--hour-over' : '' }}" style="min-height: {{ $projectHeight }}px">
                             <div class="plan-frozen">
                                 <div class="plan-cell plan-cell--werk{{ ! empty($projectRow['missing_craftsman']) ? ' has-missing-craftsman' : '' }}">
                                     <div class="plan-project-meta">
@@ -273,7 +333,7 @@
                                         <span class="plan-missing-craftsman" title="Geen vakman ingepland" aria-label="Geen vakman ingepland">⚠</span>
                                     @endif
                                 </div>
-                                @include('planning.partials.qty-cells', ['row' => $projectRow])
+                                @include('planning.partials.qty-cells', ['row' => $projectRow, 'showLabor' => $canViewLaborCosts])
                             </div>
                             @include('planning.partials.plan-days', [
                                 'projectId' => $projectRow['id'],
@@ -287,8 +347,11 @@
                             ])
                         </div>
                         @foreach ($projectRow['children'] as $work)
-                            @php $workHeight = max(28, 6 + ($work['bar_count'] * 24)); @endphp
-                            <div class="plan-line plan-line--work{{ count($work['warnings']) ? ' plan-line--warn' : '' }}" style="min-height: {{ $workHeight }}px">
+                            @php
+                                $workOver = $canViewLaborCosts && ! empty($work['labor']['hours_over']);
+                                $workHeight = max(28, 6 + ($work['bar_count'] * 24));
+                            @endphp
+                            <div class="plan-line plan-line--work{{ count($work['warnings']) ? ' plan-line--warn' : '' }}{{ $workOver ? ' plan-line--hour-over' : '' }}" style="min-height: {{ $workHeight }}px">
                                 <div class="plan-frozen">
                                     <div class="plan-cell plan-cell--werk plan-cell--indent">
                                         <div>
@@ -301,7 +364,7 @@
                                             @endif
                                         </div>
                                     </div>
-                                    @include('planning.partials.qty-cells', ['row' => $work])
+                                    @include('planning.partials.qty-cells', ['row' => $work, 'showLabor' => $canViewLaborCosts])
                                 </div>
                                 @include('planning.partials.plan-days', [
                                     'projectId' => $projectRow['id'],
@@ -335,7 +398,8 @@
                 @endforeach
             </select>
             <div id="plan-crew" class="hidden space-y-1 rounded border border-nicon-line bg-nicon-sand/40 px-2 py-1.5">
-                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Wie gaat er naartoe</div>
+                <div id="plan-crew-heading" class="text-[10px] uppercase tracking-wide text-nicon-muted">Wie gaat er naartoe</div>
+                <p id="plan-crew-hint" class="hidden text-xs text-nicon-muted">Niet aangevinkt blijft op het huidige werk.</p>
                 <div id="plan-crew-list" class="space-y-0.5"></div>
             </div>
             <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Wat gaan ze doen</label>

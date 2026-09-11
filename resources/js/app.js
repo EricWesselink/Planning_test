@@ -1,6 +1,4 @@
-import './drawing-board';
-import './project-upload';
-
+// Shell-only entry: load PDF.js, OCR and other feature libraries from page-specific Vite files.
 const topbar = document.querySelector('.nicon-topbar');
 if (topbar instanceof HTMLElement) {
     const syncTopbarHeight = () => {

@@ -51,7 +51,7 @@ class MaterialColor
             str_contains($hay, 'warm grey') || str_contains($hay, 'warm gray') => '#c9c985',
             str_contains($hay, 'pink clay') => '#eea8f5',
             str_contains($hay, 'aqua blue') => '#5a90ba',
-            str_contains($hay, 'english oak') || str_contains($hay, 'classics') => '#c4a484',
+            str_contains($hay, 'english oak') || str_contains($hay, 'chapman oak') || str_contains($hay, 'classics') => '#c4a484',
             str_contains($hay, 'granit light') => '#558d60',
             str_contains($hay, 'dusty brick') => '#795549',
             str_contains($hay, 'dusty green') => '#647d66',
@@ -82,5 +82,22 @@ class MaterialColor
         $b = hexdec(substr($hex, 5, 2));
 
         return sprintf('rgba(%d, %d, %d, %.2f)', $r, $g, $b, max(0.05, min(0.35, $alpha)));
+    }
+
+    public static function hexesMatch(?string $left, ?string $right, int $tolerance = 36): bool
+    {
+        $a = self::normalizeHex($left);
+        $b = self::normalizeHex($right);
+        if ($a === null || $b === null) {
+            return false;
+        }
+        if ($a === $b) {
+            return true;
+        }
+        $dr = hexdec(substr($a, 1, 2)) - hexdec(substr($b, 1, 2));
+        $dg = hexdec(substr($a, 3, 2)) - hexdec(substr($b, 3, 2));
+        $db = hexdec(substr($a, 5, 2)) - hexdec(substr($b, 5, 2));
+
+        return sqrt(($dr ** 2) + ($dg ** 2) + ($db ** 2)) <= $tolerance;
     }
 }

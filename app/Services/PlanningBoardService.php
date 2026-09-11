@@ -11,6 +11,7 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\Format;
 use App\Support\PlanningHours;
+use App\Support\PlanningLaborForecast;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
@@ -23,6 +24,7 @@ class PlanningBoardService
     public function __construct(
         private ConflictService $conflicts,
         private PlanningAvailabilityService $availability,
+        private ProjectLaborCalculator $labor,
     ) {}
 
     public function weekStart(?string $week, ?int $weekNr = null, ?int $year = null): Carbon
@@ -76,6 +78,7 @@ class PlanningBoardService
         $staffingFilter = $this->staffingFilter($request);
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         $workerId = $scheduledWorkerId ?? ($request->filled('worker_id') ? $request->integer('worker_id') : null);
+        $canViewLabor = $request->user()?->canViewLaborCosts() ?? false;
 
         $projects = Project::query()
             ->accessibleBy($request->user())
@@ -130,6 +133,11 @@ class PlanningBoardService
             $usedIds = [];
             $workRows = [];
             $projectWarnings = [];
+            $labor = $canViewLabor ? $this->labor->for($project) : [
+                'groups' => [],
+                'items_by_id' => [],
+                'overrun_label' => null,
+            ];
 
             if ($project->isWinkel()) {
                 [$workRows, $usedIds] = $this->winkelWorkRows($project, $projectAssignments, $days, $doubleBooked, $usedIds);
@@ -160,8 +168,7 @@ class PlanningBoardService
                     $personBars = [];
 
                     foreach ($projectAssignments as $assignment) {
-                        $workItemId = $assignment->work_item_id
-                            ?? $project->workOrders->firstWhere('worker_id', $assignment->worker_id)?->work_item_id;
+                        $workItemId = $assignment->resolvedWorkItemId($project->workOrders);
 
                         if (! in_array((int) $workItemId, $ids, true)) {
                             continue;
@@ -177,12 +184,24 @@ class PlanningBoardService
                         $personBars[] = $this->personBar($assignment, $bar, $doubleBooked, $days, $workName, $project->name);
                     }
 
+                    $budgetHours = round((float) $items->sum(
+                        fn (WorkItem $item): float => $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren
+                    ), 2);
+                    $personBars = $this->decorateBarsWithBudget(
+                        $personBars,
+                        $projectAssignments,
+                        $ids,
+                        $budgetHours,
+                        $project->workOrders,
+                    );
+
                     $starts = $items->pluck('planned_start_date')->filter();
                     $ends = $items->pluck('planned_end_date')->filter();
                     $title = $isOndergrond ? $primary->packageLabel() : $primary->planningTitle();
                     $steps = $isOndergrond && $items->count() > 1
                         ? $items->sortBy(fn (WorkItem $item) => $item->phase()->sort())->map(fn (WorkItem $item) => $item->name)->values()->all()
                         : [];
+                    $itemLabor = $labor['groups'][$packageKey] ?? null;
 
                     $workRows[] = [
                         'type' => 'work',
@@ -201,8 +220,17 @@ class PlanningBoardService
                         'bar_count' => count($personBars),
                         'warnings' => array_values(array_unique($itemWarnings)),
                         'status' => $primary->status,
+                        'labor' => $itemLabor,
                     ];
                 }
+            }
+
+            foreach ($workRows as $index => $row) {
+                if (array_key_exists('labor', $row)) {
+                    continue;
+                }
+                $itemLabor = $labor['items_by_id'][$row['id'] ?? 0] ?? null;
+                $workRows[$index]['labor'] = $itemLabor;
             }
 
             if ($scheduledWorkerId !== null) {
@@ -224,6 +252,7 @@ class PlanningBoardService
                 $workName = $assignment->workItem?->typeLabel() ?? 'inzet';
                 $leftoverBars[] = $this->personBar($assignment, $bar, $doubleBooked, $days, $workName, $project->name);
             }
+            $leftoverBars = $this->decorateLeftoverBars($leftoverBars, $projectAssignments, $project);
 
             $executors = $project->workOrders
                 ->merge($projectAssignments)
@@ -267,12 +296,16 @@ class PlanningBoardService
                 'start_week' => $startWeek,
                 'person_bars' => $leftoverBars,
                 'bar_count' => count($leftoverBars),
-                'warnings' => array_unique($projectWarnings),
+                'warnings' => array_values(array_unique(array_filter([
+                    ...$projectWarnings,
+                    $labor['overrun_label'] ?? null,
+                ]))),
                 'ordered' => $quantities['ordered'],
                 'completed' => $quantities['completed'],
                 'remaining' => $quantities['remaining'],
                 'percent' => $quantities['percent'],
                 'unit' => $quantities['unit'],
+                'labor' => $canViewLabor ? $labor : null,
                 'children' => $workRows,
             ];
         }
@@ -619,6 +652,96 @@ class PlanningBoardService
     }
 
     /**
+     * @param  list<array<string, mixed>>  $personBars
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  list<int>  $workItemIds
+     * @param  Collection<int, mixed>  $workOrders
+     * @return list<array<string, mixed>>
+     */
+    private function decorateBarsWithBudget(
+        array $personBars,
+        Collection $assignments,
+        array $workItemIds,
+        float $budgetHours,
+        Collection $workOrders,
+    ): array {
+        if ($personBars === [] || $budgetHours <= 0.0001) {
+            return $personBars;
+        }
+
+        $queue = [];
+        foreach ($assignments as $assignment) {
+            $workItemId = $assignment->resolvedWorkItemId($workOrders) ?? $assignment->work_item_id;
+            if (! in_array((int) $workItemId, $workItemIds, true)) {
+                continue;
+            }
+
+            $queue[] = [
+                'id' => (int) $assignment->id,
+                'hours' => $assignment->plannedPersonHours(),
+                'start_date' => $assignment->start_date->toDateString(),
+                'start_time' => PlanningHours::formatTime($assignment->startTimeValue()),
+            ];
+        }
+
+        $splits = PlanningLaborForecast::splitByBudget($budgetHours, $queue);
+
+        foreach ($personBars as $index => $bar) {
+            $split = $splits[(int) $bar['assignment_id']] ?? null;
+            if ($split === null || $split['over_hours'] <= 0.0001) {
+                continue;
+            }
+
+            $personBars[$index]['title'] = '⚠ +'.PlanningHours::hoursLabel($split['over_hours']).' boven begrote uren';
+            $personBars[$index]['has_budget_overrun'] = true;
+            $personBars[$index]['budget_ok_percent'] = $split['ok_percent'];
+            $personBars[$index]['overrun_from'] = rtrim(rtrim(number_format($split['ok_percent'], 2, '.', ''), '0'), '.').'%';
+        }
+
+        return array_values($personBars);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $personBars
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @return list<array<string, mixed>>
+     */
+    private function decorateLeftoverBars(array $personBars, Collection $assignments, Project $project): array
+    {
+        $groups = [];
+        foreach ($personBars as $index => $bar) {
+            $groups[(int) ($bar['work_item_id'] ?? 0)][] = $index;
+        }
+
+        foreach ($groups as $itemId => $indexes) {
+            if ($itemId <= 0) {
+                continue;
+            }
+
+            $item = $project->workItems->firstWhere('id', $itemId);
+            $budgetHours = $item?->begrote_uren === null ? 0.0 : round((float) $item->begrote_uren, 2);
+            $subset = [];
+            foreach ($indexes as $index) {
+                $subset[] = $personBars[$index];
+            }
+
+            $decorated = $this->decorateBarsWithBudget(
+                $subset,
+                $assignments,
+                [$itemId],
+                $budgetHours,
+                $project->workOrders,
+            );
+
+            foreach ($indexes as $offset => $index) {
+                $personBars[$index] = $decorated[$offset];
+            }
+        }
+
+        return $personBars;
+    }
+
+    /**
      * Projectperiode op de projectregel: exacte start-/einddatum, geen personeelsbalk.
      *
      * @param  Collection<int, Carbon>  $days
@@ -736,6 +859,15 @@ class PlanningBoardService
                 $usedIds[] = $assignment->id;
                 $personBars[] = $this->personBar($assignment, $bar, $doubleBooked, $days, $item->name, $project->name);
             }
+
+            $budgetHours = $item->begrote_uren === null ? 0.0 : round((float) $item->begrote_uren, 2);
+            $personBars = $this->decorateBarsWithBudget(
+                $personBars,
+                $projectAssignments,
+                [(int) $item->id],
+                $budgetHours,
+                $project->workOrders,
+            );
 
             $note = trim((string) $item->notes);
             $ordered = (float) $item->ordered_quantity;

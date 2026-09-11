@@ -21,7 +21,7 @@ class DrawingColorMatcher
         }
 
         $legend = $this->legendFromPages($extracted['pages']);
-        $found = $this->roomsFromPages($extracted['pages']);
+        $found = $this->roomsFromPages($extracted['pages'], $legend);
         $parsed['debug_rooms'] = $found['debug'];
         $parsed['duplicates_removed'] = ($parsed['duplicates_removed'] ?? 0) + (int) ($found['duplicates_removed'] ?? 0);
         $parsed['areas'] = $this->mergeAreas($parsed['areas'] ?? [], $found['rooms']);
@@ -364,12 +364,14 @@ class DrawingColorMatcher
 
     /**
      * @param  list<array<string, mixed>>  $pages
+     * @param  list<array<string, mixed>>  $legend
      * @return array{rooms: list<array<string, mixed>>, debug: list<array<string, mixed>>}
      */
-    public function roomsFromPages(array $pages): array
+    public function roomsFromPages(array $pages, array $legend = []): array
     {
         $rooms = [];
         $debug = [];
+        $skipHexes = $this->nonFlooringLegendHexes($legend);
 
         foreach ($pages as $page) {
             $width = (float) ($page['width'] ?? 595);
@@ -396,8 +398,8 @@ class DrawingColorMatcher
             $walls = $page['walls'] ?? [];
             $planned = [];
             foreach ($meters as $meter) {
-                $fill = $this->containingFill((float) $meter['x'], (float) $meter['y'], $fills);
-                $colorFill = $fill ?? $this->containingFloorColor((float) $meter['x'], (float) $meter['y'], $colorFills);
+                $fill = $this->containingFill((float) $meter['x'], (float) $meter['y'], $fills, $skipHexes);
+                $colorFill = $this->containingFloorColor((float) $meter['x'], (float) $meter['y'], $colorFills, $skipHexes) ?? $fill;
                 $cell = $this->roomCell($meter, $walls, $fill, $meters, $fills, $width, $height, (int) $page['page']);
                 $planned[] = [
                     'meter' => $meter,
@@ -1129,15 +1131,16 @@ class DrawingColorMatcher
             $fillsByPage[$page['page']] = $this->roomFills($page, $legendBox);
         }
 
+        $skipHexes = $this->nonFlooringLegendHexes($legend);
         foreach ($areas as &$area) {
             $page = (int) ($area['page'] ?? 1);
             $fills = $fillsByPage[$page] ?? [];
             $fill = null;
             if (isset($area['meter_x'], $area['meter_y'])) {
-                $fill = $this->containingFloorColor((float) $area['meter_x'], (float) $area['meter_y'], $fills);
+                $fill = $this->containingFloorColor((float) $area['meter_x'], (float) $area['meter_y'], $fills, $skipHexes);
             }
             if ($fill === null && isset($area['x'], $area['y'])) {
-                $fill = $this->containingFloorColor((float) $area['x'], (float) $area['y'], $fills);
+                $fill = $this->containingFloorColor((float) $area['x'], (float) $area['y'], $fills, $skipHexes);
             }
 
             if ($fill !== null) {
@@ -2027,34 +2030,10 @@ class DrawingColorMatcher
 
     /**
      * @param  list<array<string, mixed>>  $fills
+     * @param  list<string>  $skipHexes
      * @return array<string, mixed>|null
      */
-    private function containingFill(float $x, float $y, array $fills): ?array
-    {
-        $best = null;
-        foreach ($fills as $fill) {
-            if ($x < $fill['x'] - 2 || $x > $fill['x'] + $fill['width'] + 2) {
-                continue;
-            }
-            if ($y < $fill['y'] - 2 || $y > $fill['y'] + $fill['height'] + 2) {
-                continue;
-            }
-            if ($best === null || $fill['area'] < $best['area']) {
-                $best = $fill;
-            }
-        }
-
-        return $best;
-    }
-
-    /**
-     * Kleur voor materiaalkoppeling: substantiële vlakken gaan vóór mini-fragmenten.
-     * Mini-fragmenten (vaak Desso) mogen, maar kies dan het grootste fragment i.p.v. een icoontje.
-     *
-     * @param  list<array<string, mixed>>  $fills
-     * @return array<string, mixed>|null
-     */
-    private function containingFloorColor(float $x, float $y, array $fills): ?array
+    private function containingFill(float $x, float $y, array $fills, array $skipHexes = []): ?array
     {
         $hits = [];
         foreach ($fills as $fill) {
@@ -2070,8 +2049,55 @@ class DrawingColorMatcher
             return null;
         }
 
-        $substantial = array_values(array_filter(
+        $withoutPlint = array_values(array_filter(
             $hits,
+            fn (array $fill) => ! $this->fillMatchesHexes($fill, $skipHexes)
+        ));
+        $pool = $withoutPlint !== [] ? $withoutPlint : $hits;
+
+        $best = null;
+        foreach ($pool as $fill) {
+            if ($best === null || $fill['area'] < $best['area']) {
+                $best = $fill;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Kleur voor materiaalkoppeling: substantiële vlakken gaan vóór mini-fragmenten.
+     * Mini-fragmenten (vaak Desso) mogen, maar kies dan het grootste fragment i.p.v. een icoontje.
+     * Plintkleuren uit de legenda worden overgeslagen als er een vloervlak is.
+     *
+     * @param  list<array<string, mixed>>  $fills
+     * @param  list<string>  $skipHexes
+     * @return array<string, mixed>|null
+     */
+    private function containingFloorColor(float $x, float $y, array $fills, array $skipHexes = []): ?array
+    {
+        $hits = [];
+        foreach ($fills as $fill) {
+            if ($x < $fill['x'] - 2 || $x > $fill['x'] + $fill['width'] + 2) {
+                continue;
+            }
+            if ($y < $fill['y'] - 2 || $y > $fill['y'] + $fill['height'] + 2) {
+                continue;
+            }
+            $hits[] = $fill;
+        }
+        if ($hits === []) {
+            return null;
+        }
+
+        $withoutPlint = array_values(array_filter(
+            $hits,
+            fn (array $fill) => ! $this->fillMatchesHexes($fill, $skipHexes)
+        ));
+        $pool = $withoutPlint !== [] ? $withoutPlint : $hits;
+
+        $substantial = array_values(array_filter(
+            $pool,
             fn (array $fill) => (float) $fill['area'] >= 400.0
                 || max((float) $fill['width'], (float) $fill['height']) > 40.0
         ));
@@ -2081,9 +2107,49 @@ class DrawingColorMatcher
             return $substantial[0];
         }
 
-        usort($hits, fn (array $left, array $right) => $right['area'] <=> $left['area']);
+        usort($pool, fn (array $left, array $right) => $right['area'] <=> $left['area']);
 
-        return $hits[0];
+        return $pool[0];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $legend
+     * @return list<string>
+     */
+    private function nonFlooringLegendHexes(array $legend): array
+    {
+        $hexes = [];
+        foreach ($legend as $entry) {
+            if (! $this->isNonFlooringLegend($entry)) {
+                continue;
+            }
+            $hex = strtolower(trim((string) ($entry['color'] ?? '')));
+            if (preg_match('/^#?[0-9a-f]{6}$/', $hex) === 1) {
+                $hexes[] = '#'.ltrim($hex, '#');
+            }
+        }
+
+        return array_values(array_unique($hexes));
+    }
+
+    /**
+     * @param  array<string, mixed>  $fill
+     * @param  list<string>  $hexes
+     */
+    private function fillMatchesHexes(array $fill, array $hexes): bool
+    {
+        $color = $fill['color'] ?? null;
+        if (! $color instanceof RgbColor) {
+            return false;
+        }
+        foreach ($hexes as $hex) {
+            $other = RgbColor::fromHex($hex);
+            if ($other !== null && $color->matches($other, 36.0)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

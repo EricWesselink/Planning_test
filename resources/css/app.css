@@ -26,6 +26,30 @@
     --planning-sidebar-width: 360px;
 }
 
+@property --planning-sidebar-width {
+    syntax: '<length>';
+    inherits: true;
+    initial-value: 360px;
+}
+
+@property --plan-labor-width {
+    syntax: '<length>';
+    inherits: true;
+    initial-value: 0px;
+}
+
+@property --plan-col-fold-open {
+    syntax: '<length>';
+    inherits: true;
+    initial-value: 0px;
+}
+
+@property --plan-col-fold-close {
+    syntax: '<length>';
+    inherits: true;
+    initial-value: 0px;
+}
+
 html {
     height: 100dvh;
 }
@@ -475,6 +499,27 @@ body {
     background: white;
 }
 
+.plan-board--labor {
+    --planning-sidebar-width: 806px;
+    --plan-col-begroot: 60px;
+    --plan-col-gepland: 60px;
+    --plan-col-gemaakt: 60px;
+    --plan-col-rest-uren: 60px;
+    --plan-col-m2-budget: 58px;
+    --plan-col-m2-actual: 58px;
+    --plan-col-m2-delta: 68px;
+    --plan-labor-width: 424px;
+    --plan-col-fold-open: 0px;
+    --plan-col-fold-close: 22px;
+}
+
+.plan-board--labor.plan-board--labor-collapsed {
+    --planning-sidebar-width: 382px;
+    --plan-labor-width: 0px;
+    --plan-col-fold-open: 22px;
+    --plan-col-fold-close: 0px;
+}
+
 .plan-table {
     min-width: max(100%, calc(var(--planning-sidebar-width) + (var(--plan-days, 5) * var(--plan-day-min, 120px))));
 }
@@ -485,6 +530,7 @@ body {
     min-height: 28px;
     border-bottom: 1px solid var(--color-nicon-line);
     background: white;
+    transition: grid-template-columns 0.28s ease;
 }
 
 .plan-line--project {
@@ -551,6 +597,23 @@ body {
     overflow: hidden;
     background: inherit;
     border-right: 2px solid #9f998f;
+    transition: width 0.28s ease, max-width 0.28s ease, flex-basis 0.28s ease, grid-template-columns 0.28s ease;
+}
+
+.plan-board--labor .plan-frozen {
+    grid-template-columns:
+        minmax(0, 1fr)
+        var(--plan-col-opdracht)
+        var(--plan-col-gereed)
+        var(--plan-col-rest)
+        var(--plan-col-pct)
+        var(--plan-col-fold-open)
+        var(--plan-labor-width)
+        var(--plan-col-fold-close);
+}
+
+.plan-board--labor .plan-frozen:not(.plan-frozen--head) {
+    grid-template-rows: minmax(0, 1fr);
 }
 
 .plan-cell {
@@ -625,6 +688,81 @@ a.plan-missing-craftsman:hover {
     line-clamp: 2;
 }
 
+.plan-labor {
+    margin-top: 2px;
+    font-size: 10px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-nicon-muted);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.plan-labor--warn {
+    color: var(--color-nicon-warn);
+}
+
+.plan-labor--over {
+    color: var(--color-nicon-danger);
+    font-weight: 700;
+}
+
+.plan-hour-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
+    min-width: 0;
+}
+
+.plan-hour-bar-track {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 48px;
+    height: 5px;
+    overflow: hidden;
+    background: var(--color-nicon-line);
+}
+
+.plan-hour-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--color-nicon-ok);
+}
+
+.plan-hour-bar--warn .plan-hour-bar-fill {
+    background: var(--color-nicon-warn);
+}
+
+.plan-hour-bar--over .plan-hour-bar-fill {
+    background: var(--color-nicon-danger);
+}
+
+.plan-hour-bar-label {
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-nicon-muted);
+    white-space: nowrap;
+}
+
+.plan-hour-bar--warn .plan-hour-bar-label {
+    color: var(--color-nicon-warn);
+}
+
+.plan-hour-bar--over .plan-hour-bar-label {
+    color: var(--color-nicon-danger);
+    font-weight: 700;
+}
+
+.plan-line--hour-warn .plan-cell--indent {
+    box-shadow: inset 3px 0 0 var(--color-nicon-warn);
+}
+
+.plan-line--hour-over .plan-cell--indent {
+    box-shadow: inset 3px 0 0 var(--color-nicon-danger);
+}
+
 .plan-cell--indent {
     padding-left: 1.5rem;
 }
@@ -643,6 +781,115 @@ a.plan-missing-craftsman:hover {
 .plan-frozen > .plan-cell--num:last-child {
     padding-left: 1px;
     padding-right: 2px;
+}
+
+.plan-cell--labor {
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.plan-cell--labor-head {
+    align-items: flex-end;
+    justify-content: flex-end;
+    overflow: hidden;
+    white-space: normal;
+    line-height: 1.15;
+    letter-spacing: 0;
+    text-transform: none;
+    font-size: 10px;
+    font-weight: 650;
+}
+
+.plan-labor-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.plan-labor-toggle[aria-hidden="true"] {
+    cursor: default;
+    background: transparent;
+    pointer-events: none;
+}
+
+.sticky-head .plan-labor-toggle {
+    color: white;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+button.plan-labor-toggle:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.plan-labor-block {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.plan-labor-block-inner {
+    display: grid;
+    grid-template-columns:
+        var(--plan-col-begroot)
+        var(--plan-col-gepland)
+        var(--plan-col-gemaakt)
+        var(--plan-col-rest-uren)
+        var(--plan-col-m2-budget)
+        var(--plan-col-m2-actual)
+        var(--plan-col-m2-delta);
+    width: var(--plan-labor-width);
+    min-height: 100%;
+}
+
+.plan-line--project .plan-labor-block-inner {
+    font-weight: 700;
+}
+
+.plan-cell--labor-over {
+    color: var(--color-nicon-danger);
+    font-weight: 700;
+}
+
+.plan-cell--labor-ok {
+    color: var(--color-nicon-ok);
+    font-weight: 650;
+}
+
+.plan-cell--labor-warn {
+    color: var(--color-nicon-warn);
+    font-weight: 650;
+}
+
+.plan-cell--labor-stack {
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 1px;
+    white-space: normal;
+    line-height: 1.05;
+}
+
+.plan-labor-alert {
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.plan-cell--labor-delta {
+    white-space: normal;
+    line-height: 1.05;
+    font-size: 10px;
 }
 
 .plan-days {
@@ -709,9 +956,15 @@ a.plan-missing-craftsman:hover {
     grid-row: 1;
 }
 
-.plan-frozen--head .plan-cell {
+.plan-frozen--head .plan-cell,
+.plan-frozen--head .plan-labor-block {
     grid-row: 2;
     align-items: flex-end;
+}
+
+.plan-frozen--head .plan-labor-toggle {
+    grid-row: 2;
+    align-items: center;
 }
 
 .plan-day {
@@ -888,6 +1141,8 @@ a.plan-missing-craftsman:hover {
     overflow: hidden;
     padding: 0 4px;
     pointer-events: none;
+    position: relative;
+    z-index: 2;
 }
 
 .bar-handle {
@@ -895,6 +1150,8 @@ a.plan-missing-craftsman:hover {
     flex-shrink: 0;
     cursor: ew-resize;
     background: rgba(0, 0, 0, 0.18);
+    position: relative;
+    z-index: 2;
 }
 
 .bar-handle-start {
@@ -961,6 +1218,27 @@ a.plan-missing-craftsman:hover {
     outline: 2px solid var(--color-nicon-danger);
     outline-offset: -1px;
     box-shadow: inset 3px 0 0 var(--color-nicon-danger);
+}
+
+.person-bar--over .bar-label {
+    font-weight: 650;
+}
+
+.person-bar-overrun {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        -45deg,
+        rgba(185, 28, 28, 0.62),
+        rgba(185, 28, 28, 0.62) 3px,
+        rgba(255, 255, 255, 0.18) 3px,
+        rgba(255, 255, 255, 0.18) 7px
+    );
+    box-shadow: inset 1px 0 0 rgba(185, 28, 28, 0.85);
 }
 
 .person-bar.is-focus {
@@ -1034,6 +1312,12 @@ a.plan-missing-craftsman:hover {
     letter-spacing: 0;
     font-size: 9px;
     font-weight: 650;
+}
+
+.sticky-head .plan-cell--labor-head {
+    font-size: 10px;
+    letter-spacing: 0;
+    text-transform: none;
 }
 
 .sticky-head .plan-days,
@@ -1624,20 +1908,20 @@ a.plan-missing-craftsman:hover {
 
 .work-group {
     border: 1px solid var(--color-nicon-line);
-    border-left: 6px solid var(--material-color, var(--work-accent, #a8a29e));
-    background: var(--work-bg, var(--color-nicon-sand));
+    border-left: 6px solid var(--material-color, var(--kind-accent, #a8a29e));
+    background: var(--work-bg, var(--kind-bg, var(--color-nicon-sand)));
 }
-.work-group[data-kind="ondergrond"] { --work-accent: #5b7c99; --work-bg: #e4edf5; }
+.work-group[data-kind="ondergrond"] { --kind-accent: #5b7c99; --kind-bg: #e4edf5; }
 .work-group[data-kind="linoleum"],
-.work-group[data-kind="vloer"] { --work-accent: #c4a06a; --work-bg: #f3e6cf; }
-.work-group[data-kind="pvc"] { --work-accent: #dc2626; --work-bg: #fecaca; }
-.work-group[data-kind="plinten"] { --work-accent: #65a30d; --work-bg: #d9f99d; }
-.work-group[data-kind="entreemat"] { --work-accent: #ca8a04; --work-bg: #fef08a; }
-.work-group[data-kind="coating"] { --work-accent: #7c3aed; --work-bg: #ede9fe; }
-.work-group[data-kind="gietvloer"] { --work-accent: #0f766e; --work-bg: #ccfbf1; }
-.work-group[data-kind="tapijt"] { --work-accent: #92400e; --work-bg: #fde68a; }
-.work-group[data-kind="vinyl"] { --work-accent: #db2777; --work-bg: #fce7f3; }
-.work-group[data-kind="overige"] { --work-accent: #ea580c; --work-bg: #ffedd5; }
+.work-group[data-kind="vloer"] { --kind-accent: #c4a06a; --kind-bg: #f3e6cf; }
+.work-group[data-kind="pvc"] { --kind-accent: #dc2626; --kind-bg: #fecaca; }
+.work-group[data-kind="plinten"] { --kind-accent: #65a30d; --kind-bg: #d9f99d; }
+.work-group[data-kind="entreemat"] { --kind-accent: #ca8a04; --kind-bg: #fef08a; }
+.work-group[data-kind="coating"] { --kind-accent: #7c3aed; --kind-bg: #ede9fe; }
+.work-group[data-kind="gietvloer"] { --kind-accent: #0f766e; --kind-bg: #ccfbf1; }
+.work-group[data-kind="tapijt"] { --kind-accent: #92400e; --kind-bg: #fde68a; }
+.work-group[data-kind="vinyl"] { --kind-accent: #db2777; --kind-bg: #fce7f3; }
+.work-group[data-kind="overige"] { --kind-accent: #ea580c; --kind-bg: #ffedd5; }
 
 .work-swatch {
     display: inline-block;
@@ -1666,19 +1950,19 @@ a.plan-missing-craftsman:hover {
     width: 0.55rem;
     height: 0.55rem;
     border-radius: 99px;
-    background: var(--work-accent, #a8a29e);
+    background: var(--work-accent, var(--kind-accent, #a8a29e));
 }
-.work-legend [data-kind="ondergrond"] { --work-accent: #5b7c99; }
+.work-legend [data-kind="ondergrond"] { --kind-accent: #5b7c99; }
 .work-legend [data-kind="linoleum"],
-.work-legend [data-kind="vloer"] { --work-accent: #c4a06a; }
-.work-legend [data-kind="pvc"] { --work-accent: #dc2626; }
-.work-legend [data-kind="plinten"] { --work-accent: #65a30d; }
-.work-legend [data-kind="entreemat"] { --work-accent: #ca8a04; }
-.work-legend [data-kind="coating"] { --work-accent: #7c3aed; }
-.work-legend [data-kind="gietvloer"] { --work-accent: #0f766e; }
-.work-legend [data-kind="tapijt"] { --work-accent: #92400e; }
-.work-legend [data-kind="vinyl"] { --work-accent: #db2777; }
-.work-legend [data-kind="overige"] { --work-accent: #ea580c; }
+.work-legend [data-kind="vloer"] { --kind-accent: #c4a06a; }
+.work-legend [data-kind="pvc"] { --kind-accent: #dc2626; }
+.work-legend [data-kind="plinten"] { --kind-accent: #65a30d; }
+.work-legend [data-kind="entreemat"] { --kind-accent: #ca8a04; }
+.work-legend [data-kind="coating"] { --kind-accent: #7c3aed; }
+.work-legend [data-kind="gietvloer"] { --kind-accent: #0f766e; }
+.work-legend [data-kind="tapijt"] { --kind-accent: #92400e; }
+.work-legend [data-kind="vinyl"] { --kind-accent: #db2777; }
+.work-legend [data-kind="overige"] { --kind-accent: #ea580c; }
 
 .work-group.is-partial {
     border-color: #fdba74;

@@ -2,6 +2,10 @@
 
 @section('title', 'Nieuw project · Nicon Planning')
 
+@push('scripts')
+    @vite(['resources/js/project-upload.js'])
+@endpush
+
 @section('content')
     <a href="{{ route('projects.index') }}" class="text-sm text-nicon-muted">← Projecten</a>
     <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
@@ -91,7 +95,7 @@
             @csrf
             <div class="flex min-h-0 grow flex-col">
                 <h2 class="text-xs uppercase tracking-wide text-nicon-muted">Projectbestanden</h2>
-                <p class="mt-1 text-sm text-nicon-muted">Vloerimport.</p>
+                <p class="mt-1 text-sm text-nicon-muted">Vloerimport. PDF-meetstaat én Excel-calculatie (.xlsx) kunnen samen.</p>
                 <label data-upload-dropzone class="mt-2 flex grow cursor-pointer flex-col items-center justify-center gap-2 border border-dashed border-nicon-line bg-nicon-sand/40 px-4 py-8 text-center">
                     <span class="text-sm font-medium">Sleep bestanden hierheen</span>
                     <span class="text-xs text-nicon-muted">Maximaal {{ $maxFileMegabytes }} MB per bestand</span>

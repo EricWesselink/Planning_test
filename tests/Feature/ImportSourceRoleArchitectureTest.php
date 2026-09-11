@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Enums\ImportSourceRole;
+use App\Services\CalculationExcelParser;
 use App\Services\Meetstaat\ImportDocumentClassifier;
 use App\Services\Meetstaat\ImportPreviewBuilder;
 use App\Services\Meetstaat\PdfTextExtractor;
+use App\Services\SpreadsheetReader;
 use Illuminate\Http\UploadedFile;
 use Tests\Support\RealDrawingFixtures;
 use Tests\Support\SimplePdf;
@@ -158,7 +160,11 @@ TXT;
 
     private function classifier(): ImportDocumentClassifier
     {
-        return new ImportDocumentClassifier(new PdfTextExtractor);
+        return new ImportDocumentClassifier(
+            new PdfTextExtractor,
+            new SpreadsheetReader,
+            new CalculationExcelParser,
+        );
     }
 
     private function assertDoesNotContainProjectSpecificRules(string $haystack): void

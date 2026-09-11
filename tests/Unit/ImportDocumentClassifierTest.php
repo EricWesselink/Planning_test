@@ -2,8 +2,10 @@
 
 namespace Tests\Unit;
 
+use App\Services\CalculationExcelParser;
 use App\Services\Meetstaat\ImportDocumentClassifier;
 use App\Services\Meetstaat\PdfTextExtractor;
+use App\Services\SpreadsheetReader;
 use Illuminate\Http\UploadedFile;
 use Tests\Support\SimplePdf;
 use Tests\TestCase;
@@ -30,11 +32,58 @@ class ImportDocumentClassifierTest extends TestCase
         $this->assertSame('high', $snijmaten['confidence']);
     }
 
-    public function test_marks_spreadsheets_without_a_hint_as_uncertain_meetstaat(): void
+    public function test_marks_spreadsheets_without_a_hint_as_uncertain_other(): void
     {
         $result = $this->classifier()->fromFilename('ruimtes.csv');
 
-        $this->assertSame('meetstaat', $result['type']);
+        $this->assertSame('overig', $result['type']);
+        $this->assertSame('low', $result['confidence']);
+        $this->assertNotSame('meetstaat', $result['type']);
+    }
+
+    public function test_recognizes_ericwesselink_xlsx_as_calculation_not_meetstaat(): void
+    {
+        $file = new UploadedFile(
+            base_path('tests/fixtures/11-ericwesselink.xlsx'),
+            '11-ericwesselink.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            null,
+            true,
+        );
+
+        $result = $this->classifier()->classify($file);
+
+        $this->assertSame('calculatie', $result['type']);
+        $this->assertSame('high', $result['confidence']);
+        $this->assertSame('Calculatie', $result['type_label']);
+        $this->assertNotSame('meetstaat', $result['type']);
+        $this->assertNotSame('overig', $result['type']);
+    }
+
+    public function test_calculation_content_wins_over_a_meetstaat_type_hint(): void
+    {
+        $file = new UploadedFile(
+            base_path('tests/fixtures/11-ericwesselink.xlsx'),
+            '11-ericwesselink.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            null,
+            true,
+        );
+
+        $result = $this->classifier()->classify($file, 'meetstaat');
+
+        $this->assertSame('calculatie', $result['type']);
+        $this->assertSame('high', $result['confidence']);
+    }
+
+    public function test_does_not_classify_spreadsheet_without_calculation_columns_as_calculation(): void
+    {
+        $file = $this->spreadsheetWithoutCalculationColumns();
+
+        $result = $this->classifier()->classify($file);
+
+        $this->assertNotSame('calculatie', $result['type']);
+        $this->assertSame('overig', $result['type']);
         $this->assertSame('low', $result['confidence']);
     }
 
@@ -81,6 +130,43 @@ class ImportDocumentClassifierTest extends TestCase
 
     private function classifier(): ImportDocumentClassifier
     {
-        return new ImportDocumentClassifier(new PdfTextExtractor);
+        return new ImportDocumentClassifier(
+            new PdfTextExtractor,
+            new SpreadsheetReader,
+            new CalculationExcelParser,
+        );
+    }
+
+    private function spreadsheetWithoutCalculationColumns(): UploadedFile
+    {
+        $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-generic-'.uniqid('', true).'.xlsx';
+        $zip = new \ZipArchive;
+        $this->assertSame(true, $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('xl/worksheets/sheet1.xml', <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>Omschrijving</t></is></c>
+      <c r="B1" t="inlineStr"><is><t>Aantal</t></is></c>
+      <c r="C1" t="inlineStr"><is><t>EH</t></is></c>
+    </row>
+    <row r="2">
+      <c r="A2" t="inlineStr"><is><t>Screenwit</t></is></c>
+      <c r="B2"><v>12</v></c>
+      <c r="C2" t="inlineStr"><is><t>st</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>
+XML);
+        $zip->close();
+
+        return new UploadedFile(
+            $path,
+            'opdrachtlijst.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            null,
+            true,
+        );
     }
 }

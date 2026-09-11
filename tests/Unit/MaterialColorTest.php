@@ -20,6 +20,7 @@ class MaterialColorTest extends TestCase
         $this->assertSame('#c9c985', MaterialColor::resolve(null, 'dark warm grey'));
         $this->assertSame('#5a90ba', MaterialColor::resolve(null, 'aqua blue'));
         $this->assertSame('#c4a484', MaterialColor::resolve(null, 'English Oak Classics'));
+        $this->assertSame('#c4a484', MaterialColor::resolve(null, 'IVC Ultimo Chapman Oak, 24245, PVC - LVT'));
     }
 
     public function test_unknown_materials_use_neutral_gray(): void
@@ -33,5 +34,12 @@ class MaterialColorTest extends TestCase
     {
         $soft = MaterialColor::softBackground('#8d8676', 0.14);
         $this->assertStringStartsWith('rgba(141, 134, 118,', $soft);
+    }
+
+    public function test_hexes_match_within_tolerance(): void
+    {
+        $this->assertTrue(MaterialColor::hexesMatch('#db4ddf', '#db4ddf'));
+        $this->assertTrue(MaterialColor::hexesMatch('#db4ddf', '#d94cdc'));
+        $this->assertFalse(MaterialColor::hexesMatch('#db4ddf', '#c4a484'));
     }
 }

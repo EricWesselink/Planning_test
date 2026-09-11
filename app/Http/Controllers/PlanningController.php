@@ -38,6 +38,7 @@ class PlanningController extends Controller
                 ->orderBy('name')
                 ->get(),
             'canManagePlanning' => $request->user()?->canManagePlanning() ?? false,
+            'canViewLaborCosts' => $request->user()?->canViewLaborCosts() ?? false,
         ]));
     }
 
@@ -50,6 +51,7 @@ class PlanningController extends Controller
         return view('planning.pdf', array_merge($data, [
             'clientProject' => $clientProject,
             'showNames' => $request->boolean('intern'),
+            'canViewLaborCosts' => ($request->user()?->canViewLaborCosts() ?? false) && $request->boolean('intern'),
         ]));
     }
 

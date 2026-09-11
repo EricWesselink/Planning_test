@@ -51,6 +51,11 @@ enum UserRole: string
         return $this->is(self::Admin, self::Projectleider, self::Planner);
     }
 
+    public function canViewLaborCosts(): bool
+    {
+        return $this->canManagePlanning();
+    }
+
     public function canManageWorkers(): bool
     {
         return $this->is(self::Admin, self::Planner);

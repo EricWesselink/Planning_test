@@ -157,6 +157,11 @@ class User extends Authenticatable
         return $this->role?->canManagePlanning() ?? false;
     }
 
+    public function canViewLaborCosts(): bool
+    {
+        return $this->role?->canViewLaborCosts() ?? false;
+    }
+
     public function canManageWorkers(): bool
     {
         return $this->role?->canManageWorkers() ?? false;

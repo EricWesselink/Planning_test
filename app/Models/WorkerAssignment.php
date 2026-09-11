@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Collection;
 
 #[Fillable([
     'worker_id', 'project_id', 'work_item_id', 'team_id',
@@ -51,6 +52,22 @@ class WorkerAssignment extends Model
         return $this->belongsTo(WorkItem::class);
     }
 
+    public function resolvedWorkItemId(?Collection $workOrders = null): ?int
+    {
+        if ($this->work_item_id) {
+            return (int) $this->work_item_id;
+        }
+
+        $orders = $workOrders ?? ($this->relationLoaded('project') ? $this->project->workOrders : null);
+        if ($orders === null || $orders->isEmpty()) {
+            return null;
+        }
+
+        $id = $orders->firstWhere('worker_id', $this->worker_id)?->work_item_id;
+
+        return $id ? (int) $id : null;
+    }
+
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
@@ -88,6 +105,22 @@ class WorkerAssignment extends Model
             $this->startTimeValue(),
             $this->endTimeValue(),
         );
+    }
+
+    public function plannedPersonHours(): float
+    {
+        if ($this->relationLoaded('crewMembers') && $this->crewMembers->isNotEmpty()) {
+            return (float) $this->crewMembers->sum(function (CrewMember $member): float {
+                return PlanningHours::totalHours(
+                    $this->start_date,
+                    $this->end_date,
+                    PlanningHours::normalizeTime($member->pivot?->start_time, $this->startTimeValue()),
+                    PlanningHours::normalizeTime($member->pivot?->end_time, $this->endTimeValue()),
+                );
+            });
+        }
+
+        return $this->plannedHoursValue() * $this->peopleCount();
     }
 
     /**

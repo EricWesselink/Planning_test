@@ -133,6 +133,62 @@ class DrawingColorMatcherTest extends TestCase
         $this->assertNull(collect($result['rooms'])->first(fn (array $room) => abs((float) $room['square_meters'] - 685.47) < 0.01));
     }
 
+    public function test_room_fill_skips_plint_legend_color_when_a_floor_fill_is_present(): void
+    {
+        $oak = new RgbColor(196, 164, 132);
+        $plint = new RgbColor(219, 77, 223);
+        $result = (new DrawingColorMatcher(new PdfPageGeometry))->roomsFromPages([[
+            'page' => 1,
+            'width' => 595,
+            'height' => 842,
+            'texts' => [
+                ['text' => 'tekenlokaal', 'x' => 80, 'y' => 420, 'page' => 1],
+                ['text' => '16.33 m2', 'x' => 80, 'y' => 440, 'page' => 1],
+            ],
+            'fills' => [
+                [
+                    'x' => 40,
+                    'y' => 400,
+                    'width' => 90,
+                    'height' => 60,
+                    'color' => $oak,
+                    'area' => 5400,
+                    'page' => 1,
+                ],
+                [
+                    'x' => 50,
+                    'y' => 436,
+                    'width' => 80,
+                    'height' => 10,
+                    'color' => $plint,
+                    'area' => 800,
+                    'page' => 1,
+                ],
+            ],
+        ]], [
+            [
+                'material' => 'IVC Ultimo Chapman Oak, 24245, PVC',
+                'color' => '#c4a484',
+                'declared_total' => 32.65,
+                'unit' => 'm2',
+                'page' => 1,
+                'floor' => 'verdieping 1',
+            ],
+            [
+                'material' => 'Plint, wit, 1-linten',
+                'color' => '#db4ddf',
+                'declared_total' => 38.5,
+                'unit' => 'm1',
+                'page' => 1,
+                'floor' => 'verdieping 1',
+            ],
+        ]);
+
+        $this->assertCount(1, $result['rooms']);
+        $this->assertSame('tekenlokaal', $result['rooms'][0]['room_name']);
+        $this->assertSame('#c4a484', $result['rooms'][0]['fill_color']);
+    }
+
     public function test_keeps_a_square_meter_anchor_without_a_fill_as_debug_only(): void
     {
         $result = (new DrawingColorMatcher(new PdfPageGeometry))->roomsFromPages([[

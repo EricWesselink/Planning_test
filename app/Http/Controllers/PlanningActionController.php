@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\Team;
 use App\Models\Worker;
@@ -14,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class PlanningActionController extends Controller
@@ -231,6 +233,7 @@ class PlanningActionController extends Controller
         Gate::authorize('view', $assignment->project);
         $data = $request->validate([
             'worker_id' => ['sometimes', 'integer', 'exists:workers,id'],
+            'project_id' => ['sometimes', 'nullable', 'integer', 'exists:projects,id'],
             'work_item_id' => ['sometimes', 'nullable', 'integer', 'exists:work_items,id'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
@@ -249,31 +252,38 @@ class PlanningActionController extends Controller
         $start = Carbon::parse($data['start_date']);
         $end = Carbon::parse($data['end_date']);
         $workerId = (int) ($data['worker_id'] ?? $assignment->worker_id);
-        $assignment->loadMissing('crewMembers');
+        $assignment->loadMissing(['crewMembers', 'workItem.workActivity', 'project']);
 
         $worker = Worker::query()->with(['crewPeople', 'availabilities'])->findOrFail($workerId);
+        $originalCrewIds = $assignment->crewMembers
+            ->map(fn (CrewMember $member): int => (int) $member->id)
+            ->values()
+            ->all();
         $crewIds = array_key_exists('crew_member_ids', $data)
             ? $this->crewIdsForWorker($worker, $data['crew_member_ids'] ?? [])
-            : $assignment->crewMembers->modelKeys();
+            : $originalCrewIds;
         if ($crewIds === null) {
             return response()->json(['message' => 'Deze personen horen niet bij dit team.'], 422);
         }
 
-        $targetItem = $assignment->workItem;
-        if (array_key_exists('work_item_id', $data) && $data['work_item_id']) {
-            $targetItem = WorkItem::query()
-                ->with('workActivity')
-                ->where('project_id', $assignment->project_id)
-                ->findOrFail($data['work_item_id']);
-        } else {
-            $assignment->loadMissing('workItem.workActivity');
-            $targetItem = $assignment->workItem;
-        }
+        $targetItem = $this->targetWorkItem($assignment, $data);
         if ($targetItem) {
+            Gate::authorize('view', $targetItem->project);
             $message = $fit->skillRejection($worker, $targetItem, $crewIds);
             if ($message) {
                 return response()->json(['message' => $message], 422);
             }
+        }
+
+        $isMove = $targetItem !== null && (
+            (int) $targetItem->id !== (int) $assignment->work_item_id
+            || (int) $targetItem->project_id !== (int) $assignment->project_id
+        );
+        $stayingIds = ($isMove && array_key_exists('crew_member_ids', $data))
+            ? array_values(array_diff($originalCrewIds, $crewIds))
+            : [];
+        if ($isMove && array_key_exists('crew_member_ids', $data) && $crewIds === [] && $originalCrewIds !== []) {
+            return response()->json(['message' => 'Vink aan wie er naar dit werk gaat.'], 422);
         }
 
         $away = $fit->awayRejection($worker, $start, $end);
@@ -333,40 +343,83 @@ class PlanningActionController extends Controller
             }
         }
 
-        if (array_key_exists('work_item_id', $data) && $data['work_item_id']) {
-            WorkItem::query()
-                ->where('project_id', $assignment->project_id)
-                ->findOrFail($data['work_item_id']);
-            $assignment->work_item_id = $data['work_item_id'];
-        }
+        $staySnapshot = $stayingIds === [] ? null : [
+            'worker_id' => (int) $assignment->worker_id,
+            'project_id' => (int) $assignment->project_id,
+            'work_item_id' => $assignment->work_item_id,
+            'team_id' => $assignment->team_id,
+            'start' => $assignment->start_date->copy(),
+            'end' => $assignment->end_date->copy(),
+            'start_time' => $assignment->startTimeValue(),
+            'end_time' => $assignment->endTimeValue(),
+            'hours_by_id' => $this->crewScheduleSnapshot($assignment, $stayingIds),
+        ];
 
         $originalWorkerId = (int) $assignment->worker_id;
-        $assignment->worker_id = $workerId;
-        $assignment->people_count = $first['people_count'];
-        $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time']);
-        $assignment->save();
-        if (array_key_exists('crew_member_ids', $data) || $first['crew_ids'] !== []) {
-            $assignment->syncPresentCrew($first['crew_ids']);
-        } elseif ($originalWorkerId !== $workerId) {
-            $assignment->crewMembers()->sync([]);
-        } else {
-            $assignment->syncPresentCrew($assignment->crewMembers->modelKeys());
-        }
+        $targetProjectId = $targetItem ? (int) $targetItem->project_id : (int) $assignment->project_id;
+        $targetWorkItemId = $targetItem?->id ?? $assignment->work_item_id;
 
-        foreach ($groups as $group) {
-            $this->createScheduledAssignment(
-                $workerId,
-                $assignment->project_id,
-                $assignment->work_item_id,
-                $assignment->team_id,
-                $start,
-                $end,
-                $group['start_time'],
-                $group['end_time'],
-                $group['people_count'],
-                $group['crew_ids'],
-            );
-        }
+        DB::transaction(function () use (
+            $assignment,
+            $data,
+            $first,
+            $groups,
+            $start,
+            $end,
+            $workerId,
+            $originalWorkerId,
+            $targetProjectId,
+            $targetWorkItemId,
+            $staySnapshot,
+            $stayingIds,
+        ): void {
+            $assignment->project_id = $targetProjectId;
+            $assignment->work_item_id = $targetWorkItemId;
+            $assignment->worker_id = $workerId;
+            $assignment->people_count = $first['people_count'];
+            $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time']);
+            $assignment->save();
+            if (array_key_exists('crew_member_ids', $data) || $first['crew_ids'] !== [] || $stayingIds !== []) {
+                $assignment->syncPresentCrew($first['crew_ids']);
+            } elseif ($originalWorkerId !== $workerId) {
+                $assignment->crewMembers()->sync([]);
+            } else {
+                $assignment->syncPresentCrew($assignment->crewMembers->modelKeys());
+            }
+
+            foreach ($groups as $group) {
+                $this->createScheduledAssignment(
+                    $workerId,
+                    $assignment->project_id,
+                    $assignment->work_item_id,
+                    $assignment->team_id,
+                    $start,
+                    $end,
+                    $group['start_time'],
+                    $group['end_time'],
+                    $group['people_count'],
+                    $group['crew_ids'],
+                );
+            }
+
+            if ($staySnapshot !== null) {
+                $staying = $this->createScheduledAssignment(
+                    $staySnapshot['worker_id'],
+                    $staySnapshot['project_id'],
+                    $staySnapshot['work_item_id'],
+                    $staySnapshot['team_id'],
+                    $staySnapshot['start'],
+                    $staySnapshot['end'],
+                    $staySnapshot['start_time'],
+                    $staySnapshot['end_time'],
+                    count($stayingIds),
+                    $stayingIds,
+                );
+                if ($staySnapshot['hours_by_id'] !== []) {
+                    $staying->syncPresentCrew($stayingIds, $staySnapshot['hours_by_id']);
+                }
+            }
+        });
 
         return response()->json(['ok' => true]);
     }
@@ -412,6 +465,46 @@ class PlanningActionController extends Controller
         $assignment->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function targetWorkItem(WorkerAssignment $assignment, array $data): ?WorkItem
+    {
+        if (! array_key_exists('work_item_id', $data) || ! $data['work_item_id']) {
+            return $assignment->workItem;
+        }
+
+        $query = WorkItem::query()->with(['project', 'workActivity']);
+        if (! empty($data['project_id'])) {
+            $query->where('project_id', $data['project_id']);
+        }
+
+        return $query->findOrFail($data['work_item_id']);
+    }
+
+    /**
+     * @param  list<int>  $crewIds
+     * @return array<int, array{start_time: string, end_time: string, planned_hours: float}>
+     */
+    private function crewScheduleSnapshot(WorkerAssignment $assignment, array $crewIds): array
+    {
+        $wanted = array_flip($crewIds);
+        $hours = [];
+        foreach ($assignment->crewMembers as $member) {
+            $id = (int) $member->id;
+            if (! isset($wanted[$id])) {
+                continue;
+            }
+            $hours[$id] = [
+                'start_time' => PlanningHours::normalizeTime($member->pivot?->start_time, $assignment->startTimeValue()),
+                'end_time' => PlanningHours::normalizeTime($member->pivot?->end_time, $assignment->endTimeValue()),
+                'planned_hours' => (float) ($member->pivot?->planned_hours ?: $assignment->plannedHoursValue()),
+            ];
+        }
+
+        return $hours;
     }
 
     private function workersForRequest(array $data): Collection

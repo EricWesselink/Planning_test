@@ -68,6 +68,11 @@
 
         @include('projects.partials.planning-weeks', ['idPrefix' => 'winkel-'])
 
+        <div>
+            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Basis uurtarief (€)</label>
+            <input id="basis_uurtarief" name="basis_uurtarief" value="{{ old('basis_uurtarief') }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="45,00">
+        </div>
+
         <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Winkelwerk aanmaken</button>
     </form>
 @endsection

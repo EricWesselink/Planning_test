@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Inloggen · Nicon Planning</title>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @vite(['resources/css/app.css'])
 </head>
 <body class="min-h-screen bg-nicon-ink text-white flex items-center justify-center p-6">
     <div class="w-full max-w-md bg-white text-nicon-ink p-8">

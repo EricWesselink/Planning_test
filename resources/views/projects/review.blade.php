@@ -416,6 +416,8 @@
             </x-review-fold>
         @endif
 
+        @include('projects.partials.review-calculation-labor')
+
         @if ($hasMaterialFold)
             <x-review-fold
                 id="materiallist"

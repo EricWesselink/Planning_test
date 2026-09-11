@@ -29,6 +29,8 @@ class ProjectIntakeService
         private MeetstaatParser $parser,
         private MaterialIdentity $materialIdentity,
         private ScreenExcelParser $screenExcel,
+        private CalculationExcelParser $calculationExcel,
+        private CalculationImportService $calculationImport,
     ) {}
 
     /**
@@ -112,7 +114,7 @@ class ProjectIntakeService
         $extension = strtolower($file->getClientOriginalExtension());
         $path = $file->getRealPath();
 
-        if (in_array($extension, ['csv', 'txt', 'xlsx', 'xlsm'], true) && is_string($path) && $path !== '') {
+        if (in_array($extension, ['csv', 'txt', 'xlsx', 'xlsm', 'xls'], true) && is_string($path) && $path !== '') {
             try {
                 $rows = $this->reader->rows($path, $file->getClientOriginalName());
             } catch (\Throwable $e) {
@@ -129,6 +131,10 @@ class ProjectIntakeService
                 ];
             }
 
+            if ($this->calculationExcel->looksLike($rows)) {
+                return $this->calculationImport->importFile($project, $file, $user);
+            }
+
             if ($this->screenExcel->looksLike($rows)) {
                 return $this->importScreenExcel($project, $file, $user, $rows);
             }
@@ -136,7 +142,7 @@ class ProjectIntakeService
 
         $document = $this->storeDocument($project, $file, 'meetstaat', $user);
 
-        if (! in_array($extension, ['csv', 'txt', 'xlsx', 'xlsm'], true)) {
+        if (! in_array($extension, ['csv', 'txt', 'xlsx', 'xlsm', 'xls'], true)) {
             $document->parse_status = 'skipped';
             $document->save();
 
@@ -725,7 +731,9 @@ class ProjectIntakeService
                 );
             }
 
-            return $project->load('documents');
+            $this->calculationImport->persist($project->load(['documents', 'workItems']), $preview);
+
+            return $project->load(['documents', 'calculationLines', 'workItems']);
         });
     }
 
@@ -899,38 +907,57 @@ class ProjectIntakeService
     private function workDisplayColor(array $work, array $preview): string
     {
         $name = (string) ($work['name'] ?? '');
-        $needle = mb_strtolower(trim($name));
-
-        foreach ($preview['areas'] ?? [] as $area) {
-            $fill = MaterialColor::normalizeHex($area['fill_color'] ?? null);
-            if ($fill === null) {
-                continue;
-            }
-
-            foreach ($area['tasks'] ?? [] as $task) {
-                if (mb_strtolower(trim((string) ($task['work_name'] ?? ''))) === $needle) {
-                    return MaterialColor::resolve($fill, $name);
-                }
-            }
-
-            $legend = mb_strtolower(trim((string) ($area['legend_material'] ?? '')));
-            if ($legend !== '' && ($needle === $legend || str_contains($needle, $legend) || str_contains($legend, $needle))) {
-                return MaterialColor::resolve($fill, $name);
+        $isPlint = str_contains(mb_strtolower($name), 'plint');
+        $plintHexes = [];
+        foreach ($preview['legend'] ?? [] as $entry) {
+            $material = trim((string) ($entry['material'] ?? $entry['name'] ?? ''));
+            $color = MaterialColor::normalizeHex($entry['color'] ?? $entry['fill_color'] ?? null);
+            if ($color !== null && str_contains(mb_strtolower($material), 'plint')) {
+                $plintHexes[] = $color;
             }
         }
 
         foreach ($preview['legend'] ?? [] as $entry) {
-            $material = mb_strtolower(trim((string) ($entry['material'] ?? $entry['name'] ?? '')));
+            $material = trim((string) ($entry['material'] ?? $entry['name'] ?? ''));
             $color = MaterialColor::normalizeHex($entry['color'] ?? $entry['fill_color'] ?? null);
-            if ($color === null || $material === '') {
+            if ($color === null || $material === '' || ! $this->materialIdentity->sharesIdentity($name, $material)) {
                 continue;
             }
-            if ($needle === $material || str_contains($needle, $material) || str_contains($material, $needle)) {
-                return MaterialColor::resolve($color, $name);
+            if (! $isPlint && $this->hexIsPlintColor($color, $plintHexes)) {
+                continue;
+            }
+
+            return MaterialColor::resolve($color, $name);
+        }
+
+        foreach ($preview['areas'] ?? [] as $area) {
+            $fill = MaterialColor::normalizeHex($area['fill_color'] ?? null);
+            if ($fill === null || (! $isPlint && $this->hexIsPlintColor($fill, $plintHexes))) {
+                continue;
+            }
+
+            foreach ($area['tasks'] ?? [] as $task) {
+                if ($this->materialIdentity->sharesIdentity($name, (string) ($task['work_name'] ?? ''))) {
+                    return MaterialColor::resolve($fill, $name);
+                }
             }
         }
 
         return MaterialColor::resolve(null, $name);
+    }
+
+    /**
+     * @param  list<string>  $plintHexes
+     */
+    private function hexIsPlintColor(string $hex, array $plintHexes): bool
+    {
+        foreach ($plintHexes as $plintHex) {
+            if (MaterialColor::hexesMatch($hex, $plintHex)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

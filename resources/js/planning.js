@@ -12,6 +12,7 @@ import {
     timeFromFraction,
     timesFromHours,
 } from './planning-hours';
+import { bindLaborFold } from './planning-labor-fold';
 
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 const board = document.getElementById('plan-board');
@@ -27,6 +28,8 @@ if (board) {
     const menWrap = document.getElementById('plan-men-wrap');
     const crewBox = document.getElementById('plan-crew');
     const crewList = document.getElementById('plan-crew-list');
+    const crewHeading = document.getElementById('plan-crew-heading');
+    const crewHint = document.getElementById('plan-crew-hint');
     const hoursSelect = document.getElementById('plan-hours');
     const slotWrap = document.getElementById('plan-slot-wrap');
     const slotList = document.getElementById('plan-slot-list');
@@ -109,25 +112,52 @@ if (board) {
     }
 
     function fillWorkItems(projectId, selectedId) {
-        const items = workItems[projectId] || workItems[String(projectId)] || [];
-        const grouped = {};
-        items.forEach((item) => {
-            const key = item.group || '';
-            grouped[key] = grouped[key] || [];
-            grouped[key].push(item);
-        });
-        workSelect.innerHTML = Object.entries(grouped).map(([label, rows]) => {
-            const options = rows.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
-            if (!label || rows.length === 1) {
-                return options;
+        const edit = Boolean(form.dataset.assignmentId);
+        const sources = edit
+            ? Object.entries(workItems)
+            : [[String(projectId), workItems[projectId] || workItems[String(projectId)] || []]];
+        workSelect.innerHTML = sources.map(([pid, items]) => {
+            const rows = Array.isArray(items) ? items : [];
+            if (rows.length === 0) {
+                return '';
             }
-            return `<optgroup label="${label}">${options}</optgroup>`;
-        }).join('');
-        if (!items.length) {
-            workSelect.innerHTML = '<option value="">Geen werkzaamheden</option>';
-        }
+            const optionsFor = (groupRows) => groupRows.map((item) => {
+                const projectKey = item.project_id || pid;
+                const workLabel = item.name || item.group || 'Werk';
+                const label = edit && item.project
+                    ? `${item.project} — ${workLabel}`
+                    : workLabel;
+                return `<option value="${item.id}" data-project-id="${escapeHtml(String(projectKey))}">${escapeHtml(label)}</option>`;
+            }).join('');
+            if (edit) {
+                const projectLabel = rows[0]?.project || `Project ${pid}`;
+                return `<optgroup label="${escapeHtml(projectLabel)}">${optionsFor(rows)}</optgroup>`;
+            }
+            const grouped = {};
+            rows.forEach((item) => {
+                const key = item.group || '';
+                grouped[key] = grouped[key] || [];
+                grouped[key].push(item);
+            });
+            return Object.entries(grouped).map(([label, groupRows]) => {
+                const options = optionsFor(groupRows);
+                if (!label || groupRows.length === 1) {
+                    return options;
+                }
+                return `<optgroup label="${escapeHtml(label)}">${options}</optgroup>`;
+            }).join('');
+        }).join('') || '<option value="">Geen werkzaamheden</option>';
         if (selectedId) {
             workSelect.value = String(selectedId);
+        }
+        syncProjectFromWork();
+    }
+
+    function syncProjectFromWork() {
+        const option = workSelect.selectedOptions[0];
+        const projectId = option?.dataset.projectId;
+        if (projectId) {
+            projectInput.value = projectId;
         }
     }
 
@@ -394,6 +424,10 @@ if (board) {
         form.dataset.assignmentId = '';
         titleEl.textContent = 'Iemand inplannen';
         deleteBtn.classList.add('hidden');
+        if (crewHeading) {
+            crewHeading.textContent = 'Wie gaat er naartoe';
+        }
+        crewHint?.classList.add('hidden');
         whoSelect.value = '';
         whoSelect.disabled = false;
         projectInput.value = projectId;
@@ -418,6 +452,10 @@ if (board) {
         form.dataset.assignmentId = bar.dataset.shiftId;
         titleEl.textContent = 'Inzet aanpassen';
         deleteBtn.classList.remove('hidden');
+        if (crewHeading) {
+            crewHeading.textContent = 'Wie gaat mee naar het gekozen werk';
+        }
+        crewHint?.classList.remove('hidden');
         whoSelect.disabled = false;
         whoSelect.querySelectorAll('option[value^="team:"]').forEach((option) => {
             option.hidden = true;
@@ -695,7 +733,10 @@ if (board) {
     }
 
     whoSelect.addEventListener('change', syncMenFromWho);
-    workSelect.addEventListener('change', refreshCandidates);
+    workSelect.addEventListener('change', () => {
+        syncProjectFromWork();
+        refreshCandidates();
+    });
     startInput.addEventListener('change', refreshCandidates);
     endInput.addEventListener('change', refreshCandidates);
     hoursSelect?.addEventListener('change', () => {
@@ -719,7 +760,9 @@ if (board) {
         const crewIds = selectedCrewIds();
         const people = workerCrew(id);
         if (people.length >= 2 && crewIds.length === 0) {
-            window.alert('Vink aan wie er naar dit project gaat.');
+            window.alert(assignmentId
+                ? 'Vink aan wie er naar dit werk gaat.'
+                : 'Vink aan wie er naar dit project gaat.');
             return;
         }
         const times = selectedTimes();
@@ -800,4 +843,6 @@ if (board) {
             focusConflictBars(button.dataset.focusWorker);
         });
     });
+
+    bindLaborFold(board);
 }

@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Storage;
     'project_number', 'customer_id', 'name', 'address', 'postal_code', 'city',
     'contact_name', 'contact_phone', 'contact_email', 'supervisor_user_id',
     'planned_start_date', 'planned_end_date', 'actual_start_date', 'actual_end_date',
-    'status', 'kind', 'notes', 'work_description', 'archived_at',
+    'status', 'kind', 'notes', 'work_description', 'basis_uurtarief', 'archived_at',
 ])]
 class Project extends Model
 {
@@ -39,6 +39,7 @@ class Project extends Model
             'planned_end_date' => 'date',
             'actual_start_date' => 'date',
             'actual_end_date' => 'date',
+            'basis_uurtarief' => 'decimal:2',
             'archived_at' => 'datetime',
         ];
     }
@@ -189,6 +190,11 @@ class Project extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(ProjectDocument::class);
+    }
+
+    public function calculationLines(): HasMany
+    {
+        return $this->hasMany(ProjectCalculationLine::class)->orderBy('row_number')->orderBy('id');
     }
 
     public function snags(): HasMany

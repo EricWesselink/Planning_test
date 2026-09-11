@@ -98,6 +98,7 @@ class ShopProjectController extends Controller
     private function validated(Request $request, ?Project $project = null): array
     {
         $this->normalizeQuantities($request);
+        $this->normalizeHourlyRate($request);
         $maxKb = (int) config('filesystems.project_file_max_kilobytes');
         $allowedIds = $this->allowedActivityIds($project);
         $shopUnits = array_map(fn (WorkUnit $unit): string => $unit->value, WorkUnit::shopCases());
@@ -117,6 +118,7 @@ class ShopProjectController extends Controller
             'activity_units.*' => ['nullable', Rule::in($shopUnits)],
             'attachments' => ['nullable', 'array', 'max:20'],
             'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,pdf', 'extensions:jpg,jpeg,png,webp,gif,pdf'],
+            'basis_uurtarief' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
             ...PlanningWeek::rules(),
         ], $this->messages());
         $validator->after(fn ($weekValidator) => PlanningWeek::validateOrder(
@@ -156,6 +158,18 @@ class ShopProjectController extends Controller
         ]);
     }
 
+    private function normalizeHourlyRate(Request $request): void
+    {
+        if (! $request->exists('basis_uurtarief')) {
+            return;
+        }
+
+        $value = Format::decimalInput($request->input('basis_uurtarief'));
+        $request->merge([
+            'basis_uurtarief' => $value === '' ? null : $value,
+        ]);
+    }
+
     /**
      * @return array<string, list<string>>
      */
@@ -181,6 +195,8 @@ class ShopProjectController extends Controller
             'work_activity_ids.*.exists' => 'Deze werkzaamheid is niet beschikbaar.',
             'activity_quantities.*.numeric' => 'Vul een geldig aantal in.',
             'activity_units.*.in' => 'Kies m² of stuks.',
+            'basis_uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
+            'basis_uurtarief.numeric' => 'Vul een geldig uurtarief in.',
             'attachments.required' => 'Kies minstens één bestand.',
             'attachments.*.mimes' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',

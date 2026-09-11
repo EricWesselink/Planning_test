@@ -55,6 +55,7 @@ Homestead.yaml
 !/storage/app/public/.gitignore
 /storage/app/private/*
 !/storage/app/private/.gitignore
+/storage/app/import-examples/
 *.tmp
 *.temp
 *.bak

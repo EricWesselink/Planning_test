@@ -78,11 +78,197 @@ class ProjectBoardMaterialColorTest extends TestCase
         $this->assertStringContainsString('mergeAreaFromServer', $js);
         $this->assertStringContainsString('Positie op tekening niet bekend', $js);
         $this->assertStringContainsString('hasReliableRoomPosition', $js);
+        $this->assertStringContainsString('paintNameOverlay', $js);
+        $this->assertStringContainsString('area.material_color', $js);
         $this->assertStringContainsString('[room-jump]', $js);
         $this->assertStringNotContainsString('areaForLabelHit(item)', $js);
         $this->assertStringNotContainsString('.room-select-fill', $css);
         $this->assertStringNotContainsString('.room-label.is-selected', $css);
         $this->assertSame(MaterialColor::UNKNOWN, MaterialColor::resolve(null, '???'));
+    }
+
+    public function test_flooring_card_does_not_use_the_plint_legend_color(): void
+    {
+        Storage::fake('local');
+        [$user, $project, $area] = $this->makeBoardProject();
+        $plint = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plinten wit',
+            'display_color' => '#db4ddf',
+            'unit' => 'm1',
+            'ordered_quantity' => 18,
+            'status' => 'gepland',
+            'sort_order' => 2,
+        ]);
+        $oak = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'IVC Ultimo Chapman Oak, 24245, PVC - LVT',
+            'display_color' => '#db4ddf',
+            'unit' => 'm2',
+            'ordered_quantity' => 16.33,
+            'status' => 'gepland',
+            'sort_order' => 3,
+        ]);
+        $area->forceFill(['fill_color' => '#db4ddf'])->save();
+        $area->tasks()->delete();
+        AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $oak->id,
+            'ordered_quantity' => 16.33,
+            'unit' => 'm2',
+            'status' => AreaStatus::NietGestart,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $plint->id,
+            'ordered_quantity' => 18,
+            'unit' => 'm1',
+            'status' => AreaStatus::NietGestart,
+        ]);
+
+        $detail = app(ProjectBoardService::class)->areaDetail($area->fresh(['tasks.workItem', 'markers', 'floor', 'project.documents']));
+        $vloer = collect($detail['groups'])->first(
+            fn (array $group) => str_contains(mb_strtolower($group['label'] ?? ''), 'chapman')
+        );
+        $plintGroup = collect($detail['groups'])->first(
+            fn (array $group) => str_contains(mb_strtolower($group['label'] ?? ''), 'plint')
+        );
+
+        $this->assertNotNull($vloer);
+        $this->assertSame('#c4a484', $vloer['display_color']);
+        $this->assertNotNull($plintGroup);
+        $this->assertSame('#db4ddf', $plintGroup['display_color']);
+        $this->assertSame('#c4a484', $area->fresh(['tasks.workItem', 'project.workItems'])->materialColor());
+    }
+
+    public function test_flooring_stays_distinct_from_plint_and_carpet_legend_colors(): void
+    {
+        Storage::fake('local');
+        [$user, $project, $oakRoom] = $this->makeBoardProject();
+        $floor = $oakRoom->floor;
+
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plint, wit, Plinten 3267.00 cm',
+            'display_color' => '#db4ddf',
+            'unit' => 'm1',
+            'ordered_quantity' => 32.67,
+            'status' => 'gepland',
+            'sort_order' => 4,
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plint, wit, Plinten 11438.60 cm',
+            'display_color' => '#db4ddf',
+            'unit' => 'm1',
+            'ordered_quantity' => 114.38,
+            'status' => 'gepland',
+            'sort_order' => 5,
+        ]);
+        $stolenPlint = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plinten wit',
+            'display_color' => '#5f72f5',
+            'unit' => 'm1',
+            'ordered_quantity' => 18,
+            'status' => 'gepland',
+            'sort_order' => 6,
+        ]);
+        $oak = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'IVC Ultimo Chapman Oak, 24245, PVC - LVT',
+            'display_color' => '#db4ddf',
+            'unit' => 'm2',
+            'ordered_quantity' => 16.33,
+            'status' => 'gepland',
+            'sort_order' => 7,
+        ]);
+        $desso = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Desso Airmaster Atmos B747 9092, Tapijttegels',
+            'display_color' => '#5f72f5',
+            'unit' => 'm2',
+            'ordered_quantity' => 40,
+            'status' => 'gepland',
+            'sort_order' => 8,
+        ]);
+        $taraflex = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Taraflex multi-use, 6350 light cherry 6,3 mm, n.t.b., PVC / Vinyl',
+            'display_color' => '#ee5086',
+            'unit' => 'm2',
+            'ordered_quantity' => 110.37,
+            'status' => 'gepland',
+            'sort_order' => 9,
+        ]);
+
+        $oakRoom->forceFill(['fill_color' => '#d75fd1', 'name' => 'cabine 3'])->save();
+        $oakRoom->tasks()->delete();
+        AreaTask::query()->create([
+            'project_area_id' => $oakRoom->id,
+            'work_item_id' => $oak->id,
+            'ordered_quantity' => 16.33,
+            'unit' => 'm2',
+            'status' => AreaStatus::NietGestart,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $oakRoom->id,
+            'work_item_id' => $stolenPlint->id,
+            'ordered_quantity' => 18,
+            'unit' => 'm1',
+            'status' => AreaStatus::NietGestart,
+        ]);
+
+        $dessoRoom = ProjectArea::query()->create([
+            'project_id' => $project->id,
+            'project_floor_id' => $floor->id,
+            'area_number' => '1.10',
+            'name' => 'leer en meer 1',
+            'square_meters' => 12.4,
+            'fill_color' => '#5f72f5',
+            'status' => AreaStatus::NietGestart,
+            'sort_order' => 2,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $dessoRoom->id,
+            'work_item_id' => $desso->id,
+            'ordered_quantity' => 12.4,
+            'unit' => 'm2',
+            'status' => AreaStatus::NietGestart,
+        ]);
+
+        $taraflexRoom = ProjectArea::query()->create([
+            'project_id' => $project->id,
+            'project_floor_id' => $floor->id,
+            'area_number' => '1.20',
+            'name' => 'oefenruimte',
+            'square_meters' => 32.1,
+            'fill_color' => '#ee5086',
+            'status' => AreaStatus::NietGestart,
+            'sort_order' => 3,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $taraflexRoom->id,
+            'work_item_id' => $taraflex->id,
+            'ordered_quantity' => 32.1,
+            'unit' => 'm2',
+            'status' => AreaStatus::NietGestart,
+        ]);
+
+        $service = app(ProjectBoardService::class);
+        $oakDetail = $service->areaDetail($oakRoom->fresh(['tasks.workItem', 'markers', 'floor', 'project.documents', 'project.workItems']));
+        $oakGroup = collect($oakDetail['groups'])->first(
+            fn (array $group) => str_contains(mb_strtolower($group['label'] ?? ''), 'chapman')
+        );
+        $plintGroup = collect($oakDetail['groups'])->first(
+            fn (array $group) => str_contains(mb_strtolower($group['label'] ?? ''), 'plint')
+        );
+
+        $this->assertSame('#c4a484', $oakRoom->fresh(['tasks.workItem', 'project.workItems'])->materialColor());
+        $this->assertSame('#c4a484', $oakGroup['display_color']);
+        $this->assertSame('#db4ddf', $plintGroup['display_color']);
+        $this->assertSame('#5f72f5', $dessoRoom->fresh(['tasks.workItem', 'project.workItems'])->materialColor());
+        $this->assertSame('#ee5086', $taraflexRoom->fresh(['tasks.workItem', 'project.workItems'])->materialColor());
     }
 
     /**

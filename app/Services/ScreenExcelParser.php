@@ -176,11 +176,16 @@ class ScreenExcelParser
         $group = null;
         $bnr = null;
         $hasFloorMarkers = false;
+        $hasCalculationMarkers = false;
 
         foreach ($cells as $column => $cell) {
             $header = $this->normalizeHeader((string) $cell);
             if ($header === '') {
                 continue;
+            }
+
+            if (in_array($header, ['m/u', 'mu', 'm u'], true) || $header === 'kostprijs') {
+                $hasCalculationMarkers = true;
             }
 
             if (in_array($header, ['verdieping', 'bouwlaag', 'm2', 'm²'], true) || $header === 'nummer') {
@@ -211,6 +216,10 @@ class ScreenExcelParser
         }
 
         if ($description === null || $quantity === null || $unit === null || $descriptionScore < 1) {
+            return null;
+        }
+
+        if ($hasCalculationMarkers) {
             return null;
         }
 

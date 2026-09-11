@@ -3,6 +3,10 @@
 @section('title', $project->name.' · Nicon Planning')
 @section('main_class', 'p-0 min-h-0 overflow-hidden')
 
+@push('scripts')
+    @vite(['resources/js/drawing-board.js'])
+@endpush
+
 @section('content')
     @php
         $areas = collect($board['areas'])->sortBy(fn ($area) => \App\Support\RoomUniqueName::sortKey($area))->values();
@@ -39,6 +43,10 @@
                         <span>Klaar werk: {{ \App\Support\PlanningWeek::label($project->planned_end_date) }}</span>
                     @endif
                 </div>
+                @if (auth()->user()?->canViewLaborCosts())
+                    @include('projects.partials.labor-summary', ['labor' => $labor])
+                    @include('projects.partials.calculation-lines', ['project' => $project])
+                @endif
                 @if (session('status'))
                     <p class="mt-1 text-xs text-nicon-ok">{{ session('status') }}</p>
                 @endif
@@ -51,16 +59,19 @@
                         <a href="{{ $project->googleMapsUrl() }}" target="_blank" rel="noopener noreferrer" class="text-nicon-orange-dark">Navigeren</a>
                     @endif
                     @can('update', $project)
-                        <details class="relative" @if ($errors->hasAny(['address', 'postal_code', 'city', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'])) open @endif>
+                        <details class="relative" @if ($errors->hasAny(['address', 'postal_code', 'city', 'basis_uurtarief', 'work_items', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date']) || $errors->has('work_items.*')) open @endif>
                             <summary class="cursor-pointer hover:text-nicon-ink">Project bewerken</summary>
-                            <form method="POST" action="{{ route('projects.update', $project) }}" class="absolute z-30 mt-1 w-96 border border-nicon-line bg-white p-3 shadow-sm space-y-2">
+                            <form method="POST" action="{{ route('projects.update', $project) }}" class="absolute z-30 mt-1 w-[28rem] max-h-[80vh] overflow-auto border border-nicon-line bg-white p-3 shadow-sm space-y-2">
                                 @csrf
                                 @method('PATCH')
-                                @foreach (['address', 'postal_code', 'city', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'] as $field)
+                                @foreach (['address', 'postal_code', 'city', 'basis_uurtarief', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'] as $field)
                                     @error($field)
                                         <p class="text-xs text-nicon-danger">{{ $message }}</p>
                                     @enderror
                                 @endforeach
+                                @error('work_items.*')
+                                    <p class="text-xs text-nicon-danger">{{ $message }}</p>
+                                @enderror
                                 <label class="block text-[11px] uppercase tracking-wide">Straat</label>
                                 <input name="address" value="{{ old('address', $project->address) }}" class="w-full border border-nicon-line px-2 py-1" placeholder="Straat 12">
                                 <div class="grid grid-cols-2 gap-2">
@@ -73,6 +84,32 @@
                                         <input name="city" value="{{ old('city', $project->city) }}" class="w-full border border-nicon-line px-2 py-1" placeholder="Amersfoort">
                                     </div>
                                 </div>
+                                @if (auth()->user()?->canViewLaborCosts())
+                                    <label class="block text-[11px] uppercase tracking-wide" for="basis_uurtarief">Basis uurtarief (€)</label>
+                                    <input id="basis_uurtarief" name="basis_uurtarief" value="{{ old('basis_uurtarief', $project->basis_uurtarief) }}" inputmode="decimal" class="w-full border border-nicon-line px-2 py-1" placeholder="45,00">
+                                    @if ($project->workItems->isNotEmpty())
+                                        <div class="text-[11px] uppercase tracking-wide">Uren per onderdeel</div>
+                                        @foreach ($project->workItems as $item)
+                                            <div class="space-y-1 border border-nicon-line bg-nicon-sand/40 p-2">
+                                                <div class="text-xs font-medium">{{ $item->name }}</div>
+                                                <div class="grid grid-cols-3 gap-1">
+                                                    <div>
+                                                        <label class="block text-[10px] text-nicon-muted" for="work-hours-{{ $item->id }}">Begrote uren</label>
+                                                        <input id="work-hours-{{ $item->id }}" name="work_items[{{ $item->id }}][begrote_uren]" value="{{ old('work_items.'.$item->id.'.begrote_uren', $item->begrote_uren) }}" inputmode="decimal" class="w-full border border-nicon-line px-1.5 py-1" placeholder="80">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] text-nicon-muted" for="work-qty-{{ $item->id }}">Begroot {{ $item->unit?->label() }}</label>
+                                                        <input id="work-qty-{{ $item->id }}" name="work_items[{{ $item->id }}][begrote_hoeveelheid]" value="{{ old('work_items.'.$item->id.'.begrote_hoeveelheid', $item->begrote_hoeveelheid) }}" inputmode="decimal" class="w-full border border-nicon-line px-1.5 py-1" placeholder="{{ \App\Support\Format::qty($item->ordered_quantity) }}">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] text-nicon-muted" for="work-rate-{{ $item->id }}">Tarief €/u</label>
+                                                        <input id="work-rate-{{ $item->id }}" name="work_items[{{ $item->id }}][uurtarief]" value="{{ old('work_items.'.$item->id.'.uurtarief', $item->uurtarief) }}" inputmode="decimal" class="w-full border border-nicon-line px-1.5 py-1" placeholder="basis">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    @endif
+                                @endif
                                 @include('projects.partials.planning-weeks', [
                                     'idPrefix' => 'project-',
                                     'compact' => true,
@@ -315,8 +352,8 @@
                 </div>
                 <div class="mt-1 h-1.5 bg-nicon-sand"><div id="room-progress-bar" class="h-1.5 bg-nicon-orange" style="width: {{ $first && $first['total'] ? round(100 * $first['done'] / $first['total']) : 0 }}%"></div></div>
                 <div id="work-legend" class="work-legend">
-                    @foreach (collect($firstDetail['groups'] ?? [])->unique('color_key') as $legendGroup)
-                        <span data-kind="{{ $legendGroup['color_key'] ?? 'overige' }}"><i></i>{{ $legendGroup['color_label'] ?? \App\Support\WorkColor::legendLabel($legendGroup['color_key'] ?? 'overige') }}</span>
+                    @foreach ($firstDetail['groups'] ?? [] as $legendGroup)
+                        <span data-kind="{{ $legendGroup['color_key'] ?? 'overige' }}" style="--work-accent: {{ $legendGroup['display_color'] ?? '#9ca3af' }}"><i></i>{{ $legendGroup['label'] ?? $legendGroup['color_label'] ?? \App\Support\WorkColor::legendLabel($legendGroup['color_key'] ?? 'overige') }}</span>
                     @endforeach
                 </div>
             </div>

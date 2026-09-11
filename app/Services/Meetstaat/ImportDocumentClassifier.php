@@ -4,12 +4,18 @@ namespace App\Services\Meetstaat;
 
 use App\Enums\ImportDocumentType;
 use App\Enums\ImportSourceRole;
+use App\Services\CalculationExcelParser;
 use App\Services\Meetstaat\Formats\NiconMeetbonParser;
+use App\Services\SpreadsheetReader;
 use Illuminate\Http\UploadedFile;
 
 class ImportDocumentClassifier
 {
-    public function __construct(private PdfTextExtractor $extractor) {}
+    public function __construct(
+        private PdfTextExtractor $extractor,
+        private SpreadsheetReader $spreadsheets,
+        private CalculationExcelParser $calculations,
+    ) {}
 
     /**
      * @return array{
@@ -24,6 +30,14 @@ class ImportDocumentClassifier
     public function classify(UploadedFile $file, ?string $hint = null): array
     {
         $hint = is_string($hint) ? mb_strtolower(trim($hint)) : '';
+
+        if ($this->looksLikeCalculation($file)) {
+            return $this->withRoleAnalysis([
+                'type' => ImportDocumentType::Calculatie->value,
+                'confidence' => $hint === ImportDocumentType::Calculatie->value ? 'manual' : 'high',
+            ]);
+        }
+
         if (in_array($hint, ImportDocumentType::values(), true)) {
             $base = [
                 'type' => $hint,
@@ -151,8 +165,11 @@ class ImportDocumentClassifier
         if (preg_match('/meetstaat|meetbon/', $flat)) {
             return ['type' => ImportDocumentType::Meetstaat->value, 'confidence' => 'high'];
         }
+        if (preg_match('/calculatie|kalkulatie/', $flat)) {
+            return ['type' => ImportDocumentType::Calculatie->value, 'confidence' => 'high'];
+        }
         if (in_array($extension, ['csv', 'xlsx', 'xls', 'xlsm', 'txt'], true)) {
-            return ['type' => ImportDocumentType::Meetstaat->value, 'confidence' => 'low'];
+            return ['type' => ImportDocumentType::Overig->value, 'confidence' => 'low'];
         }
 
         return ['type' => ImportDocumentType::Overig->value, 'confidence' => 'low'];
@@ -313,5 +330,30 @@ class ImportDocumentClassifier
         fclose($handle);
 
         return $sample;
+    }
+
+    private function looksLikeCalculation(UploadedFile $file): bool
+    {
+        if (! $this->isSpreadsheet($file)) {
+            return false;
+        }
+
+        $path = $file->getRealPath();
+        if (! is_string($path) || $path === '') {
+            return false;
+        }
+
+        try {
+            $rows = $this->spreadsheets->rows($path, $file->getClientOriginalName());
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $this->calculations->looksLike($rows);
+    }
+
+    private function isSpreadsheet(UploadedFile $file): bool
+    {
+        return in_array(strtolower($file->getClientOriginalExtension()), ['csv', 'txt', 'xlsx', 'xls', 'xlsm'], true);
     }
 }

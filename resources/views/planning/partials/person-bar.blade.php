@@ -1,4 +1,4 @@
-<div class="person-bar {{ $personBar['double'] ? 'double' : '' }}"
+<div class="person-bar {{ $personBar['double'] ? 'double' : '' }}{{ ! empty($personBar['has_budget_overrun']) ? ' person-bar--over' : '' }}"
      data-shift-type="assignment"
      data-shift-id="{{ $personBar['assignment_id'] }}"
      data-worker-id="{{ $personBar['worker_id'] }}"
@@ -17,6 +17,9 @@
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"
      title="{{ $personBar['title'] }}"
      style="background: {{ $personBar['color'] }}; top: {{ ($personBarOffset ?? 4) + ($index * 24) }}px; width: calc(({{ $personBar['bar']['span'] }} - {{ $personBar['bar']['start_offset'] ?? 0 }} - (1 - {{ $personBar['bar']['end_offset'] ?? 1 }})) * 100% / {{ $dayCount }} - 2px); left: calc(({{ $personBar['bar']['start'] }} + {{ $personBar['bar']['start_offset'] ?? 0 }}) * 100% / {{ $dayCount }} + 1px);">
+    @if (! empty($personBar['has_budget_overrun']))
+        <span class="person-bar-overrun" style="left: {{ $personBar['overrun_from'] ?? '100%' }}" aria-hidden="true"></span>
+    @endif
     <span class="bar-handle bar-handle-start" data-edge="start"></span>
     <span class="bar-label">{{ $personBar['label'] }}</span>
     <span class="bar-handle bar-handle-end" data-edge="end"></span>

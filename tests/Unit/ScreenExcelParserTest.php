@@ -61,6 +61,17 @@ class ScreenExcelParserTest extends TestCase
         $this->assertFalse($parser->parse($rows)['matched']);
     }
 
+    public function test_does_not_match_a_floor_calculation_spreadsheet(): void
+    {
+        $parser = new ScreenExcelParser;
+        $rows = [
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Aantal', 'EH', 'Kostprijs'],
+            ['L', '4843-1', 'U', 'Schuren, primeren en egaliseren', '30', 'uur', '48'],
+        ];
+
+        $this->assertFalse($parser->looksLike($rows));
+    }
+
     public function test_marks_unknown_units_and_missing_quantities_as_unrecognized(): void
     {
         $parsed = (new ScreenExcelParser)->parse([

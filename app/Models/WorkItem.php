@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'project_id', 'work_activity_id', 'name', 'display_color', 'unit', 'ordered_quantity',
+    'begrote_uren', 'begrote_hoeveelheid', 'uurtarief',
     'planned_start_date', 'planned_end_date', 'status', 'sort_order', 'notes',
 ])]
 class WorkItem extends Model
@@ -24,6 +25,9 @@ class WorkItem extends Model
         return [
             'unit' => WorkUnit::class,
             'ordered_quantity' => 'decimal:2',
+            'begrote_uren' => 'decimal:2',
+            'begrote_hoeveelheid' => 'decimal:2',
+            'uurtarief' => 'decimal:2',
             'planned_start_date' => 'date',
             'planned_end_date' => 'date',
         ];
@@ -57,6 +61,11 @@ class WorkItem extends Model
     public function areaTasks(): HasMany
     {
         return $this->hasMany(AreaTask::class);
+    }
+
+    public function calculationLines(): HasMany
+    {
+        return $this->hasMany(ProjectCalculationLine::class);
     }
 
     public function phase(): WorkPhase

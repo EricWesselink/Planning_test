@@ -35,6 +35,7 @@ class ProjectBoardService
             'areas.markers',
             'areas.floor',
             'documents',
+            'workItems',
             'progressEntries.worker',
             'progressEntries.workItem',
             'progressEntries.area',
@@ -71,13 +72,13 @@ class ProjectBoardService
     public function areaDetail(ProjectArea $area): array
     {
         $this->setup->ensureArea($area);
-        $area->loadMissing(['project.documents', 'tasks.workItem', 'tasks.completedByWorker', 'floor', 'markers']);
+        $area->loadMissing(['project.documents', 'project.workItems', 'tasks.workItem', 'tasks.completedByWorker', 'floor', 'markers']);
 
         $counts = $area->progressCounts();
 
         return [
             'area' => $this->areaSummary($area, $area->project->plattegrond()),
-            'groups' => $area->groupedTasks()->map(function (array $group) {
+            'groups' => $area->groupedTasks()->map(function (array $group) use ($area) {
                 $tasks = collect($group['tasks']);
                 $open = $tasks->filter(fn (AreaTask $task) => ! $task->isDone());
                 $done = $tasks->isNotEmpty() && $open->isEmpty();
@@ -90,10 +91,7 @@ class ProjectBoardService
                     ->values()
                     ->first();
                 $colorKey = WorkColor::key($group['key'], $typeLabel, $group['label']);
-                $displayColor = MaterialColor::resolve(
-                    $primary?->workItem?->display_color,
-                    $group['label'] ?? $primary?->workItem?->name,
-                );
+                $displayColor = $this->groupDisplayColor($area, $group, $primary);
                 $ordered = (float) $tasks->sum(fn (AreaTask $task) => (float) $task->ordered_quantity);
                 $remaining = (float) $open->sum(fn (AreaTask $task) => $task->remainingQuantity());
                 $completed = max(0, round($ordered - $remaining, 2));
@@ -263,6 +261,26 @@ class ProjectBoardService
             <=> [$this->workFilterRank($right['key']), $right['label']]);
 
         return $filters;
+    }
+
+    /**
+     * @param  array{key?: string, label?: string}  $group
+     */
+    private function groupDisplayColor(ProjectArea $area, array $group, ?AreaTask $primary): string
+    {
+        $name = $group['label'] ?? $primary?->workItem?->name;
+        $groupKey = $primary?->phase()->group();
+        if ($groupKey === 'vloer') {
+            return $area->materialColor();
+        }
+        if ($groupKey === 'plinten') {
+            return MaterialColor::resolve(
+                $area->plintLegendColor() ?? $primary?->workItem?->display_color,
+                $name,
+            );
+        }
+
+        return MaterialColor::resolve($primary?->workItem?->display_color, $name);
     }
 
     private function workFilterRank(string $key): int
