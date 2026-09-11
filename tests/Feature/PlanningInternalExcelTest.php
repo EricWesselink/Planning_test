@@ -73,35 +73,37 @@ class PlanningInternalExcelTest extends TestCase
         $monday = $this->dayColumn(37, 0);
 
         $this->assertSame('Planning Nicon', $sheet->getTitle());
-        $this->assertSame('Aannemer/ klant', $sheet->getCell('A2')->getValue());
-        $this->assertSame('Naam project', $sheet->getCell('B2')->getValue());
-        $this->assertSame('Plaats', $sheet->getCell('C2')->getValue());
-        $this->assertSame('Soort stoffering', $sheet->getCell('D2')->getValue());
-        $this->assertSame('m2', $sheet->getCell('E2')->getValue());
-        $this->assertSame('Team / vakman', $sheet->getCell('F2')->getValue());
-        $this->assertSame('Begroot uren', $sheet->getCell('G2')->getValue());
-        $this->assertSame('Gepland uren', $sheet->getCell('H2')->getValue());
-        $this->assertSame('Verschil', $sheet->getCell('I2')->getValue());
-        $this->assertSame(1, (int) $sheet->getCell('J1')->getValue());
-        $this->assertSame('ma', $sheet->getCell('J2')->getValue());
-        $this->assertSame('vr', $sheet->getCell('N2')->getValue());
-        $this->assertSame('wk', $sheet->getCell('O2')->getValue());
+        $this->assertSame('Bron', $sheet->getCell('A2')->getValue());
+        $this->assertSame('Aannemer/ klant', $sheet->getCell('B2')->getValue());
+        $this->assertSame('Naam project', $sheet->getCell('C2')->getValue());
+        $this->assertSame('Plaats', $sheet->getCell('D2')->getValue());
+        $this->assertSame('Soort stoffering', $sheet->getCell('E2')->getValue());
+        $this->assertSame('m2', $sheet->getCell('F2')->getValue());
+        $this->assertSame('Team / vakman', $sheet->getCell('G2')->getValue());
+        $this->assertSame('Begroot uren', $sheet->getCell('H2')->getValue());
+        $this->assertSame('Gepland uren', $sheet->getCell('I2')->getValue());
+        $this->assertSame('Verschil', $sheet->getCell('J2')->getValue());
+        $this->assertSame(1, (int) $sheet->getCell('K1')->getValue());
+        $this->assertSame('ma', $sheet->getCell('K2')->getValue());
+        $this->assertSame('vr', $sheet->getCell('O2')->getValue());
+        $this->assertSame('wk', $sheet->getCell('P2')->getValue());
         $this->assertSame(37, (int) $sheet->getCell($monday.'1')->getValue());
         $this->assertSame(53, (int) $sheet->getCell($this->dayColumn(53, 0).'1')->getValue());
-        $this->assertSame('J3', $sheet->getFreezePane());
-        $this->assertGreaterThan(20.0, $sheet->getColumnDimension('F')->getWidth());
-        $this->assertGreaterThan(10.0, $sheet->getColumnDimension('G')->getWidth());
+        $this->assertSame('K3', $sheet->getFreezePane());
+        $this->assertGreaterThan(20.0, $sheet->getColumnDimension('G')->getWidth());
         $this->assertGreaterThan(10.0, $sheet->getColumnDimension('H')->getWidth());
         $this->assertGreaterThan(10.0, $sheet->getColumnDimension('I')->getWidth());
-        $this->assertEqualsWithDelta(4.0, $sheet->getColumnDimension('J')->getWidth(), 0.2);
+        $this->assertGreaterThan(10.0, $sheet->getColumnDimension('J')->getWidth());
+        $this->assertEqualsWithDelta(4.0, $sheet->getColumnDimension('K')->getWidth(), 0.2);
         $this->assertSame('C00000', $sheet->getStyle('A2')->getFill()->getStartColor()->getRGB());
         $this->assertSame('FFFFFF', $sheet->getStyle('A2')->getFont()->getColor()->getRGB());
-        $this->assertSame('D8D8D8', $sheet->getStyle('J1')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('D8D8D8', $sheet->getStyle('K1')->getFill()->getStartColor()->getRGB());
 
         $projectRow = $this->projectRow($sheet, 'Laakse Tuinen Amersfoort');
-        $this->assertSame('Gemeente Amersfoort', $sheet->getCell('A'.$projectRow)->getValue());
-        $this->assertSame('Amersfoort', $sheet->getCell('C'.$projectRow)->getValue());
-        $this->assertSame(3835, (int) $sheet->getCell('E'.$projectRow)->getValue());
+        $this->assertSame('Nicon Vloeren', $sheet->getCell('A'.$projectRow)->getValue());
+        $this->assertSame('Gemeente Amersfoort', $sheet->getCell('B'.$projectRow)->getValue());
+        $this->assertSame('Amersfoort', $sheet->getCell('D'.$projectRow)->getValue());
+        $this->assertSame(3835, (int) $sheet->getCell('F'.$projectRow)->getValue());
         $this->assertSame('', (string) $sheet->getCell($monday.$projectRow)->getValue());
         $this->assertSame(['Laakse Tuinen Amersfoort'], $this->projectNames($sheet));
 
@@ -116,11 +118,11 @@ class PlanningInternalExcelTest extends TestCase
         $this->assertHoursFormula($sheet, $this->totalHoursCell($sheet, 'Laakse Tuinen Amersfoort', 'Albert'), 12);
         $this->assertHoursFormula($sheet, $this->totalHoursCell($sheet, 'Laakse Tuinen Amersfoort', 'Nick'), 8);
         $this->assertHoursFormula($sheet, $this->totalHoursCell($sheet, 'Laakse Tuinen Amersfoort', 'Totaal werk'), 20);
-        $this->assertSame('—', $sheet->getCell('G'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Albert'))->getValue());
-        $this->assertSame('—', $sheet->getCell('G'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Totaal werk'))->getValue());
+        $this->assertSame('—', $sheet->getCell('H'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Albert'))->getValue());
+        $this->assertSame('—', $sheet->getCell('H'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Totaal werk'))->getValue());
         $this->assertTrue($sheet->getStyle('A'.$projectRow)->getFont()->getBold());
-        $this->assertTrue($sheet->getStyle('F'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Totaal werk'))->getFont()->getBold());
-        $this->assertSame('F8CBAD', $sheet->getStyle('F'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Totaal werk'))->getFill()->getStartColor()->getRGB());
+        $this->assertTrue($sheet->getStyle('G'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Totaal werk'))->getFont()->getBold());
+        $this->assertSame('F8CBAD', $sheet->getStyle('G'.$this->rowInProject($sheet, 'Laakse Tuinen Amersfoort', 'Totaal werk'))->getFill()->getStartColor()->getRGB());
     }
 
     public function test_two_crew_members_each_get_their_own_hour_row(): void
@@ -175,8 +177,8 @@ class PlanningInternalExcelTest extends TestCase
             $this->actingAs($user)->get(route('planning.excel', ['year' => 2026]))
         );
 
-        $this->assertSame('Wepro (Eric W.)', $sheet->getCell('F'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Wepro (Eric W.)'))->getValue());
-        $this->assertSame('Wepro (Harm W.)', $sheet->getCell('F'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Wepro (Harm W.)'))->getValue());
+        $this->assertSame('Wepro (Eric W.)', $sheet->getCell('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Wepro (Eric W.)'))->getValue());
+        $this->assertSame('Wepro (Harm W.)', $sheet->getCell('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Wepro (Harm W.)'))->getValue());
         $this->assertSame(8, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Wepro (Eric W.)', 37, 0));
         $this->assertSame(8, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Wepro (Harm W.)', 37, 0));
         $this->assertSame(16, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Totaal werk', 37, 0));
@@ -198,9 +200,9 @@ class PlanningInternalExcelTest extends TestCase
             $this->actingAs($user)->get(route('planning.excel', ['year' => 2026]))
         );
 
-        $this->assertSame('', (string) $sheet->getCell('F'.$this->projectRow($sheet, 'Laakse Tuinen'))->getValue());
-        $this->assertSame('Team 1 (Eric V.)', $sheet->getCell('F'.$this->rowInProject($sheet, 'Laakse Tuinen', 'Team 1 (Eric V.)'))->getValue());
-        $this->assertSame('Team 1 (Nick)', $sheet->getCell('F'.$this->rowInProject($sheet, 'Laakse Tuinen', 'Team 1 (Nick)'))->getValue());
+        $this->assertSame('', (string) $sheet->getCell('G'.$this->projectRow($sheet, 'Laakse Tuinen'))->getValue());
+        $this->assertSame('Team 1 (Eric V.)', $sheet->getCell('G'.$this->rowInProject($sheet, 'Laakse Tuinen', 'Team 1 (Eric V.)'))->getValue());
+        $this->assertSame('Team 1 (Nick)', $sheet->getCell('G'.$this->rowInProject($sheet, 'Laakse Tuinen', 'Team 1 (Nick)'))->getValue());
         $this->assertSame(8, $this->hoursAt($sheet, 'Laakse Tuinen', 'Team 1 (Nick)', 37, 0));
         $this->assertSame(4, $this->hoursAt($sheet, 'Laakse Tuinen', 'Team 1 (Eric V.)', 37, 0));
         $this->assertSame(12, $this->hoursAt($sheet, 'Laakse Tuinen', 'Totaal werk', 37, 0));
@@ -315,12 +317,12 @@ class PlanningInternalExcelTest extends TestCase
         );
 
         $projectRow = $this->projectRow($sheet, 'Gezondheidscentrum Laren');
-        $this->assertSame('', (string) $sheet->getCell('F'.$projectRow)->getValue());
-        $this->assertSame('Team 1 (Eric W.)', $sheet->getCell('F'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Team 1 (Eric W.)'))->getValue());
-        $this->assertSame('Team 2 (Nick)', $sheet->getCell('F'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Team 2 (Nick)'))->getValue());
-        $this->assertTrue($sheet->getStyle('F'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getFont()->getBold());
-        $this->assertSame('BDD7EE', $sheet->getStyle('F'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getFill()->getStartColor()->getRGB());
-        $this->assertSame('F8CBAD', $sheet->getStyle('F'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal werk'))->getFill()->getStartColor()->getRGB());
+        $this->assertSame('', (string) $sheet->getCell('G'.$projectRow)->getValue());
+        $this->assertSame('Team 1 (Eric W.)', $sheet->getCell('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Team 1 (Eric W.)'))->getValue());
+        $this->assertSame('Team 2 (Nick)', $sheet->getCell('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Team 2 (Nick)'))->getValue());
+        $this->assertTrue($sheet->getStyle('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getFont()->getBold());
+        $this->assertSame('BDD7EE', $sheet->getStyle('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getFill()->getStartColor()->getRGB());
+        $this->assertSame('F8CBAD', $sheet->getStyle('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal werk'))->getFill()->getStartColor()->getRGB());
         $this->assertSame(8, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Team 1 (Eric W.)', 37, 0));
         $this->assertSame(4, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Team 2 (Nick)', 37, 1));
         $this->assertSame(8, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1', 37, 0));
@@ -332,9 +334,9 @@ class PlanningInternalExcelTest extends TestCase
             $this->totalHoursCell($sheet, 'Gezondheidscentrum Laren', 'Totaal werk'),
             12,
         );
-        $this->assertSame('—', $sheet->getCell('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Team 1 (Eric W.)'))->getValue());
-        $this->assertSame('—', $sheet->getCell('G'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getValue());
-        $this->assertSame('—', $sheet->getCell('I'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getValue());
+        $this->assertSame('—', $sheet->getCell('H'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Team 1 (Eric W.)'))->getValue());
+        $this->assertSame('—', $sheet->getCell('H'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getValue());
+        $this->assertSame('—', $sheet->getCell('J'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal Team 1'))->getValue());
         $this->assertHoursFormula(
             $sheet,
             $this->weekTotalColumn(37).$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal werk'),
@@ -381,9 +383,9 @@ class PlanningInternalExcelTest extends TestCase
 
         $names = $this->projectNames($sheet);
         $types = [
-            (string) $sheet->getCell('D'.$this->projectRow($sheet, 'herstel'))->getValue(),
-            (string) $sheet->getCell('D'.$this->projectRow($sheet, 'Gezondheidscentrum Laren'))->getValue(),
-            (string) $sheet->getCell('D'.$this->projectRow($sheet, 'plinten vervangen'))->getValue(),
+            (string) $sheet->getCell('E'.$this->projectRow($sheet, 'herstel'))->getValue(),
+            (string) $sheet->getCell('E'.$this->projectRow($sheet, 'Gezondheidscentrum Laren'))->getValue(),
+            (string) $sheet->getCell('E'.$this->projectRow($sheet, 'plinten vervangen'))->getValue(),
         ];
 
         $this->assertContains('herstel', $names);
@@ -393,6 +395,40 @@ class PlanningInternalExcelTest extends TestCase
         $this->assertTrue(collect($types)->contains(fn (string $type): bool => str_contains($type, 'KLEIN')));
         $this->assertSame(4, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Nick', 37, 1));
         $this->assertSame(8, $this->hoursAt($sheet, 'Gezondheidscentrum Laren', 'Nick', 37, 2));
+    }
+
+    public function test_shows_nicon_logo_and_marks_winkel_versus_projecten(): void
+    {
+        $user = User::factory()->create();
+        $owner = Customer::query()->create(['name' => 'Harm Wesselink']);
+        [$worker, $winkel, $winkelItem] = $this->makeProjectWorker('Harm', 'Harm Wesselink - Zwolle', [
+            'kind' => ProjectKind::Winkel,
+            'customer_id' => $owner->id,
+            'project_number' => '2026-003',
+            'city' => 'Zwolle',
+        ]);
+        [$project, $item] = $this->makeProject('Gezondheidscentrum Laren', [
+            'project_number' => '260200091',
+            'city' => 'Laren',
+        ]);
+        $this->assign($worker, $winkel, $winkelItem, '2026-09-07', '2026-09-07', '08:00:00', '16:00:00');
+        $this->assign($worker, $project, $item, '2026-09-08', '2026-09-08', '08:00:00', '16:00:00');
+
+        $sheet = $this->sheetFrom(
+            $this->actingAs($user)->get(route('planning.excel', ['year' => 2026]))
+        );
+
+        $drawings = $sheet->getDrawingCollection();
+        $this->assertCount(1, $drawings);
+        $this->assertSame('A1', $drawings[0]->getCoordinates());
+        $this->assertSame('Nicon Vloeren', $drawings[0]->getName());
+
+        $winkelRow = $this->projectRow($sheet, 'Harm Wesselink - Zwolle');
+        $projectRow = $this->projectRow($sheet, 'Gezondheidscentrum Laren');
+        $this->assertSame('Kloppenburg Interieur', $sheet->getCell('A'.$winkelRow)->getValue());
+        $this->assertSame('Nicon Vloeren', $sheet->getCell('A'.$projectRow)->getValue());
+        $this->assertSame('Kloppenburg Interieur', $sheet->getCell('A'.$this->rowInProject($sheet, 'Harm Wesselink - Zwolle', 'Harm'))->getValue());
+        $this->assertSame('Nicon Vloeren', $sheet->getCell('A'.$this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Harm'))->getValue());
     }
 
     public function test_work_total_compares_calculation_budget_with_planned_hours(): void
@@ -437,15 +473,15 @@ class PlanningInternalExcelTest extends TestCase
         $harmRow = $this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Wesselink Media (Harm W.)');
         $totalRow = $this->rowInProject($sheet, 'Gezondheidscentrum Laren', 'Totaal werk');
 
-        $this->assertSame('—', $sheet->getCell('G'.$ericRow)->getValue());
-        $this->assertSame('—', $sheet->getCell('I'.$ericRow)->getValue());
-        $this->assertHoursFormula($sheet, 'H'.$ericRow, 48);
-        $this->assertSame('—', $sheet->getCell('G'.$harmRow)->getValue());
-        $this->assertHoursFormula($sheet, 'H'.$harmRow, 56);
-        $this->assertSame(150.3, $this->numericHours($sheet->getCell('G'.$totalRow)));
-        $this->assertHoursFormula($sheet, 'H'.$totalRow, 104);
-        $this->assertHoursFormula($sheet, 'I'.$totalRow, -46.3);
-        $this->assertSame('548235', $sheet->getStyle('I'.$totalRow)->getFont()->getColor()->getRGB());
+        $this->assertSame('—', $sheet->getCell('H'.$ericRow)->getValue());
+        $this->assertSame('—', $sheet->getCell('J'.$ericRow)->getValue());
+        $this->assertHoursFormula($sheet, 'I'.$ericRow, 48);
+        $this->assertSame('—', $sheet->getCell('H'.$harmRow)->getValue());
+        $this->assertHoursFormula($sheet, 'I'.$harmRow, 56);
+        $this->assertSame(150.3, $this->numericHours($sheet->getCell('H'.$totalRow)));
+        $this->assertHoursFormula($sheet, 'I'.$totalRow, 104);
+        $this->assertHoursFormula($sheet, 'J'.$totalRow, -46.3);
+        $this->assertSame('548235', $sheet->getStyle('J'.$totalRow)->getFont()->getColor()->getRGB());
     }
 
     public function test_work_total_difference_turns_red_when_planned_hours_exceed_budget(): void
@@ -460,10 +496,10 @@ class PlanningInternalExcelTest extends TestCase
         );
 
         $totalRow = $this->rowInProject($sheet, 'Laakse Tuinen', 'Totaal werk');
-        $this->assertSame(8, $this->numericHours($sheet->getCell('G'.$totalRow)));
-        $this->assertHoursFormula($sheet, 'H'.$totalRow, 16);
-        $this->assertHoursFormula($sheet, 'I'.$totalRow, 8);
-        $this->assertSame('C00000', $sheet->getStyle('I'.$totalRow)->getFont()->getColor()->getRGB());
+        $this->assertSame(8, $this->numericHours($sheet->getCell('H'.$totalRow)));
+        $this->assertHoursFormula($sheet, 'I'.$totalRow, 16);
+        $this->assertHoursFormula($sheet, 'J'.$totalRow, 8);
+        $this->assertSame('C00000', $sheet->getStyle('J'.$totalRow)->getFont()->getColor()->getRGB());
     }
 
     public function test_export_spreads_every_iso_week_of_the_selected_year(): void
@@ -484,7 +520,7 @@ class PlanningInternalExcelTest extends TestCase
         $response->assertDownload('Nicon-planning-2026.xlsx');
         $sheet = $this->sheetFrom($response);
 
-        $this->assertSame(1, (int) $sheet->getCell('J1')->getValue());
+        $this->assertSame(1, (int) $sheet->getCell('K1')->getValue());
         $this->assertSame(53, (int) $sheet->getCell($this->dayColumn(53, 0).'1')->getValue());
         $this->assertSame(8, $this->hoursAt($sheet, 'Laakse Tuinen', 'Albert', 1, 4));
         $this->assertSame(4, $this->hoursAt($sheet, 'Laakse Tuinen', 'Albert', 53, 0));
@@ -717,23 +753,23 @@ class PlanningInternalExcelTest extends TestCase
 
     private function dayColumn(int $isoWeek, int $weekdayIndex): string
     {
-        return Coordinate::stringFromColumnIndex(10 + (($isoWeek - 1) * 6) + $weekdayIndex);
+        return Coordinate::stringFromColumnIndex(11 + (($isoWeek - 1) * 6) + $weekdayIndex);
     }
 
     private function weekTotalColumn(int $isoWeek): string
     {
-        return Coordinate::stringFromColumnIndex(10 + (($isoWeek - 1) * 6) + 5);
+        return Coordinate::stringFromColumnIndex(11 + (($isoWeek - 1) * 6) + 5);
     }
 
     private function totalHoursCell(Worksheet $sheet, string $project, string $label): string
     {
-        return 'H'.$this->rowInProject($sheet, $project, $label);
+        return 'I'.$this->rowInProject($sheet, $project, $label);
     }
 
     private function projectRow(Worksheet $sheet, string $name): int
     {
         for ($row = 3; $row <= $sheet->getHighestRow(); $row++) {
-            if ((string) $sheet->getCell('B'.$row)->getValue() === $name) {
+            if ((string) $sheet->getCell('C'.$row)->getValue() === $name) {
                 return $row;
             }
         }
@@ -748,7 +784,7 @@ class PlanningInternalExcelTest extends TestCase
     {
         $names = [];
         for ($row = 3; $row <= $sheet->getHighestRow(); $row++) {
-            $name = (string) $sheet->getCell('B'.$row)->getValue();
+            $name = (string) $sheet->getCell('C'.$row)->getValue();
             if ($name !== '') {
                 $names[] = $name;
             }
@@ -765,10 +801,10 @@ class PlanningInternalExcelTest extends TestCase
         $start = $this->projectRow($sheet, $project);
         $labels = [];
         for ($row = $start; $row <= $sheet->getHighestRow(); $row++) {
-            if ($row > $start && (string) $sheet->getCell('B'.$row)->getValue() !== '') {
+            if ($row > $start && (string) $sheet->getCell('C'.$row)->getValue() !== '') {
                 break;
             }
-            $label = (string) $sheet->getCell('F'.$row)->getValue();
+            $label = (string) $sheet->getCell('G'.$row)->getValue();
             if ($label !== '') {
                 $labels[] = $label;
             }
@@ -781,10 +817,10 @@ class PlanningInternalExcelTest extends TestCase
     {
         $start = $this->projectRow($sheet, $project);
         for ($row = $start; $row <= $sheet->getHighestRow(); $row++) {
-            if ($row > $start && (string) $sheet->getCell('B'.$row)->getValue() !== '') {
+            if ($row > $start && (string) $sheet->getCell('C'.$row)->getValue() !== '') {
                 break;
             }
-            if (trim((string) $sheet->getCell('F'.$row)->getValue()) === $label) {
+            if (trim((string) $sheet->getCell('G'.$row)->getValue()) === $label) {
                 return $row;
             }
         }

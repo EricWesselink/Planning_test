@@ -44,41 +44,63 @@
     @endif
 
     <div class="mt-6 space-y-6">
-        <form method="POST" action="{{ route('projects.winkel.update', $project) }}" enctype="multipart/form-data" class="space-y-6 border border-nicon-line bg-white p-5">
+        <form method="POST" action="{{ route('projects.winkel.update', $project) }}" enctype="multipart/form-data" class="space-y-4 border border-nicon-line bg-white p-4">
             @csrf
             @method('PATCH')
-            <div class="grid gap-4 md:grid-cols-2">
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="customer_name">Klant</label>
-                    <input id="customer_name" name="customer_name" value="{{ old('customer_name', $project->customer?->name) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! auth()->user()?->can('update', $project))>
-                </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="city">Plaats</label>
-                    <input id="city" name="city" value="{{ old('city', $project->city) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! auth()->user()?->can('update', $project))>
-                </div>
-                <div class="md:col-span-2">
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="address">Adres</label>
-                    <input id="address" name="address" value="{{ old('address', $project->address) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! auth()->user()?->can('update', $project))>
-                </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
-                    <input id="postal_code" name="postal_code" value="{{ old('postal_code', $project->postal_code) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! auth()->user()?->can('update', $project))>
-                </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>
-                    <input id="contact_phone" name="contact_phone" type="tel" value="{{ old('contact_phone', $project->contact_phone ?: $project->customer?->phone) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="06 12345678" autocomplete="tel" @disabled(! auth()->user()?->can('update', $project))>
-                </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_email">E-mail</label>
-                    <input id="contact_email" name="contact_email" type="email" value="{{ old('contact_email', $project->contact_email ?: $project->customer?->email) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="jansen@example.nl" autocomplete="email" @disabled(! auth()->user()?->can('update', $project))>
-                </div>
-                @if (auth()->user()?->canViewLaborCosts())
+            <div class="grid gap-4 lg:grid-cols-2">
+                <div class="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
                     <div>
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Uurtarief (€)</label>
-                        <input id="basis_uurtarief" name="basis_uurtarief" value="{{ $hourlyRate }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="48" @disabled(! auth()->user()?->can('update', $project))>
-                        <p class="mt-1 text-xs text-nicon-muted">Standaard €48/u, aanpasbaar. Begrote uren × dit tarief.</p>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="customer_name">Klant</label>
+                        <input id="customer_name" name="customer_name" value="{{ old('customer_name', $project->customer?->name) }}" required class="mt-1 w-full border border-nicon-line px-2 py-1.5" @disabled(! auth()->user()?->can('update', $project))>
                     </div>
-                @endif
+                    <div>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="city">Plaats</label>
+                        <input id="city" name="city" value="{{ old('city', $project->city) }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" @disabled(! auth()->user()?->can('update', $project))>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="address">Adres</label>
+                        <input id="address" name="address" value="{{ old('address', $project->address) }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" @disabled(! auth()->user()?->can('update', $project))>
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
+                        <input id="postal_code" name="postal_code" value="{{ old('postal_code', $project->postal_code) }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" @disabled(! auth()->user()?->can('update', $project))>
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>
+                        <input id="contact_phone" name="contact_phone" type="tel" value="{{ old('contact_phone', $project->contact_phone ?: $project->customer?->phone) }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="06 12345678" autocomplete="tel" @disabled(! auth()->user()?->can('update', $project))>
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_email">E-mail</label>
+                        <input id="contact_email" name="contact_email" type="email" value="{{ old('contact_email', $project->contact_email ?: $project->customer?->email) }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="jansen@example.nl" autocomplete="email" @disabled(! auth()->user()?->can('update', $project))>
+                    </div>
+                    @if (auth()->user()?->canViewLaborCosts())
+                        <div>
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Uurtarief (€) <span class="font-normal normal-case tracking-normal">Standaard €48/u</span></label>
+                            <input id="basis_uurtarief" name="basis_uurtarief" value="{{ $hourlyRate }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="48" title="Aanpasbaar. Begrote uren × dit tarief." @disabled(! auth()->user()?->can('update', $project))>
+                        </div>
+                    @endif
+                </div>
+                <div class="flex flex-col gap-2">
+                    <div class="flex min-h-0 grow flex-col">
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="work_description">Omschrijving werkzaamheden</label>
+                        <textarea id="work_description" name="work_description" rows="3" class="mt-1 min-h-[4.5rem] w-full grow border border-nicon-line px-2 py-1.5" @disabled(! auth()->user()?->can('update', $project))>{{ old('work_description', $project->work_description) }}</textarea>
+                    </div>
+                    @can('update', $project)
+                        <div>
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Extra bijlagen</label>
+                            <input id="attachments" type="file" name="attachments[]" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf" class="mt-1 w-full text-sm">
+                            <p class="mt-1 text-xs text-nicon-muted">Meerdere foto’s, PDF’s of tekeningen. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
+                        </div>
+                    @endcan
+                    @include('projects.partials.planning-weeks', [
+                        'idPrefix' => 'winkel-',
+                        'compact' => true,
+                        'startYear' => $project->planningStartYear(),
+                        'startWeek' => $project->planningStartWeek(),
+                        'klaarYear' => $project->planningEndYear(),
+                        'klaarWeek' => $project->planningEndWeek(),
+                    ])
+                </div>
             </div>
 
             @include('projects.partials.shop-activities', [
@@ -89,27 +111,6 @@
                 'activityUnits' => old('activity_units', $selectedUnits),
                 'activityHours' => old('activity_hours', $selectedHours),
                 'hourlyRate' => $hourlyRate,
-            ])
-
-            <div>
-                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="work_description">Omschrijving werkzaamheden</label>
-                <textarea id="work_description" name="work_description" rows="4" class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! auth()->user()?->can('update', $project))>{{ old('work_description', $project->work_description) }}</textarea>
-            </div>
-
-            @can('update', $project)
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Extra bijlagen</label>
-                    <input id="attachments" type="file" name="attachments[]" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf" class="mt-1 w-full text-sm">
-                    <p class="mt-1 text-xs text-nicon-muted">Meerdere foto’s, PDF’s of tekeningen. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
-                </div>
-            @endcan
-
-            @include('projects.partials.planning-weeks', [
-                'idPrefix' => 'winkel-',
-                'startYear' => $project->planningStartYear(),
-                'startWeek' => $project->planningStartWeek(),
-                'klaarYear' => $project->planningEndYear(),
-                'klaarWeek' => $project->planningEndWeek(),
             ])
 
             @can('update', $project)
@@ -144,6 +145,15 @@
                                 $itemCost = $itemHours > 0.0001 && is_numeric($hourlyRate)
                                     ? $itemHours * (float) $hourlyRate
                                     : 0.0;
+                                $itemQuantity = (float) ($activity->pivot->quantity ?? 0);
+                                $itemUnit = $activity->pivot->unit instanceof \App\Enums\WorkUnit
+                                    ? $activity->pivot->unit
+                                    : \App\Enums\WorkUnit::tryFrom((string) $activity->pivot->unit);
+                                $itemUnitPrice = $itemCost > 0.0001
+                                    && $itemQuantity > 0.0001
+                                    && ($itemUnit === \App\Enums\WorkUnit::SquareMeter || $itemUnit === \App\Enums\WorkUnit::LinearMeter)
+                                    ? \App\Support\Format::euroWhole($itemCost / $itemQuantity).'/'.$itemUnit->label()
+                                    : null;
                             @endphp
                             <div class="font-medium">
                                 {{ $activity->name }}
@@ -155,6 +165,9 @@
                                 @endif
                                 @if ($itemCost > 0.0001)
                                     <span class="font-normal text-nicon-muted">· {{ \App\Support\Format::euroWhole($itemCost) }}</span>
+                                @endif
+                                @if ($itemUnitPrice)
+                                    <span class="font-normal text-nicon-muted">· {{ $itemUnitPrice }}</span>
                                 @endif
                             </div>
                             @if ($activity->pivot->notes)

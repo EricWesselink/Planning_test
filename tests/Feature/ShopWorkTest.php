@@ -57,6 +57,7 @@ class ShopWorkTest extends TestCase
             ->assertSee('Uren')
             ->assertSee('Standaard €48/u')
             ->assertSee('value="48"', false)
+            ->assertSee('lg:grid-cols-2', false)
             ->assertSee('lg:grid-cols-4', false)
             ->assertSee('Telefoon')
             ->assertSee('E-mail')
@@ -66,11 +67,15 @@ class ShopWorkTest extends TestCase
             ->getContent();
 
         $this->assertMatchesRegularExpression(
-            '/id="activity-quantity-'.$pvc->id.'"[^>]*\bdisabled\b/',
+            '/id="activity-quantity-'.$pvc->id.'"[^>]*\sdisabled(?:="disabled")?\s*>/s',
             $html
         );
-        $this->assertDoesNotMatchRegularExpression(
-            '/data-shop-activity-notes[^>]*\bhidden\b/',
+        $this->assertMatchesRegularExpression(
+            '/id="activity-details-'.$pvc->id.'"[^>]*\bhidden\b/s',
+            $html
+        );
+        $this->assertMatchesRegularExpression(
+            '/id="activity-note-row-'.$pvc->id.'"[^>]*\bhidden\b/s',
             $html
         );
 
@@ -120,7 +125,7 @@ class ShopWorkTest extends TestCase
         $this->assertSame('48.00', $project->workItems()->first()?->uurtarief);
         $this->assertSame(2, $project->documents()->where('document_type', 'bijlage')->count());
 
-        $this->actingAs($user)
+        $html = $this->actingAs($user)
             ->get(route('projects.show', $project))
             ->assertOk()
             ->assertSee('WINKEL')
@@ -128,7 +133,17 @@ class ShopWorkTest extends TestCase
             ->assertSee('Zonwering · Screens + Rolluiken + Montage')
             ->assertSee('4 stuks plaatsen achterzijde woning')
             ->assertSee('achterzijde.jpg')
-            ->assertSee('Open planning');
+            ->assertSee('Open planning')
+            ->getContent();
+
+        $this->assertDoesNotMatchRegularExpression(
+            '/id="activity-quantity-'.$screens->id.'"[^>]*\sdisabled(?:="disabled")?\s*>/s',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/id="activity-details-'.$screens->id.'"[^>]*\bhidden\b/s',
+            $html
+        );
     }
 
     public function test_planner_saves_customer_phone_and_email_on_winkelwerk(): void
@@ -305,7 +320,9 @@ class ShopWorkTest extends TestCase
         $this->actingAs($user)
             ->get(route('projects.show', $project))
             ->assertOk()
-            ->assertSee('24,50 m¹');
+            ->assertSee('24,50 m¹')
+            ->assertSee('€96')
+            ->assertSee('€3,92/m¹');
     }
 
     public function test_rejects_winkelwerk_when_activity_unit_is_not_square_meters_or_pieces(): void
@@ -374,6 +391,7 @@ class ShopWorkTest extends TestCase
             ->assertSee('· 8,5u')
             ->assertSee('· 4u')
             ->assertSee('€408')
+            ->assertSee('€10,07/m²')
             ->assertSee('€192');
 
         $this->actingAs($user)
@@ -460,7 +478,7 @@ class ShopWorkTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
             ->assertOk()
-            ->assertSee('WINKEL')
+            ->assertSee('Kloppenburg Interieur')
             ->assertSee('De Vries - Enschede')
             ->assertSee('Vloeren · PVC + Egaliseren + Plinten')
             ->assertSee('PVC')

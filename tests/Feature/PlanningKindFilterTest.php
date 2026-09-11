@@ -33,7 +33,8 @@ class PlanningKindFilterTest extends TestCase
             ->assertSee('>Projecten</option>', false)
             ->assertSee('>Winkelwerk</option>', false)
             ->assertSee('plan-line--section', false)
-            ->assertSee('WINKELWERK')
+            ->assertSee('>Nicon Vloeren</div>', false)
+            ->assertSee('>Kloppenburg Interieur</div>', false)
             ->assertSee('Laakse Tuinen')
             ->assertSee('Jansen - Hengelo');
     }
@@ -50,7 +51,7 @@ class PlanningKindFilterTest extends TestCase
             ->assertSee('Laakse Tuinen')
             ->assertDontSee('Jansen - Hengelo')
             ->assertDontSee('plan-line--section', false)
-            ->assertDontSee('>WINKELWERK</div>', false);
+            ->assertDontSee('>Kloppenburg Interieur</div>', false);
     }
 
     public function test_winkelwerk_filter_hides_projects_without_section_header(): void
@@ -65,7 +66,7 @@ class PlanningKindFilterTest extends TestCase
             ->assertSee('Jansen - Hengelo')
             ->assertDontSee('Laakse Tuinen')
             ->assertDontSee('plan-line--section', false)
-            ->assertDontSee('>WINKELWERK</div>', false);
+            ->assertDontSee('>Kloppenburg Interieur</div>', false);
     }
 
     public function test_kind_filter_combines_with_worker_filter(): void
@@ -142,7 +143,7 @@ class PlanningKindFilterTest extends TestCase
             ->assertSee('Laakse Tuinen')
             ->assertSee('Jansen - Hengelo')
             ->assertDontSee('data-project-id="'.$otherWinkel->id.'"', false)
-            ->assertSee('WINKELWERK');
+            ->assertSee('>Kloppenburg Interieur</div>', false);
     }
 
     public function test_kind_filter_does_not_change_or_delete_projects(): void

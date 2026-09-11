@@ -30,9 +30,12 @@
                     maximumFractionDigits: decimals,
                 }).format(rounded);
             };
-            const setFieldsEnabled = (row, enabled) => {
-                row.querySelectorAll('[data-shop-activity-notes] input, [data-shop-activity-notes] select').forEach((el) => {
-                    el.disabled = !enabled;
+            const setOpen = (row, enabled) => {
+                row.querySelectorAll('[data-shop-activity-details]').forEach((el) => {
+                    el.classList.toggle('hidden', !enabled);
+                    el.querySelectorAll('input, select').forEach((input) => {
+                        input.disabled = !enabled;
+                    });
                 });
             };
             const updateCosts = () => {
@@ -40,37 +43,54 @@
                 document.querySelectorAll('[data-shop-activity]').forEach((row) => {
                     const checked = row.querySelector('[data-shop-activity-toggle]')?.checked;
                     const hours = parseAmount(row.querySelector('[data-shop-activity-hours]')?.value);
+                    const quantity = parseAmount(row.querySelector('[data-shop-activity-quantity]')?.value);
+                    const unitSelect = row.querySelector('[data-shop-activity-unit]');
+                    const unit = unitSelect?.value;
                     const out = row.querySelector('[data-shop-activity-cost]');
                     if (! out) {
                         return;
                     }
-                    out.textContent = checked && hours > 0.0001 ? formatEuro(hours * rate) : '';
+                    if (! checked || hours <= 0.0001) {
+                        out.textContent = '';
+
+                        return;
+                    }
+                    const total = hours * rate;
+                    const parts = [formatEuro(total)];
+                    if ((unit === 'm2' || unit === 'm1') && quantity > 0.0001) {
+                        const unitLabel = unitSelect?.selectedOptions?.[0]?.text ?? (unit === 'm2' ? 'm²' : 'm¹');
+                        parts.push(`${formatEuro(total / quantity)}/${unitLabel}`);
+                    }
+                    out.textContent = parts.join(' · ');
                 });
             };
 
             document.querySelectorAll('[data-shop-activity-toggle]').forEach((input) => {
                 const row = input.closest('[data-shop-activity]');
                 if (row) {
-                    setFieldsEnabled(row, input.checked);
+                    setOpen(row, input.checked);
                 }
                 input.addEventListener('change', () => {
                     if (row) {
-                        setFieldsEnabled(row, input.checked);
+                        setOpen(row, input.checked);
                     }
                     updateCosts();
                 });
             });
-            document.querySelectorAll('[data-shop-activity-hours]').forEach((input) => {
+            document.querySelectorAll('[data-shop-activity-hours], [data-shop-activity-quantity]').forEach((input) => {
                 input.addEventListener('input', updateCosts);
+            });
+            document.querySelectorAll('[data-shop-activity-unit]').forEach((input) => {
+                input.addEventListener('change', updateCosts);
             });
             rateInput?.addEventListener('input', updateCosts);
             updateCosts();
         });
     </script>
 @endpushOnce
-<fieldset class="space-y-4">
+<fieldset class="space-y-3">
     <legend class="text-xs uppercase tracking-wide text-nicon-muted">Werkzaamheden</legend>
-    <p class="text-sm text-nicon-muted">Vier groepen naast elkaar. Aantal en uren blijven zichtbaar; invullen kan na aanvinken.</p>
+    <p class="text-sm text-nicon-muted">Vink aan om aantal, uren en een korte omschrijving in te vullen.</p>
     @error('work_activity_ids')
         <p class="text-sm text-nicon-danger">{{ $message }}</p>
     @enderror
@@ -79,9 +99,9 @@
     @enderror
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         @foreach ($categories as $category)
-            <div class="border border-nicon-line p-3">
+            <div class="border border-nicon-line p-2">
                 <h3 class="text-xs uppercase tracking-wide text-nicon-muted">{{ $category->name }}</h3>
-                <div class="mt-2 space-y-2">
+                <div class="mt-2 flex flex-col gap-2">
                     @foreach ($category->activities as $activity)
                         @php
                             $checked = $selectedIds->contains((int) $activity->id);
@@ -94,51 +114,69 @@
                                 $hoursValue = (int) (float) $hoursValue;
                             }
                             $unitValue = old('activity_units.'.$activity->id, $activityUnits[$activity->id] ?? $activity->defaultShopUnit($category)->value);
-                            $hoursNumber = is_numeric($hoursValue) ? (float) $hoursValue : 0.0;
-                            $costLabel = $hoursNumber > 0.0001 ? \App\Support\Format::euroWhole($hoursNumber * $hourlyRate) : '';
+                            $quantityNumber = is_numeric($quantityValue)
+                                ? (float) $quantityValue
+                                : (float) \App\Support\Format::decimalInput($quantityValue);
+                            $hoursNumber = is_numeric($hoursValue)
+                                ? (float) $hoursValue
+                                : (float) \App\Support\Format::decimalInput($hoursValue);
+                            $totalCost = $hoursNumber * $hourlyRate;
+                            $costLabel = '';
+                            if ($checked && $hoursNumber > 0.0001) {
+                                $costLabel = \App\Support\Format::euroWhole($totalCost);
+                                $unit = \App\Enums\WorkUnit::tryFrom((string) $unitValue);
+                                if (
+                                    $quantityNumber > 0.0001
+                                    && ($unit === \App\Enums\WorkUnit::SquareMeter || $unit === \App\Enums\WorkUnit::LinearMeter)
+                                ) {
+                                    $costLabel .= ' · '.\App\Support\Format::euroWhole($totalCost / $quantityNumber).'/'.$unit->label();
+                                }
+                            }
                         @endphp
-                        <div data-shop-activity>
-                            <label class="flex items-start gap-2 text-sm">
-                                <input
-                                    type="checkbox"
-                                    name="work_activity_ids[]"
-                                    value="{{ $activity->id }}"
-                                    class="mt-0.5"
-                                    data-shop-activity-toggle
-                                    @checked($checked)
+                        <div class="flex flex-col gap-1" data-shop-activity>
+                            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                <label class="flex items-center gap-1.5">
+                                    <input
+                                        type="checkbox"
+                                        name="work_activity_ids[]"
+                                        value="{{ $activity->id }}"
+                                        class="shrink-0"
+                                        data-shop-activity-toggle
+                                        @checked($checked)
+                                    >
+                                    <span>{{ $activity->name }}</span>
+                                </label>
+                                <div
+                                    id="activity-details-{{ $activity->id }}"
+                                    @class(['hidden' => ! $checked])
+                                    data-shop-activity-details
                                 >
-                                <span>{{ $activity->name }}</span>
-                            </label>
-                            <div class="mt-1.5 space-y-1.5 pl-6" data-shop-activity-notes>
-                                <div class="grid grid-cols-2 gap-1.5">
-                                    <div>
-                                        <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="activity-quantity-{{ $activity->id }}">Aantal</label>
-                                        <div class="mt-1 flex gap-1">
-                                            <input
-                                                id="activity-quantity-{{ $activity->id }}"
-                                                type="text"
-                                                inputmode="decimal"
-                                                name="activity_quantities[{{ $activity->id }}]"
-                                                value="{{ $quantityValue }}"
-                                                class="min-w-0 grow border border-nicon-line px-2 py-1.5 text-sm disabled:bg-nicon-sand disabled:text-nicon-muted"
-                                                placeholder="0"
-                                                @disabled(! $checked)
-                                            >
-                                            <select
-                                                id="activity-unit-{{ $activity->id }}"
-                                                name="activity_units[{{ $activity->id }}]"
-                                                class="w-20 shrink-0 border border-nicon-line px-1 py-1.5 text-sm disabled:bg-nicon-sand disabled:text-nicon-muted"
-                                                title="Eenheid"
-                                                @disabled(! $checked)
-                                            >
-                                                @foreach (\App\Enums\WorkUnit::shopCases() as $unit)
-                                                    <option value="{{ $unit->value }}" @selected($unitValue === $unit->value)>{{ $unit->label() }}</option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="activity-hours-{{ $activity->id }}">Uren</label>
+                                    <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                        <label class="text-xs text-nicon-muted" for="activity-quantity-{{ $activity->id }}">Aantal</label>
+                                        <input
+                                            id="activity-quantity-{{ $activity->id }}"
+                                            type="text"
+                                            inputmode="decimal"
+                                            name="activity_quantities[{{ $activity->id }}]"
+                                            value="{{ $quantityValue }}"
+                                            data-shop-activity-quantity
+                                            class="w-24 shrink-0 border border-nicon-line px-1.5 py-1 text-sm"
+                                            placeholder="0"
+                                            @disabled(! $checked)
+                                        >
+                                        <select
+                                            id="activity-unit-{{ $activity->id }}"
+                                            name="activity_units[{{ $activity->id }}]"
+                                            data-shop-activity-unit
+                                            class="w-14 shrink-0 border border-nicon-line px-1 py-1 text-sm"
+                                            title="Eenheid"
+                                            @disabled(! $checked)
+                                        >
+                                            @foreach (\App\Enums\WorkUnit::shopCases() as $unit)
+                                                <option value="{{ $unit->value }}" @selected($unitValue === $unit->value)>{{ $unit->label() }}</option>
+                                            @endforeach
+                                        </select>
+                                        <label class="text-xs text-nicon-muted" for="activity-hours-{{ $activity->id }}">Uren</label>
                                         <input
                                             id="activity-hours-{{ $activity->id }}"
                                             type="text"
@@ -146,25 +184,29 @@
                                             name="activity_hours[{{ $activity->id }}]"
                                             value="{{ $hoursValue }}"
                                             data-shop-activity-hours
-                                            class="mt-1 w-full border border-nicon-line px-2 py-1.5 text-sm disabled:bg-nicon-sand disabled:text-nicon-muted"
+                                            class="w-20 shrink-0 border border-nicon-line px-1.5 py-1 text-sm"
                                             placeholder="0"
                                             @disabled(! $checked)
                                         >
-                                        <div class="mt-0.5 min-h-4 text-[11px] text-nicon-muted" data-shop-activity-cost>{{ $costLabel }}</div>
+                                        <span class="text-[11px] whitespace-nowrap text-nicon-muted" data-shop-activity-cost>{{ $costLabel }}</span>
                                     </div>
                                 </div>
-                                <div>
-                                    <label class="sr-only" for="activity-note-{{ $activity->id }}">Omschrijving {{ $activity->name }}</label>
-                                    <input
-                                        id="activity-note-{{ $activity->id }}"
-                                        type="text"
-                                        name="activity_notes[{{ $activity->id }}]"
-                                        value="{{ old('activity_notes.'.$activity->id, $activityNotes[$activity->id] ?? '') }}"
-                                        class="w-full border border-nicon-line px-2 py-1.5 text-sm disabled:bg-nicon-sand disabled:text-nicon-muted"
-                                        placeholder="Korte omschrijving"
-                                        @disabled(! $checked)
-                                    >
-                                </div>
+                            </div>
+                            <div
+                                id="activity-note-row-{{ $activity->id }}"
+                                @class(['hidden' => ! $checked])
+                                data-shop-activity-details
+                            >
+                                <label class="sr-only" for="activity-note-{{ $activity->id }}">Omschrijving {{ $activity->name }}</label>
+                                <input
+                                    id="activity-note-{{ $activity->id }}"
+                                    type="text"
+                                    name="activity_notes[{{ $activity->id }}]"
+                                    value="{{ old('activity_notes.'.$activity->id, $activityNotes[$activity->id] ?? '') }}"
+                                    class="w-full border border-nicon-line px-1.5 py-1 text-sm"
+                                    placeholder="Korte omschrijving"
+                                    @disabled(! $checked)
+                                >
                             </div>
                         </div>
                     @endforeach

@@ -296,7 +296,7 @@ class PlanningBoardService
                     'type' => 'project',
                     'id' => $project->id,
                     'kind' => $project->kind?->value,
-                    'badge' => $project->isWinkel() ? $project->kind?->badge() : null,
+                    'badge' => $project->isWinkel() ? (string) config('company.shop_name') : null,
                     'compact' => false,
                     'sort_date' => $project->planned_start_date?->toDateString() ?? '',
                     'number' => $project->project_number,
@@ -556,10 +556,14 @@ class PlanningBoardService
         }
 
         return [
+            [
+                'type' => 'section',
+                'title' => (string) config('company.name'),
+            ],
             ...$main,
             [
                 'type' => 'section',
-                'title' => 'WINKELWERK',
+                'title' => (string) config('company.shop_name'),
             ],
             ...$winkel,
         ];

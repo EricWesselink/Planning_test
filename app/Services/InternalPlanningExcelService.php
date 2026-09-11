@@ -22,6 +22,7 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -42,7 +43,7 @@ class InternalPlanningExcelService
 
     private const WHITE = 'FFFFFF';
 
-    private const LEFT_COLUMNS = 9;
+    private const LEFT_COLUMNS = 10;
 
     private const WEEK_BLOCK = 6;
 
@@ -251,7 +252,8 @@ class InternalPlanningExcelService
                 fn (array $team): bool => $team['name'] !== null && $team['name'] !== '',
             ));
             $showTeamTotals = count($namedTeams) > 1;
-            $rows[] = $this->projectHeader($entry['project'], '');
+            $source = $this->sourceLabel($entry['project']);
+            $rows[] = $this->projectHeader($entry['project'], '', $source);
 
             foreach ($teams as $team) {
                 $named = $team['name'] !== null && $team['name'] !== '';
@@ -261,11 +263,12 @@ class InternalPlanningExcelService
                         'person',
                         $this->personLabel($named ? (string) $team['name'] : null, $person['name']),
                         $person['days'],
+                        source: $source,
                     );
                 }
 
                 if ($named && $showTeamTotals) {
-                    $rows[] = $this->hourRow('team_total', 'Totaal '.$team['name'], []);
+                    $rows[] = $this->hourRow('team_total', 'Totaal '.$team['name'], [], source: $source);
                 }
             }
 
@@ -275,6 +278,7 @@ class InternalPlanningExcelService
                 [],
                 $this->budgetHours($entry['project']),
                 $this->plannedHoursForTeams($teams),
+                $source,
             );
         }
 
@@ -667,10 +671,11 @@ class InternalPlanningExcelService
     /**
      * @return array<string, mixed>
      */
-    private function projectHeader(Project $project, string $label): array
+    private function projectHeader(Project $project, string $label, string $source): array
     {
         return [
             'kind' => 'project',
+            'source' => $source,
             'customer' => trim((string) ($project->customer?->name ?? '')),
             'name' => $this->projectName($project),
             'city' => trim((string) $project->city),
@@ -691,9 +696,11 @@ class InternalPlanningExcelService
         array $days,
         int|float|null $budgetHours = null,
         float $plannedHours = 0.0,
+        string $source = '',
     ): array {
         return [
             'kind' => $kind,
+            'source' => $source,
             'customer' => '',
             'name' => '',
             'city' => '',
@@ -704,6 +711,13 @@ class InternalPlanningExcelService
             'budget_hours' => $budgetHours,
             'planned_hours' => $plannedHours,
         ];
+    }
+
+    private function sourceLabel(Project $project): string
+    {
+        return $project->isWinkel()
+            ? (string) config('company.shop_name')
+            : (string) config('company.name');
     }
 
     private function budgetHours(Project $project): int|float|null
@@ -882,16 +896,17 @@ class InternalPlanningExcelService
         $lastColRef = Coordinate::stringFromColumnIndex($lastCol);
         $lastRow = 2 + max(1, count($rows));
 
-        $sheet->setCellValue('E1', 'Weeknummer');
-        $sheet->setCellValue('A2', 'Aannemer/ klant');
-        $sheet->setCellValue('B2', 'Naam project');
-        $sheet->setCellValue('C2', 'Plaats');
-        $sheet->setCellValue('D2', 'Soort stoffering');
-        $sheet->setCellValue('E2', 'm2');
-        $sheet->setCellValue('F2', 'Team / vakman');
-        $sheet->setCellValue('G2', 'Begroot uren');
-        $sheet->setCellValue('H2', 'Gepland uren');
-        $sheet->setCellValue('I2', 'Verschil');
+        $sheet->setCellValue('F1', 'Weeknummer');
+        $sheet->setCellValue('A2', 'Bron');
+        $sheet->setCellValue('B2', 'Aannemer/ klant');
+        $sheet->setCellValue('C2', 'Naam project');
+        $sheet->setCellValue('D2', 'Plaats');
+        $sheet->setCellValue('E2', 'Soort stoffering');
+        $sheet->setCellValue('F2', 'm2');
+        $sheet->setCellValue('G2', 'Team / vakman');
+        $sheet->setCellValue('H2', 'Begroot uren');
+        $sheet->setCellValue('I2', 'Gepland uren');
+        $sheet->setCellValue('J2', 'Verschil');
 
         $column = self::LEFT_COLUMNS + 1;
         foreach ($weeks as $week) {
@@ -918,26 +933,28 @@ class InternalPlanningExcelService
                 }
                 $current = $this->emptyBlock();
                 $currentTeamPeople = [];
-                $sheet->setCellValue('A'.$excelRow, $row['customer']);
-                $sheet->setCellValue('B'.$excelRow, $row['name']);
-                $sheet->setCellValue('C'.$excelRow, $row['city']);
-                $sheet->setCellValue('D'.$excelRow, $row['work_type']);
+                $sheet->setCellValue('B'.$excelRow, $row['customer']);
+                $sheet->setCellValue('C'.$excelRow, $row['name']);
+                $sheet->setCellValue('D'.$excelRow, $row['city']);
+                $sheet->setCellValue('E'.$excelRow, $row['work_type']);
                 if ($row['m2'] !== null) {
-                    $sheet->setCellValue('E'.$excelRow, $row['m2']);
+                    $sheet->setCellValue('F'.$excelRow, $row['m2']);
                 }
             }
 
-            $sheet->setCellValue('F'.$excelRow, $row['label']);
+            $sheet->setCellValue('A'.$excelRow, $row['source']);
+
+            $sheet->setCellValue('G'.$excelRow, $row['label']);
 
             if (in_array($row['kind'], ['person', 'team_total'], true)) {
-                $sheet->setCellValue('G'.$excelRow, self::DASH);
-                $sheet->setCellValue('I'.$excelRow, self::DASH);
+                $sheet->setCellValue('H'.$excelRow, self::DASH);
+                $sheet->setCellValue('J'.$excelRow, self::DASH);
             }
 
             if ($row['kind'] === 'person') {
                 $this->writePersonDays($sheet, $excelRow, $weeks, $row['days']);
                 $this->writeWeekFormulas($sheet, $excelRow, $weekCount);
-                $sheet->setCellValue('H'.$excelRow, $this->weekTotalsSumFormula($excelRow, $weekCount));
+                $sheet->setCellValue('I'.$excelRow, $this->weekTotalsSumFormula($excelRow, $weekCount));
                 $current['people'][] = $excelRow;
                 $currentTeamPeople[] = $excelRow;
             }
@@ -964,7 +981,7 @@ class InternalPlanningExcelService
         foreach ($blocks as $block) {
             foreach ($block['team_totals'] as $team) {
                 $this->writeRolledUpHours($sheet, $team['row'], $team['people'], $weeks, $weekCount);
-                $sheet->setCellValue('H'.$team['row'], $this->columnSum('H', $team['people']));
+                $sheet->setCellValue('I'.$team['row'], $this->columnSum('I', $team['people']));
             }
 
             $workSources = $block['team_totals'] !== []
@@ -975,24 +992,25 @@ class InternalPlanningExcelService
                 : $block['people'];
             if ($block['work_total'] !== null) {
                 $this->writeRolledUpHours($sheet, $block['work_total'], $workSources, $weeks, $weekCount);
-                $sheet->setCellValue('H'.$block['work_total'], $this->columnSum('H', $block['people']));
+                $sheet->setCellValue('I'.$block['work_total'], $this->columnSum('I', $block['people']));
             }
         }
 
+        $this->addCompanyLogo($sheet);
         $this->styleSheet($sheet, $lastColRef, $lastRow, $weeks, $rows);
     }
 
     private function writeWorkBudget(Worksheet $sheet, int $row, int|float|null $budgetHours): void
     {
         if ($budgetHours === null) {
-            $sheet->setCellValue('G'.$row, self::DASH);
-            $sheet->setCellValue('I'.$row, self::DASH);
+            $sheet->setCellValue('H'.$row, self::DASH);
+            $sheet->setCellValue('J'.$row, self::DASH);
 
             return;
         }
 
-        $sheet->setCellValue('G'.$row, $budgetHours);
-        $sheet->setCellValue('I'.$row, '=H'.$row.'-G'.$row);
+        $sheet->setCellValue('H'.$row, $budgetHours);
+        $sheet->setCellValue('J'.$row, '=I'.$row.'-H'.$row);
     }
 
     /**
@@ -1133,14 +1151,15 @@ class InternalPlanningExcelService
             ->setFooter(0.3);
 
         $sheet->getColumnDimension('A')->setWidth(22);
-        $sheet->getColumnDimension('B')->setWidth(28);
-        $sheet->getColumnDimension('C')->setWidth(16);
-        $sheet->getColumnDimension('D')->setWidth(22);
-        $sheet->getColumnDimension('E')->setWidth(10);
-        $sheet->getColumnDimension('F')->setWidth(26);
-        $sheet->getColumnDimension('G')->setWidth(12);
+        $sheet->getColumnDimension('B')->setWidth(22);
+        $sheet->getColumnDimension('C')->setWidth(28);
+        $sheet->getColumnDimension('D')->setWidth(16);
+        $sheet->getColumnDimension('E')->setWidth(22);
+        $sheet->getColumnDimension('F')->setWidth(10);
+        $sheet->getColumnDimension('G')->setWidth(26);
         $sheet->getColumnDimension('H')->setWidth(12);
         $sheet->getColumnDimension('I')->setWidth(12);
+        $sheet->getColumnDimension('J')->setWidth(12);
 
         $column = self::LEFT_COLUMNS + 1;
         foreach ($weeks as $week) {
@@ -1160,7 +1179,7 @@ class InternalPlanningExcelService
             'borders' => ['allBorders' => $medium],
         ]);
 
-        $sheet->getRowDimension(1)->setRowHeight(36);
+        $sheet->getRowDimension(1)->setRowHeight(42);
         $sheet->getStyle('A1:'.$lastColRef.'1')->applyFromArray([
             'font' => ['name' => self::FONT, 'size' => 12, 'bold' => true, 'color' => ['rgb' => '000000']],
             'alignment' => [
@@ -1172,7 +1191,7 @@ class InternalPlanningExcelService
                 'startColor' => ['rgb' => self::GRAY],
             ],
         ]);
-        $sheet->getStyle('E1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('F1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
         $sheet->getRowDimension(2)->setRowHeight(34);
         $sheet->getStyle('A2:'.$lastColRef.'2')->applyFromArray([
@@ -1187,7 +1206,7 @@ class InternalPlanningExcelService
                 'startColor' => ['rgb' => self::RED],
             ],
         ]);
-        $sheet->getStyle('A2:F2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('A2:G2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
         $sheet->getStyle('A3:'.$lastColRef.$lastRow)->applyFromArray([
             'font' => ['name' => self::FONT, 'size' => 9],
@@ -1198,19 +1217,19 @@ class InternalPlanningExcelService
             ],
         ]);
         $firstWeekCol = Coordinate::stringFromColumnIndex(self::LEFT_COLUMNS + 1);
-        $sheet->getStyle('G3:'.$lastColRef.$lastRow)->applyFromArray([
+        $sheet->getStyle('H3:'.$lastColRef.$lastRow)->applyFromArray([
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
-        $sheet->getStyle('G3:H'.$lastRow)->applyFromArray([
+        $sheet->getStyle('H3:I'.$lastRow)->applyFromArray([
             'numberFormat' => ['formatCode' => self::HOURS_FORMAT],
         ]);
-        $sheet->getStyle('I3:I'.$lastRow)->applyFromArray([
+        $sheet->getStyle('J3:J'.$lastRow)->applyFromArray([
             'numberFormat' => ['formatCode' => self::DIFF_FORMAT],
         ]);
         $sheet->getStyle($firstWeekCol.'3:'.$lastColRef.$lastRow)->applyFromArray([
             'numberFormat' => ['formatCode' => self::HOURS_FORMAT],
         ]);
-        $sheet->getStyle('E3:E'.$lastRow)->applyFromArray([
+        $sheet->getStyle('F3:F'.$lastRow)->applyFromArray([
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
             'numberFormat' => ['formatCode' => '0" m2"'],
         ]);
@@ -1262,10 +1281,40 @@ class InternalPlanningExcelService
 
         $difference = (float) $rowData['planned_hours'] - (float) $rowData['budget_hours'];
         if ($difference > 0.001) {
-            $sheet->getStyle('I'.$row)->getFont()->getColor()->setRGB(self::RED);
+            $sheet->getStyle('J'.$row)->getFont()->getColor()->setRGB(self::RED);
         } elseif ($difference < -0.001) {
-            $sheet->getStyle('I'.$row)->getFont()->getColor()->setRGB(self::UNDER_GREEN);
+            $sheet->getStyle('J'.$row)->getFont()->getColor()->setRGB(self::UNDER_GREEN);
         }
+    }
+
+    private function addCompanyLogo(Worksheet $sheet): void
+    {
+        $path = $this->publicImagePath((string) config('company.logo'));
+        if ($path === null) {
+            return;
+        }
+
+        $drawing = new Drawing;
+        $drawing->setName((string) config('company.name'));
+        $drawing->setDescription((string) config('company.name'));
+        $drawing->setPath($path);
+        $drawing->setCoordinates('A1');
+        $drawing->setOffsetX(4);
+        $drawing->setOffsetY(4);
+        $drawing->setHeight(34);
+        $drawing->setWorksheet($sheet);
+    }
+
+    private function publicImagePath(string $relative): ?string
+    {
+        $relative = trim($relative);
+        if ($relative === '') {
+            return null;
+        }
+
+        $absolute = public_path($relative);
+
+        return is_file($absolute) ? $absolute : null;
     }
 
     private function optionalInt(mixed $value): ?int
