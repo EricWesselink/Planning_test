@@ -5,14 +5,20 @@ namespace App\Http\Controllers;
 use App\Enums\ProjectKind;
 use App\Models\Project;
 use App\Models\Worker;
+use App\Services\InternalPlanningExcelService;
 use App\Services\PlanningBoardService;
+use App\Services\WeekplanningPdfService;
+use App\Support\PlanningWeek;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PlanningController extends Controller
 {
-    public function index(Request $request, PlanningBoardService $board): View
+    public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning): View
     {
         $this->authorizeRequestedProject($request);
         $data = $board->build($request);
@@ -46,6 +52,7 @@ class PlanningController extends Controller
                 ->get(),
             'canManagePlanning' => $request->user()?->canManagePlanning() ?? false,
             'canViewLaborCosts' => $request->user()?->canViewLaborCosts() ?? false,
+            'weekplanningTeams' => $weekplanning->scheduledGroups($request),
         ]));
     }
 
@@ -60,6 +67,41 @@ class PlanningController extends Controller
             'showNames' => $request->boolean('intern'),
             'canViewLaborCosts' => ($request->user()?->canViewLaborCosts() ?? false) && $request->boolean('intern'),
         ]));
+    }
+
+    public function weekplanning(Request $request, WeekplanningPdfService $weekplanning): Response
+    {
+        $data = $weekplanning->build($request);
+        $pdf = Pdf::loadView('planning.weekplanning', $data)
+            ->setPaper('a4', 'landscape')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['heading'].' · Week '.$data['weekNumber'].' · '.$data['weekYear'],
+        ]);
+        $pdf->render();
+
+        $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
+        $muted = [0.35, 0.35, 0.38];
+        $pdf->getCanvas()->page_text(
+            28,
+            18,
+            'NICON VLOEREN | Weekplanning | Gegenereerd op '.$data['generatedOn'],
+            $font,
+            8,
+            $muted,
+        );
+        $pdf->getCanvas()->page_text(700, 18, 'Pagina {PAGE_NUM} van {PAGE_COUNT}', $font, 8, $muted);
+
+        return $pdf->stream($data['filename']);
+    }
+
+    public function excel(Request $request, InternalPlanningExcelService $excel): BinaryFileResponse
+    {
+        $request->validate([
+            'year' => ['nullable', 'integer', 'min:'.PlanningWeek::MIN_YEAR, 'max:'.PlanningWeek::MAX_YEAR],
+        ]);
+
+        return $excel->download($request);
     }
 
     /**

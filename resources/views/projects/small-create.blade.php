@@ -18,7 +18,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('projects.small.store') }}" class="mt-6 max-w-xl space-y-4 border border-nicon-line bg-white p-5" data-small-work-form>
+    <form method="POST" action="{{ route('projects.small.store') }}" class="mt-6 max-w-2xl space-y-4 border border-nicon-line bg-white p-5" data-small-work-form>
         @csrf
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="type">Type</label>
@@ -54,9 +54,24 @@
             <p class="mt-1 text-xs text-nicon-muted">Klant en werknummer komen van dit project. Uren blijven bij dit opdrachtnummer.</p>
         </div>
 
+        <div class="grid gap-4 sm:grid-cols-2" @class(['hidden' => ! $linked]) data-small-work-linked>
+            <div>
+                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="klaar_date">Klaar</label>
+                <input id="klaar_date" type="date" name="klaar_date" value="{{ old('klaar_date') }}" class="mt-1 w-full border border-nicon-line px-3 py-2">
+            </div>
+        </div>
+
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="description">Korte omschrijving</label>
             <input id="description" name="description" value="{{ old('description') }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="plint herstellen">
+        </div>
+
+        <div @class(['hidden' => ! $linked]) data-small-work-linked>
+            @include('projects.partials.extra-lines', [
+                'lines' => $lines,
+                'showCompleted' => false,
+                'canUpdate' => true,
+            ])
         </div>
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>

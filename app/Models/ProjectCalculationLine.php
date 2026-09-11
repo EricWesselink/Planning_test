@@ -58,7 +58,7 @@ class ProjectCalculationLine extends Model
 
     public function isMatched(): bool
     {
-        return $this->match_status === 'matched' && filled($this->work_match_label);
+        return in_array($this->match_status, ['matched', 'warning'], true) && filled($this->work_match_label);
     }
 
     public function usesSquareMeters(): bool

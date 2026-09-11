@@ -9,6 +9,7 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\Format;
 use App\Support\PlanningHours;
+use App\Support\PlanningLaborForecast;
 use Illuminate\Support\Collection;
 
 class ProjectLaborCalculator
@@ -30,6 +31,7 @@ class ProjectLaborCalculator
      *     completed_m2: float,
      *     cost_per_m2: ?float,
      *     budget_cost_per_m2: ?float,
+     *     forecast_unit_price: ?float,
      *     cost_delta_per_m2: ?float,
      *     summary: ?string,
      *     budget_summary: ?string,
@@ -86,6 +88,12 @@ class ProjectLaborCalculator
             2,
         );
         $budgetLaborCost = round((float) $originalItems->sum('budget_labor_cost'), 2);
+        $forecastLaborCost = round(
+            (float) $originalItems->sum('forecast_labor_cost')
+                + ($hourlyRate === null ? 0.0 : $unassignedHours * $hourlyRate),
+            2,
+        );
+        $forecastHours = round((float) $originalItems->sum('forecast_hours') + $unassignedHours, 2);
         $plannedLaborCost = round(
             (float) $originalItems->sum(
                 fn (array $row): float => $row['hourly_rate'] === null ? 0.0 : $row['planned_hours'] * $row['hourly_rate']
@@ -111,6 +119,8 @@ class ProjectLaborCalculator
             $hourlyRate,
             $budgetLaborCost,
             $actualLaborCost,
+            $forecastHours,
+            $forecastLaborCost,
             $orderedM2,
             $completedM2,
             WorkUnit::SquareMeter->value,
@@ -198,6 +208,12 @@ class ProjectLaborCalculator
         $actualLaborCost = $hourlyRate === null ? 0.0 : round($actualHours * $hourlyRate, 2);
         $budgetLaborCost = $hourlyRate === null ? 0.0 : round($budgetHours * $hourlyRate, 2);
         $plannedLaborCost = $hourlyRate === null ? 0.0 : round($plannedHours * $hourlyRate, 2);
+        $forecastHours = PlanningLaborForecast::expectedHours(
+            $plannedHours,
+            $actualHours,
+            $this->quantityComplete($budgetQty, $completedQty),
+        );
+        $forecastLaborCost = $hourlyRate === null ? 0.0 : round($forecastHours * $hourlyRate, 2);
         $laborCost = $actualHours > 0.0001 ? $actualLaborCost : $plannedLaborCost;
         $unitLabel = $item->unit?->label() ?? '';
         $prices = $this->priceFields(
@@ -206,6 +222,8 @@ class ProjectLaborCalculator
             $hourlyRate,
             $budgetLaborCost,
             $actualLaborCost,
+            $forecastHours,
+            $forecastLaborCost,
             $budgetQty,
             $completedQty,
             $item->unit?->value,
@@ -285,6 +303,8 @@ class ProjectLaborCalculator
         $hourlyRate = $rates->count() === 1 ? (float) $rates->first() : null;
         $actualLaborCost = round((float) collect($rows)->sum('actual_labor_cost'), 2);
         $budgetLaborCost = round((float) collect($rows)->sum('budget_labor_cost'), 2);
+        $forecastLaborCost = round((float) collect($rows)->sum('forecast_labor_cost'), 2);
+        $forecastHours = round((float) collect($rows)->sum('forecast_hours'), 2);
         $laborCost = $actualHours > 0.0001 ? $actualLaborCost : round((float) collect($rows)->sum('labor_cost'), 2);
         $completedQty = round((float) collect($rows)->sum('completed_qty'), 2);
         $budgetQty = round((float) collect($rows)->sum('budget_qty'), 2);
@@ -298,6 +318,8 @@ class ProjectLaborCalculator
             $hourlyRate,
             $budgetLaborCost,
             $actualLaborCost,
+            $forecastHours,
+            $forecastLaborCost,
             $budgetQty,
             $completedQty,
             $unitValueKey !== '' ? $unitValueKey : null,
@@ -370,15 +392,24 @@ class ProjectLaborCalculator
 
     /**
      * @return array{
+     *     forecast_hours: float,
+     *     forecast_labor_cost: float,
      *     budget_unit_price: ?float,
      *     actual_unit_price: ?float,
+     *     forecast_unit_price: ?float,
      *     budget_cost_per_m2: ?float,
      *     actual_cost_per_m2: ?float,
+     *     forecast_cost_per_m2: ?float,
      *     price_per_unit: ?float,
      *     cost_delta: ?float,
      *     cost_delta_per_m2: ?float,
      *     cost_delta_label: ?string,
      *     cost_delta_tone: 'none'|'ok'|'over',
+     *     forecast_delta: ?float,
+     *     forecast_delta_label: ?string,
+     *     forecast_delta_tone: 'none'|'ok'|'warn'|'over',
+     *     forecast_over_percent: ?int,
+     *     forecast_over_percent_label: ?string,
      *     unit_price_title: ?string,
      *     finance: ?string,
      * }
@@ -389,6 +420,8 @@ class ProjectLaborCalculator
         ?float $hourlyRate,
         float $budgetLaborCost,
         float $actualLaborCost,
+        float $forecastHours,
+        float $forecastLaborCost,
         float $orderedQty,
         float $completedQty,
         ?string $unitValue,
@@ -396,35 +429,57 @@ class ProjectLaborCalculator
     ): array {
         $suffix = $this->priceSuffix($unitValue, $unitLabel);
         $showsPrice = $this->isPricedUnit($unitValue);
+        $forecastHours = round($forecastHours, 2);
         $budgetPrice = $showsPrice ? $this->unitPrice($budgetLaborCost, $orderedQty) : null;
         $actualPrice = $showsPrice && $actualHours > 0.0001 && $completedQty > 0.0001
             ? $this->unitPrice($actualLaborCost, $completedQty)
             : null;
+        $forecastPrice = $showsPrice && $forecastHours > 0.0001
+            ? $this->unitPrice($forecastLaborCost, $orderedQty)
+            : null;
         $delta = $this->delta($actualPrice, $budgetPrice);
+        $forecastDelta = $this->delta($forecastPrice, $budgetPrice);
+        $forecastOverPercent = $this->overPercent($forecastPrice, $budgetPrice);
 
         return [
+            'forecast_hours' => $forecastHours,
+            'forecast_labor_cost' => round($forecastLaborCost, 2),
             'budget_unit_price' => $budgetPrice,
             'actual_unit_price' => $actualPrice,
+            'forecast_unit_price' => $forecastPrice,
             'budget_cost_per_m2' => $budgetPrice,
             'actual_cost_per_m2' => $actualPrice,
+            'forecast_cost_per_m2' => $forecastPrice,
             'price_per_unit' => $actualPrice,
             'cost_delta' => $delta,
             'cost_delta_per_m2' => $delta,
             'cost_delta_label' => $delta === null ? null : $this->deltaLabel($delta, $suffix),
             'cost_delta_tone' => $this->deltaTone($delta),
+            'forecast_delta' => $forecastDelta,
+            'forecast_delta_label' => $forecastDelta === null ? null : $this->deltaLabel($forecastDelta, $suffix),
+            'forecast_delta_tone' => $this->forecastTone($forecastPrice, $budgetPrice),
+            'forecast_over_percent' => $forecastOverPercent,
+            'forecast_over_percent_label' => $forecastOverPercent === null ? null : '+'.$forecastOverPercent.'%',
             'unit_price_title' => $this->unitPriceTitle(
                 $budgetHours,
+                $forecastHours,
                 $actualHours,
                 $hourlyRate,
                 $orderedQty,
                 $completedQty,
                 $budgetPrice,
+                $forecastPrice,
                 $actualPrice,
-                $delta,
+                $forecastDelta ?? $delta,
                 $suffix,
             ),
             'finance' => $this->financeLine($budgetPrice, $actualPrice, $suffix),
         ];
+    }
+
+    private function quantityComplete(float $orderedQty, float $completedQty): bool
+    {
+        return $orderedQty > 0.0001 && $completedQty >= $orderedQty - 0.0001;
     }
 
     private function isPricedUnit(?string $unitValue): bool
@@ -484,6 +539,35 @@ class ProjectLaborCalculator
         return 'none';
     }
 
+    /**
+     * @return 'none'|'ok'|'warn'|'over'
+     */
+    private function forecastTone(?float $forecast, ?float $budget): string
+    {
+        if ($forecast === null || $budget === null) {
+            return 'none';
+        }
+
+        if ($forecast <= $budget + 0.0001) {
+            return $forecast < $budget - 0.0001 ? 'ok' : 'none';
+        }
+
+        $percent = ($forecast - $budget) / $budget * 100;
+
+        return $percent > 20.0001 ? 'over' : 'warn';
+    }
+
+    private function overPercent(?float $forecast, ?float $budget): ?int
+    {
+        if ($forecast === null || $budget === null || $budget <= 0.0001) {
+            return null;
+        }
+
+        $percent = (int) round(($forecast - $budget) / $budget * 100);
+
+        return $percent > 0 ? $percent : null;
+    }
+
     private function deltaLabel(float $delta, string $suffix): string
     {
         $sign = $delta > 0.0001 ? '+' : ($delta < -0.0001 ? '-' : '');
@@ -493,16 +577,18 @@ class ProjectLaborCalculator
 
     private function unitPriceTitle(
         float $budgetHours,
+        float $forecastHours,
         float $actualHours,
         ?float $hourlyRate,
         float $orderedQty,
         float $completedQty,
         ?float $budgetPrice,
+        ?float $forecastPrice,
         ?float $actualPrice,
         ?float $delta,
         string $suffix,
     ): ?string {
-        if ($hourlyRate === null && $budgetPrice === null && $actualPrice === null) {
+        if ($hourlyRate === null && $budgetPrice === null && $forecastPrice === null && $actualPrice === null) {
             return null;
         }
 
@@ -512,6 +598,13 @@ class ProjectLaborCalculator
                 .' × '.Format::euroWhole($hourlyRate)
                 .' / '.Format::qty($orderedQty).$suffix
                 .' = '.Format::euro($budgetPrice, 2).'/'.$suffix;
+        }
+
+        if ($forecastPrice !== null && $hourlyRate !== null) {
+            $lines[] = 'Prognose: '.PlanningHours::hoursLabel($forecastHours)
+                .' × '.Format::euroWhole($hourlyRate)
+                .' / '.Format::qty($orderedQty).$suffix
+                .' = '.Format::euro($forecastPrice, 2).'/'.$suffix;
         }
 
         if ($actualPrice !== null && $hourlyRate !== null) {

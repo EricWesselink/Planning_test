@@ -59,6 +59,19 @@ class PlanningLaborForecastTest extends TestCase
         $this->assertSame('—', $forecast['rest_label']);
     }
 
+    public function test_expected_hours_are_actual_plus_remaining_planned(): void
+    {
+        $this->assertSame(48.0, PlanningLaborForecast::expectedHours(48, 10));
+        $this->assertSame(50.0, PlanningLaborForecast::expectedHours(48, 50));
+        $this->assertSame(48.0, PlanningLaborForecast::expectedHours(48, 0));
+    }
+
+    public function test_expected_hours_use_actual_when_the_quantity_is_complete(): void
+    {
+        $this->assertSame(38.0, PlanningLaborForecast::expectedHours(48, 38, true));
+        $this->assertSame(48.0, PlanningLaborForecast::expectedHours(48, 0, true));
+    }
+
     public function test_splits_a_single_bar_proportionally_when_planned_hours_exceed_budget(): void
     {
         $splits = PlanningLaborForecast::splitByBudget(30.1, [

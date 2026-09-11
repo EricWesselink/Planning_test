@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ProjectKind;
+use App\Enums\SmallWorkType;
 use App\Enums\WorkUnit;
 use App\Models\Project;
 use App\Models\ProjectDocument;
@@ -32,6 +33,8 @@ class ShopProjectController extends Controller
             'activityNotes' => old('activity_notes', []),
             'activityQuantities' => old('activity_quantities', []),
             'activityUnits' => old('activity_units', []),
+            'activityHours' => old('activity_hours', []),
+            'hourlyRate' => old('basis_uurtarief', SmallWorkType::HOURLY_RATE),
             'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
         ]);
     }
@@ -97,7 +100,7 @@ class ShopProjectController extends Controller
      */
     private function validated(Request $request, ?Project $project = null): array
     {
-        $this->normalizeQuantities($request);
+        $this->normalizeDecimalMaps($request, ['activity_quantities', 'activity_hours']);
         $this->normalizeHourlyRate($request);
         $maxKb = (int) config('filesystems.project_file_max_kilobytes');
         $allowedIds = $this->allowedActivityIds($project);
@@ -107,6 +110,8 @@ class ShopProjectController extends Controller
             'city' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
+            'contact_phone' => ['nullable', 'string', 'max:64'],
+            'contact_email' => ['nullable', 'email', 'max:255'],
             'work_description' => ['nullable', 'string', 'max:5000'],
             'work_activity_ids' => ['required', 'array', 'min:1'],
             'work_activity_ids.*' => ['integer', Rule::exists('work_activities', 'id')->where(fn ($query) => $query->whereIn('id', $allowedIds))],
@@ -114,6 +119,8 @@ class ShopProjectController extends Controller
             'activity_notes.*' => ['nullable', 'string', 'max:500'],
             'activity_quantities' => ['nullable', 'array'],
             'activity_quantities.*' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'activity_hours' => ['nullable', 'array'],
+            'activity_hours.*' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
             'activity_units' => ['nullable', 'array'],
             'activity_units.*' => ['nullable', Rule::in($shopUnits)],
             'attachments' => ['nullable', 'array', 'max:20'],
@@ -127,6 +134,9 @@ class ShopProjectController extends Controller
             $project?->planned_end_date,
         ));
         $data = $validator->validate();
+        if (($data['basis_uurtarief'] ?? null) === null) {
+            $data['basis_uurtarief'] = SmallWorkType::HOURLY_RATE;
+        }
 
         return $project === null ? PlanningWeek::applyTo($data) : $data;
     }
@@ -144,18 +154,23 @@ class ShopProjectController extends Controller
         return $ids->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
     }
 
-    private function normalizeQuantities(Request $request): void
+    /**
+     * @param  list<string>  $keys
+     */
+    private function normalizeDecimalMaps(Request $request, array $keys): void
     {
-        $quantities = $request->input('activity_quantities');
-        if (! is_array($quantities)) {
-            return;
-        }
+        foreach ($keys as $key) {
+            $values = $request->input($key);
+            if (! is_array($values)) {
+                continue;
+            }
 
-        $request->merge([
-            'activity_quantities' => collect($quantities)
-                ->map(fn (mixed $value): mixed => Format::decimalInput($value))
-                ->all(),
-        ]);
+            $request->merge([
+                $key => collect($values)
+                    ->map(fn (mixed $value): mixed => Format::decimalInput($value))
+                    ->all(),
+            ]);
+        }
     }
 
     private function normalizeHourlyRate(Request $request): void
@@ -190,11 +205,14 @@ class ShopProjectController extends Controller
     {
         return [
             'customer_name.required' => 'Vul een klantnaam in.',
+            'contact_email.email' => 'Vul een geldig e-mailadres in.',
             'work_activity_ids.required' => 'Kies minstens één werkzaamheid.',
             'work_activity_ids.min' => 'Kies minstens één werkzaamheid.',
             'work_activity_ids.*.exists' => 'Deze werkzaamheid is niet beschikbaar.',
             'activity_quantities.*.numeric' => 'Vul een geldig aantal in.',
-            'activity_units.*.in' => 'Kies m² of stuks.',
+            'activity_hours.*.numeric' => 'Vul geldige begrote uren in.',
+            'activity_hours.*.min' => 'Begrote uren kunnen niet lager zijn dan 0.',
+            'activity_units.*.in' => 'Kies m², m¹ of stuks.',
             'basis_uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
             'basis_uurtarief.numeric' => 'Vul een geldig uurtarief in.',
             'attachments.required' => 'Kies minstens één bestand.',

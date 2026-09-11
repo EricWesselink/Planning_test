@@ -12,10 +12,12 @@ use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
+use App\Models\WorkProgressEntry;
 use App\Support\PlanningHours;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SmallWorkService
 {
@@ -29,6 +31,9 @@ class SmallWorkService
      *     description: string,
      *     location?: ?string,
      *     date: string,
+     *     klaar_date?: ?string,
+     *     quantity?: float|int|string|null,
+     *     lines?: array<int, array<string, mixed>>,
      *     hours: float|int|string,
      *     worker_id?: ?int,
      *     team_id?: ?int,
@@ -147,6 +152,87 @@ class SmallWorkService
     }
 
     /**
+     * @param  array{
+     *     description: string,
+     *     date: string,
+     *     klaar_date?: ?string,
+     *     hours: float|int|string,
+     *     quantity?: float|int|string|null,
+     *     lines?: array<int, array<string, mixed>>,
+     *     actual_hours?: float|int|string|null,
+     *     completed_quantity?: float|int|string|null
+     * }  $data
+     */
+    public function updateAttached(WorkItem $item, array $data, User $user): WorkItem
+    {
+        abort_unless($item->isExtraWork(), 404);
+
+        return DB::transaction(function () use ($item, $data, $user) {
+            $item->loadMissing(['assignments', 'progressEntries', 'project']);
+            $hours = PlanningHours::snapHours((float) $data['hours']);
+            $date = Carbon::parse($data['date'])->toDateString();
+            $klaar = filled($data['klaar_date'] ?? null)
+                ? Carbon::parse((string) $data['klaar_date'])->toDateString()
+                : $date;
+            $lines = $this->extraLinesFrom($data);
+            $quantity = round(array_sum(array_column($lines, 'quantity')), 2);
+            $hasMaterial = $quantity > 0.0001;
+            $description = trim((string) $data['description']);
+
+            $item->update([
+                'name' => $description,
+                'unit' => $hasMaterial ? WorkUnit::SquareMeter : WorkUnit::Hours,
+                'ordered_quantity' => $hasMaterial ? $quantity : $hours,
+                'begrote_uren' => $hours,
+                'begrote_hoeveelheid' => $hasMaterial ? $quantity : null,
+                'uurtarief' => SmallWorkType::HOURLY_RATE,
+                'planned_start_date' => $date,
+                'planned_end_date' => $klaar,
+                'extra_lines' => $lines === [] ? null : $lines,
+            ]);
+            $this->reschedule($item->fresh('assignments') ?? $item, $date, $hours);
+
+            $actualHours = is_numeric($data['actual_hours'] ?? null) ? (float) $data['actual_hours'] : 0.0;
+            $completed = round(array_sum(array_column($lines, 'completed')), 2);
+            if ($completed <= 0.0001 && is_numeric($data['completed_quantity'] ?? null)) {
+                $completed = (float) $data['completed_quantity'];
+            }
+            if ($actualHours > 0.0001 || $completed > 0.0001) {
+                $workerId = $item->assignments->first()?->worker_id;
+                if ($workerId === null) {
+                    throw ValidationException::withMessages([
+                        'actual_hours' => 'Plan eerst een vakman in.',
+                    ]);
+                }
+
+                $doneQty = $completed > 0.0001
+                    ? $completed
+                    : ($hasMaterial ? $quantity : $hours);
+                $entry = $item->progressEntries->first();
+                $payload = [
+                    'project_id' => $item->project_id,
+                    'work_item_id' => $item->id,
+                    'worker_id' => $workerId,
+                    'date' => $klaar,
+                    'completed_quantity' => $doneQty,
+                    'unit' => $hasMaterial ? WorkUnit::SquareMeter : WorkUnit::Hours,
+                    'worked_hours' => $actualHours,
+                    'note' => $description,
+                    'created_by' => $user->id,
+                ];
+                if ($entry instanceof WorkProgressEntry) {
+                    $entry->update($payload);
+                } else {
+                    WorkProgressEntry::query()->create($payload);
+                }
+                $item->syncStatusFromProgress();
+            }
+
+            return $item->fresh(['assignments', 'progressEntries']) ?? $item;
+        });
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      */
     private function createAttached(SmallWorkType $type, array $data): Project
@@ -154,21 +240,29 @@ class SmallWorkService
         $project = Project::query()->findOrFail($data['project_id']);
         $hours = PlanningHours::snapHours((float) $data['hours']);
         $date = Carbon::parse($data['date'])->toDateString();
+        $klaar = filled($data['klaar_date'] ?? null)
+            ? Carbon::parse((string) $data['klaar_date'])->toDateString()
+            : $date;
+        $lines = $this->extraLinesFrom($data);
+        $quantity = round(array_sum(array_column($lines, 'quantity')), 2);
+        $hasMaterial = $quantity > 0.0001;
         $description = trim((string) $data['description']);
         $sort = (int) $project->workItems()->max('sort_order') + 1;
 
         $item = $project->workItems()->create([
             'name' => $description,
-            'unit' => WorkUnit::Hours,
-            'ordered_quantity' => $hours,
+            'unit' => $hasMaterial ? WorkUnit::SquareMeter : WorkUnit::Hours,
+            'ordered_quantity' => $hasMaterial ? $quantity : $hours,
             'begrote_uren' => $hours,
+            'begrote_hoeveelheid' => $hasMaterial ? $quantity : null,
             'uurtarief' => SmallWorkType::HOURLY_RATE,
             'planned_start_date' => $date,
-            'planned_end_date' => $date,
+            'planned_end_date' => $klaar,
             'status' => 'gepland',
             'sort_order' => $sort,
             'is_extra_work' => true,
             'small_work_type' => $type,
+            'extra_lines' => $lines === [] ? null : $lines,
         ]);
 
         $this->schedule($project, $item, $data, $date, $hours);
@@ -229,5 +323,30 @@ class SmallWorkService
         }
 
         return collect();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<array{name: string, quantity: float, completed: float}>
+     */
+    private function extraLinesFrom(array $data): array
+    {
+        $lines = WorkItem::normalizeExtraLines(is_array($data['lines'] ?? null) ? $data['lines'] : []);
+        if ($lines !== []) {
+            return $lines;
+        }
+
+        $quantity = is_numeric($data['quantity'] ?? null) ? (float) $data['quantity'] : 0.0;
+        if ($quantity <= 0.0001) {
+            return [];
+        }
+
+        $completed = is_numeric($data['completed_quantity'] ?? null) ? (float) $data['completed_quantity'] : 0.0;
+
+        return [[
+            'name' => 'Materiaal',
+            'quantity' => $quantity,
+            'completed' => $completed,
+        ]];
     }
 }

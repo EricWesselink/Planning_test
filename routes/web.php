@@ -56,6 +56,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/planning', [PlanningController::class, 'index'])->name('planning');
     Route::get('/planning/candidates', [PlanningActionController::class, 'candidates'])->name('planning.candidates');
     Route::get('/planning/pdf', [PlanningController::class, 'export'])->name('planning.export');
+    Route::get('/planning/weekplanning', [PlanningController::class, 'weekplanning'])->name('planning.weekplanning');
+    Route::get('/planning/excel', [PlanningController::class, 'excel'])->name('planning.excel');
     Route::post('/planning/shift', [PlanningActionController::class, 'shift'])->name('planning.shift');
     Route::post('/planning/assignments/move', [PlanningActionController::class, 'moveAssignment'])->name('planning.assignments.move');
     Route::post('/planning/assignments', [PlanningActionController::class, 'storeAssignment'])->name('planning.assignments.store');
@@ -79,6 +81,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/projecten/klein/nieuw', [SmallWorkController::class, 'create'])->name('projects.small.create');
     Route::post('/projecten/klein', [SmallWorkController::class, 'store'])->name('projects.small.store');
     Route::patch('/projecten/klein/{project}', [SmallWorkController::class, 'update'])->name('projects.small.update');
+    Route::get('/projecten/{project}/extra-werk/{workItem}', [SmallWorkController::class, 'editExtra'])->name('projects.extra.edit')->scopeBindings();
+    Route::patch('/projecten/{project}/extra-werk/{workItem}', [SmallWorkController::class, 'updateExtra'])->name('projects.extra.update')->scopeBindings();
     Route::post('/projecten/inlezen', [MeetstaatImportController::class, 'preview'])->name('projects.preview');
     Route::get('/projecten/controle/{token}', [MeetstaatImportController::class, 'review'])->name('projects.review');
     Route::post('/projecten/controle/{token}', [MeetstaatImportController::class, 'import'])->name('projects.import');

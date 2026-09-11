@@ -6,6 +6,7 @@ use App\Enums\ImportSourceRole;
 use App\Services\CalculationExcelParser;
 use App\Services\Meetstaat\ImportDocumentClassifier;
 use App\Services\Meetstaat\ImportPreviewBuilder;
+use App\Services\Meetstaat\MaterialIdentity;
 use App\Services\Meetstaat\PdfTextExtractor;
 use App\Services\SpreadsheetReader;
 use Illuminate\Http\UploadedFile;
@@ -163,7 +164,7 @@ TXT;
         return new ImportDocumentClassifier(
             new PdfTextExtractor,
             new SpreadsheetReader,
-            new CalculationExcelParser,
+            new CalculationExcelParser(new MaterialIdentity),
         );
     }
 

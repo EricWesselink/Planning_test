@@ -1,24 +1,30 @@
 @php
     $laborLines = $preview['calculation']['labor'] ?? [];
     $openLabor = (int) ($preview['calculation']['open_matches'] ?? 0);
+    $laborWarnings = (int) ($preview['calculation']['warnings'] ?? 0);
     $options = $preview['calculation']['options'] ?? [];
+    $products = $preview['calculation']['products'] ?? [];
+    $sourceChecks = $preview['calculation']['source_checks'] ?? [];
 @endphp
 @if ($laborLines !== [])
     <x-review-fold
         id="begrote-arbeidsuren"
         title="Begrote arbeidsuren uit calculatie"
         :expanded="$openLabor > 0 || $errors->has('calculation_labor')"
-        :badge="$openLabor > 0 ? 'Controleren' : null"
+        :badge="$openLabor > 0 ? 'Handmatige controle' : ($laborWarnings > 0 ? 'Waarschuwing' : null)"
     >
         @error('calculation_labor')
             <p class="text-sm text-nicon-danger">{{ $message }}</p>
         @enderror
         <p class="text-sm text-nicon-muted">
-            Uren en tarieven komen uit de Excel-calculatie (M/U = U en EH = uur). Het tarief wordt per regel bewaard, niet hardcoded.
+            Uren en tarieven komen uit de Excel-calculatie (M/U = U en EH = uur). Hoeveelheden komen uit de bronbestanden, nooit terugrekend vanuit uren.
             @if (! empty($preview['calculation']['filenames']))
                 Bron: {{ implode(', ', $preview['calculation']['filenames']) }}
             @endif
         </p>
+        @if ($openLabor === 0)
+            <p class="text-sm text-nicon-ok">Arbeidsregels, producten en hoeveelheden zijn automatisch gekoppeld uit Excel, meetstaat en materialenstaat.</p>
+        @endif
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-nicon-ink text-white text-left">
@@ -42,21 +48,33 @@
                             }
                             $qtyUnit = $line['quantity_unit'] ?? $line['unit'] ?? '';
                             $qtyLabel = $qtyUnit === 'm2' ? 'm²' : ($qtyUnit === 'm1' ? 'm¹' : $qtyUnit);
-                            $quantityUncertain = ($line['quantity_status'] ?? '') === 'review';
-                            if ($quantityUncertain && $status !== 'review') {
-                                $status = 'review';
-                            }
+                            $contextMaterials = $line['context_materials'] ?? [];
+                            $rowClass = match ($status) {
+                                'review' => 'bg-amber-50',
+                                'warning' => 'bg-amber-50/60',
+                                default => '',
+                            };
                         @endphp
-                        <tr class="border-t border-nicon-line {{ $status === 'review' ? 'bg-amber-50' : '' }}">
+                        <tr class="border-t border-nicon-line {{ $rowClass }}">
                             <td class="px-3 py-2">
                                 <div>{{ $line['description'] ?? $line['production_description'] }}</div>
                                 @if (! empty($line['group_code']))
                                     <div class="text-xs text-nicon-muted">Groep {{ $line['group_code'] }}</div>
                                 @endif
+                                @foreach ($contextMaterials as $material)
+                                    <div class="text-xs text-nicon-muted">
+                                        {{ $material['label'] ?? '' }}
+                                        @if (($material['m2'] ?? 0) > 0.0001)
+                                            · {{ \App\Support\Format::qty($material['m2'], 2) }} m²
+                                        @elseif (($material['m1'] ?? 0) > 0.0001)
+                                            · {{ \App\Support\Format::qty($material['m1'], 2) }} m¹
+                                        @endif
+                                    </div>
+                                @endforeach
                             </td>
                             <td class="px-3 py-2">
                                 <select name="calculation_labor[{{ $index }}][work_name]" class="w-full border border-nicon-line bg-white px-2 py-1 text-sm">
-                                    <option value="">Controleren…</option>
+                                    <option value="">{{ $status === 'review' ? 'Kies werkzaamheid…' : '' }}</option>
                                     @foreach ($options as $option)
                                         <option value="{{ $option }}" @selected($selected === $option)>{{ $option }}</option>
                                     @endforeach
@@ -66,11 +84,10 @@
                                 </select>
                             </td>
                             <td class="px-3 py-2">
-                                @if (($line['quantity_status'] ?? '') === 'review')
-                                    —
-                                    <div class="text-xs text-nicon-warn">Hoeveelheid niet betrouwbaar gekoppeld</div>
-                                @elseif (($line['quantity'] ?? null) !== null && ! in_array(mb_strtolower((string) $qtyUnit), ['uur', 'uren', 'u'], true))
+                                @if (($line['quantity'] ?? null) !== null && ! in_array(mb_strtolower((string) $qtyUnit), ['uur', 'uren', 'u'], true))
                                     {{ \App\Support\Format::qty($line['quantity'], 2) }} {{ $qtyLabel }}
+                                @elseif ($contextMaterials !== [])
+                                    —
                                 @else
                                     —
                                 @endif
@@ -78,8 +95,11 @@
                             <td class="px-3 py-2">{{ \App\Support\Format::qty($line['hours'] ?? 0, 2) }}</td>
                             <td class="px-3 py-2">{{ ($line['hourly_rate'] ?? null) === null ? '—' : \App\Support\Format::euro($line['hourly_rate'], 2) }}</td>
                             <td class="px-3 py-2">{{ ($line['labor_cost'] ?? null) === null ? '—' : \App\Support\Format::euro($line['labor_cost'], 2) }}</td>
-                            <td class="px-3 py-2 {{ $status === 'review' ? 'font-medium text-nicon-warn' : 'text-nicon-muted' }}">
-                                {{ $status === 'review' ? 'Controleren' : 'Gekoppeld' }}
+                            <td class="px-3 py-2 {{ $status === 'review' || $status === 'warning' ? 'font-medium text-nicon-warn' : 'text-nicon-muted' }}">
+                                {{ $line['status_label'] ?? ($status === 'review' ? 'Handmatige controle vereist' : 'Automatisch bevestigd') }}
+                                @if (! empty($line['warning']))
+                                    <div class="text-xs font-normal">{{ $line['warning'] }}</div>
+                                @endif
                             </td>
                         </tr>
                     @endforeach
@@ -95,5 +115,47 @@
                 </tfoot>
             </table>
         </div>
+        @if ($products !== [])
+            <h3 class="mt-4 text-sm font-medium">Hoeveelheden per type en kleur</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-nicon-sand text-left">
+                        <tr>
+                            <th class="px-3 py-2">Product</th>
+                            <th class="px-3 py-2">Excel</th>
+                            <th class="px-3 py-2">Meetstaat</th>
+                            <th class="px-3 py-2">Materialenstaat</th>
+                            <th class="px-3 py-2">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($products as $product)
+                            <tr class="border-t border-nicon-line">
+                                <td class="px-3 py-2">{{ $product['name'] ?? '' }}</td>
+                                <td class="px-3 py-2">{{ $product['excel_quantity'] === null ? '—' : \App\Support\Format::qty($product['excel_quantity'], 2) }}</td>
+                                <td class="px-3 py-2">{{ $product['meetstaat_quantity'] === null ? '—' : \App\Support\Format::qty($product['meetstaat_quantity'], 2) }}</td>
+                                <td class="px-3 py-2">{{ $product['materialenstaat_quantity'] === null ? '—' : \App\Support\Format::qty($product['materialenstaat_quantity'], 2) }}</td>
+                                <td class="px-3 py-2 {{ ($product['status'] ?? '') === 'warning' ? 'text-nicon-warn' : 'text-nicon-muted' }}">
+                                    {{ $product['status_label'] ?? '' }}
+                                    @if (! empty($product['message']))
+                                        <div class="text-xs">{{ $product['message'] }}</div>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+        @if ($sourceChecks !== [])
+            <ul class="mt-3 text-xs text-nicon-muted">
+                @foreach ($sourceChecks as $check)
+                    <li>
+                        {{ $check['label'] ?? '' }}:
+                        {{ ($check['status'] ?? '') === 'confirmed' ? 'automatisch bevestigd' : (($check['status'] ?? '') === 'warning' ? 'waarschuwing' : 'niet vergeleken') }}
+                    </li>
+                @endforeach
+            </ul>
+        @endif
     </x-review-fold>
 @endif

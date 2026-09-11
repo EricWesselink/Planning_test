@@ -182,6 +182,19 @@ body {
     color: white;
 }
 
+.planning-btn--icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.28rem 0.45rem;
+    line-height: 0;
+}
+
+.planning-btn--icon svg {
+    width: 0.95rem;
+    height: 0.95rem;
+}
+
 .planning-pdf-form {
     display: flex;
     align-items: center;
@@ -500,15 +513,16 @@ body {
 }
 
 .plan-board--labor {
-    --planning-sidebar-width: 806px;
+    --planning-sidebar-width: 868px;
     --plan-col-begroot: 60px;
     --plan-col-gepland: 60px;
     --plan-col-gemaakt: 60px;
     --plan-col-rest-uren: 60px;
     --plan-col-m2-budget: 58px;
     --plan-col-m2-actual: 58px;
+    --plan-col-m2-forecast: 62px;
     --plan-col-m2-delta: 68px;
-    --plan-labor-width: 424px;
+    --plan-labor-width: 486px;
     --plan-col-fold-open: 0px;
     --plan-col-fold-close: 22px;
 }
@@ -560,6 +574,10 @@ body {
 .plan-line--section .plan-frozen {
     background: var(--color-nicon-ink);
     border-right-color: rgba(255, 255, 255, 0.2);
+}
+
+.plan-line--section .plan-cell--num {
+    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.22);
 }
 
 .plan-cell--section {
@@ -819,6 +837,9 @@ a.plan-missing-craftsman:hover {
     white-space: nowrap;
     padding-left: 2px;
     padding-right: 3px;
+    align-self: stretch;
+    height: 100%;
+    box-shadow: inset 1px 0 0 #b8b0a4;
 }
 
 .plan-frozen > .plan-cell--num:last-child {
@@ -877,8 +898,10 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-labor-block {
+    display: grid;
     min-width: 0;
     overflow: hidden;
+    align-self: stretch;
 }
 
 .plan-labor-block-inner {
@@ -890,9 +913,12 @@ button.plan-labor-toggle:hover {
         var(--plan-col-rest-uren)
         var(--plan-col-m2-budget)
         var(--plan-col-m2-actual)
+        var(--plan-col-m2-forecast)
         var(--plan-col-m2-delta);
     width: var(--plan-labor-width);
     min-height: 100%;
+    height: 100%;
+    align-self: stretch;
 }
 
 .plan-line--project .plan-labor-block-inner {
@@ -999,13 +1025,16 @@ button.plan-labor-toggle:hover {
     grid-row: 1;
 }
 
-.plan-frozen--head .plan-cell,
-.plan-frozen--head .plan-labor-block {
+.plan-frozen--head > .plan-cell,
+.plan-frozen--head > .plan-labor-block {
     grid-row: 2;
+}
+
+.plan-frozen--head .plan-cell {
     align-items: flex-end;
 }
 
-.plan-frozen--head .plan-labor-toggle {
+.plan-frozen--head > .plan-labor-toggle {
     grid-row: 2;
     align-items: center;
 }
@@ -1355,6 +1384,11 @@ button.plan-labor-toggle:hover {
     letter-spacing: 0;
     font-size: 9px;
     font-weight: 650;
+    box-shadow: none;
+}
+
+.plan-line--small .plan-frozen > .plan-cell--num {
+    box-shadow: none;
 }
 
 .sticky-head .plan-cell--labor-head {
@@ -1470,6 +1504,7 @@ button.plan-labor-toggle:hover {
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    overflow: visible;
     background: #ece7dc;
 }
 
@@ -1483,6 +1518,7 @@ button.plan-labor-toggle:hover {
     border-bottom: 1px solid var(--color-nicon-line);
     position: relative;
     z-index: 30;
+    overflow: visible;
 }
 
 .draw-work-qty {
@@ -1500,6 +1536,158 @@ button.plan-labor-toggle:hover {
 
 .draw-work-qty.is-on {
     display: inline-block;
+}
+
+.draw-work-menu {
+    position: relative;
+    z-index: 80;
+    flex-shrink: 0;
+}
+
+.draw-work-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 11.5rem;
+    max-width: 16rem;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    padding: 0.25rem 0.5rem;
+    font: inherit;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.draw-work-summary::after {
+    content: "▾";
+    color: var(--color-nicon-muted);
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+
+.draw-work-menu.is-open .draw-work-summary::after {
+    content: "▴";
+}
+
+#draw-work-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.draw-work-panel {
+    position: fixed;
+    z-index: 200;
+    display: none;
+    flex-direction: column;
+    width: 420px;
+    max-width: min(420px, calc(100vw - 1.5rem));
+    max-height: 400px;
+    background: white;
+    border: 1px solid var(--color-nicon-line);
+    box-shadow: 0 10px 28px rgba(28, 25, 23, 0.14);
+}
+
+.draw-work-panel.is-open {
+    display: flex;
+}
+
+.draw-work-panel-head {
+    padding: 0.7rem 0.85rem 0.35rem;
+    font-size: 0.8125rem;
+    font-weight: 650;
+}
+
+.draw-work-panel-list {
+    min-height: 0;
+    overflow: auto;
+    padding: 0.15rem 0 0.35rem;
+    border-top: 1px solid var(--color-nicon-line);
+}
+
+.draw-work-group {
+    padding: 0.55rem 0.85rem 0.2rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-nicon-muted);
+}
+
+.draw-work-option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.32rem 0.85rem;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+    cursor: pointer;
+}
+
+.draw-work-option.is-all {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding-bottom: 0.55rem;
+}
+
+.draw-work-option:hover {
+    background: var(--color-nicon-sand);
+}
+
+.draw-work-option input {
+    flex-shrink: 0;
+    accent-color: var(--color-nicon-ok);
+}
+
+.draw-work-option-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.draw-work-option-qty {
+    color: var(--color-nicon-steel);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    font-size: 0.75rem;
+}
+
+.draw-work-panel-foot {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.55rem 0.85rem 0.7rem;
+    border-top: 1px solid var(--color-nicon-line);
+    background: white;
+}
+
+.draw-work-panel-total {
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+
+.draw-work-panel-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
+
+.draw-work-panel-actions button {
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    padding: 0.28rem 0.7rem;
+    font-size: 0.75rem;
+}
+
+#draw-work-apply {
+    border-color: var(--color-nicon-ink);
+    background: var(--color-nicon-ink);
+    color: #fff;
 }
 
 .draw-stage {

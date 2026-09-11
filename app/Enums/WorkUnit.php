@@ -28,6 +28,6 @@ enum WorkUnit: string
      */
     public static function shopCases(): array
     {
-        return [self::SquareMeter, self::Pieces];
+        return [self::SquareMeter, self::LinearMeter, self::Pieces];
     }
 }

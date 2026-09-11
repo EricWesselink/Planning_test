@@ -2,23 +2,23 @@
 
 @section('title', $project->displayTitle().' · Nicon Planning')
 
-@push('scripts')
-    <script>
-        document.querySelectorAll('[data-shop-activity-toggle]').forEach((input) => {
-            input.addEventListener('change', () => {
-                const notes = input.closest('[data-shop-activity]')?.querySelector('[data-shop-activity-notes]');
-                notes?.classList.toggle('hidden', !input.checked);
-            });
-        });
-    </script>
-@endpush
-
 @section('content')
     @php
         $bijlagen = $project->documents->where('document_type', \App\Services\ShopWorkService::ATTACHMENT_TYPE)->values();
         $selectedNotes = $project->workActivities->mapWithKeys(fn ($activity) => [$activity->id => $activity->pivot->notes])->all();
         $selectedQuantities = $project->workActivities->mapWithKeys(fn ($activity) => [$activity->id => $activity->pivot->quantity])->all();
         $selectedUnits = $project->workActivities->mapWithKeys(fn ($activity) => [$activity->id => $activity->pivot->unit?->value])->all();
+        $selectedHours = $project->workItems
+            ->whereNotNull('work_activity_id')
+            ->mapWithKeys(fn ($item) => [$item->work_activity_id => $item->begrote_uren])
+            ->all();
+        $hourlyRate = old(
+            'basis_uurtarief',
+            $project->basis_uurtarief ?? \App\Enums\SmallWorkType::HOURLY_RATE
+        );
+        if (is_numeric($hourlyRate) && fmod((float) $hourlyRate, 1.0) === 0.0) {
+            $hourlyRate = (int) (float) $hourlyRate;
+        }
     @endphp
     <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-sm text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
     <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -43,8 +43,8 @@
         </ul>
     @endif
 
-    <div class="mt-6 grid gap-6 lg:grid-cols-3">
-        <form method="POST" action="{{ route('projects.winkel.update', $project) }}" enctype="multipart/form-data" class="space-y-6 border border-nicon-line bg-white p-5 lg:col-span-2">
+    <div class="mt-6 space-y-6">
+        <form method="POST" action="{{ route('projects.winkel.update', $project) }}" enctype="multipart/form-data" class="space-y-6 border border-nicon-line bg-white p-5">
             @csrf
             @method('PATCH')
             <div class="grid gap-4 md:grid-cols-2">
@@ -64,6 +64,21 @@
                     <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
                     <input id="postal_code" name="postal_code" value="{{ old('postal_code', $project->postal_code) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! auth()->user()?->can('update', $project))>
                 </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>
+                    <input id="contact_phone" name="contact_phone" type="tel" value="{{ old('contact_phone', $project->contact_phone ?: $project->customer?->phone) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="06 12345678" autocomplete="tel" @disabled(! auth()->user()?->can('update', $project))>
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_email">E-mail</label>
+                    <input id="contact_email" name="contact_email" type="email" value="{{ old('contact_email', $project->contact_email ?: $project->customer?->email) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="jansen@example.nl" autocomplete="email" @disabled(! auth()->user()?->can('update', $project))>
+                </div>
+                @if (auth()->user()?->canViewLaborCosts())
+                    <div>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Uurtarief (€)</label>
+                        <input id="basis_uurtarief" name="basis_uurtarief" value="{{ $hourlyRate }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="48" @disabled(! auth()->user()?->can('update', $project))>
+                        <p class="mt-1 text-xs text-nicon-muted">Standaard €48/u, aanpasbaar. Begrote uren × dit tarief.</p>
+                    </div>
+                @endif
             </div>
 
             @include('projects.partials.shop-activities', [
@@ -72,6 +87,8 @@
                 'activityNotes' => old('activity_notes', $selectedNotes),
                 'activityQuantities' => old('activity_quantities', $selectedQuantities),
                 'activityUnits' => old('activity_units', $selectedUnits),
+                'activityHours' => old('activity_hours', $selectedHours),
+                'hourlyRate' => $hourlyRate,
             ])
 
             <div>
@@ -95,21 +112,12 @@
                 'klaarWeek' => $project->planningEndWeek(),
             ])
 
-            @if (auth()->user()?->canViewLaborCosts())
-                @can('update', $project)
-                    <div>
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Basis uurtarief (€)</label>
-                        <input id="basis_uurtarief" name="basis_uurtarief" value="{{ old('basis_uurtarief', $project->basis_uurtarief) }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="45,00">
-                    </div>
-                @endcan
-            @endif
-
             @can('update', $project)
                 <button class="bg-nicon-ink text-white px-5 py-3 font-medium">Winkelwerk opslaan</button>
             @endcan
         </form>
 
-        <div class="space-y-6">
+        <div class="grid gap-6 lg:grid-cols-3">
             <section class="border border-nicon-line bg-white p-5">
                 <h2 class="text-xs uppercase tracking-wide text-nicon-muted">Planning</h2>
                 <p class="mt-2 text-sm">Personen inplannen op dit Winkelwerk gebeurt in de bestaande Nicon Planning.</p>
@@ -118,6 +126,12 @@
                     <p class="mt-3 text-sm text-nicon-muted">{{ $project->nawLine() }}</p>
                     <a href="{{ $project->googleMapsUrl() }}" target="_blank" rel="noopener noreferrer" class="text-sm text-nicon-orange-dark">Navigeren</a>
                 @endif
+                @if ($project->contact_phone)
+                    <p class="mt-3 text-sm"><a href="tel:{{ $project->contact_phone }}" class="text-nicon-orange-dark">{{ $project->contact_phone }}</a></p>
+                @endif
+                @if ($project->contact_email)
+                    <p class="mt-1 text-sm"><a href="mailto:{{ $project->contact_email }}" class="text-nicon-orange-dark">{{ $project->contact_email }}</a></p>
+                @endif
             </section>
 
             <section class="border border-nicon-line bg-white p-5">
@@ -125,10 +139,22 @@
                 <ul class="mt-3 space-y-3 text-sm">
                     @forelse ($project->workActivities as $activity)
                         <li>
+                            @php
+                                $itemHours = (float) ($selectedHours[$activity->id] ?? 0);
+                                $itemCost = $itemHours > 0.0001 && is_numeric($hourlyRate)
+                                    ? $itemHours * (float) $hourlyRate
+                                    : 0.0;
+                            @endphp
                             <div class="font-medium">
                                 {{ $activity->name }}
                                 @if ($activity->pivot->quantityLabel())
                                     <span class="font-normal text-nicon-muted">· {{ $activity->pivot->quantityLabel() }}</span>
+                                @endif
+                                @if ($itemHours > 0.0001)
+                                    <span class="font-normal text-nicon-muted">· {{ \App\Support\PlanningHours::hoursLabel($itemHours) }}</span>
+                                @endif
+                                @if ($itemCost > 0.0001)
+                                    <span class="font-normal text-nicon-muted">· {{ \App\Support\Format::euroWhole($itemCost) }}</span>
                                 @endif
                             </div>
                             @if ($activity->pivot->notes)

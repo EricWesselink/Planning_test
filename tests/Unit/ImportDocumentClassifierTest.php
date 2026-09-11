@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\CalculationExcelParser;
 use App\Services\Meetstaat\ImportDocumentClassifier;
+use App\Services\Meetstaat\MaterialIdentity;
 use App\Services\Meetstaat\PdfTextExtractor;
 use App\Services\SpreadsheetReader;
 use Illuminate\Http\UploadedFile;
@@ -133,7 +134,7 @@ class ImportDocumentClassifierTest extends TestCase
         return new ImportDocumentClassifier(
             new PdfTextExtractor,
             new SpreadsheetReader,
-            new CalculationExcelParser,
+            new CalculationExcelParser(new MaterialIdentity),
         );
     }
 

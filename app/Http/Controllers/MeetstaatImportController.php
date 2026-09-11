@@ -215,9 +215,9 @@ class MeetstaatImportController extends Controller
             return redirect()
                 ->route('projects.review', $token)
                 ->withInput()
-                ->with('status', 'Koppel onzekere arbeidsregels voordat je importeert')
+                ->with('status', 'Koppel alleen de arbeidsregels die het systeem niet betrouwbaar kon bepalen')
                 ->withErrors([
-                    'calculation_labor' => 'Er staan nog arbeidsregels op Controleren. Kies per regel de juiste werkzaamheid.',
+                    'calculation_labor' => 'Er staan nog arbeidsregels die niet betrouwbaar gekoppeld kunnen worden. Controleer alleen die regels.',
                 ]);
         }
 

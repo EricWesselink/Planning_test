@@ -49,6 +49,22 @@ class MaterialIdentity
         );
     }
 
+    /**
+     * STABU-categorie zonder product: nooit reden voor handmatige controle op zichzelf.
+     */
+    public function isGenericCoveringLabel(string $name): bool
+    {
+        $flat = mb_strtolower(trim($name));
+        if ($flat === '') {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/^(elastische|zachte|harde|textiele)?\s*vloerbedekking\b/u',
+            $flat
+        );
+    }
+
     public function looksLikeProductTypeContinuation(string $line): bool
     {
         $flat = trim($line);

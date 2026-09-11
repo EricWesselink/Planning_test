@@ -98,6 +98,7 @@
         .col-werk { width: 28%; text-align: left; padding: 7px 10px; }
         .col-num { width: 7%; text-align: right; padding: 7px 8px; font-variant-numeric: tabular-nums; }
         .col-num.over { color: #b42318; font-weight: 700; }
+        .col-num.warn { color: #b45309; font-weight: 650; }
         .col-num.ok { color: #3f6212; font-weight: 650; }
         .col-days { width: auto; }
         .project-row td { background: var(--sand); font-weight: 600; }
@@ -341,6 +342,7 @@
                         <th class="col-num">Verschil</th>
                         <th class="col-num">Begroot €/m²</th>
                         <th class="col-num">Werkelijk €/m²</th>
+                        <th class="col-num">Prognose €/m²</th>
                         <th class="col-num">Verschil €/m²</th>
                     @endif
                     <th class="col-days">
@@ -364,7 +366,7 @@
                 @foreach ($rows as $projectRow)
                     @if (($projectRow['type'] ?? '') === 'section')
                         <tr class="section-row">
-                            <td class="col-werk section-label" colspan="{{ ($canViewLaborCosts ?? false) ? 14 : 6 }}">{{ $projectRow['title'] }}</td>
+                            <td class="col-werk section-label" colspan="{{ ($canViewLaborCosts ?? false) ? 15 : 6 }}">{{ $projectRow['title'] }}</td>
                         </tr>
                         @continue
                     @endif

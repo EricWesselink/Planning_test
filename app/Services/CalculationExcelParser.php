@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Enums\WorkUnit;
+use App\Services\Meetstaat\MaterialIdentity;
 use App\Support\DutchNumber;
 use App\Support\WorkType;
 
 class CalculationExcelParser
 {
+    public function __construct(private MaterialIdentity $identity) {}
+
     /**
      * @param  list<list<string>>  $rows
      */
@@ -182,6 +185,7 @@ class CalculationExcelParser
             'total_cost' => $totalCost,
             'is_labor' => $isLabor,
             'quantity_status' => $isLabor ? 'missing' : 'ignored',
+            'context_materials' => [],
             'naca_code' => $this->cell($row, $columns['naca_code'] ?? null) ?: null,
             'raw' => $this->rawRow($row, $columns),
         ];
@@ -205,6 +209,8 @@ class CalculationExcelParser
      */
     private function attachLaborQuantities(array $lines): array
     {
+        $lines = $this->attachNeighborMaterials($lines);
+
         $materialsByKey = [];
         $laborIndexesByKey = [];
 
@@ -220,20 +226,18 @@ class CalculationExcelParser
                 continue;
             }
 
-            $unit = $this->floorUnit((string) ($line['unit'] ?? ''));
-            if ($unit === null || $line['quantity'] === null || (float) $line['quantity'] <= 0) {
+            $snapshot = $this->floorMaterialSnapshot($line);
+            if ($snapshot === null) {
                 continue;
             }
 
             $articleKey = $this->articleKey($line);
             if (! isset($materialsByKey[$key][$articleKey])) {
-                $materialsByKey[$key][$articleKey] = [
-                    'label' => $this->articleLabel($line),
-                    'm2' => 0.0,
-                    'm1' => 0.0,
-                ];
+                $materialsByKey[$key][$articleKey] = $snapshot;
+            } else {
+                $materialsByKey[$key][$articleKey]['m2'] += $snapshot['m2'];
+                $materialsByKey[$key][$articleKey]['m1'] += $snapshot['m1'];
             }
-            $materialsByKey[$key][$articleKey][$unit] += (float) $line['quantity'];
         }
 
         foreach ($laborIndexesByKey as $key => $indexes) {
@@ -243,20 +247,143 @@ class CalculationExcelParser
             ));
 
             foreach ($indexes as $index) {
+                if (($lines[$index]['quantity_status'] ?? '') === 'linked') {
+                    continue;
+                }
+
                 $linked = $this->reliableQuantity($lines[$index], $articles);
                 if ($linked === null) {
-                    $lines[$index]['quantity_status'] = $articles === [] ? 'missing' : 'review';
-
                     continue;
                 }
 
                 $lines[$index]['quantity'] = $linked['quantity'];
                 $lines[$index]['quantity_unit'] = $linked['unit'];
                 $lines[$index]['quantity_status'] = 'linked';
+                if (($lines[$index]['context_materials'] ?? []) === []) {
+                    $lines[$index]['context_materials'] = array_values($articles);
+                }
             }
         }
 
         return $this->attachPreparationFloorQuantities($lines);
+    }
+
+    /**
+     * Koppel arbeidsregels aan omliggende materiaalregels in dezelfde groep.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @return list<array<string, mixed>>
+     */
+    private function attachNeighborMaterials(array $lines): array
+    {
+        $claimed = [];
+        foreach ($this->indexesByGroup($lines) as $indexes) {
+            $laborIndexes = array_values(array_filter(
+                $indexes,
+                fn (int $index): bool => (bool) $lines[$index]['is_labor']
+            ));
+
+            foreach ($laborIndexes as $position => $laborIndex) {
+                $nextLabor = $laborIndexes[$position + 1] ?? null;
+                $previousLabor = $laborIndexes[$position - 1] ?? null;
+                $after = $this->materialIndexesBetween($lines, $indexes, $laborIndex, $nextLabor, $claimed);
+                $before = $this->materialIndexesBetween($lines, $indexes, $previousLabor, $laborIndex, $claimed);
+                $chosen = $after !== [] ? $after : $before;
+                $materials = [];
+                foreach ($chosen as $materialIndex) {
+                    $snapshot = $this->floorMaterialSnapshot($lines[$materialIndex]);
+                    if ($snapshot === null) {
+                        continue;
+                    }
+                    $materials[] = $snapshot;
+                    $claimed[$materialIndex] = true;
+                }
+
+                $lines[$laborIndex]['context_materials'] = $materials;
+                $linked = $this->reliableQuantity($lines[$laborIndex], $materials);
+                if ($linked === null) {
+                    if ($materials !== []) {
+                        $lines[$laborIndex]['quantity_status'] = 'context';
+                    }
+
+                    continue;
+                }
+
+                $lines[$laborIndex]['quantity'] = $linked['quantity'];
+                $lines[$laborIndex]['quantity_unit'] = $linked['unit'];
+                $lines[$laborIndex]['quantity_status'] = 'linked';
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lines
+     * @return array<string, list<int>>
+     */
+    private function indexesByGroup(array $lines): array
+    {
+        $groups = [];
+        foreach ($lines as $index => $line) {
+            $group = mb_strtolower(trim((string) ($line['group_code'] ?? '')));
+            $groups[$group][] = $index;
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lines
+     * @param  list<int>  $groupIndexes
+     * @param  array<int, bool>  $claimed
+     * @return list<int>
+     */
+    private function materialIndexesBetween(
+        array $lines,
+        array $groupIndexes,
+        ?int $startExclusive,
+        ?int $endExclusive,
+        array $claimed,
+    ): array {
+        $hits = [];
+        foreach ($groupIndexes as $index) {
+            if (isset($claimed[$index]) || $lines[$index]['is_labor']) {
+                continue;
+            }
+            if ($startExclusive !== null && $index <= $startExclusive) {
+                continue;
+            }
+            if ($endExclusive !== null && $index >= $endExclusive) {
+                continue;
+            }
+            if ($this->floorMaterialSnapshot($lines[$index]) === null) {
+                continue;
+            }
+            $hits[] = $index;
+        }
+
+        return $hits;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     * @return array{label: string, article_number: ?string, m2: float, m1: float, row_number: int}|null
+     */
+    private function floorMaterialSnapshot(array $line): ?array
+    {
+        $unit = $this->floorUnit((string) ($line['unit'] ?? ''));
+        if ($unit === null || $line['quantity'] === null || (float) $line['quantity'] <= 0.0001) {
+            return null;
+        }
+
+        return [
+            'label' => $this->articleLabel($line),
+            'article_number' => $line['article_number'] ?? null,
+            'm2' => $unit === 'm2' ? (float) $line['quantity'] : 0.0,
+            'm1' => $unit === 'm1' ? (float) $line['quantity'] : 0.0,
+            'row_number' => (int) ($line['row_number'] ?? 0),
+        ];
     }
 
     /**
@@ -276,7 +403,10 @@ class CalculationExcelParser
             if ($line['quantity'] === null || (float) $line['quantity'] <= 0.0001) {
                 continue;
             }
-            if (! WorkType::requiresPrimingLeveling((string) ($line['production_description'] ?? ''))) {
+            if (
+                ! WorkType::requiresPrimingLeveling((string) ($line['production_description'] ?? ''))
+                && ! WorkType::requiresPrimingLeveling((string) ($line['article_description'] ?? ''))
+            ) {
                 continue;
             }
 
@@ -332,7 +462,33 @@ class CalculationExcelParser
             return $this->floorAmount($articles[0]);
         }
 
-        return $this->uniqueArticleMatch((string) ($labor['production_description'] ?? ''), $articles);
+        $sameProduct = true;
+        foreach ($articles as $article) {
+            if (! $this->identity->sharesIdentity($articles[0]['label'], $article['label'])) {
+                $sameProduct = false;
+                break;
+            }
+        }
+        if ($sameProduct) {
+            return $this->floorAmount([
+                'm2' => array_sum(array_column($articles, 'm2')),
+                'm1' => array_sum(array_column($articles, 'm1')),
+            ]);
+        }
+
+        $production = trim((string) ($labor['production_description'] ?? ''));
+        $article = trim((string) ($labor['article_description'] ?? ''));
+        foreach (array_filter([$production, $article]) as $needle) {
+            if ($this->identity->isGenericCoveringLabel($needle)) {
+                continue;
+            }
+            $matched = $this->uniqueArticleMatch($needle, $articles);
+            if ($matched !== null) {
+                return $matched;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -342,13 +498,21 @@ class CalculationExcelParser
     private function uniqueArticleMatch(string $production, array $articles): ?array
     {
         $haystack = mb_strtolower(trim($production));
-        if ($haystack === '') {
+        if ($haystack === '' || $this->identity->isGenericCoveringLabel($production)) {
             return null;
         }
 
         $hits = [];
         foreach ($articles as $article) {
             $needle = mb_strtolower(trim($article['label']));
+            if ($needle === '') {
+                continue;
+            }
+            if ($this->identity->sharesIdentity($production, $article['label'])) {
+                $hits[] = $article;
+
+                continue;
+            }
             if (mb_strlen($needle) < 12) {
                 continue;
             }
@@ -390,7 +554,7 @@ class CalculationExcelParser
     private function quantityGroupKey(array $line): string
     {
         $production = $this->productionKey((string) ($line['production_description'] ?? ''));
-        if ($production === '') {
+        if ($production === '' || $this->identity->isGenericCoveringLabel($production)) {
             return '';
         }
 

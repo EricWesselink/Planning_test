@@ -22,13 +22,20 @@ class PlanningPdfTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('PDF')
+            ->assertSee('Weekplanning vakmannen')
             ->assertSee('Intern')
             ->assertSee('Week')
             ->assertSee('Maand')
             ->assertSee('Gehele werk')
             ->assertSee('action="'.url('/planning/pdf').'"', false)
-            ->assertSee('name="period"', false);
+            ->assertSee('name="period"', false)
+            ->assertSee('Weekplanning exporteren')
+            ->assertSee('action="'.url('/planning/weekplanning').'"', false)
+            ->assertSee('id="weekplanning-open"', false)
+            ->assertSee('name="all"', false)
+            ->assertSee('PDF maken')
+            ->assertSee('Annuleren')
+            ->assertDontSee('href="'.url('/planning/weekplanning?week=2026-09-07'), false);
     }
 
     public function test_client_pdf_hides_worker_names(): void

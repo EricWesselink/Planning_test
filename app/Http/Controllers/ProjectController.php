@@ -192,7 +192,7 @@ class ProjectController extends Controller
         Gate::authorize('view', $project);
 
         if ($project->isWinkel()) {
-            $project->load(['customer', 'workActivities.category', 'documents', 'assignments.worker']);
+            $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']);
 
             return view('projects.winkel', [
                 'project' => $project,

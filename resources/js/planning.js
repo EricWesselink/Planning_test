@@ -846,4 +846,61 @@ if (board) {
     });
 
     bindLaborFold(board);
+    bindWeekplanningExport();
+}
+
+function bindWeekplanningExport() {
+    const dialog = document.getElementById('weekplanning-dialog');
+    const form = document.getElementById('weekplanning-form');
+    const open = document.getElementById('weekplanning-open');
+    const cancel = document.getElementById('weekplanning-cancel');
+    const all = document.getElementById('weekplanning-all');
+    if (! dialog || ! form || ! open) {
+        return;
+    }
+
+    const teams = () => [...form.querySelectorAll('.weekplanning-team')];
+
+    open.addEventListener('click', () => dialog.showModal());
+    cancel?.addEventListener('click', () => dialog.close());
+
+    all?.addEventListener('change', () => {
+        if (all.checked) {
+            teams().forEach((input) => {
+                input.checked = false;
+            });
+        }
+    });
+
+    form.addEventListener('change', (event) => {
+        if (! (event.target instanceof HTMLInputElement) || ! event.target.classList.contains('weekplanning-team')) {
+            return;
+        }
+        if (event.target.checked && all) {
+            all.checked = false;
+        }
+        if (all && teams().every((input) => ! input.checked)) {
+            all.checked = true;
+        }
+    });
+
+    form.addEventListener('submit', () => {
+        const useAll = ! all || all.checked || teams().every((input) => ! input.checked);
+        teams().forEach((input) => {
+            input.disabled = useAll;
+        });
+        if (all) {
+            all.disabled = ! useAll;
+            all.checked = useAll;
+        }
+        dialog.close();
+        window.setTimeout(() => {
+            teams().forEach((input) => {
+                input.disabled = false;
+            });
+            if (all) {
+                all.disabled = false;
+            }
+        }, 0);
+    });
 }

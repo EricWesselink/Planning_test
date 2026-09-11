@@ -2,17 +2,6 @@
 
 @section('title', 'Nieuw Winkelwerk · Nicon Planning')
 
-@push('scripts')
-    <script>
-        document.querySelectorAll('[data-shop-activity-toggle]').forEach((input) => {
-            input.addEventListener('change', () => {
-                const notes = input.closest('[data-shop-activity]')?.querySelector('[data-shop-activity-notes]');
-                notes?.classList.toggle('hidden', !input.checked);
-            });
-        });
-    </script>
-@endpush
-
 @section('content')
     <a href="{{ route('projects.create') }}" class="text-sm text-nicon-muted">← Nieuw project</a>
     <h1 class="mt-2 text-2xl font-semibold">Nieuw Winkelwerk</h1>
@@ -45,6 +34,19 @@
                 <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
                 <input id="postal_code" name="postal_code" value="{{ old('postal_code') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="7551 AA">
             </div>
+            <div>
+                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>
+                <input id="contact_phone" name="contact_phone" type="tel" value="{{ old('contact_phone') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="06 12345678" autocomplete="tel">
+            </div>
+            <div>
+                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_email">E-mail</label>
+                <input id="contact_email" name="contact_email" type="email" value="{{ old('contact_email') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="jansen@example.nl" autocomplete="email">
+            </div>
+            <div>
+                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Uurtarief (€)</label>
+                <input id="basis_uurtarief" name="basis_uurtarief" value="{{ old('basis_uurtarief', $hourlyRate) }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="48">
+                <p class="mt-1 text-xs text-nicon-muted">Standaard €48/u, aanpasbaar. Begrote uren × dit tarief.</p>
+            </div>
         </div>
 
         @include('projects.partials.shop-activities', [
@@ -53,6 +55,8 @@
             'activityNotes' => $activityNotes,
             'activityQuantities' => $activityQuantities,
             'activityUnits' => $activityUnits,
+            'activityHours' => $activityHours,
+            'hourlyRate' => $hourlyRate,
         ])
 
         <div>
@@ -67,11 +71,6 @@
         </div>
 
         @include('projects.partials.planning-weeks', ['idPrefix' => 'winkel-'])
-
-        <div>
-            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Basis uurtarief (€)</label>
-            <input id="basis_uurtarief" name="basis_uurtarief" value="{{ old('basis_uurtarief') }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="45,00">
-        </div>
 
         <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Winkelwerk aanmaken</button>
     </form>

@@ -25,7 +25,7 @@ class PlanningLaborForecast
         ?float $remaining = null,
     ): array {
         $stillPlanned = max(0.0, $plannedHours - $actualHours);
-        $expectedTotal = $actualHours + $stillPlanned;
+        $expectedTotal = self::expectedHours($plannedHours, $actualHours);
         $hasBudget = $budgetHours > 0.0001;
         $expectedOverrun = $hasBudget ? max(0.0, $expectedTotal - $budgetHours) : 0.0;
         $remainingHours = $hasBudget
@@ -88,6 +88,18 @@ class PlanningLaborForecast
         }
 
         return $splits;
+    }
+
+    /**
+     * Expected total hours: actual plus remaining planned, or actual once the quantity is done.
+     */
+    public static function expectedHours(float $plannedHours, float $actualHours, bool $complete = false): float
+    {
+        if ($complete && $actualHours > 0.0001) {
+            return round($actualHours, 2);
+        }
+
+        return round($actualHours + max(0.0, $plannedHours - $actualHours), 2);
     }
 
     /**

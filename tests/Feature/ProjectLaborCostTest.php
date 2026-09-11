@@ -177,15 +177,94 @@ class ProjectLaborCostTest extends TestCase
             ->assertOk()
             ->assertSee('Begroot €/m²')
             ->assertSee('Werkelijk €/m²')
+            ->assertSee('Prognose €/m²')
             ->assertSee('€1,93')
             ->assertSee('€2,44')
             ->assertSee('+€0,51/m²')
             ->assertSee('plan-cell--labor-over', false)
             ->assertSee('Begroot: 30,1u × €45 / 702m² = €1,93/m²', false)
+            ->assertSee('Prognose: 38u × €45 / 702m² = €2,44/m²', false)
             ->assertSee('Werkelijk: 38u × €45 / 702m² = €2,44/m²', false)
             ->assertSee('Verschil: +€0,51/m²', false);
 
         $this->assertSame($assignment->work_item_id, $item->id);
+    }
+
+    public function test_planning_board_shows_forecast_price_when_planned_hours_exceed_budget(): void
+    {
+        $user = User::factory()->create();
+        [$project, $assignment, $item] = $this->makeScheduledProject(
+            people: 2,
+            start: '2026-09-07',
+            end: '2026-09-09',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 0,
+            actualHours: 0,
+        );
+        $project->forceFill(['basis_uurtarief' => 48])->save();
+        $item->forceFill([
+            'name' => 'Primen & Egaliseren',
+            'ordered_quantity' => 702,
+            'begrote_uren' => 30.1,
+            'begrote_hoeveelheid' => 702,
+            'uurtarief' => 48,
+        ])->save();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('Prognose €/m²')
+            ->assertSee('€2,06')
+            ->assertSee('€3,28')
+            ->assertSee('+€1,22/m²')
+            ->assertSee('+59%')
+            ->assertSee('plan-cell--labor-over', false)
+            ->assertSee('Prognose: 48u × €48 / 702m² = €3,28/m²', false)
+            ->assertSee('Verschil: +€1,22/m²', false);
+
+        $this->assertSame($assignment->work_item_id, $item->id);
+    }
+
+    public function test_resizing_an_assignment_recalculates_the_forecast_price_on_the_next_board_load(): void
+    {
+        $user = User::factory()->create();
+        [$project, $assignment, $item] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-07',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 0,
+            actualHours: 0,
+        );
+        $project->forceFill(['basis_uurtarief' => 48])->save();
+        $item->forceFill([
+            'ordered_quantity' => 702,
+            'begrote_uren' => 30.1,
+            'begrote_hoeveelheid' => 702,
+            'uurtarief' => 48,
+        ])->save();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('€0,55');
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'start_date' => '2026-09-07',
+                'end_date' => '2026-09-07',
+                'start_time' => '08:00',
+                'end_time' => '12:00',
+            ])
+            ->assertOk();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('€0,27')
+            ->assertDontSee('€0,55');
     }
 
     public function test_labor_column_headers_stay_sentence_case_so_they_do_not_overlap(): void
@@ -194,11 +273,12 @@ class ProjectLaborCostTest extends TestCase
 
         $this->assertIsString($css);
         $this->assertStringContainsString('.plan-board--labor', $css);
-        $this->assertStringContainsString('--planning-sidebar-width: 806px', $css);
+        $this->assertStringContainsString('--planning-sidebar-width: 868px', $css);
         $this->assertStringContainsString('plan-board--labor-collapsed', $css);
-        $this->assertStringContainsString('--plan-labor-width: 424px', $css);
+        $this->assertStringContainsString('--plan-labor-width: 486px', $css);
         $this->assertStringContainsString('--plan-col-begroot: 60px', $css);
         $this->assertStringContainsString('--plan-col-m2-budget: 58px', $css);
+        $this->assertStringContainsString('--plan-col-m2-forecast: 62px', $css);
         $this->assertStringContainsString('--plan-col-m2-delta: 68px', $css);
         $this->assertStringContainsString('transition: width 0.28s ease', $css);
         $this->assertStringContainsString('.plan-labor-block', $css);
@@ -274,6 +354,7 @@ class ProjectLaborCostTest extends TestCase
             ->assertSee('48u')
             ->assertSee('+8u')
             ->assertSee('€/m²')
+            ->assertSee('Prognose €/m²')
             ->assertDontSee('48u · €45/u · €1.800 arbeid · €7,50/m²', false);
     }
 

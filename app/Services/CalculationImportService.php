@@ -18,6 +18,7 @@ class CalculationImportService
         private SpreadsheetReader $reader,
         private CalculationExcelParser $parser,
         private CalculationWorkMatcher $matcher,
+        private CalculationSourceReconciler $reconciler,
         private MaterialIdentity $identity,
     ) {}
 
@@ -87,6 +88,7 @@ class CalculationImportService
         $totalHours = 0.0;
         $totalCost = 0.0;
         $works = $preview['works'] ?? [];
+        $sourceProducts = $this->reconciler->sourceProducts($preview);
 
         foreach ($files as $file) {
             $parsed = $file['parsed'];
@@ -95,24 +97,29 @@ class CalculationImportService
                 $lines[] = $line;
             }
             foreach ($parsed['labor'] as $line) {
-                $matched = $this->matcher->match($this->lineDescription($line), $works);
-                if (($line['quantity_status'] ?? '') === 'review') {
-                    $matched['status'] = 'review';
-                }
+                $matched = $this->matcher->match($this->lineDescription($line), $works, [
+                    'line' => $line,
+                    'materials' => $line['context_materials'] ?? [],
+                    'source_products' => $sourceProducts,
+                ]);
                 $labor[] = $this->laborPreviewRow($line, $matched);
                 $totalHours += (float) ($line['hours'] ?? 0);
                 $totalCost += (float) ($line['labor_cost'] ?? 0);
             }
         }
 
+        $reconciliation = $this->reconciler->reconcile($lines, $preview);
         $preview['calculation'] = [
             'filenames' => array_values(array_filter($filenames)),
             'lines' => $lines,
             'labor' => $labor,
-            'options' => $this->matcher->optionLabels($works),
+            'products' => $reconciliation['products'],
+            'source_checks' => $reconciliation['checks'],
+            'options' => $this->matcher->optionLabels(array_merge($works, $sourceProducts)),
             'total_hours' => round($totalHours, 2),
             'total_labor_cost' => round($totalCost, 2),
             'open_matches' => $this->openMatchCount($labor),
+            'warnings' => $this->warningCount($labor, $reconciliation['products']),
         ];
 
         return $preview;
@@ -127,18 +134,23 @@ class CalculationImportService
     {
         $labor = $preview['calculation']['labor'] ?? [];
         foreach ($labor as $index => $line) {
-            $workName = trim((string) ($posted[$index]['work_name'] ?? $line['work_name'] ?? ''));
+            $postedName = $posted[$index]['work_name'] ?? null;
+            $workName = trim((string) ($postedName ?? $line['work_name'] ?? ''));
             if ($workName === '') {
                 $labor[$index]['work_name'] = null;
                 $labor[$index]['work_key'] = null;
                 $labor[$index]['status'] = 'review';
+                $labor[$index]['status_label'] = 'Handmatige controle vereist';
 
                 continue;
             }
 
             $labor[$index]['work_name'] = $workName;
             $labor[$index]['work_key'] = mb_strtolower($workName);
-            $labor[$index]['status'] = 'matched';
+            if (($line['status'] ?? '') === 'review' || $postedName !== null) {
+                $labor[$index]['status'] = 'matched';
+                $labor[$index]['status_label'] = 'Automatisch bevestigd';
+            }
         }
 
         $preview['calculation']['labor'] = $labor;
@@ -292,25 +304,47 @@ class CalculationImportService
     {
         return count(array_filter(
             $labor,
-            fn (array $line): bool => ($line['status'] ?? '') !== 'matched' || blank($line['work_name'] ?? null)
+            fn (array $line): bool => ($line['status'] ?? '') === 'review' || blank($line['work_name'] ?? null)
+        ));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $labor
+     * @param  list<array<string, mixed>>  $products
+     */
+    private function warningCount(array $labor, array $products): int
+    {
+        return count(array_filter(
+            $labor,
+            fn (array $line): bool => ($line['status'] ?? '') === 'warning'
+        )) + count(array_filter(
+            $products,
+            fn (array $row): bool => ($row['status'] ?? '') === 'warning'
         ));
     }
 
     /**
      * @param  array<string, mixed>  $line
-     * @param  array{status: string, work_name: ?string, work_key: ?string, candidates: list<string>}  $matched
+     * @param  array{status: string, work_name: ?string, work_key: ?string, candidates: list<string>, warning?: ?string}  $matched
      * @return array<string, mixed>
      */
     private function laborPreviewRow(array $line, array $matched): array
     {
+        $status = $matched['status'];
+
         return [
             ...$line,
             'description' => $this->lineDescription($line),
-            'status' => $matched['status'],
+            'status' => $status,
             'work_name' => $matched['work_name'],
             'work_key' => $matched['work_key'],
             'candidates' => $matched['candidates'],
-            'status_label' => $matched['status'] === 'matched' ? 'Gekoppeld' : 'Controleren',
+            'warning' => $matched['warning'] ?? null,
+            'status_label' => match ($status) {
+                'matched' => 'Automatisch bevestigd',
+                'warning' => 'Waarschuwing',
+                default => 'Handmatige controle vereist',
+            },
         ];
     }
 
@@ -373,7 +407,7 @@ class CalculationImportService
             $laborKey = mb_strtolower((string) ($line['source_filename'] ?? $filename)).'#'.(int) $line['row_number'];
             $labor = $laborByRow[$laborKey] ?? $laborByRow['#'.(int) $line['row_number']] ?? null;
             $workName = $labor['work_name'] ?? null;
-            $matched = ($labor['status'] ?? '') === 'matched' && filled($workName);
+            $matched = in_array(($labor['status'] ?? ''), ['matched', 'warning'], true) && filled($workName);
             $workItem = (($labor['is_labor'] ?? $line['is_labor'] ?? false) && $matched)
                 ? $this->workItemFor($project, (string) $workName, $line)
                 : null;

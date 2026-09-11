@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
+use App\Enums\SmallWorkType;
 use App\Enums\WorkUnit;
 use App\Models\Customer;
 use App\Models\Project;
@@ -27,12 +28,15 @@ class ShopWorkService
      *     city?: ?string,
      *     address?: ?string,
      *     postal_code?: ?string,
+     *     contact_phone?: ?string,
+     *     contact_email?: ?string,
      *     work_description?: ?string,
      *     planned_start_date?: ?string,
      *     planned_end_date?: ?string,
      *     work_activity_ids: list<int>,
      *     activity_notes?: array<int|string, mixed>,
      *     activity_quantities?: array<int|string, mixed>,
+     *     activity_hours?: array<int|string, mixed>,
      *     activity_units?: array<int|string, mixed>
      * }  $data
      * @param  list<UploadedFile>  $files
@@ -40,10 +44,7 @@ class ShopWorkService
     public function create(array $data, User $user, array $files = []): Project
     {
         return DB::transaction(function () use ($data, $user, $files) {
-            $customer = Customer::query()->firstOrCreate(
-                ['name' => $data['customer_name']],
-                ['city' => $data['city'] ?? null]
-            );
+            $customer = $this->syncCustomer($data);
 
             $project = Project::query()->create([
                 'project_number' => $this->intake->nextProjectNumber(),
@@ -52,13 +53,15 @@ class ShopWorkService
                 'address' => $data['address'] ?? null,
                 'postal_code' => $data['postal_code'] ?? null,
                 'city' => $data['city'] ?? null,
+                'contact_phone' => $this->nullableString($data['contact_phone'] ?? null),
+                'contact_email' => $this->nullableString($data['contact_email'] ?? null),
                 'supervisor_user_id' => $user->id,
                 'planned_start_date' => $data['planned_start_date'] ?? null,
                 'planned_end_date' => $data['planned_end_date'] ?? null,
                 'status' => ProjectStatus::Gepland,
                 'kind' => ProjectKind::Winkel,
                 'work_description' => $data['work_description'] ?? null,
-                'basis_uurtarief' => $data['basis_uurtarief'] ?? null,
+                'basis_uurtarief' => $data['basis_uurtarief'] ?? SmallWorkType::HOURLY_RATE,
             ]);
 
             $this->syncActivities(
@@ -67,6 +70,7 @@ class ShopWorkService
                 $data['activity_notes'] ?? [],
                 $data['activity_quantities'] ?? [],
                 $data['activity_units'] ?? [],
+                $data['activity_hours'] ?? [],
             );
             $this->storeFiles($project, $files, $user);
 
@@ -80,12 +84,15 @@ class ShopWorkService
      *     city?: ?string,
      *     address?: ?string,
      *     postal_code?: ?string,
+     *     contact_phone?: ?string,
+     *     contact_email?: ?string,
      *     work_description?: ?string,
      *     planned_start_date?: ?string,
      *     planned_end_date?: ?string,
      *     work_activity_ids: list<int>,
      *     activity_notes?: array<int|string, mixed>,
      *     activity_quantities?: array<int|string, mixed>,
+     *     activity_hours?: array<int|string, mixed>,
      *     activity_units?: array<int|string, mixed>
      * }  $data
      * @param  list<UploadedFile>  $files
@@ -93,10 +100,7 @@ class ShopWorkService
     public function update(Project $project, array $data, User $user, array $files = []): Project
     {
         return DB::transaction(function () use ($project, $data, $user, $files) {
-            $customer = Customer::query()->firstOrCreate(
-                ['name' => $data['customer_name']],
-                ['city' => $data['city'] ?? null]
-            );
+            $customer = $this->syncCustomer($data);
 
             $attributes = [
                 'customer_id' => $customer->id,
@@ -104,6 +108,8 @@ class ShopWorkService
                 'address' => $data['address'] ?? null,
                 'postal_code' => $data['postal_code'] ?? null,
                 'city' => $data['city'] ?? null,
+                'contact_phone' => $this->nullableString($data['contact_phone'] ?? null),
+                'contact_email' => $this->nullableString($data['contact_email'] ?? null),
                 'work_description' => $data['work_description'] ?? null,
             ];
             if (array_key_exists('basis_uurtarief', $data)) {
@@ -124,6 +130,7 @@ class ShopWorkService
                 $data['activity_notes'] ?? [],
                 $data['activity_quantities'] ?? [],
                 $data['activity_units'] ?? [],
+                $data['activity_hours'] ?? [],
             );
             $this->storeFiles($project, $files, $user);
 
@@ -158,8 +165,9 @@ class ShopWorkService
      * @param  array<int|string, mixed>  $notes
      * @param  array<int|string, mixed>  $quantities
      * @param  array<int|string, mixed>  $units
+     * @param  array<int|string, mixed>  $hours
      */
-    private function syncActivities(Project $project, array $activityIds, array $notes, array $quantities = [], array $units = []): void
+    private function syncActivities(Project $project, array $activityIds, array $notes, array $quantities = [], array $units = [], array $hours = []): void
     {
         $ids = collect($activityIds)
             ->map(fn (mixed $id): int => (int) $id)
@@ -192,7 +200,7 @@ class ShopWorkService
         }
 
         $project->workActivities()->sync($sync);
-        $this->syncWorkItems($project, $activities, $notes, $quantities, $units);
+        $this->syncWorkItems($project, $activities, $notes, $quantities, $units, $hours);
     }
 
     /**
@@ -200,14 +208,16 @@ class ShopWorkService
      * @param  array<int|string, mixed>  $notes
      * @param  array<int|string, mixed>  $quantities
      * @param  array<int|string, mixed>  $units
+     * @param  array<int|string, mixed>  $hours
      */
-    private function syncWorkItems(Project $project, Collection $activities, array $notes, array $quantities = [], array $units = []): void
+    private function syncWorkItems(Project $project, Collection $activities, array $notes, array $quantities = [], array $units = [], array $hours = []): void
     {
         $keep = [];
 
         foreach ($activities as $index => $activity) {
             $note = trim((string) ($notes[$activity->id] ?? ''));
             $quantity = $this->parseQuantity($quantities[$activity->id] ?? null);
+            $budgetHours = $this->parseQuantity($hours[$activity->id] ?? null);
             $unit = $this->shopUnit($units[$activity->id] ?? null, $activity);
             $item = $project->workItems()
                 ->where('work_activity_id', $activity->id)
@@ -217,6 +227,8 @@ class ShopWorkService
                 'name' => $activity->name,
                 'unit' => $unit,
                 'ordered_quantity' => $quantity ?? 0,
+                'begrote_uren' => $budgetHours,
+                'uurtarief' => $project->basis_uurtarief,
                 'status' => $item?->status ?? 'gepland',
                 'sort_order' => $index + 1,
                 'notes' => $note === '' ? null : $note,
@@ -242,6 +254,34 @@ class ShopWorkService
                 $item->assignments()->update(['work_item_id' => null]);
                 $item->delete();
             });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function syncCustomer(array $data): Customer
+    {
+        $customer = Customer::query()->firstOrCreate(
+            ['name' => $data['customer_name']],
+            ['city' => $data['city'] ?? null]
+        );
+
+        $customer->fill([
+            'city' => $data['city'] ?? $customer->city,
+            'address' => $data['address'] ?? $customer->address,
+            'postal_code' => $data['postal_code'] ?? $customer->postal_code,
+            'phone' => $this->nullableString($data['contact_phone'] ?? null),
+            'email' => $this->nullableString($data['contact_email'] ?? null),
+        ])->save();
+
+        return $customer;
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $text = trim((string) $value);
+
+        return $text !== '' ? $text : null;
     }
 
     private function headline(string $customer, ?string $city): string

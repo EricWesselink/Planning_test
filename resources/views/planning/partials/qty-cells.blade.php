@@ -10,11 +10,29 @@
     $remaining = $labor['budget_remaining'] ?? null;
     $actualM2 = $labor['actual_cost_per_m2'] ?? $labor['actual_unit_price'] ?? null;
     $budgetM2 = $labor['budget_cost_per_m2'] ?? $labor['budget_unit_price'] ?? null;
-    $deltaTone = $labor['cost_delta_tone'] ?? 'none';
-    $deltaLabel = $labor['cost_delta_label'] ?? null;
+    $forecastM2 = $labor['forecast_unit_price'] ?? $labor['forecast_cost_per_m2'] ?? null;
+    $forecastTone = $labor['forecast_delta_tone'] ?? 'none';
+    $forecastPercent = $labor['forecast_over_percent_label'] ?? null;
+    $actualTone = $labor['cost_delta_tone'] ?? 'none';
+    $deltaLabel = $labor['forecast_delta_label'] ?? $labor['cost_delta_label'] ?? null;
+    $deltaTone = $forecastM2 !== null
+        ? $forecastTone
+        : $actualTone;
     $priceTitle = $labor['unit_price_title'] ?? null;
-    $priceClass = match ($deltaTone) {
+    $actualClass = match ($actualTone) {
         'over' => ' plan-cell--labor-over text-nicon-danger font-semibold',
+        'ok' => ' plan-cell--labor-ok text-nicon-ok font-semibold',
+        default => '',
+    };
+    $forecastClass = match ($forecastTone) {
+        'over' => ' plan-cell--labor-over text-nicon-danger font-semibold',
+        'warn' => ' plan-cell--labor-warn text-nicon-warn',
+        'ok' => ' plan-cell--labor-ok text-nicon-ok font-semibold',
+        default => '',
+    };
+    $deltaClass = match ($deltaTone) {
+        'over' => ' plan-cell--labor-over text-nicon-danger font-semibold',
+        'warn' => ' plan-cell--labor-warn text-nicon-warn',
         'ok' => ' plan-cell--labor-ok text-nicon-ok font-semibold',
         default => '',
     };
@@ -75,8 +93,18 @@
                 @endif
             </div>
             <div class="plan-cell plan-cell--num plan-cell--labor"@if ($priceTitle && $budgetM2 !== null) title="{{ $priceTitle }}"@endif>{{ $budgetM2 === null ? '—' : \App\Support\Format::euro($budgetM2, 2) }}</div>
-            <div class="plan-cell plan-cell--num plan-cell--labor{{ $actualM2 === null ? '' : $priceClass }}"@if ($priceTitle) title="{{ $priceTitle }}"@endif>{{ $actualM2 === null ? '—' : \App\Support\Format::euro($actualM2, 2) }}</div>
-            <div class="plan-cell plan-cell--num plan-cell--labor plan-cell--labor-delta{{ $deltaLabel === null ? '' : $priceClass }}"@if ($priceTitle) title="{{ $priceTitle }}"@endif>{{ $deltaLabel === null ? '—' : $deltaLabel }}</div>
+            <div class="plan-cell plan-cell--num plan-cell--labor{{ $actualM2 === null ? '' : $actualClass }}"@if ($priceTitle) title="{{ $priceTitle }}"@endif>{{ $actualM2 === null ? '—' : \App\Support\Format::euro($actualM2, 2) }}</div>
+            <div class="plan-cell plan-cell--num plan-cell--labor{{ $forecastM2 === null ? '' : $forecastClass }}{{ $forecastPercent ? ' plan-cell--labor-stack' : '' }}"@if ($priceTitle) title="{{ $priceTitle }}"@endif>
+                @if ($forecastM2 === null)
+                    —
+                @else
+                    {{ \App\Support\Format::euro($forecastM2, 2) }}
+                    @if ($forecastPercent)
+                        <span class="plan-labor-alert">{{ $forecastPercent }}</span>
+                    @endif
+                @endif
+            </div>
+            <div class="plan-cell plan-cell--num plan-cell--labor plan-cell--labor-delta{{ $deltaLabel === null ? '' : $deltaClass }}"@if ($priceTitle) title="{{ $priceTitle }}"@endif>{{ $deltaLabel === null ? '—' : $deltaLabel }}</div>
         </div>
     </div>
     <div class="plan-labor-toggle plan-labor-toggle--close" aria-hidden="true"></div>

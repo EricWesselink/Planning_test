@@ -59,6 +59,10 @@ class WorkActivity extends Model
 
     public function defaultShopUnit(?WorkActivityCategory $category = null): WorkUnit
     {
+        if ($this->slug === 'plinten' || str_contains(mb_strtolower($this->name), 'plint')) {
+            return WorkUnit::LinearMeter;
+        }
+
         $slug = ($category ?? $this->category)?->slug;
 
         return $slug === 'vloeren' ? WorkUnit::SquareMeter : WorkUnit::Pieces;

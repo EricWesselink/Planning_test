@@ -29,6 +29,14 @@ import {
     pageSize,
 } from './pdf-text-layer';
 import { ocrMissingRooms } from './pdf-ocr';
+import {
+    areaMatchesWorkKeys,
+    buildOutsourceSelection,
+    groupedWorkFilters,
+    measureSelectedWorks,
+    shortWorkLabel,
+    workFilterSummaryLabel,
+} from './drawing-work-selection';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -56,7 +64,18 @@ function boot() {
     const tipEl = document.getElementById('draw-tip');
     const pageSelect = document.getElementById('draw-page');
     const workSelect = document.getElementById('draw-work');
+    const workFilterLabel = document.getElementById('draw-work-label');
+    const workFilterToggle = document.getElementById('draw-work-toggle');
+    const workFilterPanel = document.getElementById('draw-work-panel');
+    const workFilterList = document.getElementById('draw-work-list');
+    const workFilterTotal = document.getElementById('draw-work-panel-total');
+    const workFilterBoxes = () => [...(workFilterPanel?.querySelectorAll('[data-work-key]') ?? [])];
+    const workFilterAllBox = workFilterPanel?.querySelector('[data-work-all]');
+    if (workFilterPanel && workFilterPanel.parentElement !== document.body) {
+        document.body.appendChild(workFilterPanel);
+    }
     const pickWorkRoomsBtn = document.getElementById('pick-work-rooms');
+    const outsourceSelectionData = document.getElementById('outsource-selection-data');
     const hint = document.getElementById('draw-hint');
     const groupsEl = document.getElementById('room-groups');
     const completeForm = document.getElementById('complete-form');
@@ -97,7 +116,8 @@ function boot() {
     let pdfRenderGeneration = 0;
     let page = 1;
     let pageCount = 1;
-    let workFilterKey = '';
+    let workFilterKeys = [];
+    let draftWorkKeys = [];
     let scale = 1;
     const MIN_ZOOM = 0.4;
     const MAX_ZOOM = 4;
@@ -331,15 +351,12 @@ function boot() {
         return (areaById(Number(row.dataset.areaId))?.works || []).map((work) => work.key);
     }
 
-    function areaMatchesWork(area, row = null) {
-        if (!workFilterKey) {
-            return true;
-        }
-        if (row) {
-            return rowWorkKeys(row).includes(workFilterKey);
-        }
+    function hasWorkFilter() {
+        return workFilterKeys.length > 0;
+    }
 
-        return (area?.works || []).some((work) => work.key === workFilterKey);
+    function areaMatchesWork(area, row = null) {
+        return areaMatchesWorkKeys(area, workFilterKeys, row ? rowWorkKeys(row) : null);
     }
 
     function areaOnSelectedFloor(area, row = null) {
@@ -367,7 +384,7 @@ function boot() {
     }
 
     function areaIsFilteredOut(area) {
-        return Boolean(workFilterKey) && !areaMatchesWork(area);
+        return hasWorkFilter() && !areaMatchesWork(area);
     }
 
     function matchingAreas() {
@@ -375,12 +392,16 @@ function boot() {
             if (!areaMatchesWork(area)) {
                 return false;
             }
-            if (!workFilterKey) {
+            if (!hasWorkFilter()) {
                 return true;
             }
 
             return areaOnSelectedFloor(area);
         });
+    }
+
+    function floorAreas() {
+        return areas.filter((area) => areaOnSelectedFloor(area));
     }
 
     function applyRoomFilters(options = {}) {
@@ -389,7 +410,7 @@ function boot() {
             const area = areaById(Number(row.dataset.areaId));
             const toneOk = tone === 'all' || row.dataset.tone === tone;
             const workOk = areaMatchesWork(area, row);
-            const floorOk = !workFilterKey || areaOnSelectedFloor(area, row);
+            const floorOk = !hasWorkFilter() || areaOnSelectedFloor(area, row);
             row.style.display = toneOk && workOk && floorOk ? '' : 'none';
         });
         prunePickedToFilter();
@@ -406,15 +427,15 @@ function boot() {
             head.style.display = any ? '' : 'none';
         });
         document.querySelectorAll('.floor-pick').forEach((button) => {
-            button.classList.toggle('hidden', Boolean(workFilterKey));
+            button.classList.toggle('hidden', hasWorkFilter());
         });
         const pickAll = document.getElementById('pick-all-rooms');
         if (pickAll) {
-            pickAll.textContent = workFilterKey ? 'Alles aanvinken' : 'Hele werk';
+            pickAll.textContent = hasWorkFilter() ? 'Alles aanvinken' : 'Hele werk';
         }
-        document.querySelector('.board-left')?.classList.toggle('is-work-filter', Boolean(workFilterKey));
+        document.querySelector('.board-left')?.classList.toggle('is-work-filter', hasWorkFilter());
         if (pickWorkRoomsBtn) {
-            pickWorkRoomsBtn.classList.toggle('hidden', !workFilterKey);
+            pickWorkRoomsBtn.classList.toggle('hidden', !hasWorkFilter());
         }
         refreshFilterCounts();
         if (!options.skipMarkers) {
@@ -423,7 +444,7 @@ function boot() {
     }
 
     function prunePickedToFilter() {
-        if (!workFilterKey) {
+        if (!hasWorkFilter()) {
             return;
         }
         const visible = new Set(visibleRoomIds());
@@ -447,12 +468,12 @@ function boot() {
     }
 
     function pickWorkGroup() {
-        if (!data.canEnterProgress || !workFilterKey || !groupsEl) {
+        if (!data.canEnterProgress || !hasWorkFilter() || !groupsEl) {
             return;
         }
         groupsEl.querySelectorAll('.work-group').forEach((card) => {
             const key = card.querySelector('.group-head')?.dataset.group;
-            const shouldPick = key === workFilterKey && !card.classList.contains('is-done');
+            const shouldPick = workFilterKeys.includes(key) && !card.classList.contains('is-done');
             if (shouldPick && !card.classList.contains('is-picked')) {
                 card.classList.add('is-picked');
                 const check = card.querySelector('.task-check');
@@ -706,7 +727,7 @@ function boot() {
             pageSelect.append(option);
         }
         pageSelect.value = String(page);
-        if (workFilterKey) {
+        if (hasWorkFilter()) {
             applyRoomFilters({ skipMarkers: true });
         }
     }
@@ -1819,8 +1840,8 @@ function boot() {
         }
         const scope = floor
             ? floor
-            : (workFilterKey ? (workSelect?.selectedOptions[0]?.textContent || 'onderdeel') : 'hele werk');
-        setHint(workFilterKey
+            : (hasWorkFilter() ? `${workFilterKeys.length} onderdelen` : 'hele werk');
+        setHint(hasWorkFilter()
             ? `${ids.length} ruimtes aangevinkt (${scope}). Onderdeel staat klaar om op te slaan.`
             : `${ids.length} ruimtes aangevinkt (${scope}). Kies egaliseren of een vloertype.`);
     }
@@ -2261,15 +2282,195 @@ function boot() {
             renderMarkers();
         }
     });
-    workSelect?.addEventListener('change', () => {
-        workFilterKey = workSelect.value;
+    function syncWorkFilterAllBox() {
+        if (!workFilterAllBox) {
+            return;
+        }
+        const boxes = workFilterBoxes();
+        workFilterAllBox.checked = boxes.length > 0 && boxes.every((box) => box.checked);
+        workFilterAllBox.indeterminate = boxes.some((box) => box.checked) && !workFilterAllBox.checked;
+    }
+
+    function readDraftKeys() {
+        return workFilterBoxes().filter((box) => box.checked).map((box) => box.dataset.workKey);
+    }
+
+    function workPanelIsOpen() {
+        return Boolean(workFilterPanel?.classList.contains('is-open'));
+    }
+
+    function closeWorkPanel() {
+        workFilterPanel?.classList.remove('is-open');
+        workSelect?.classList.remove('is-open');
+        workFilterToggle?.setAttribute('aria-expanded', 'false');
+    }
+
+    function positionWorkPanel() {
+        if (!workFilterPanel || !workFilterToggle) {
+            return;
+        }
+        const rect = workFilterToggle.getBoundingClientRect();
+        const width = Math.min(420, window.innerWidth - 24);
+        let left = rect.left;
+        if (left + width > window.innerWidth - 12) {
+            left = Math.max(12, window.innerWidth - width - 12);
+        }
+        workFilterPanel.style.left = `${left}px`;
+        workFilterPanel.style.top = `${rect.bottom + 4}px`;
+        workFilterPanel.style.width = `${width}px`;
+    }
+
+    function openWorkPanel() {
+        if (!workFilterPanel) {
+            return;
+        }
+        try {
+            renderWorkPanelList();
+        } catch (error) {
+            console.error(error);
+        }
+        workFilterPanel.classList.add('is-open');
+        workSelect?.classList.add('is-open');
+        workFilterToggle?.setAttribute('aria-expanded', 'true');
+        positionWorkPanel();
+        workFilterList?.scrollTo(0, 0);
+    }
+
+    function draftMeasure() {
+        const filters = data.work_filters || [];
+
+        return measureSelectedWorks(floorAreas(), draftWorkKeys, filters);
+    }
+
+    function refreshPanelTotal() {
+        if (!workFilterTotal) {
+            return;
+        }
+        workFilterTotal.textContent = `Geselecteerd: ${draftMeasure().label}`;
+    }
+
+    function renderWorkPanelList() {
+        if (!workFilterList) {
+            return;
+        }
+        const filters = data.work_filters || [];
+        const quantities = measureSelectedWorks(floorAreas(), filters.map((item) => item.key), filters);
+        const qtyByKey = Object.fromEntries(quantities.lines.map((line) => [line.key, line]));
+        workFilterList.innerHTML = groupedWorkFilters(filters).map((group) => {
+            const head = group.name ? `<div class="draw-work-group">${escapeHtml(group.name)}</div>` : '';
+            const items = group.items.map((filter) => {
+                const line = qtyByKey[filter.key] || { qty_label: `0,00 m²` };
+                const checked = draftWorkKeys.includes(filter.key) ? ' checked' : '';
+
+                return `<label class="draw-work-option"><input type="checkbox" data-work-key="${escapeHtml(filter.key)}"${checked}><span class="draw-work-option-name">${escapeHtml(shortWorkLabel(filter.label))}</span><span class="draw-work-option-qty">${escapeHtml(line.qty_label)}</span></label>`;
+            }).join('');
+
+            return head + items;
+        }).join('');
+        syncWorkFilterAllBox();
+        refreshPanelTotal();
+    }
+
+    function commitWorkFilter(keys, { close = false, hintOn = true } = {}) {
+        workFilterKeys = [...keys];
+        draftWorkKeys = [...keys];
+        if (workFilterLabel) {
+            workFilterLabel.textContent = workFilterSummaryLabel(workFilterKeys);
+        }
         applyRoomFilters();
-        if (workFilterKey) {
+        storeOutsourceSelection();
+        if (hasWorkFilter()) {
             pickWorkGroup();
-            const label = workSelect.selectedOptions[0]?.textContent || 'onderdeel';
-            setHint(`Alleen ruimtes met ${label} op deze verdieping. Tik een ruimte aan, of Alles aanvinken.`);
+            if (hintOn) {
+                setHint(`Alleen ruimtes met de gekozen materialen op deze verdieping. Tik een ruimte aan, of Alles aanvinken.`);
+            }
             document.querySelector('.board-left')?.classList.add('is-open');
             document.querySelector('.board-right')?.classList.remove('is-open');
+        }
+        if (close) {
+            closeWorkPanel();
+        }
+    }
+
+    function storeOutsourceSelection() {
+        if (!outsourceSelectionData || !hasWorkFilter()) {
+            if (outsourceSelectionData && !hasWorkFilter()) {
+                outsourceSelectionData.textContent = '{}';
+            }
+            return;
+        }
+        const workerSelect = document.getElementById('complete-worker');
+        const workerOption = workerSelect?.selectedOptions?.[0];
+        const payload = buildOutsourceSelection({
+            project: data.project || {},
+            floor: selectedFloorName(),
+            keys: workFilterKeys,
+            measure: selectedWorkMeasure(),
+            workerId: workerSelect?.value ? Number(workerSelect.value) : null,
+            workerName: workerOption?.textContent?.trim() || null,
+        });
+        outsourceSelectionData.textContent = JSON.stringify(payload);
+    }
+
+    workFilterToggle?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (workPanelIsOpen()) {
+            closeWorkPanel();
+        } else {
+            openWorkPanel();
+        }
+    });
+    workFilterToggle?.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    workFilterPanel?.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    workFilterPanel?.addEventListener('change', (event) => {
+        if (event.target.matches('[data-work-all]')) {
+            draftWorkKeys = event.target.checked
+                ? (data.work_filters || []).map((item) => item.key)
+                : [];
+            workFilterBoxes().forEach((box) => {
+                box.checked = event.target.checked;
+            });
+            syncWorkFilterAllBox();
+            refreshPanelTotal();
+            commitWorkFilter(draftWorkKeys, { hintOn: false });
+            return;
+        }
+        if (event.target.matches('[data-work-key]')) {
+            draftWorkKeys = readDraftKeys();
+            syncWorkFilterAllBox();
+            refreshPanelTotal();
+            commitWorkFilter(draftWorkKeys, { hintOn: false });
+        }
+    });
+    document.getElementById('draw-work-clear')?.addEventListener('click', () => {
+        commitWorkFilter([], { hintOn: false });
+        setHint('Materiaalselectie gewist.');
+    });
+    document.getElementById('draw-work-apply')?.addEventListener('click', () => {
+        commitWorkFilter(readDraftKeys(), { close: true });
+    });
+    document.addEventListener('pointerdown', (event) => {
+        if (!workPanelIsOpen()) {
+            return;
+        }
+        if (workSelect?.contains(event.target) || workFilterPanel?.contains(event.target)) {
+            return;
+        }
+        closeWorkPanel();
+    });
+    window.addEventListener('resize', () => {
+        if (workPanelIsOpen()) {
+            positionWorkPanel();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && workPanelIsOpen()) {
+            closeWorkPanel();
         }
     });
     pickWorkRoomsBtn?.addEventListener('click', () => {
@@ -2427,7 +2628,7 @@ function boot() {
             return;
         }
         event.preventDefault();
-        if (workFilterKey && data.canEnterProgress) {
+        if (hasWorkFilter() && data.canEnterProgress) {
             togglePickedRoom(row.dataset.areaId);
             return;
         }
@@ -2608,53 +2809,48 @@ function boot() {
         setHint(`${prefix} ${area?.progress || ''} · ${area?.status_label || ''}. ${markerNote}.`.trim());
     }
 
-    function formatBoardQty(value) {
-        return String((Math.round((Number(value) || 0) * 100) / 100).toFixed(2)).replace('.', ',');
-    }
-
-    function workUnitLabel(unit) {
-        if (unit === 'm1') {
-            return 'm¹';
-        }
-        if (unit === 'm2' || !unit) {
-            return 'm²';
-        }
-
-        return unit;
-    }
-
     function selectedWorkMeasure() {
-        const pool = matchingAreas();
-        let total = 0;
-        let unit = 'm2';
-        pool.forEach((area) => {
-            const work = (area.works || []).find((item) => item.key === workFilterKey);
-            if (work && work.quantity != null && work.quantity !== '') {
-                total += Number(work.quantity) || 0;
-                if (work.unit) {
-                    unit = work.unit;
-                }
+        return measureSelectedWorks(matchingAreas(), workFilterKeys, data.work_filters || []);
+    }
 
-                return;
-            }
-            if ((Number(area.m2) || 0) > 0) {
-                total += Number(area.m2);
-            }
-        });
-
-        return {
-            total: Math.round(total * 100) / 100,
-            unit,
-            label: `${formatBoardQty(total)} ${workUnitLabel(unit)}`,
-        };
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     function refreshWorkQuantity() {
-        const label = workFilterKey ? selectedWorkMeasure().label : '';
+        const measure = hasWorkFilter() ? selectedWorkMeasure() : null;
         document.querySelectorAll('.draw-work-qty').forEach((el) => {
-            el.textContent = label;
-            el.classList.toggle('is-on', Boolean(workFilterKey));
+            if (el.id === 'draw-work-qty') {
+                el.textContent = measure ? `${measure.label} geselecteerd` : '';
+            } else {
+                el.textContent = measure?.label || '';
+            }
+            el.classList.toggle('is-on', Boolean(measure));
         });
+        if (workPanelIsOpen()) {
+            updateWorkPanelQuantities();
+        }
+    }
+
+    function updateWorkPanelQuantities() {
+        const filters = data.work_filters || [];
+        if (!filters.length) {
+            refreshPanelTotal();
+            return;
+        }
+        const quantities = measureSelectedWorks(floorAreas(), filters.map((item) => item.key), filters);
+        const qtyByKey = Object.fromEntries(quantities.lines.map((line) => [line.key, line]));
+        workFilterBoxes().forEach((box) => {
+            const qty = box.closest('.draw-work-option')?.querySelector('.draw-work-option-qty');
+            if (qty) {
+                qty.textContent = qtyByKey[box.dataset.workKey]?.qty_label || '0,00 m²';
+            }
+        });
+        refreshPanelTotal();
     }
 
     function refreshFilterCounts() {

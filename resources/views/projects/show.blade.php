@@ -131,6 +131,18 @@
                         @endforeach
                     </div>
                 @endif
+                @php
+                    $extraItems = $project->workItems->filter(fn ($item) => $item->isExtraWork());
+                @endphp
+                @if ($extraItems->isNotEmpty())
+                    <div class="mt-1 space-y-0.5 text-xs">
+                        @foreach ($extraItems as $extra)
+                            <div>
+                                <a href="{{ route('projects.extra.edit', [$project, $extra]) }}" class="text-nicon-orange-dark">{{ $extra->small_work_type?->badge() ?? 'EXTRA' }} {{ $extra->name }} — klaar, uren en materiaal</a>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
             </div>
             <nav class="board-tabs">
                 <a class="is-on" href="{{ route('projects.show', $project) }}">Tekening</a>
@@ -145,7 +157,7 @@
                 <div class="flex items-center justify-between gap-2">
                     <div class="flex items-center gap-2 min-w-0">
                         <span id="room-count-label" class="text-xs text-nicon-muted">{{ $counts['all'] }} ruimtes</span>
-                        <span id="room-work-qty" class="draw-work-qty" title="Totaal van dit onderdeel op deze verdieping"></span>
+                        <span id="room-work-qty" class="draw-work-qty" title="Totaal van de aangevinkte onderdelen op deze verdieping"></span>
                         <span id="picked-count" hidden></span>
                     </div>
                     @if ($canEnterProgress)
@@ -182,17 +194,39 @@
 
         <section class="board-mid">
             <div class="draw-toolbar">
-                <div class="flex items-center gap-1 min-w-0">
+                <div class="flex items-center gap-1 min-w-0 overflow-visible">
                     <select id="draw-page" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-40">
                         <option value="1">Pagina 1</option>
                     </select>
-                    <select id="draw-work" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-44" aria-label="Onderdeel">
-                        <option value="">Alle onderdelen</option>
-                        @foreach (($board['work_filters'] ?? []) as $work)
-                            <option value="{{ $work['key'] }}">{{ $work['label'] }}</option>
-                        @endforeach
-                    </select>
-                    <span id="draw-work-qty" class="draw-work-qty" aria-live="polite" title="Totaal van dit onderdeel op deze verdieping"></span>
+                    <div id="draw-work" class="draw-work-menu">
+                        <button type="button" id="draw-work-toggle" class="draw-work-summary" aria-expanded="false" aria-haspopup="true" aria-controls="draw-work-panel">
+                            <span id="draw-work-label">Materialen kiezen</span>
+                        </button>
+                    </div>
+                    <div id="draw-work-panel" class="draw-work-panel">
+                        <div class="draw-work-panel-head">Materialen selecteren</div>
+                        <label class="draw-work-option is-all">
+                            <input type="checkbox" data-work-all>
+                            <span>Alles selecteren</span>
+                        </label>
+                        <div id="draw-work-list" class="draw-work-panel-list">
+                            @foreach (($board['work_filters'] ?? []) as $work)
+                                <label class="draw-work-option">
+                                    <input type="checkbox" data-work-key="{{ $work['key'] }}">
+                                    <span class="draw-work-option-name">{{ $work['label'] }}</span>
+                                    <span class="draw-work-option-qty"></span>
+                                </label>
+                            @endforeach
+                        </div>
+                        <div class="draw-work-panel-foot">
+                            <div id="draw-work-panel-total" class="draw-work-panel-total">Geselecteerd: 0,00 m²</div>
+                            <div class="draw-work-panel-actions">
+                                <button type="button" id="draw-work-clear">Wis selectie</button>
+                                <button type="button" id="draw-work-apply">Toepassen</button>
+                            </div>
+                        </div>
+                    </div>
+                    <span id="draw-work-qty" class="draw-work-qty" aria-live="polite" title="Totaal van de aangevinkte onderdelen op deze verdieping"></span>
                     @if ($canEnterProgress)
                         <button type="button" id="pick-work-rooms" class="room-pick-btn hidden">Alle zichtbare</button>
                     @endif
@@ -487,4 +521,5 @@
     </div>
 
     <script type="application/json" id="board-data">{!! json_encode($board, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) !!}</script>
+    <script type="application/json" id="outsource-selection-data">{}</script>
 @endsection

@@ -7,6 +7,7 @@ use App\Enums\SmallWorkType;
 use App\Enums\WorkPhase;
 use App\Enums\WorkUnit;
 use App\Services\RoomWorkSetup;
+use App\Support\Format;
 use App\Support\MaterialColor;
 use App\Support\WorkType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'project_id', 'work_activity_id', 'name', 'display_color', 'unit', 'ordered_quantity',
     'begrote_uren', 'begrote_hoeveelheid', 'uurtarief',
     'planned_start_date', 'planned_end_date', 'status', 'sort_order', 'notes',
-    'is_extra_work', 'small_work_type',
+    'is_extra_work', 'small_work_type', 'extra_lines',
 ])]
 class WorkItem extends Model
 {
@@ -41,12 +42,127 @@ class WorkItem extends Model
             'planned_end_date' => 'date',
             'is_extra_work' => 'boolean',
             'small_work_type' => SmallWorkType::class,
+            'extra_lines' => 'array',
         ];
     }
 
     public function isExtraWork(): bool
     {
         return (bool) $this->is_extra_work;
+    }
+
+    /**
+     * @param  array<int, mixed>  $lines
+     * @return list<array{name: string, quantity: float, completed: float}>
+     */
+    public static function normalizeExtraLines(array $lines): array
+    {
+        $normalized = [];
+
+        foreach ($lines as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $name = trim((string) ($line['name'] ?? ''));
+            $quantity = is_numeric($line['quantity'] ?? null) ? (float) $line['quantity'] : 0.0;
+            $completed = is_numeric($line['completed'] ?? null) ? (float) $line['completed'] : 0.0;
+            if ($name === '' && $quantity <= 0.0001 && $completed <= 0.0001) {
+                continue;
+            }
+            if ($quantity <= 0.0001 && $completed <= 0.0001) {
+                continue;
+            }
+
+            $normalized[] = [
+                'name' => $name !== '' ? $name : 'Materiaal',
+                'quantity' => $quantity,
+                'completed' => $completed,
+            ];
+        }
+
+        return array_values($normalized);
+    }
+
+    /**
+     * @return list<array{name: string, quantity: float, completed: float}>
+     */
+    public function extraLines(): array
+    {
+        $stored = is_array($this->extra_lines) ? $this->extra_lines : [];
+        $lines = self::normalizeExtraLines($stored);
+        if ($lines !== []) {
+            return $lines;
+        }
+
+        $quantity = $this->unit === WorkUnit::SquareMeter
+            ? (float) $this->ordered_quantity
+            : (float) ($this->begrote_hoeveelheid ?? 0);
+        if ($quantity <= 0.0001) {
+            return [];
+        }
+
+        return [[
+            'name' => 'Materiaal',
+            'quantity' => $quantity,
+            'completed' => $this->unit === WorkUnit::SquareMeter ? $this->completedQuantity() : 0.0,
+        ]];
+    }
+
+    /**
+     * @return list<array{name: string, quantity: float|int|string|null, completed: float|int|string|null}>
+     */
+    public function extraLinesForForm(): array
+    {
+        $lines = $this->extraLines();
+        $hasEgaliseren = false;
+        $hasMaterial = false;
+        foreach ($lines as $line) {
+            $name = mb_strtolower($line['name']);
+            if (str_contains($name, 'egalis')) {
+                $hasEgaliseren = true;
+            } elseif (trim($line['name']) !== '') {
+                $hasMaterial = true;
+            }
+        }
+        if (! $hasEgaliseren) {
+            array_unshift($lines, ['name' => 'Egaliseren', 'quantity' => 0.0, 'completed' => 0.0]);
+        }
+        if (! $hasMaterial) {
+            $lines[] = ['name' => 'Materiaal', 'quantity' => 0.0, 'completed' => 0.0];
+        }
+        $lines[] = ['name' => '', 'quantity' => 0.0, 'completed' => 0.0];
+
+        return array_map(static function (array $line): array {
+            $quantity = $line['quantity'] > 0.0001 ? $line['quantity'] : null;
+            $completed = $line['completed'] > 0.0001 ? $line['completed'] : null;
+            if (is_numeric($quantity) && fmod((float) $quantity, 1.0) === 0.0) {
+                $quantity = (int) (float) $quantity;
+            }
+            if (is_numeric($completed) && fmod((float) $completed, 1.0) === 0.0) {
+                $completed = (int) (float) $completed;
+            }
+
+            return [
+                'name' => $line['name'],
+                'quantity' => $quantity,
+                'completed' => $completed,
+            ];
+        }, $lines);
+    }
+
+    public function extraLinesSummary(): ?string
+    {
+        $parts = [];
+        foreach ($this->extraLines() as $line) {
+            if ($line['quantity'] <= 0.0001) {
+                continue;
+            }
+            $decimals = fmod($line['quantity'], 1.0) !== 0.0 ? 2 : 0;
+            $parts[] = $line['name'].' '.Format::qty($line['quantity'], $decimals).' m²';
+        }
+
+        return $parts === [] ? null : implode(' · ', $parts);
     }
 
     public function skipsSkillMatch(): bool

@@ -10,6 +10,7 @@
 @section('content')
     @php
         $query = array_filter($filters, fn ($value) => $value !== null && $value !== '');
+        $excelYear = (int) $weekStart->isoWeekYear();
     @endphp
     <div class="planning-page">
         <div class="planning-controls">
@@ -20,7 +21,12 @@
                     <p class="planning-week-label">{{ $weekRangeLabel }} · {{ $weekStart->translatedFormat('d M') }} – {{ $days->last()->translatedFormat('d M Y') }}</p>
                 </div>
                 <div class="planning-toolbar">
-                    <a class="planning-btn" href="{{ route('planning', array_merge($query, ['week' => $prevWeek])) }}">Vorige</a>
+                    <a class="planning-btn planning-btn--icon" href="{{ route('planning', array_merge($query, ['week' => $prevWeek])) }}" title="Vorige week" aria-label="Vorige week">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M19 12H5"/>
+                            <path d="m12 5-7 7 7 7"/>
+                        </svg>
+                    </a>
                     <form method="GET" class="inline">
                         @foreach ($query as $key => $value)
                             @if (! in_array($key, ['weeks', 'week'], true))
@@ -34,7 +40,12 @@
                             @endforeach
                         </select>
                     </form>
-                    <a class="planning-btn" href="{{ route('planning', array_merge($query, ['week' => $nextWeek])) }}">Volgende</a>
+                    <a class="planning-btn planning-btn--icon" href="{{ route('planning', array_merge($query, ['week' => $nextWeek])) }}" title="Volgende week" aria-label="Volgende week">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M5 12h14"/>
+                            <path d="m12 5 7 7-7 7"/>
+                        </svg>
+                    </a>
                     <a class="planning-btn" href="{{ route('planning', array_merge($query, ['week' => $thisWeek])) }}" title="Ga naar deze week">Deze week</a>
                     <form method="GET" class="planning-week-jump">
                         @foreach ($query as $key => $value)
@@ -51,6 +62,12 @@
                                title="Spring naar weeknummer">
                         <button type="submit" class="planning-week-jump-submit">Toon</button>
                     </form>
+                    <button
+                        type="button"
+                        class="planning-btn"
+                        id="weekplanning-open"
+                        title="Weekplanning vakmannen als PDF"
+                    >Weekplanning vakmannen</button>
                     <form method="GET" action="{{ route('planning.export') }}" target="_blank" class="planning-pdf-form">
                         @foreach ($query as $key => $value)
                             @if (! in_array($key, ['period', 'intern', 'week', 'week_nr', 'year'], true))
@@ -63,8 +80,15 @@
                             <option value="month" @selected(($period ?? '') === 'month')>Maand</option>
                             <option value="work" @selected(($period ?? '') === 'work')>Gehele werk</option>
                         </select>
-                        <button type="submit" class="planning-btn" title="Planning als PDF voor de opdrachtgever, zonder namen">PDF</button>
                         <button type="submit" class="planning-btn" name="intern" value="1" title="Planning printen voor eigen gebruik, met namen">Intern</button>
+                    </form>
+                    <form method="GET" action="{{ route('planning.excel') }}" class="planning-pdf-form">
+                        <select name="year" class="planning-btn planning-select" aria-label="Jaar voor intern Excel" title="Jaar voor intern Excel">
+                            @for ($year = $excelYear - 2; $year <= $excelYear + 1; $year++)
+                                <option value="{{ $year }}" @selected($year === $excelYear)>{{ $year }}</option>
+                            @endfor
+                        </select>
+                        <button type="submit" class="planning-btn" title="Jaarplanning als Excel, gevuld vanuit het planbord">Intern Excel</button>
                     </form>
                     <a class="planning-btn planning-btn--accent" href="{{ route('production.index') }}">Productie</a>
                     @if ($canManagePlanning)
@@ -244,7 +268,8 @@
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Begroot minus gemaakt">Rest</div>
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Begrote arbeidsprijs per eenheid">Begroot €/m²</div>
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Werkelijke arbeidsprijs per eenheid">Werkelijk €/m²</div>
-                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Werkelijk minus begroot">Verschil</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Verwachte arbeidsprijs per eenheid op basis van gemaakt plus nog gepland">Prognose €/m²</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Prognose minus begroot">Verschil</div>
                                     </div>
                                 </div>
                                 <button type="button" class="plan-labor-toggle plan-labor-toggle--close" data-labor-fold aria-expanded="true" title="Urenkolommen invouwen">‹</button>
@@ -291,6 +316,7 @@
                                                 <div class="plan-cell plan-cell--num plan-cell--labor"></div>
                                                 <div class="plan-cell plan-cell--num plan-cell--labor"></div>
                                                 <div class="plan-cell plan-cell--num plan-cell--labor"></div>
+                                                <div class="plan-cell plan-cell--num plan-cell--labor"></div>
                                             </div>
                                         </div>
                                         <div class="plan-labor-toggle plan-labor-toggle--close" aria-hidden="true"></div>
@@ -307,6 +333,12 @@
                         @php
                             $isCompact = ! empty($projectRow['compact']);
                             $projectHasPeriod = $projectRow['bar'] || $projectRow['start_marker'] || $projectRow['end_marker'];
+                            $isAttachedSmall = $isCompact
+                                && ! empty($projectRow['work_item_id'])
+                                && in_array($projectRow['kind'] ?? '', ['extra', 'klein'], true);
+                            $projectHref = $isAttachedSmall
+                                ? route('projects.extra.edit', [$projectRow['id'], $projectRow['work_item_id']])
+                                : route('projects.show', $projectRow['id']);
                             $projectBarOffset = $projectHasPeriod ? 16 : 4;
                             $projectHeight = max(28, $projectBarOffset + 4 + ($projectRow['bar_count'] * 24));
                             $projectOver = $canViewLaborCosts && ! empty($projectRow['labor']['hours_over']);
@@ -315,7 +347,7 @@
                             <div class="plan-frozen">
                                 <div class="plan-cell plan-cell--werk{{ ! empty($projectRow['missing_craftsman']) ? ' has-missing-craftsman' : '' }}">
                                     <div class="plan-project-meta">
-                                        <a href="{{ route('projects.show', $projectRow['id']) }}" class="hover:text-nicon-orange">
+                                        <a href="{{ $projectHref }}" class="hover:text-nicon-orange">
                                             @if (! empty($projectRow['badge']))
                                                 <span class="plan-small-badge plan-small-badge--{{ $projectRow['kind'] ?? 'klein' }}">{{ $projectRow['badge'] }}</span>
                                             @endif
@@ -455,6 +487,41 @@
                 <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">Opslaan</button>
                 <button type="button" id="plan-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>
                 <button type="button" id="plan-delete" class="text-nicon-danger px-4 py-1.5 hidden">Verwijderen</button>
+            </div>
+        </form>
+    </dialog>
+    <dialog id="weekplanning-dialog" class="plan-dialog">
+        <form
+            id="weekplanning-form"
+            method="GET"
+            action="{{ route('planning.weekplanning') }}"
+            target="_blank"
+            class="space-y-3"
+        >
+            <h2 class="text-base font-semibold">Weekplanning exporteren</h2>
+            <p class="text-sm text-nicon-muted">
+                Week:
+                <span class="font-medium text-nicon-ink">
+                    Week {{ $weekStart->isoWeek() }} – {{ $weekStart->translatedFormat('j') }} t/m {{ $days->last()->translatedFormat('j F Y') }}
+                </span>
+            </p>
+            <input type="hidden" name="week" value="{{ $filters['week'] ?? $weekStart->toDateString() }}">
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Teams / ZZP-bedrijven</div>
+                <label class="mt-1 flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="all" value="1" id="weekplanning-all" checked>
+                    Alles
+                </label>
+                @foreach ($weekplanningTeams ?? [] as $group)
+                    <label class="mt-1 flex items-center gap-2 text-sm">
+                        <input type="checkbox" name="teams[]" value="{{ $group['key'] }}" class="weekplanning-team">
+                        {{ $group['name'] }}
+                    </label>
+                @endforeach
+            </div>
+            <div class="flex flex-wrap justify-end gap-2 pt-1">
+                <button type="button" id="weekplanning-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>
+                <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">PDF maken</button>
             </div>
         </form>
     </dialog>

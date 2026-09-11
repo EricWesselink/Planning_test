@@ -42,7 +42,8 @@ class ShopWorkTest extends TestCase
         $horren = $this->addActivity('Horren', 'overig');
         $this->activity('anders')->update(['is_active' => false]);
 
-        $this->actingAs($user)
+        $pvc = $this->activity('pvc');
+        $html = $this->actingAs($user)
             ->get(route('projects.winkel.create'))
             ->assertOk()
             ->assertSee('Werkzaamheden')
@@ -53,8 +54,25 @@ class ShopWorkTest extends TestCase
             ->assertSee('Horren')
             ->assertDontSee('>Anders</span>', false)
             ->assertSee('Aantal')
+            ->assertSee('Uren')
+            ->assertSee('Standaard €48/u')
+            ->assertSee('value="48"', false)
+            ->assertSee('lg:grid-cols-4', false)
+            ->assertSee('Telefoon')
+            ->assertSee('E-mail')
             ->assertSee('>m²</option>', false)
-            ->assertSee('>stuks</option>', false);
+            ->assertSee('>m¹</option>', false)
+            ->assertSee('>stuks</option>', false)
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/id="activity-quantity-'.$pvc->id.'"[^>]*\bdisabled\b/',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/data-shop-activity-notes[^>]*\bhidden\b/',
+            $html
+        );
 
         $this->assertTrue($horren->is_active);
     }
@@ -98,6 +116,8 @@ class ShopWorkTest extends TestCase
         $this->assertSame(['Screens', 'Rolluiken', 'Montage'], $project->workActivities()->pluck('name')->all());
         $this->assertSame('4 stuks plaatsen achterzijde woning', $project->workActivities()->where('slug', 'screens')->first()?->pivot?->notes);
         $this->assertSame(3, $project->workItems()->count());
+        $this->assertSame('48.00', $project->basis_uurtarief);
+        $this->assertSame('48.00', $project->workItems()->first()?->uurtarief);
         $this->assertSame(2, $project->documents()->where('document_type', 'bijlage')->count());
 
         $this->actingAs($user)
@@ -109,6 +129,75 @@ class ShopWorkTest extends TestCase
             ->assertSee('4 stuks plaatsen achterzijde woning')
             ->assertSee('achterzijde.jpg')
             ->assertSee('Open planning');
+    }
+
+    public function test_planner_saves_customer_phone_and_email_on_winkelwerk(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'address' => 'Kerkstraat 12',
+            'postal_code' => '7551 AA',
+            'contact_phone' => '06 12345678',
+            'contact_email' => 'jansen@example.nl',
+            'work_activity_ids' => [$screens->id],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('06 12345678', $project->contact_phone);
+        $this->assertSame('jansen@example.nl', $project->contact_email);
+        $this->assertSame('06 12345678', $project->customer?->phone);
+        $this->assertSame('jansen@example.nl', $project->customer?->email);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('name="contact_phone"', false)
+            ->assertSee('name="contact_email"', false)
+            ->assertSee('06 12345678')
+            ->assertSee('jansen@example.nl')
+            ->assertSee('href="tel:06 12345678"', false)
+            ->assertSee('href="mailto:jansen@example.nl"', false);
+
+        $this->actingAs($user)->patch(route('projects.winkel.update', $project), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'address' => 'Kerkstraat 12',
+            'postal_code' => '7551 AA',
+            'contact_phone' => '053 1234567',
+            'contact_email' => 'info@jansen.nl',
+            'work_activity_ids' => [$screens->id],
+        ])->assertRedirect(route('projects.show', $project));
+
+        $project->refresh();
+        $this->assertSame('053 1234567', $project->contact_phone);
+        $this->assertSame('info@jansen.nl', $project->contact_email);
+        $this->assertSame('053 1234567', $project->customer?->fresh()?->phone);
+        $this->assertSame('info@jansen.nl', $project->customer?->fresh()?->email);
+    }
+
+    public function test_rejects_winkelwerk_with_an_invalid_email(): void
+    {
+        $user = User::factory()->create();
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), [
+                'customer_name' => 'Jansen',
+                'city' => 'Hengelo',
+                'work_activity_ids' => [$screens->id],
+                'contact_email' => 'niet-geldig',
+            ])
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['contact_email' => 'Vul een geldig e-mailadres in.']);
+
+        $this->assertSame(0, Project::query()->count());
     }
 
     public function test_rejects_winkelwerk_without_selected_activities(): void
@@ -184,6 +273,41 @@ class ShopWorkTest extends TestCase
             ->assertSee('4 stuks');
     }
 
+    public function test_planner_saves_plinten_in_linear_meters(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $plinten = $this->activity('plinten');
+
+        $this->actingAs($user)
+            ->get(route('projects.winkel.create'))
+            ->assertOk()
+            ->assertSee('value="'.$plinten->id.'"', false)
+            ->assertSee('value="'.WorkUnit::LinearMeter->value.'"', false);
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$plinten->id],
+            'activity_quantities' => [$plinten->id => '24,5'],
+            'activity_hours' => [$plinten->id => '2'],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $item = $project->workItems()->where('name', 'Plinten')->first();
+        $pivot = $project->workActivities()->where('slug', 'plinten')->first()?->pivot;
+        $this->assertSame(WorkUnit::LinearMeter, $item?->unit);
+        $this->assertSame(24.5, (float) $item?->ordered_quantity);
+        $this->assertSame(WorkUnit::LinearMeter, $pivot?->unit);
+        $this->assertSame(24.5, (float) $pivot?->quantity);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('24,50 m¹');
+    }
+
     public function test_rejects_winkelwerk_when_activity_unit_is_not_square_meters_or_pieces(): void
     {
         $user = User::factory()->create();
@@ -199,7 +323,107 @@ class ShopWorkTest extends TestCase
                 'activity_units' => [$screens->id => WorkUnit::Hours->value],
             ])
             ->assertRedirect(route('projects.winkel.create'))
-            ->assertSessionHasErrors(['activity_units.'.$screens->id => 'Kies m² of stuks.']);
+            ->assertSessionHasErrors(['activity_units.'.$screens->id => 'Kies m², m¹ of stuks.']);
+
+        $this->assertSame(0, Project::query()->count());
+    }
+
+    public function test_planner_saves_begrote_uren_per_activity_for_planning(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc');
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$pvc->id, $screens->id],
+            'activity_quantities' => [
+                $pvc->id => '40,5',
+                $screens->id => '4',
+            ],
+            'activity_units' => [
+                $pvc->id => WorkUnit::SquareMeter->value,
+                $screens->id => WorkUnit::Pieces->value,
+            ],
+            'activity_hours' => [
+                $pvc->id => '8,5',
+                $screens->id => '4',
+            ],
+            'start_year' => 2026,
+            'start_week' => 37,
+            'klaar_year' => 2026,
+            'klaar_week' => 37,
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+
+        $pvcItem = $project->workItems()->where('name', 'PVC')->first();
+        $screensItem = $project->workItems()->where('name', 'Screens')->first();
+        $this->assertSame(8.5, (float) $pvcItem?->begrote_uren);
+        $this->assertSame(4.0, (float) $screensItem?->begrote_uren);
+        $this->assertSame('48.00', $project->basis_uurtarief);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('name="activity_hours['.$pvc->id.']"', false)
+            ->assertSee('value="48"', false)
+            ->assertSee('· 8,5u')
+            ->assertSee('· 4u')
+            ->assertSee('€408')
+            ->assertSee('€192');
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('8,5u')
+            ->assertSee('4u');
+    }
+
+    public function test_planner_saves_a_custom_winkelwerk_hourly_rate(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$pvc->id],
+            'activity_hours' => [$pvc->id => '2'],
+            'basis_uurtarief' => '52,50',
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('52.50', $project->basis_uurtarief);
+        $this->assertSame('52.50', $project->workItems()->first()?->uurtarief);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('value="52.50"', false)
+            ->assertSee('€105');
+    }
+
+    public function test_rejects_winkelwerk_when_activity_hours_are_negative(): void
+    {
+        $user = User::factory()->create();
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), [
+                'customer_name' => 'Jansen',
+                'city' => 'Hengelo',
+                'work_activity_ids' => [$screens->id],
+                'activity_hours' => [$screens->id => '-1'],
+            ])
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['activity_hours.'.$screens->id => 'Begrote uren kunnen niet lager zijn dan 0.']);
 
         $this->assertSame(0, Project::query()->count());
     }
@@ -361,6 +585,10 @@ class ShopWorkTest extends TestCase
                 $screens->id => WorkUnit::Pieces->value,
                 $gordijnen->id => WorkUnit::Pieces->value,
             ],
+            'activity_hours' => [
+                $screens->id => '6',
+                $gordijnen->id => '2,5',
+            ],
         ])->assertRedirect(route('projects.show', $project));
 
         $project->refresh();
@@ -371,6 +599,8 @@ class ShopWorkTest extends TestCase
         $this->assertSame(8.0, (float) $project->workActivities()->where('slug', 'gordijnen')->first()?->pivot?->quantity);
         $this->assertSame(['Gordijnen', 'Screens'], $project->workItems()->orderBy('sort_order')->pluck('name')->all());
         $this->assertSame(3.0, (float) $project->workItems()->where('name', 'Screens')->first()?->ordered_quantity);
+        $this->assertSame(6.0, (float) $project->workItems()->where('name', 'Screens')->first()?->begrote_uren);
+        $this->assertSame(2.5, (float) $project->workItems()->where('name', 'Gordijnen')->first()?->begrote_uren);
         $this->assertSame('Raambekleding + Zonwering · Gordijnen + Screens', $project->fresh(['workActivities.category'])->shopWorkLine());
     }
 

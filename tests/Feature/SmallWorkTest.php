@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
+use App\Models\WorkProgressEntry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -178,7 +179,11 @@ class SmallWorkTest extends TestCase
             ->assertSee('Opdrachtnummer / klant')
             ->assertSee('11P241267')
             ->assertSee('250100010')
-            ->assertSee('Gezondheidscentrum Laren');
+            ->assertSee('Gezondheidscentrum Laren')
+            ->assertSee('Klaar')
+            ->assertSee('Egaliseren')
+            ->assertSee('Materiaal')
+            ->assertSee('Regel toevoegen');
     }
 
     public function test_extra_work_requires_an_existing_project(): void
@@ -285,6 +290,274 @@ class SmallWorkTest extends TestCase
             ->assertSee('▶ Start', false)
             ->assertSee('09-09-2026')
             ->assertSee('plan-missing-craftsman', false);
+    }
+
+    public function test_extra_work_name_opens_the_extra_work_form_instead_of_the_drawing(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Extra->value,
+            'project_id' => $parent->id,
+            'description' => 'vloer herstel',
+            'date' => '2026-09-09',
+            'hours' => 8,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+
+        $extra = $parent->workItems()->where('is_extra_work', true)->first();
+        $this->assertNotNull($extra);
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString(
+            route('projects.extra.edit', [$parent, $extra], false),
+            $html
+        );
+
+        $this->actingAs($user)
+            ->get(route('projects.extra.edit', [$parent, $extra]))
+            ->assertOk()
+            ->assertSee('Klaar')
+            ->assertSee('Geworden uren')
+            ->assertSee('Egaliseren')
+            ->assertSee('Materiaal')
+            ->assertSee('Regel toevoegen')
+            ->assertSee('vloer herstel');
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $parent))
+            ->assertOk()
+            ->assertSee('EXTRA vloer herstel — klaar, uren en materiaal');
+    }
+
+    public function test_planner_saves_klaar_date_actual_hours_and_material_on_extra_work(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Extra->value,
+            'project_id' => $parent->id,
+            'description' => 'vloer herstel',
+            'date' => '2026-09-09',
+            'hours' => 8,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+
+        $extra = $parent->workItems()->where('is_extra_work', true)->first();
+        $this->assertNotNull($extra);
+
+        $this->actingAs($user)
+            ->patch(route('projects.extra.update', [$parent, $extra]), [
+                'description' => 'vloer herstel',
+                'date' => '2026-09-09',
+                'klaar_date' => '2026-09-11',
+                'hours' => 8,
+                'quantity' => 18,
+                'actual_hours' => 10,
+                'completed_quantity' => 18,
+            ])
+            ->assertRedirect(route('planning', [
+                'week' => '2026-09-07',
+                'project_id' => $parent->id,
+            ]));
+
+        $extra->refresh();
+        $this->assertSame(WorkUnit::SquareMeter, $extra->unit);
+        $this->assertSame(18.0, (float) $extra->ordered_quantity);
+        $this->assertSame('2026-09-11', $extra->planned_end_date?->toDateString());
+        $this->assertSame('gereed', $extra->status);
+        $this->assertSame(10.0, (float) $extra->progressEntries()->sum('worked_hours'));
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('18 m²')
+            ->assertSee('10u')
+            ->assertSee('Klaar 11-09-2026');
+    }
+
+    public function test_planner_saves_egaliseren_and_material_lines_on_extra_work(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Extra->value,
+            'project_id' => $parent->id,
+            'description' => 'vloer herstel',
+            'date' => '2026-09-09',
+            'hours' => 8,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+
+        $extra = $parent->workItems()->where('is_extra_work', true)->first();
+        $this->assertNotNull($extra);
+
+        $this->actingAs($user)
+            ->patch(route('projects.extra.update', [$parent, $extra]), [
+                'description' => 'vloer herstel',
+                'date' => '2026-09-09',
+                'klaar_date' => '2026-09-11',
+                'hours' => 8,
+                'actual_hours' => 10,
+                'lines' => [
+                    ['name' => 'Egaliseren', 'quantity' => 30, 'completed' => 30],
+                    ['name' => 'Marmoleum', 'quantity' => 30, 'completed' => 30],
+                ],
+            ])
+            ->assertRedirect(route('planning', [
+                'week' => '2026-09-07',
+                'project_id' => $parent->id,
+            ]));
+
+        $extra->refresh();
+        $this->assertSame(WorkUnit::SquareMeter, $extra->unit);
+        $this->assertSame(60.0, (float) $extra->ordered_quantity);
+        $this->assertSame([
+            ['name' => 'Egaliseren', 'quantity' => 30.0, 'completed' => 30.0],
+            ['name' => 'Marmoleum', 'quantity' => 30.0, 'completed' => 30.0],
+        ], $extra->extraLines());
+
+        $this->actingAs($user)
+            ->get(route('projects.extra.edit', [$parent, $extra]))
+            ->assertOk()
+            ->assertSee('Egaliseren')
+            ->assertSee('Marmoleum')
+            ->assertSee('Regel toevoegen');
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('Egaliseren 30 m² · Marmoleum 30 m²')
+            ->assertSee('10u');
+    }
+
+    public function test_guest_is_redirected_from_extra_work_form(): void
+    {
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+        $extra = $parent->workItems()->create([
+            'name' => 'vloer herstel',
+            'unit' => WorkUnit::Hours,
+            'ordered_quantity' => 8,
+            'begrote_uren' => 8,
+            'is_extra_work' => true,
+            'small_work_type' => SmallWorkType::Extra,
+            'status' => 'gepland',
+            'sort_order' => 2,
+        ]);
+
+        $this->get(route('projects.extra.edit', [$parent, $extra]))->assertRedirect(route('login'));
+        $this->patch(route('projects.extra.update', [$parent, $extra]), [])->assertRedirect(route('login'));
+    }
+
+    public function test_extra_work_form_is_not_found_for_regular_work_items(): void
+    {
+        $user = User::factory()->create();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+        $regular = $parent->workItems()->first();
+        $this->assertNotNull($regular);
+
+        $this->actingAs($user)
+            ->get(route('projects.extra.edit', [$parent, $regular]))
+            ->assertNotFound();
+    }
+
+    public function test_extra_work_form_is_not_found_for_a_work_item_of_another_project(): void
+    {
+        $user = User::factory()->create();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+        $other = $this->makeConstruction('Laakse Tuinen', '260200091');
+        $extra = $other->workItems()->create([
+            'name' => 'vloer herstel',
+            'unit' => WorkUnit::Hours,
+            'ordered_quantity' => 8,
+            'begrote_uren' => 8,
+            'is_extra_work' => true,
+            'small_work_type' => SmallWorkType::Extra,
+            'status' => 'gepland',
+            'sort_order' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.extra.edit', [$parent, $extra]))
+            ->assertNotFound();
+    }
+
+    public function test_extra_work_shows_klaar_date_actual_hours_and_material_on_the_planning_board(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Extra->value,
+            'project_id' => $parent->id,
+            'description' => 'vloer herstel',
+            'date' => '2026-09-09',
+            'klaar_date' => '2026-09-11',
+            'hours' => 8,
+            'quantity' => 18,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+
+        $extra = $parent->workItems()->where('is_extra_work', true)->first();
+        $this->assertNotNull($extra);
+        $this->assertSame(WorkUnit::SquareMeter, $extra->unit);
+        $this->assertSame(18.0, (float) $extra->ordered_quantity);
+        $this->assertSame(8.0, (float) $extra->begrote_uren);
+        $this->assertSame('2026-09-11', $extra->planned_end_date?->toDateString());
+
+        WorkProgressEntry::query()->create([
+            'project_id' => $parent->id,
+            'work_item_id' => $extra->id,
+            'worker_id' => $worker->id,
+            'date' => '2026-09-11',
+            'completed_quantity' => 18,
+            'unit' => WorkUnit::SquareMeter,
+            'worked_hours' => 10,
+            'created_by' => $user->id,
+        ]);
+        $extra->syncStatusFromProgress();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('>EXTRA</span>', false)
+            ->assertSee('18 m²')
+            ->assertSee('10u')
+            ->assertSee('period-marker--end', false)
+            ->assertSee('Klaar 11-09-2026')
+            ->assertSee('period-marker--end is-done', false);
+    }
+
+    public function test_extra_work_rejects_a_klaar_date_before_the_start_date(): void
+    {
+        $user = User::factory()->create();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)
+            ->from(route('projects.small.create'))
+            ->post(route('projects.small.store'), [
+                'type' => SmallWorkType::Extra->value,
+                'project_id' => $parent->id,
+                'description' => 'vloer herstel',
+                'date' => '2026-09-09',
+                'klaar_date' => '2026-09-08',
+                'hours' => 8,
+            ])
+            ->assertRedirect(route('projects.small.create'))
+            ->assertSessionHasErrors(['klaar_date' => 'Klaar moet op dezelfde dag of later vallen dan de startdatum.']);
+
+        $this->assertSame(0, WorkItem::query()->where('is_extra_work', true)->count());
     }
 
     public function test_planner_updates_service_details_and_moves_the_assignment(): void
@@ -502,11 +775,11 @@ class SmallWorkTest extends TestCase
         return $worker;
     }
 
-    private function makeConstruction(string $name): Project
+    private function makeConstruction(string $name, string $projectNumber = '260200090'): Project
     {
         $customer = Customer::query()->create(['name' => 'Gemeente']);
         $project = Project::query()->create([
-            'project_number' => '260200090',
+            'project_number' => $projectNumber,
             'customer_id' => $customer->id,
             'name' => $name,
             'city' => 'Amersfoort',

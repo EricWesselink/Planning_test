@@ -69,9 +69,13 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Voortgang')
             ->assertSee('Opleverpunten')
             ->assertSee('id="draw-work"', false)
-            ->assertSee('Alle onderdelen')
+            ->assertSee('Materialen kiezen')
             ->assertSee('Alle zichtbare')
             ->assertSee('id="pick-work-rooms"', false)
+            ->assertSee('id="draw-work-panel"', false)
+            ->assertSee('Alles selecteren')
+            ->assertSee('Wis selectie')
+            ->assertSee('Toepassen')
             ->assertSee('id="room-count-label"', false)
             ->assertSee('id="snag-status"', false)
             ->assertSee('for="snag-status"', false)
@@ -95,7 +99,10 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Alleen ter inzage')
             ->assertSee('Primen & Egaliseren')
             ->assertSee('id="draw-work"', false)
-            ->assertSee('Alle onderdelen')
+            ->assertSee('Materialen kiezen')
+            ->assertSee('id="draw-work-panel"', false)
+            ->assertSee('Wis selectie')
+            ->assertSee('Toepassen')
             ->assertDontSee('id="complete-form"', false)
             ->assertDontSee('id="complete-worker"', false)
             ->assertDontSee('id="complete-submit"', false)
@@ -157,7 +164,7 @@ class DrawingBoardTest extends TestCase
             ->get(route('projects.show', $project))
             ->assertOk()
             ->assertSee('id="draw-work"', false)
-            ->assertSee('Alle onderdelen')
+            ->assertSee('Materialen kiezen')
             ->assertSee('Alle zichtbare')
             ->getContent();
 
@@ -166,14 +173,22 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('id="draw-work-qty"', $html);
         $this->assertStringContainsString('id="room-work-qty"', $html);
         $this->assertStringContainsString('class="draw-work-qty"', $html);
+        $this->assertStringContainsString('data-work-all', $html);
+        $this->assertStringContainsString('data-work-key=', $html);
+        $this->assertStringContainsString('id="draw-work-toggle"', $html);
+        $this->assertStringContainsString('type="button"', $html);
+        $this->assertStringContainsString('id="draw-work-panel"', $html);
+        $this->assertStringContainsString('id="draw-work-list"', $html);
+        $this->assertStringContainsString('id="draw-work-apply"', $html);
+        $this->assertStringContainsString('id="outsource-selection-data"', $html);
         $this->assertTrue(
             (bool) preg_match('/data-works="[^"]*ondergrond[^"]*"/', $html),
             'Elke ruimte moet haar onderdelen in de lijst zetten zodat het filter ze kan verbergen.',
         );
 
-        $this->assertSame(1, preg_match('/id="draw-work"[^>]*>.*?<\/select>/s', $html, $select));
-        $this->assertStringContainsString('Primen &amp; Egaliseren', $select[0]);
-        $this->assertStringContainsString('Coating', $select[0]);
+        $this->assertStringContainsString('Alles selecteren', $html);
+        $this->assertStringContainsString('Wis selectie', $html);
+        $this->assertStringContainsString('Toepassen', $html);
 
         $this->assertSame(1, preg_match('/id="board-data">([^<]*)<\/script>/', $html, $matches));
         $board = json_decode($matches[1], true);
@@ -294,8 +309,19 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('function matchingAreas', $js);
         $this->assertStringContainsString('function selectedWorkMeasure', $js);
         $this->assertStringContainsString('function refreshWorkQuantity', $js);
+        $this->assertStringContainsString('function hasWorkFilter', $js);
+        $this->assertStringContainsString('workFilterKeys', $js);
+        $this->assertStringContainsString('[data-work-key]', $js);
+        $this->assertStringContainsString('outsource-selection-data', $js);
+        $this->assertStringContainsString('buildOutsourceSelection', $js);
+        $this->assertStringContainsString('shortWorkLabel', $js);
+        $this->assertStringContainsString('groupedWorkFilters', $js);
+        $this->assertStringContainsString('floorAreas', $js);
         $this->assertStringContainsString("querySelectorAll('.draw-work-qty')", $js);
         $this->assertStringContainsString('function prunePickedToFilter', $js);
+        $this->assertStringContainsString('document.body.appendChild', $js);
+        $this->assertStringContainsString("classList.add('is-open')", $js);
+        $this->assertStringContainsString('aria-expanded', $js);
         $this->assertStringContainsString('Alles aanvinken', $js);
         $this->assertStringContainsString('is-work-filter', $js);
         $this->assertStringContainsString('is-filtered-out', $js);
@@ -303,6 +329,10 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('.status-badge.is-filtered-out', $css);
         $this->assertStringContainsString('.board-left.is-work-filter', $css);
         $this->assertStringContainsString('.draw-work-qty', $css);
+        $this->assertStringContainsString('.draw-work-menu', $css);
+        $this->assertStringContainsString('.draw-work-panel', $css);
+        $this->assertStringContainsString('.draw-work-panel.is-open', $css);
+        $this->assertStringContainsString('max-height: 400px', $css);
         $this->assertStringContainsString('#dc2626', $css);
     }
 

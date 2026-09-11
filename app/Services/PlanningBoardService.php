@@ -1068,13 +1068,28 @@ class PlanningBoardService
         $start = $item?->planned_start_date ?? $project->planned_start_date;
         $end = $item?->planned_end_date ?? $project->planned_end_date ?? $start;
         $startWeek = $start?->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
+        $itemDone = $item !== null && $item->status === 'gereed';
         $endMarker = null;
-        if ($end !== null && ($start === null || $end->toDateString() !== $start->toDateString())) {
+        $showEndMarker = $end !== null && (
+            $start === null
+            || $end->toDateString() !== $start->toDateString()
+            || ($kind === SmallWorkType::Extra->value && $itemDone)
+        );
+        if ($showEndMarker) {
             $endMarker = $this->dateMarker($end, $days);
             if ($endMarker !== null) {
-                $endMarker['done'] = in_array($project->status, [ProjectStatus::Gereed, ProjectStatus::Opgeleverd], true);
+                $endMarker['done'] = $item !== null
+                    ? $itemDone
+                    : in_array($project->status, [ProjectStatus::Gereed, ProjectStatus::Opgeleverd], true);
             }
         }
+
+        $ordered = $item !== null ? (float) $item->ordered_quantity : 0.0;
+        $showMaterial = $item !== null
+            && $item->unit !== WorkUnit::Hours
+            && $ordered > 0.0001;
+        $completed = $showMaterial ? $item->completedQuantity() : null;
+        $remaining = $showMaterial ? $item->remainingQuantity() : null;
 
         return [
             'type' => 'small',
@@ -1091,7 +1106,7 @@ class PlanningBoardService
             'title' => $title,
             'hours_label' => $hours > 0.0001 ? PlanningHours::hoursLabel($hours) : null,
             'planned_hours' => $hours > 0.0001 ? $hours : null,
-            'subtitle' => null,
+            'subtitle' => $item?->isExtraWork() ? $item->extraLinesSummary() : null,
             'customer' => $project->customer?->name,
             'address' => $project->address,
             'postal_code' => $project->postal_code,
@@ -1108,11 +1123,12 @@ class PlanningBoardService
             'person_bars' => $personBars,
             'bar_count' => count($personBars),
             'warnings' => [],
-            'ordered' => null,
-            'completed' => null,
-            'remaining' => null,
-            'percent' => null,
-            'unit' => '',
+            'ordered' => $showMaterial ? $ordered : null,
+            'ordered_decimals' => $showMaterial && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
+            'completed' => $completed,
+            'remaining' => $remaining,
+            'percent' => $showMaterial ? $this->progressPercent($completed, $ordered) : null,
+            'unit' => $showMaterial ? ($item->unit?->label() ?? '') : '',
             'labor' => $labor,
             'children' => [],
         ];

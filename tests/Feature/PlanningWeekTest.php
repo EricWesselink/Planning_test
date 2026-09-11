@@ -73,6 +73,31 @@ class PlanningWeekTest extends TestCase
         $this->assertSame('Week 37–44', $data['weekRangeLabel']);
     }
 
+    public function test_planning_page_has_arrow_links_to_previous_and_next_week(): void
+    {
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'status' => 'gepland']))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<a class="planning-btn planning-btn--icon" href="[^"]*week=2026-08-31[^"]*" title="Vorige week" aria-label="Vorige week">/',
+            $html
+        );
+        $this->assertMatchesRegularExpression(
+            '/<a class="planning-btn planning-btn--icon" href="[^"]*week=2026-09-14[^"]*" title="Volgende week" aria-label="Volgende week">/',
+            $html
+        );
+        $this->assertMatchesRegularExpression(
+            '/<a class="planning-btn planning-btn--icon" href="[^"]*status=gepland[^"]*" title="Vorige week" aria-label="Vorige week">/',
+            $html
+        );
+        $this->assertStringNotContainsString('>Vorige</a>', $html);
+        $this->assertStringNotContainsString('>Volgende</a>', $html);
+    }
+
     public function test_planning_page_has_a_button_to_the_current_week(): void
     {
         $this->travelTo('2026-11-04 10:00:00');
@@ -251,6 +276,37 @@ class PlanningWeekTest extends TestCase
         );
         $this->assertMatchesRegularExpression(
             '/\.plan-cell--werk \.plan-project-numbers\s*\{[^}]*white-space:\s*nowrap/s',
+            $css
+        );
+    }
+
+    public function test_planning_number_columns_have_subtle_vertical_dividers(): void
+    {
+        $css = file_get_contents(resource_path('css/app.css'));
+
+        $this->assertIsString($css);
+        $this->assertMatchesRegularExpression(
+            '/\.plan-cell--num\s*\{[^}]*box-shadow:\s*inset 1px 0 0 #b8b0a4/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.sticky-head \.plan-cell--num\s*\{[^}]*box-shadow:\s*none/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-line--small \.plan-frozen > \.plan-cell--num\s*\{[^}]*box-shadow:\s*none/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-line--section \.plan-cell--num\s*\{[^}]*box-shadow:\s*inset 1px 0 0 rgba\(255,\s*255,\s*255,\s*0\.22\)/s',
+            $css
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.plan-frozen--head \.plan-cell,\s*\.plan-frozen--head \.plan-labor-block\s*\{[^}]*grid-row:\s*2/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-frozen--head > \.plan-cell,\s*\.plan-frozen--head > \.plan-labor-block\s*\{[^}]*grid-row:\s*2/s',
             $css
         );
     }

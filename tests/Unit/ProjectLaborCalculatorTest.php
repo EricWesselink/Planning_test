@@ -434,8 +434,10 @@ class ProjectLaborCalculatorTest extends TestCase
         $this->assertSame(0.51, $item['cost_delta']);
         $this->assertSame('over', $item['cost_delta_tone']);
         $this->assertSame('+€0,51/m²', $item['cost_delta_label']);
+        $this->assertSame(38.0, $item['forecast_hours']);
+        $this->assertSame(2.44, $item['forecast_unit_price']);
         $this->assertSame(
-            "Begroot: 30,1u × €45 / 702m² = €1,93/m²\nWerkelijk: 38u × €45 / 702m² = €2,44/m²\nVerschil: +€0,51/m²",
+            "Begroot: 30,1u × €45 / 702m² = €1,93/m²\nPrognose: 38u × €45 / 702m² = €2,44/m²\nWerkelijk: 38u × €45 / 702m² = €2,44/m²\nVerschil: +€0,51/m²",
             $item['unit_price_title'],
         );
         $this->assertSame(1.93, $item['budget_cost_per_m2']);
@@ -467,7 +469,15 @@ class ProjectLaborCalculatorTest extends TestCase
         $this->assertNull($item['actual_unit_price']);
         $this->assertNull($item['cost_delta']);
         $this->assertSame('none', $item['cost_delta_tone']);
-        $this->assertSame('Begroot: 30,1u × €45 / 702m² = €1,93/m²', $item['unit_price_title']);
+        $this->assertSame(38.0, $item['forecast_hours']);
+        $this->assertSame(2.44, $item['forecast_unit_price']);
+        $this->assertSame(0.51, $item['forecast_delta']);
+        $this->assertSame('over', $item['forecast_delta_tone']);
+        $this->assertSame('+26%', $item['forecast_over_percent_label']);
+        $this->assertSame(
+            "Begroot: 30,1u × €45 / 702m² = €1,93/m²\nPrognose: 38u × €45 / 702m² = €2,44/m²\nVerschil: +€0,51/m²",
+            $item['unit_price_title'],
+        );
     }
 
     public function test_prices_linear_meters_per_running_meter(): void
@@ -498,6 +508,178 @@ class ProjectLaborCalculatorTest extends TestCase
         $this->assertSame('ok', $item['cost_delta_tone']);
         $this->assertSame('-€2,25/m¹', $item['cost_delta_label']);
         $this->assertSame('m¹', $item['unit']);
+        $this->assertSame(6.0, $item['forecast_hours']);
+        $this->assertSame(6.75, $item['forecast_unit_price']);
+        $this->assertSame('ok', $item['forecast_delta_tone']);
+        $this->assertSame('-€2,25/m¹', $item['forecast_delta_label']);
+    }
+
+    public function test_forecasts_unit_price_from_expected_hours_and_ordered_quantity(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 2,
+            start: '2026-09-07',
+            end: '2026-09-09',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 0,
+            orderedM2: 702,
+            actualHours: 0,
+        );
+        $project->forceFill(['basis_uurtarief' => 48])->save();
+        $project->workItems()->update([
+            'name' => 'Primen & Egaliseren',
+            'begrote_uren' => 30.1,
+            'begrote_hoeveelheid' => 702,
+            'uurtarief' => 48,
+        ]);
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+        $item = $labor['items'][0];
+
+        $this->assertSame(48.0, $item['planned_hours']);
+        $this->assertSame(48.0, $item['forecast_hours']);
+        $this->assertSame(2.06, $item['budget_unit_price']);
+        $this->assertNull($item['actual_unit_price']);
+        $this->assertSame(3.28, $item['forecast_unit_price']);
+        $this->assertSame(1.22, $item['forecast_delta']);
+        $this->assertSame('+€1,22/m²', $item['forecast_delta_label']);
+        $this->assertSame('over', $item['forecast_delta_tone']);
+        $this->assertSame(59, $item['forecast_over_percent']);
+        $this->assertSame('+59%', $item['forecast_over_percent_label']);
+    }
+
+    public function test_forecast_hours_are_actual_plus_remaining_planned_while_work_is_open(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 2,
+            start: '2026-09-07',
+            end: '2026-09-09',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 200,
+            orderedM2: 702,
+            actualHours: 10,
+        );
+        $project->workItems()->update([
+            'begrote_uren' => 30.1,
+            'begrote_hoeveelheid' => 702,
+            'uurtarief' => 48,
+        ]);
+
+        $item = app(ProjectLaborCalculator::class)->for($project->fresh())['items'][0];
+
+        $this->assertSame(10.0, $item['actual_hours']);
+        $this->assertSame(48.0, $item['planned_hours']);
+        $this->assertSame(48.0, $item['forecast_hours']);
+        $this->assertSame(3.28, $item['forecast_unit_price']);
+    }
+
+    public function test_forecast_hours_follow_actual_hours_when_they_already_exceed_the_plan(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-07',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 200,
+            orderedM2: 702,
+            actualHours: 12,
+        );
+        $project->workItems()->update([
+            'begrote_uren' => 30.1,
+            'begrote_hoeveelheid' => 702,
+            'uurtarief' => 48,
+        ]);
+
+        $item = app(ProjectLaborCalculator::class)->for($project->fresh())['items'][0];
+
+        $this->assertSame(8.0, $item['planned_hours']);
+        $this->assertSame(12.0, $item['actual_hours']);
+        $this->assertSame(12.0, $item['forecast_hours']);
+        $this->assertSame(0.82, $item['forecast_unit_price']);
+    }
+
+    public function test_marks_a_modest_forecast_overrun_as_a_warning(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-10',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 0,
+            orderedM2: 702,
+            actualHours: 0,
+        );
+        $project->workItems()->update([
+            'begrote_uren' => 30,
+            'begrote_hoeveelheid' => 702,
+            'uurtarief' => 48,
+        ]);
+
+        $item = app(ProjectLaborCalculator::class)->for($project->fresh())['items'][0];
+
+        $this->assertSame(32.0, $item['planned_hours']);
+        $this->assertSame(2.05, $item['budget_unit_price']);
+        $this->assertSame(2.19, $item['forecast_unit_price']);
+        $this->assertSame('warn', $item['forecast_delta_tone']);
+        $this->assertSame('+7%', $item['forecast_over_percent_label']);
+    }
+
+    public function test_hides_the_forecast_price_without_a_rate_or_ordered_quantity(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-07',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+        );
+        $project->forceFill(['basis_uurtarief' => null])->save();
+        $project->workItems()->update([
+            'begrote_uren' => 30.1,
+            'begrote_hoeveelheid' => 702,
+            'uurtarief' => null,
+        ]);
+
+        $item = app(ProjectLaborCalculator::class)->for($project->fresh())['items'][0];
+
+        $this->assertNull($item['hourly_rate']);
+        $this->assertNull($item['budget_unit_price']);
+        $this->assertNull($item['forecast_unit_price']);
+        $this->assertNull($item['forecast_delta_label']);
+        $this->assertSame('none', $item['forecast_delta_tone']);
+    }
+
+    public function test_forecasts_linear_meters_from_expected_hours_and_ordered_quantity(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-08',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 0,
+            orderedM2: 40,
+            actualHours: 0,
+        );
+        $project->workItems()->update([
+            'name' => 'Plinten',
+            'unit' => 'm1',
+            'begrote_uren' => 8,
+            'begrote_hoeveelheid' => 40,
+        ]);
+
+        $item = app(ProjectLaborCalculator::class)->for($project->fresh())['items'][0];
+
+        $this->assertSame(16.0, $item['forecast_hours']);
+        $this->assertSame(9.0, $item['budget_unit_price']);
+        $this->assertSame(18.0, $item['forecast_unit_price']);
+        $this->assertSame('+€9,00/m¹', $item['forecast_delta_label']);
+        $this->assertSame('over', $item['forecast_delta_tone']);
+        $this->assertSame('+100%', $item['forecast_over_percent_label']);
     }
 
     /**

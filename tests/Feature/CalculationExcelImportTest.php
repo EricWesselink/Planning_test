@@ -39,7 +39,7 @@ class CalculationExcelImportTest extends TestCase
             ->assertSee('Schuren, primeren en egaliseren')
             ->assertSee(RoomWorkSetup::PRIMEN_EGALISEREN)
             ->assertSee('Tapijt')
-            ->assertSee('Controleren')
+            ->assertSee('Automatisch bevestigd')
             ->assertSee('Toeslag leggen proefkamer')
             ->assertSee('Totaal begrote uren')
             ->assertDontSee('Opdrachtlijst raambekleding', false);
@@ -122,10 +122,44 @@ class CalculationExcelImportTest extends TestCase
         $this->assertSame(1, $project->documents()->where('document_type', 'calculatie')->count());
     }
 
+    public function test_generic_covering_rows_import_without_manual_work_selection(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [$this->meetstaatFile(), $this->genericCalculationFile()],
+            'types' => ['meetstaat', 'calculatie'],
+        ]);
+        $response->assertRedirect();
+        $token = basename(parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        $this->makeCachedPreviewReady($token);
+
+        $this->followRedirects($response)
+            ->assertOk()
+            ->assertSee('NovaFloor Real 1100 coral')
+            ->assertSee('Automatisch bevestigd')
+            ->assertDontSee('Handmatige controle vereist');
+
+        $this->actingAs($user)->post(route('projects.import', $token), [
+            'customer_name' => 'Nicon vloeren',
+            'project_name' => 'Generic Covering',
+            'project_number' => '260200094',
+        ])->assertRedirect();
+
+        $project = Project::query()->where('project_number', '260200094')->first();
+        $this->assertNotNull($project);
+        $this->assertGreaterThan(0, $project->calculationLines()->where('is_labor', true)->count());
+        $this->assertTrue(
+            $project->workItems()->get()->contains(
+                fn ($item): bool => str_contains((string) $item->name, 'NovaFloor Real')
+            )
+        );
+    }
+
     public function test_uncertain_labor_rows_block_import_until_the_user_selects_a_work_type(): void
     {
         $user = User::factory()->create();
-        $token = $this->previewToken($user);
+        $token = $this->previewToken($user, $this->unmatchableCalculationFile());
         $this->makeCachedPreviewReady($token);
 
         $this->actingAs($user)
@@ -242,10 +276,10 @@ class CalculationExcelImportTest extends TestCase
         ];
     }
 
-    private function previewToken(User $user): string
+    private function previewToken(User $user, ?UploadedFile $calculation = null): string
     {
         $response = $this->actingAs($user)->post(route('projects.preview'), [
-            'files' => [$this->meetstaatFile(), $this->calculationFile()],
+            'files' => [$this->meetstaatFile(), $calculation ?? $this->calculationFile()],
             'types' => ['meetstaat', 'calculatie'],
         ]);
         $response->assertRedirect();
@@ -362,5 +396,24 @@ TXT),
             null,
             true
         );
+    }
+
+    private function genericCalculationFile(): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent('generic-calc.csv', implode("\n", [
+            'KM;Groep;M/U;Productie Eenheid Omschrijving;Artikel Omschrijving;Aantal;EH;Kostprijs;Kostprijs Tot.',
+            'L;100;U;Elastische vloerbedekking;Elastische vloerbedekking;10;uur;48;480',
+            'M;100;M;Elastische vloerbedekking;NovaFloor Real 1100 coral, Linoleum;80;m2;9;720',
+            'L;100;U;Zachte vloerbedekking;Zachte vloerbedekking;5;uur;48;240',
+            'M;100;M;Zachte vloerbedekking;SoftTile 55 grey, Tapijt;40;m2;9;360',
+        ]));
+    }
+
+    private function unmatchableCalculationFile(): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent('unknown-calc.csv', implode("\n", [
+            'KM;Groep;M/U;Productie Eenheid Omschrijving;Artikel Omschrijving;Aantal;EH;Kostprijs;Kostprijs Tot.',
+            'L;100;U;Onbekende extra werkzaamheid xyz;Onbekende extra werkzaamheid xyz;4;uur;48;192',
+        ]));
     }
 }

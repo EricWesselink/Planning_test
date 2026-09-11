@@ -6,6 +6,7 @@ use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
 use App\Models\Project;
 use App\Models\Worker;
+use App\Models\WorkItem;
 use App\Services\SmallWorkService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -55,6 +56,54 @@ class SmallWorkController extends Controller
             ->with('status', 'Klein werk opgeslagen.');
     }
 
+    public function editExtra(Project $project, WorkItem $workItem): View
+    {
+        Gate::authorize('view', $project);
+        abort_unless($workItem->isExtraWork(), 404);
+
+        $workItem->load(['assignments.worker', 'progressEntries']);
+        $actualHours = (float) $workItem->progressEntries->sum('worked_hours');
+
+        return view('projects.extra-edit', [
+            'project' => $project,
+            'item' => $workItem,
+            'hourOptions' => [2, 4, 6, 8],
+            'lines' => old('lines', $workItem->extraLinesForForm()),
+            'actualHours' => $actualHours > 0.0001 ? $actualHours : null,
+            'canUpdate' => (auth()->user()?->can('update', $project) || auth()->user()?->canEnterProgress()) ?? false,
+        ]);
+    }
+
+    public function updateExtra(Request $request, Project $project, WorkItem $workItem, SmallWorkService $smallWork): RedirectResponse
+    {
+        Gate::authorize('view', $project);
+        abort_unless($workItem->isExtraWork(), 404);
+        abort_unless(
+            $request->user()?->can('update', $project) || $request->user()?->canEnterProgress(),
+            403
+        );
+
+        $data = $request->validate([
+            'description' => ['required', 'string', 'max:255'],
+            'date' => ['required', 'date'],
+            'klaar_date' => ['nullable', 'date', 'after_or_equal:date'],
+            'hours' => ['required', 'numeric', Rule::in([2, 4, 6, 8])],
+            'quantity' => ['nullable', 'numeric', 'min:0'],
+            'actual_hours' => ['nullable', 'numeric', 'min:0'],
+            'completed_quantity' => ['nullable', 'numeric', 'min:0'],
+            ...$this->lineRules(),
+        ], $this->messages());
+
+        $smallWork->updateAttached($workItem, $data, $request->user());
+
+        return redirect()
+            ->route('planning', [
+                'week' => Carbon::parse($data['date'])->startOfWeek(Carbon::MONDAY)->toDateString(),
+                'project_id' => $project->id,
+            ])
+            ->with('status', 'Extra werk opgeslagen.');
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -76,6 +125,7 @@ class SmallWorkController extends Controller
                 ->orderBy('name')
                 ->get(),
             'hourOptions' => [2, 4, 6, 8],
+            'lines' => old('lines', $this->defaultExtraLines()),
         ];
     }
 
@@ -108,10 +158,13 @@ class SmallWorkController extends Controller
             'description' => ['required', 'string', 'max:255'],
             'location' => [$standalone ? 'required' : 'nullable', 'string', 'max:255'],
             'date' => ['required', 'date'],
+            'klaar_date' => ['nullable', 'date', 'after_or_equal:date'],
+            'quantity' => ['nullable', 'numeric', 'min:0'],
             'hours' => ['required', 'numeric', Rule::in([2, 4, 6, 8])],
             'worker_id' => ['nullable', 'integer', 'exists:workers,id'],
             'team_id' => ['nullable', 'integer', 'exists:teams,id'],
             'work_number' => ['nullable', 'string', 'max:64', Rule::unique('projects', 'project_number')],
+            ...$this->lineRules(),
         ], $this->messages());
     }
 
@@ -148,9 +201,35 @@ class SmallWorkController extends Controller
             'description.required' => 'Vul een korte omschrijving in.',
             'location.required' => 'Vul een locatie in.',
             'date.required' => 'Kies een datum.',
+            'klaar_date.after_or_equal' => 'Klaar moet op dezelfde dag of later vallen dan de startdatum.',
             'hours.required' => 'Kies de geplande uren.',
             'hours.in' => 'Kies 2, 4, 6 of 8 uur.',
             'work_number.unique' => 'Dit werknummer bestaat al.',
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function lineRules(): array
+    {
+        return [
+            'lines' => ['nullable', 'array', 'max:20'],
+            'lines.*.name' => ['nullable', 'string', 'max:255'],
+            'lines.*.quantity' => ['nullable', 'numeric', 'min:0'],
+            'lines.*.completed' => ['nullable', 'numeric', 'min:0'],
+        ];
+    }
+
+    /**
+     * @return list<array{name: string, quantity: string, completed: string}>
+     */
+    private function defaultExtraLines(): array
+    {
+        return [
+            ['name' => 'Egaliseren', 'quantity' => '', 'completed' => ''],
+            ['name' => 'Materiaal', 'quantity' => '', 'completed' => ''],
+            ['name' => '', 'quantity' => '', 'completed' => ''],
         ];
     }
 }
