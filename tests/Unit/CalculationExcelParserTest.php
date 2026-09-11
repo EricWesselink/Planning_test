@@ -31,6 +31,9 @@ class CalculationExcelParserTest extends TestCase
         $this->assertEqualsWithDelta(30.064, $first['hours'], 0.001);
         $this->assertSame(48.0, $first['hourly_rate']);
         $this->assertEqualsWithDelta(1443.07, $first['labor_cost'], 0.02);
+        $this->assertSame('linked', $first['quantity_status']);
+        $this->assertSame('m2', $first['quantity_unit']);
+        $this->assertEqualsWithDelta(392.04, $first['quantity'], 0.02);
 
         $pvc = collect($parsed['labor'])->first(
             fn (array $line): bool => str_contains((string) $line['production_description'], 'IVC Ultimo Trasimeno')
@@ -92,6 +95,38 @@ class CalculationExcelParserTest extends TestCase
         $this->assertSame('uur', $parsed['labor'][0]['quantity_unit']);
         $this->assertSame(10.0, $parsed['labor'][0]['quantity']);
         $this->assertSame(12.0, $parsed['labor'][1]['quantity']);
+    }
+
+    public function test_links_preparation_labor_to_hard_floor_m2_in_the_same_group(): void
+    {
+        $parsed = (new CalculationExcelParser)->parse([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs', 'Kostprijs Tot.'],
+            ['L', '100', 'U', 'Schuren, primeren en egaliseren max. 2 mm', 'Schuren, primeren en egaliseren', '30', 'uur', '48', '1440'],
+            ['M', '100', 'M', 'Schuren, primeren en egaliseren max. 2 mm', 'ALM500 egalisatiemortel', '57', 'zak', '13.8', '786.6'],
+            ['L', '100', 'U', 'Leveren en leggen PVC', 'Elastische vloerbedekking', '10', 'uur', '48', '480'],
+            ['M', '100', 'M', 'Leveren en leggen PVC', 'PVC tegels', '200', 'm2', '9', '1800'],
+            ['L', '100', 'U', 'Leveren en leggen tapijttegels', 'Zachte vloerbedekking', '5', 'uur', '48', '240'],
+            ['M', '100', 'M', 'Leveren en leggen tapijttegels', 'Tapijttegels', '80', 'm2', '9', '720'],
+            ['L', '100', 'U', 'Toeslag leggen proefkamer', '', '15', 'uur', '48', '720'],
+        ], 'calc.xlsx');
+
+        $prep = collect($parsed['labor'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'egaliseren')
+        );
+        $toeslag = collect($parsed['labor'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'Toeslag')
+        );
+
+        $this->assertNotNull($prep);
+        $this->assertSame('linked', $prep['quantity_status']);
+        $this->assertSame('m2', $prep['quantity_unit']);
+        $this->assertEqualsWithDelta(200.0, $prep['quantity'], 0.01);
+        $this->assertEqualsWithDelta(30.0, $prep['hours'], 0.01);
+
+        $this->assertNotNull($toeslag);
+        $this->assertSame('missing', $toeslag['quantity_status']);
+        $this->assertSame('uur', $toeslag['quantity_unit']);
+        $this->assertSame(15.0, $toeslag['quantity']);
     }
 
     public function test_does_not_match_a_screen_opdrachtlijst(): void

@@ -190,7 +190,8 @@ class ProjectPlanningWeeksTest extends TestCase
             ->get(route('projects.show', $project))
             ->assertOk()
             ->assertSee('Start werk: 2026 · week 40')
-            ->assertSee('Klaar werk: 2026 · week 44');
+            ->assertDontSee('Klaar werk: 2026 · week 44')
+            ->assertSee('Klaar werk');
     }
 
     public function test_changing_weeks_updates_planning_without_reimport(): void

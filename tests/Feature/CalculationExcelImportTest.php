@@ -12,6 +12,7 @@ use App\Services\Meetstaat\ImportClosureEvaluator;
 use App\Services\Meetstaat\RoomImportAssembler;
 use App\Services\ProjectLaborCalculator;
 use App\Services\RoomWorkSetup;
+use App\Support\Format;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -72,6 +73,15 @@ class CalculationExcelImportTest extends TestCase
         $this->assertSame('48.00', $prep->uurtarief);
         $this->assertEqualsWithDelta(30.06, (float) $prep->begrote_uren, 0.02);
 
+        $prepLine = $project->calculationLines()
+            ->where('is_labor', true)
+            ->where('production_description', 'like', '%egaliseren%')
+            ->first();
+        $this->assertNotNull($prepLine);
+        $this->assertSame('m2', $prepLine->unit);
+        $this->assertEqualsWithDelta(392.04, (float) $prepLine->quantity, 0.02);
+        $this->assertEqualsWithDelta(30.064, (float) $prepLine->hours, 0.001);
+
         $pvc = $project->workItems()->where('name', 'PVC')->first();
         $this->assertNotNull($pvc);
         $this->assertSame('48.00', $pvc->uurtarief);
@@ -81,6 +91,21 @@ class CalculationExcelImportTest extends TestCase
         $tapijt = $project->workItems()->where('name', 'Tapijt')->first();
         $this->assertNotNull($tapijt);
         $this->assertEqualsWithDelta(15.0, (float) $tapijt->begrote_uren, 0.01);
+
+        $laborLines = $project->calculationLines()->where('is_labor', true)->get();
+        $expectedTotal = round((float) $laborLines->sum(fn ($line) => (float) ($line->total_cost ?? $line->labor_cost ?? 0)), 2);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Oorspronkelijke calculatieregels (6)')
+            ->assertSee('392,04 m²')
+            ->assertSee('Totaal bedrag')
+            ->assertSee(Format::euro($expectedTotal, 2))
+            ->assertDontSee('>Bron</th>', false)
+            ->assertDontSee('11-ericwesselink.xlsx')
+            ->assertDontSee('Ingepland:')
+            ->assertDontSee('Tarief: €');
     }
 
     public function test_reimporting_the_same_excel_file_does_not_duplicate_lines(): void

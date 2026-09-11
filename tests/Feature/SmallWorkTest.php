@@ -1,0 +1,558 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Enums\ProjectKind;
+use App\Enums\SmallWorkType;
+use App\Enums\UserRole;
+use App\Enums\WorkUnit;
+use App\Models\Customer;
+use App\Models\Project;
+use App\Models\User;
+use App\Models\Worker;
+use App\Models\WorkerAssignment;
+use App\Models\WorkItem;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\TestCase;
+
+class SmallWorkTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_guest_is_redirected_from_new_small_work(): void
+    {
+        $this->get(route('projects.small.create'))->assertRedirect(route('login'));
+        $this->post(route('projects.small.store'), [])->assertRedirect(route('login'));
+        $this->patch(route('projects.small.update', $this->makeService()), [])->assertRedirect(route('login'));
+    }
+
+    public function test_uitvoerder_cannot_open_or_create_small_work(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+
+        $this->actingAs($user)->get(route('projects.small.create'))->assertForbidden();
+        $this->actingAs($user)->post(route('projects.small.store'), $this->payload())->assertForbidden();
+        $this->actingAs($user)->patch(route('projects.small.update', $this->makeService()), [
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-11',
+            'hours' => 4,
+        ])->assertForbidden();
+    }
+
+    public function test_planner_creates_a_compact_service_row_on_the_planning_board(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+
+        $response = $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 2,
+            'worker_id' => $worker->id,
+        ]);
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $response->assertRedirect(route('planning', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]));
+
+        $this->assertSame('plint herstellen', $project->name);
+        $this->assertSame('Deventer', $project->city);
+        $this->assertSame(1, $project->workItems()->count());
+        $item = $project->workItems()->first();
+        $this->assertSame(WorkUnit::Hours, $item?->unit);
+        $this->assertSame(2.0, (float) $item?->begrote_uren);
+        $this->assertSame('48.00', $project->basis_uurtarief);
+        $this->assertSame('48.00', $item?->uurtarief);
+        $this->assertFalse((bool) $item?->is_extra_work);
+
+        $this->assertDatabaseHas('worker_assignments', [
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'worker_id' => $worker->id,
+            'hours_per_day' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('plan-line--small', false)
+            ->assertSee('>SERVICE</span>', false)
+            ->assertSee('Deventer – plint herstellen')
+            ->assertSee('| 2u')
+            ->assertSee('period-marker--start', false)
+            ->assertSee('▶ Start', false)
+            ->assertSee('08-09-2026');
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('€48/u', false)
+            ->assertSee('€96');
+    }
+
+    public function test_planner_creates_service_without_a_craftsman(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-11',
+            'hours' => 4,
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $this->assertSame(0, $project->assignments()->count());
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('>SERVICE</span>', false)
+            ->assertSee('Deventer – hestel schoon maken')
+            ->assertSee('| 4u')
+            ->assertSee('plan-missing-craftsman', false)
+            ->assertSee('period-marker--start', false)
+            ->assertSee('▶ Start', false)
+            ->assertSee('11-09-2026')
+            ->assertSee('data-hours="4"', false)
+            ->assertDontSee('Klaar 11-09-2026');
+    }
+
+    public function test_planner_creates_klein_werk_on_an_existing_assignment(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Klein->value,
+            'project_id' => $parent->id,
+            'description' => '25 m² PVC',
+            'date' => '2026-09-08',
+            'hours' => 8,
+            'worker_id' => $worker->id,
+        ])->assertRedirect(route('planning', [
+            'week' => '2026-09-07',
+            'project_id' => $parent->id,
+        ]));
+
+        $this->assertSame(1, Project::query()->count());
+        $item = $parent->workItems()->where('is_extra_work', true)->first();
+        $this->assertNotNull($item);
+        $this->assertSame('25 m² PVC', $item->name);
+        $this->assertSame(SmallWorkType::Klein, $item->small_work_type);
+        $this->assertSame(0, $parent->areas()->count());
+        $this->assertSame(0, $parent->documents()->count());
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('>KLEIN</span>', false)
+            ->assertSee('Gezondheidscentrum Laren – 25 m² PVC');
+    }
+
+    public function test_new_small_work_form_lists_existing_assignment_numbers(): void
+    {
+        $user = User::factory()->create();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+        $parent->forceFill([
+            'project_number' => '250100010',
+            'notes' => 'Referentie: 11P241267 Gezondheidscentrum Laren',
+        ])->save();
+
+        $this->actingAs($user)
+            ->get(route('projects.small.create'))
+            ->assertOk()
+            ->assertSee('Opdrachtnummer / klant')
+            ->assertSee('11P241267')
+            ->assertSee('250100010')
+            ->assertSee('Gezondheidscentrum Laren');
+    }
+
+    public function test_extra_work_requires_an_existing_project(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+
+        $this->actingAs($user)
+            ->from(route('projects.small.create'))
+            ->post(route('projects.small.store'), [
+                'type' => SmallWorkType::Extra->value,
+                'description' => 'extra egaliseren',
+                'date' => '2026-09-08',
+                'hours' => 4,
+                'worker_id' => $worker->id,
+            ])
+            ->assertRedirect(route('projects.small.create'))
+            ->assertSessionHasErrors(['project_id' => 'Kies een bestaand opdrachtnummer.']);
+
+        $this->assertSame(0, WorkItem::query()->where('is_extra_work', true)->count());
+    }
+
+    public function test_klein_werk_requires_an_existing_project(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('projects.small.create'))
+            ->post(route('projects.small.store'), [
+                'type' => SmallWorkType::Klein->value,
+                'description' => '25 m² PVC',
+                'date' => '2026-09-08',
+                'hours' => 8,
+            ])
+            ->assertRedirect(route('projects.small.create'))
+            ->assertSessionHasErrors(['project_id' => 'Kies een bestaand opdrachtnummer.']);
+    }
+
+    public function test_extra_work_stays_on_the_parent_project_and_shows_as_a_compact_row(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Extra->value,
+            'project_id' => $parent->id,
+            'description' => 'extra egaliseren',
+            'date' => '2026-09-09',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+        ])->assertRedirect(route('planning', [
+            'week' => '2026-09-07',
+            'project_id' => $parent->id,
+        ]));
+
+        $this->assertSame(1, Project::query()->count());
+        $extra = $parent->workItems()->where('is_extra_work', true)->first();
+        $this->assertNotNull($extra);
+        $this->assertSame('extra egaliseren', $extra->name);
+        $this->assertSame(4.0, (float) $extra->begrote_uren);
+        $this->assertSame('48.00', $extra->uurtarief);
+        $this->assertDatabaseHas('worker_assignments', [
+            'project_id' => $parent->id,
+            'work_item_id' => $extra->id,
+            'hours_per_day' => 4,
+        ]);
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('>EXTRA</span>', false)
+            ->assertSee('Gezondheidscentrum Laren – extra egaliseren')
+            ->assertSee('| 4u')
+            ->assertSee('Extra werk 4u (niet in oorspronkelijke begroting)')
+            ->getContent();
+
+        $this->assertStringContainsString('plan-line--small', $html);
+        $this->assertStringContainsString('period-marker--start', $html);
+        $this->assertStringContainsString('09-09-2026', $html);
+    }
+
+    public function test_extra_work_without_a_craftsman_still_shows_the_start_date(): void
+    {
+        $user = User::factory()->create();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Extra->value,
+            'project_id' => $parent->id,
+            'description' => 'extra egaliseren',
+            'date' => '2026-09-09',
+            'hours' => 4,
+        ])->assertRedirect();
+
+        $this->assertSame(0, $parent->assignments()->count());
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('>EXTRA</span>', false)
+            ->assertSee('Gezondheidscentrum Laren – extra egaliseren')
+            ->assertSee('period-marker--start', false)
+            ->assertSee('▶ Start', false)
+            ->assertSee('09-09-2026')
+            ->assertSee('plan-missing-craftsman', false);
+    }
+
+    public function test_planner_updates_service_details_and_moves_the_assignment(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'hegemanbouwgroep',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-11',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('name="description"', false)
+            ->assertSee('hestel schoon maken')
+            ->assertSee('hegemanbouwgroep');
+
+        $this->actingAs($user)
+            ->patch(route('projects.small.update', $project), [
+                'customer_name' => 'Gemeente Apeldoorn',
+                'description' => 'plinten herstellen',
+                'location' => 'Apeldoorn',
+                'date' => '2026-09-14',
+                'hours' => 6,
+                'work_number' => 'KW-77',
+            ])
+            ->assertRedirect(route('projects.show', $project));
+
+        $project->refresh();
+        $this->assertSame('plinten herstellen', $project->name);
+        $this->assertSame('Apeldoorn', $project->city);
+        $this->assertSame('KW-77', $project->project_number);
+        $this->assertSame('2026-09-14', $project->planned_start_date?->toDateString());
+        $this->assertSame('Gemeente Apeldoorn', $project->customer?->name);
+        $item = $project->workItems()->first();
+        $this->assertSame('plinten herstellen', $item?->name);
+        $this->assertSame(6.0, (float) $item?->begrote_uren);
+        $this->assertSame('2026-09-14', $item?->planned_start_date?->toDateString());
+
+        $assignment = WorkerAssignment::query()->where('project_id', $project->id)->first();
+        $this->assertNotNull($assignment);
+        $this->assertSame('2026-09-14', $assignment->start_date->toDateString());
+        $this->assertSame('2026-09-14', $assignment->end_date->toDateString());
+        $this->assertSame(6.0, (float) $assignment->hours_per_day);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('plinten herstellen')
+            ->assertSee('Gemeente Apeldoorn')
+            ->assertSee('Apeldoorn');
+    }
+
+    public function test_small_work_update_is_not_found_for_a_full_project(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeConstruction('Laakse Tuinen');
+
+        $this->actingAs($user)
+            ->patch(route('projects.small.update', $project), [
+                'customer_name' => 'Gemeente',
+                'description' => 'plint herstellen',
+                'location' => 'Deventer',
+                'date' => '2026-09-11',
+                'hours' => 4,
+            ])
+            ->assertNotFound();
+    }
+
+    public function test_rejects_an_empty_description_when_updating_service(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeService();
+
+        $this->actingAs($user)
+            ->from(route('projects.show', $project))
+            ->patch(route('projects.small.update', $project), [
+                'customer_name' => 'hegemanbouwgroep',
+                'description' => '',
+                'location' => 'Deventer',
+                'date' => '2026-09-11',
+                'hours' => 4,
+            ])
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHasErrors(['description' => 'Vul een korte omschrijving in.']);
+
+        $this->assertSame('hestel schoon maken', $project->fresh()->name);
+    }
+
+    public function test_four_hours_of_service_leave_half_a_man_day_free_that_day(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('Totaal vrij:')
+            ->assertSee('4,5');
+    }
+
+    public function test_kleine_werken_filter_hides_full_projects(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $this->makeConstruction('Laakse Tuinen');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 2,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'kind' => ProjectKind::KLEINE_FILTER]))
+            ->assertOk()
+            ->assertSee('>Kleine werken</option>', false)
+            ->assertSee('>SERVICE</span>', false)
+            ->assertSee('Deventer – plint herstellen')
+            ->assertDontSee('>Laakse Tuinen</span>', false);
+    }
+
+    public function test_rejects_hours_outside_two_to_eight(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+
+        $this->actingAs($user)
+            ->from(route('projects.small.create'))
+            ->post(route('projects.small.store'), [
+                'type' => SmallWorkType::Service->value,
+                'customer_name' => 'Gemeente Deventer',
+                'description' => 'plint herstellen',
+                'location' => 'Deventer',
+                'date' => '2026-09-08',
+                'hours' => 3,
+                'worker_id' => $worker->id,
+            ])
+            ->assertRedirect(route('projects.small.create'))
+            ->assertSessionHasErrors(['hours' => 'Kies 2, 4, 6 of 8 uur.']);
+    }
+
+    #[DataProvider('rolesThatMayCreate')]
+    public function test_roles_that_may_create_small_work(UserRole $role): void
+    {
+        $user = User::factory()->create(['role' => $role]);
+
+        $this->actingAs($user)->get(route('projects.small.create'))->assertOk();
+    }
+
+    /** @return array<string, array{0: UserRole}> */
+    public static function rolesThatMayCreate(): array
+    {
+        return [
+            'admin' => [UserRole::Admin],
+            'planner' => [UserRole::Planner],
+            'projectleider' => [UserRole::Projectleider],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payload(): array
+    {
+        return [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 2,
+            'worker_id' => Worker::query()->create([
+                'name' => 'Kees',
+                'employment_type' => 'eigen',
+                'active' => true,
+            ])->id,
+        ];
+    }
+
+    private function makeWorker(): Worker
+    {
+        $worker = Worker::query()->create([
+            'name' => 'Albert',
+            'employment_type' => 'eigen',
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+        User::factory()->vakman($worker->id)->create(['name' => $worker->name]);
+
+        return $worker;
+    }
+
+    private function makeConstruction(string $name): Project
+    {
+        $customer = Customer::query()->create(['name' => 'Gemeente']);
+        $project = Project::query()->create([
+            'project_number' => '260200090',
+            'customer_id' => $customer->id,
+            'name' => $name,
+            'city' => 'Amersfoort',
+            'kind' => ProjectKind::Project,
+            'status' => 'in_uitvoering',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 100,
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+            'status' => 'in_uitvoering',
+        ]);
+
+        return $project->fresh('workItems');
+    }
+
+    private function makeService(): Project
+    {
+        $customer = Customer::query()->create(['name' => 'hegemanbouwgroep']);
+        $project = Project::query()->create([
+            'project_number' => '2026-001',
+            'customer_id' => $customer->id,
+            'name' => 'hestel schoon maken',
+            'city' => 'Deventer',
+            'kind' => ProjectKind::Service,
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-11',
+            'planned_end_date' => '2026-09-11',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'hestel schoon maken',
+            'unit' => WorkUnit::Hours,
+            'ordered_quantity' => 4,
+            'begrote_uren' => 4,
+            'planned_start_date' => '2026-09-11',
+            'planned_end_date' => '2026-09-11',
+            'status' => 'gepland',
+            'sort_order' => 1,
+        ]);
+
+        return $project->fresh(['customer', 'workItems']);
+    }
+}

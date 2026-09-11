@@ -15,6 +15,7 @@ use App\Http\Controllers\PublicSnagController;
 use App\Http\Controllers\ScannedDimensionsImportController;
 use App\Http\Controllers\ScreenExcelImportController;
 use App\Http\Controllers\ShopProjectController;
+use App\Http\Controllers\SmallWorkController;
 use App\Http\Controllers\SnagController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\UserController;
@@ -75,6 +76,9 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/projecten/nieuw', [ProjectController::class, 'create'])->name('projects.create');
     Route::get('/projecten/winkel/nieuw', [ShopProjectController::class, 'create'])->name('projects.winkel.create');
     Route::post('/projecten/winkel', [ShopProjectController::class, 'store'])->name('projects.winkel.store');
+    Route::get('/projecten/klein/nieuw', [SmallWorkController::class, 'create'])->name('projects.small.create');
+    Route::post('/projecten/klein', [SmallWorkController::class, 'store'])->name('projects.small.store');
+    Route::patch('/projecten/klein/{project}', [SmallWorkController::class, 'update'])->name('projects.small.update');
     Route::post('/projecten/inlezen', [MeetstaatImportController::class, 'preview'])->name('projects.preview');
     Route::get('/projecten/controle/{token}', [MeetstaatImportController::class, 'review'])->name('projects.review');
     Route::post('/projecten/controle/{token}', [MeetstaatImportController::class, 'import'])->name('projects.import');

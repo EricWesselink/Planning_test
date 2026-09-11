@@ -11,6 +11,7 @@
     <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
         <h1 class="text-2xl font-semibold">Nieuw project</h1>
         @can('create', \App\Models\Project::class)
+            <a href="{{ route('projects.small.create') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm">Klein werk</a>
             <a href="{{ route('projects.winkel.create') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm">Nieuw Winkelwerk</a>
         @endcan
     </div>

@@ -7,7 +7,8 @@
 @endphp
 <div class="plan-days person-stack"
      data-project-id="{{ $projectId }}"
-     @if (! empty($workItemId)) data-work-item-id="{{ $workItemId }}" @endif>
+     @if (! empty($workItemId)) data-work-item-id="{{ $workItemId }}" @endif
+     @if (! empty($plannedHours)) data-hours="{{ $plannedHours }}" @endif>
     @foreach ($days as $day)
         <div class="drop-day{{ $loop->first ? '' : ' day-start' }}{{ $day->isMonday() && ! $loop->first ? ' week-start' : '' }}{{ $day->isSaturday() ? ' is-saturday' : '' }}" data-date="{{ $day->toDateString() }}"></div>
     @endforeach

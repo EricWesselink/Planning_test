@@ -384,7 +384,7 @@
                             @if (! empty($projectRow['numbers_label']))
                                 <div>{{ $projectRow['numbers_label'] }}</div>
                             @endif
-                            <div>{{ $projectRow['title'] }}</div>
+                            <div>{{ $projectRow['title'] }}@if (! empty($projectRow['hours_label'])) | {{ $projectRow['hours_label'] }}@endif</div>
                             @if (! empty($projectRow['subtitle']))
                                 <div class="city">{{ $projectRow['subtitle'] }}</div>
                             @elseif (! $clientProject && ($projectRow['customer'] || $projectRow['city']))

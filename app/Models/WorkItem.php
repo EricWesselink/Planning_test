@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\FlooringSpecialty;
+use App\Enums\SmallWorkType;
 use App\Enums\WorkPhase;
 use App\Enums\WorkUnit;
 use App\Services\RoomWorkSetup;
@@ -17,9 +18,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'project_id', 'work_activity_id', 'name', 'display_color', 'unit', 'ordered_quantity',
     'begrote_uren', 'begrote_hoeveelheid', 'uurtarief',
     'planned_start_date', 'planned_end_date', 'status', 'sort_order', 'notes',
+    'is_extra_work', 'small_work_type',
 ])]
 class WorkItem extends Model
 {
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'is_extra_work' => false,
+    ];
+
     protected function casts(): array
     {
         return [
@@ -30,7 +39,23 @@ class WorkItem extends Model
             'uurtarief' => 'decimal:2',
             'planned_start_date' => 'date',
             'planned_end_date' => 'date',
+            'is_extra_work' => 'boolean',
+            'small_work_type' => SmallWorkType::class,
         ];
+    }
+
+    public function isExtraWork(): bool
+    {
+        return (bool) $this->is_extra_work;
+    }
+
+    public function skipsSkillMatch(): bool
+    {
+        if ($this->isExtraWork()) {
+            return true;
+        }
+
+        return $this->project?->isSmallWork() ?? false;
     }
 
     public function project(): BelongsTo
@@ -70,6 +95,10 @@ class WorkItem extends Model
 
     public function phase(): WorkPhase
     {
+        if ($this->isExtraWork()) {
+            return WorkPhase::Overige;
+        }
+
         $name = mb_strtolower($this->name);
 
         if (WorkType::isWindowCovering($this->name)) {
@@ -93,6 +122,10 @@ class WorkItem extends Model
 
     public function packageKey(): string
     {
+        if ($this->isExtraWork()) {
+            return 'extra';
+        }
+
         return $this->phase()->group();
     }
 
@@ -103,6 +136,10 @@ class WorkItem extends Model
 
     public function typeLabel(): string
     {
+        if ($this->isExtraWork()) {
+            return 'Extra werk';
+        }
+
         if ($this->packageKey() === 'ondergrond') {
             return $this->packageLabel();
         }
@@ -126,6 +163,10 @@ class WorkItem extends Model
 
     public function typeKey(): string
     {
+        if ($this->isExtraWork()) {
+            return 'extra';
+        }
+
         if ($this->packageKey() === 'ondergrond') {
             return 'ondergrond';
         }
@@ -135,6 +176,10 @@ class WorkItem extends Model
 
     public function planningTitle(): string
     {
+        if ($this->isExtraWork()) {
+            return trim((string) $this->name);
+        }
+
         if ($this->packageKey() === 'ondergrond') {
             return $this->packageLabel();
         }

@@ -1,0 +1,156 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Enums\ProjectKind;
+use App\Enums\SmallWorkType;
+use App\Models\Project;
+use App\Models\Worker;
+use App\Services\SmallWorkService;
+use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+use Illuminate\View\View;
+
+class SmallWorkController extends Controller
+{
+    public function create(Request $request): View
+    {
+        Gate::authorize('create', Project::class);
+
+        return view('projects.small-create', $this->formData($request));
+    }
+
+    public function store(Request $request, SmallWorkService $smallWork): RedirectResponse
+    {
+        Gate::authorize('create', Project::class);
+        $data = $this->validated($request);
+        $type = SmallWorkType::from($data['type']);
+
+        if ($type->attachesToExistingProject()) {
+            Gate::authorize('update', Project::query()->findOrFail($data['project_id']));
+        }
+
+        $project = $smallWork->create($data, $request->user());
+
+        return redirect()
+            ->route('planning', [
+                'week' => Carbon::parse($data['date'])->startOfWeek(Carbon::MONDAY)->toDateString(),
+                'project_id' => $project->id,
+            ])
+            ->with('status', $type->label().' ingepland.');
+    }
+
+    public function update(Request $request, Project $project, SmallWorkService $smallWork): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+        abort_unless($project->isSmallWork(), 404);
+        $data = $this->validatedUpdate($request, $project);
+        $smallWork->update($project, $data);
+
+        return redirect()
+            ->route('projects.show', $project)
+            ->with('status', 'Klein werk opgeslagen.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formData(Request $request): array
+    {
+        return [
+            'types' => SmallWorkType::cases(),
+            'selectedType' => old('type', $request->string('type')->toString() ?: SmallWorkType::Service->value),
+            'parentProjects' => Project::query()
+                ->accessibleBy($request->user())
+                ->active()
+                ->with('customer')
+                ->whereNotIn('kind', array_map(fn (ProjectKind $kind): string => $kind->value, ProjectKind::smallWorkCases()))
+                ->orderBy('project_number')
+                ->get(),
+            'workers' => Worker::query()
+                ->where('active', true)
+                ->withLogin()
+                ->orderBy('name')
+                ->get(),
+            'hourOptions' => [2, 4, 6, 8],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validated(Request $request): array
+    {
+        $type = SmallWorkType::tryFrom((string) $request->input('type'));
+        $standalone = $type?->isStandalone() ?? true;
+
+        return $request->validate([
+            'type' => ['required', Rule::enum(SmallWorkType::class)],
+            'customer_name' => [$standalone ? 'required' : 'nullable', 'string', 'max:255'],
+            'project_id' => [
+                $standalone ? 'nullable' : 'required',
+                'integer',
+                Rule::exists('projects', 'id')->where(function ($query) use ($request): void {
+                    $query->whereNull('archived_at')
+                        ->whereNotIn('kind', array_map(
+                            fn (ProjectKind $kind): string => $kind->value,
+                            ProjectKind::smallWorkCases()
+                        ));
+                    $user = $request->user();
+                    if ($user !== null && ! $user->can_access_all_projects && ! $user->isVakman()) {
+                        $query->whereHas('users', fn ($users) => $users->where('users.id', $user->id));
+                    }
+                }),
+            ],
+            'description' => ['required', 'string', 'max:255'],
+            'location' => [$standalone ? 'required' : 'nullable', 'string', 'max:255'],
+            'date' => ['required', 'date'],
+            'hours' => ['required', 'numeric', Rule::in([2, 4, 6, 8])],
+            'worker_id' => ['nullable', 'integer', 'exists:workers,id'],
+            'team_id' => ['nullable', 'integer', 'exists:teams,id'],
+            'work_number' => ['nullable', 'string', 'max:64', Rule::unique('projects', 'project_number')],
+        ], $this->messages());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatedUpdate(Request $request, Project $project): array
+    {
+        return $request->validate([
+            'customer_name' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:255'],
+            'location' => ['required', 'string', 'max:255'],
+            'date' => ['required', 'date'],
+            'hours' => ['required', 'numeric', Rule::in([2, 4, 6, 8])],
+            'work_number' => [
+                'nullable',
+                'string',
+                'max:64',
+                Rule::unique('projects', 'project_number')->ignore($project->id),
+            ],
+        ], $this->messages());
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function messages(): array
+    {
+        return [
+            'type.required' => 'Kies het type werk.',
+            'customer_name.required' => 'Vul een klantnaam in.',
+            'project_id.required' => 'Kies een bestaand opdrachtnummer.',
+            'project_id.exists' => 'Dit project is niet beschikbaar.',
+            'description.required' => 'Vul een korte omschrijving in.',
+            'location.required' => 'Vul een locatie in.',
+            'date.required' => 'Kies een datum.',
+            'hours.required' => 'Kies de geplande uren.',
+            'hours.in' => 'Kies 2, 4, 6 of 8 uur.',
+            'work_number.unique' => 'Dit werknummer bestaat al.',
+        ];
+    }
+}

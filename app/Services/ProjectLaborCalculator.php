@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\SmallWorkType;
 use App\Enums\WorkUnit;
 use App\Models\Project;
 use App\Models\WorkerAssignment;
@@ -62,41 +63,44 @@ class ProjectLaborCalculator
             );
         }
 
+        $originalItems = collect($items)->reject(fn (array $row): bool => ! empty($row['is_extra']));
+        $extraItems = collect($items)->filter(fn (array $row): bool => ! empty($row['is_extra']));
+
         $groups = [];
-        foreach (collect($items)->groupBy('type_key') as $typeKey => $rows) {
+        foreach ($originalItems->groupBy('type_key') as $typeKey => $rows) {
             $groups[(string) $typeKey] = $this->rollUp($rows->all(), (string) $rows->first()['title']);
         }
+        if ($extraItems->isNotEmpty()) {
+            $groups['extra'] = $this->rollUp($extraItems->all(), 'Extra werk');
+        }
 
-        $plannedHours = round(
-            (float) $project->assignments->sum(
-                fn (WorkerAssignment $assignment): float => $assignment->plannedPersonHours()
-            ),
-            2,
-        );
-        $actualHours = round((float) collect($items)->sum('actual_hours'), 2);
-        $budgetHours = round((float) collect($items)->sum('budget_hours'), 2);
-        $usedHours = round((float) collect($items)->sum('used_hours') + $unassignedHours, 2);
-        $hourlyRate = $this->rate($project->basis_uurtarief);
+        $plannedHours = round((float) $originalItems->sum('planned_hours') + $unassignedHours, 2);
+        $actualHours = round((float) $originalItems->sum('actual_hours'), 2);
+        $budgetHours = round((float) $originalItems->sum('budget_hours'), 2);
+        $usedHours = round((float) $originalItems->sum('used_hours') + $unassignedHours, 2);
+        $hourlyRate = $project->isSmallWork()
+            ? SmallWorkType::HOURLY_RATE
+            : $this->rate($project->basis_uurtarief);
         $actualLaborCost = round(
-            (float) collect($items)->sum('actual_labor_cost') + ($hourlyRate === null ? 0.0 : $unassignedHours * $hourlyRate),
+            (float) $originalItems->sum('actual_labor_cost') + ($hourlyRate === null ? 0.0 : $unassignedHours * $hourlyRate),
             2,
         );
-        $budgetLaborCost = round((float) collect($items)->sum('budget_labor_cost'), 2);
+        $budgetLaborCost = round((float) $originalItems->sum('budget_labor_cost'), 2);
         $plannedLaborCost = round(
-            (float) collect($items)->sum(
+            (float) $originalItems->sum(
                 fn (array $row): float => $row['hourly_rate'] === null ? 0.0 : $row['planned_hours'] * $row['hourly_rate']
             ) + ($hourlyRate === null ? 0.0 : $unassignedHours * $hourlyRate),
             2,
         );
         $laborCost = $actualHours > 0.0001 ? $actualLaborCost : $plannedLaborCost;
         $completedM2 = round(
-            (float) collect($items)
+            (float) $originalItems
                 ->filter(fn (array $row): bool => ($row['unit_value'] ?? '') === WorkUnit::SquareMeter->value)
                 ->sum('completed_qty'),
             2,
         );
         $orderedM2 = round(
-            (float) collect($items)
+            (float) $originalItems
                 ->filter(fn (array $row): bool => ($row['unit_value'] ?? '') === WorkUnit::SquareMeter->value)
                 ->sum('budget_qty'),
             2,
@@ -129,6 +133,14 @@ class ProjectLaborCalculator
             $detail = null;
         }
 
+        $extraPlanned = round((float) $extraItems->sum('planned_hours'), 2);
+        $extraActual = round((float) $extraItems->sum('actual_hours'), 2);
+        $extraBudget = round((float) $extraItems->sum('budget_hours'), 2);
+        $extraShown = max($extraPlanned, $extraActual, $extraBudget);
+        $extraSummary = $extraShown > 0.0001
+            ? 'Extra werk '.PlanningHours::hoursLabel($extraShown).' (niet in oorspronkelijke begroting)'
+            : null;
+
         return [
             'hourly_rate' => $hourlyRate,
             'planned_hours' => $plannedHours,
@@ -151,6 +163,10 @@ class ProjectLaborCalculator
             'summary' => $summary,
             'budget_summary' => $this->budgetCompact(null, $budgetHours, $plannedHours, $actualHours),
             'overrun_label' => $this->overrunLabel($status, 'Project'),
+            'extra_planned_hours' => $extraPlanned,
+            'extra_actual_hours' => $extraActual,
+            'extra_budget_hours' => $extraBudget,
+            'extra_summary' => $extraSummary,
             'warnings' => $status['warnings'],
             'detail' => $detail,
             'items' => $items,
@@ -165,7 +181,7 @@ class ProjectLaborCalculator
      */
     public function forItem(WorkItem $item, Project $project, Collection $assignments): array
     {
-        $hourlyRate = $this->rate($item->uurtarief) ?? $this->rate($project->basis_uurtarief);
+        $hourlyRate = $this->rateFor($item, $project);
         $plannedHours = round(
             (float) $assignments->sum(
                 fn (WorkerAssignment $assignment): float => $assignment->plannedPersonHours()
@@ -211,10 +227,13 @@ class ProjectLaborCalculator
             'title' => $item->planningTitle(),
             'name' => $item->name,
             'type_key' => $item->typeKey(),
+            'is_extra' => $item->isExtraWork(),
             'unit' => $unitLabel,
             'unit_value' => $item->unit?->value,
             'hourly_rate' => $hourlyRate,
-            'own_hourly_rate' => $this->rate($item->uurtarief),
+            'own_hourly_rate' => $this->usesSmallWorkRate($item, $project)
+                ? SmallWorkType::HOURLY_RATE
+                : $this->rate($item->uurtarief),
             'planned_hours' => $plannedHours,
             'actual_hours' => $actualHours,
             ...$delta,
@@ -234,7 +253,14 @@ class ProjectLaborCalculator
             'actual_labor_cost' => $actualLaborCost,
             'budget_labor_cost' => $budgetLaborCost,
             ...$prices,
-            'compact' => $this->hoursCompact($item->name, $budgetHours, $usedHours, $plannedHours, $actualHours, $status),
+            'compact' => $this->hoursCompact(
+                $item->isExtraWork() ? 'Extra werk: '.$item->name : $item->name,
+                $budgetHours,
+                $usedHours,
+                $plannedHours,
+                $actualHours,
+                $status,
+            ),
             'board_line' => $this->hoursCompact(null, $budgetHours, $usedHours, $plannedHours, $actualHours, $status),
             'bar_label' => $budgetHours > 0.0001
                 ? $this->hoursNumber($usedHours).' / '.$this->hoursNumber($budgetHours).' uur'
@@ -321,6 +347,20 @@ class ProjectLaborCalculator
                 ? (int) round(min(100, max(0, $usedHours / $budgetHours * 100)))
                 : null,
         ];
+    }
+
+    private function rateFor(WorkItem $item, Project $project): ?float
+    {
+        if ($this->usesSmallWorkRate($item, $project)) {
+            return SmallWorkType::HOURLY_RATE;
+        }
+
+        return $this->rate($item->uurtarief) ?? $this->rate($project->basis_uurtarief);
+    }
+
+    private function usesSmallWorkRate(WorkItem $item, Project $project): bool
+    {
+        return $item->isExtraWork() || $project->isSmallWork();
     }
 
     private function rate(mixed $value): ?float

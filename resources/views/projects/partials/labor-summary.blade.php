@@ -5,6 +5,9 @@
     @if (! empty($labor['overrun_label']))
         <div class="font-semibold text-nicon-danger">{{ $labor['overrun_label'] }}</div>
     @endif
+    @if (! empty($labor['extra_summary']))
+        <div class="font-medium text-nicon-ink">{{ $labor['extra_summary'] }}</div>
+    @endif
     @if (! empty($labor['budget_summary']))
         <div @class([
             'font-medium',

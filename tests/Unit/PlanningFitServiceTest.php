@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\ProjectKind;
 use App\Models\CrewMember;
 use App\Models\Customer;
 use App\Models\Project;
@@ -82,6 +83,18 @@ class PlanningFitServiceTest extends TestCase
         $this->assertFalse($candidate['selectable']);
         $this->assertSame('no_skill', $candidate['status']);
         $this->assertSame('Geen vakkennis: Linoleum', $candidate['status_label']);
+    }
+
+    public function test_service_work_lists_a_free_team_without_matching_vakkennis(): void
+    {
+        $team = $this->makeWorker('Wopro', 'PVC', ['Jan', 'Piet']);
+        $item = $this->makeWorkItem('hestel schoon maken');
+        $item->project->update(['kind' => ProjectKind::Service]);
+
+        $candidate = $this->candidateNamed($item, 'Wopro', $team);
+
+        $this->assertTrue($candidate['selectable']);
+        $this->assertSame('2/2 geschikt en beschikbaar', $candidate['status_label']);
     }
 
     public function test_lists_bezet_with_the_overlapping_hours(): void

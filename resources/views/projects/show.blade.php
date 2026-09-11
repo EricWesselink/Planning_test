@@ -39,12 +39,8 @@
                     @if ($project->planned_start_date)
                         <span>Start werk: {{ \App\Support\PlanningWeek::label($project->planned_start_date) }}</span>
                     @endif
-                    @if ($project->planned_end_date)
-                        <span>Klaar werk: {{ \App\Support\PlanningWeek::label($project->planned_end_date) }}</span>
-                    @endif
                 </div>
                 @if (auth()->user()?->canViewLaborCosts())
-                    @include('projects.partials.labor-summary', ['labor' => $labor])
                     @include('projects.partials.calculation-lines', ['project' => $project])
                 @endif
                 @if (session('status'))

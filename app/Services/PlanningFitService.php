@@ -28,8 +28,9 @@ class PlanningFitService
         ?string $endTime,
         ?int $ignoreAssignmentId = null,
     ): array {
-        $item->loadMissing('workActivity');
+        $item->loadMissing(['workActivity', 'project']);
         $specialty = $item->requiredSpecialty();
+        $skipSkill = $item->skipsSkillMatch();
         $from = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
         $workers = Worker::query()
@@ -52,6 +53,7 @@ class PlanningFitService
                     $end,
                     $from,
                     $to,
+                    $skipSkill,
                 ))
                 ->values()
                 ->all(),
@@ -66,8 +68,12 @@ class PlanningFitService
         WorkItem $item,
         array $crewIds = [],
     ): ?string {
+        $item->loadMissing(['workActivity', 'project']);
+        if ($item->skipsSkillMatch()) {
+            return null;
+        }
+
         $worker->loadMissing('crewPeople');
-        $item->loadMissing('workActivity');
         $specialty = $item->requiredSpecialty();
         $ids = array_values(array_unique(array_filter(
             array_map(static fn (mixed $id): int => (int) $id, $crewIds),
@@ -135,10 +141,11 @@ class PlanningFitService
         CarbonInterface $end,
         string $from,
         string $to,
+        bool $skipSkill,
     ): array {
         $people = $worker->crewPeople;
         if ($people->count() >= 2) {
-            return $this->presentTeam($worker, $people, $specialty, $assignments, $start, $end, $from, $to);
+            return $this->presentTeam($worker, $people, $specialty, $assignments, $start, $end, $from, $to, $skipSkill);
         }
 
         $member = $people->first();
@@ -146,7 +153,7 @@ class PlanningFitService
             $member->setRelation('worker', $worker);
         }
         $person = $this->presentPerson(
-            $this->personHasSkill($member, $worker, $specialty),
+            $skipSkill || $this->personHasSkill($member, $worker, $specialty),
             $this->busyInterval($assignments, $worker, $member?->id, $start, $end, $from, $to)
                 ?? $this->availability->awayLabelInRange($worker, $start, $end),
             $specialty['label'],
@@ -180,13 +187,14 @@ class PlanningFitService
         CarbonInterface $end,
         string $from,
         string $to,
+        bool $skipSkill,
     ): array {
         $crew = [];
         $suitable = 0;
         foreach ($people as $member) {
             $member->setRelation('worker', $worker);
             $person = $this->presentPerson(
-                $this->personHasSkill($member, $worker, $specialty),
+                $skipSkill || $this->personHasSkill($member, $worker, $specialty),
                 $this->busyInterval($assignments, $worker, $member->id, $start, $end, $from, $to)
                     ?? $this->availability->awayLabelInRange($worker, $start, $end),
                 $specialty['label'],

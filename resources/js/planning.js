@@ -195,7 +195,7 @@ if (board) {
 
             return `<option value="${value}" data-men="${candidate.people_count}" data-selectable="${candidate.selectable ? '1' : '0'}"${disabled}${selected}>${escapeHtml(`${candidate.name} — ${candidate.status_label}`)}</option>`;
         }).join('');
-        whoSelect.innerHTML = `<option value="">Kies team</option>${options}`;
+        whoSelect.innerHTML = `<option value="">Kies vakman of team</option>${options}`;
         const stillValid = current
             && whoSelect.querySelector(`option[value="${CSS.escape(current)}"]:not(:disabled)`);
         whoSelect.value = stillValid ? current : '';
@@ -721,12 +721,13 @@ if (board) {
             const rect = cell.getBoundingClientRect();
             const fraction = snapPosition((event.clientX - rect.left) / Math.max(1, rect.width), 1);
             const startTime = timeFromFraction(Math.min(0.75, fraction));
+            const hours = Number(stack.dataset.hours || WORKDAY_HOURS);
             openAdd(
                 stack.dataset.projectId,
                 stack.dataset.workItemId || '',
                 cell.dataset.date,
                 startTime,
-                WORKDAY_HOURS,
+                Number.isFinite(hours) && hours > 0 ? hours : WORKDAY_HOURS,
             );
         });
     });

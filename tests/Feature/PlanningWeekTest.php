@@ -73,6 +73,27 @@ class PlanningWeekTest extends TestCase
         $this->assertSame('Week 37–44', $data['weekRangeLabel']);
     }
 
+    public function test_planning_page_has_a_button_to_the_current_week(): void
+    {
+        $this->travelTo('2026-11-04 10:00:00');
+
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'status' => 'gepland']))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<a class="planning-btn" href="[^"]*week=2026-11-02[^"]*" title="Ga naar deze week">Deze week<\/a>/',
+            $html
+        );
+        $this->assertMatchesRegularExpression(
+            '/<a class="planning-btn" href="[^"]*status=gepland[^"]*" title="Ga naar deze week">Deze week<\/a>/',
+            $html
+        );
+    }
+
     public function test_planning_page_shows_week_numbers_and_week_search(): void
     {
         $user = User::factory()->create();

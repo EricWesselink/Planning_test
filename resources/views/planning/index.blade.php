@@ -35,6 +35,7 @@
                         </select>
                     </form>
                     <a class="planning-btn" href="{{ route('planning', array_merge($query, ['week' => $nextWeek])) }}">Volgende</a>
+                    <a class="planning-btn" href="{{ route('planning', array_merge($query, ['week' => $thisWeek])) }}" title="Ga naar deze week">Deze week</a>
                     <form method="GET" class="planning-week-jump">
                         @foreach ($query as $key => $value)
                             @if (! in_array($key, ['week', 'weeks', 'week_nr', 'year'], true))
@@ -66,6 +67,9 @@
                         <button type="submit" class="planning-btn" name="intern" value="1" title="Planning printen voor eigen gebruik, met namen">Intern</button>
                     </form>
                     <a class="planning-btn planning-btn--accent" href="{{ route('production.index') }}">Productie</a>
+                    @if ($canManagePlanning)
+                        <a class="planning-btn" href="{{ route('projects.small.create') }}">Klein werk</a>
+                    @endif
                 </div>
             </div>
 
@@ -76,6 +80,7 @@
                     <option value="" @selected(($filters['kind'] ?? '') === '')>Alle werken</option>
                     <option value="{{ \App\Enums\ProjectKind::Project->value }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::Project->value)>Projecten</option>
                     <option value="{{ \App\Enums\ProjectKind::Winkel->value }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::Winkel->value)>Winkelwerk</option>
+                    <option value="{{ \App\Enums\ProjectKind::KLEINE_FILTER }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::KLEINE_FILTER)>Kleine werken</option>
                 </select>
                 <select name="project_id" class="planning-filter" onchange="this.form.submit()" aria-label="Werk">
                     <option value="">Alle</option>
@@ -105,6 +110,17 @@
                 @endif
                 <a href="{{ route('planning', ['week' => $weekStart->toDateString(), 'weeks' => $weeks]) }}" class="planning-filter planning-filter--reset">Reset</a>
             </form>
+
+            @if (session('status'))
+                <p class="mt-2 text-sm text-nicon-ok">{{ session('status') }}</p>
+            @endif
+            @if ($errors->any())
+                <ul class="mt-2 text-sm text-nicon-danger list-disc pl-5">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            @endif
 
             @if (count($warnings))
                 <div class="planning-warnings" role="alert">
@@ -289,28 +305,32 @@
                             @continue
                         @endif
                         @php
+                            $isCompact = ! empty($projectRow['compact']);
                             $projectHasPeriod = $projectRow['bar'] || $projectRow['start_marker'] || $projectRow['end_marker'];
                             $projectBarOffset = $projectHasPeriod ? 16 : 4;
                             $projectHeight = max(28, $projectBarOffset + 4 + ($projectRow['bar_count'] * 24));
                             $projectOver = $canViewLaborCosts && ! empty($projectRow['labor']['hours_over']);
                         @endphp
-                        <div class="plan-line plan-line--project{{ $projectOver ? ' plan-line--hour-over' : '' }}" style="min-height: {{ $projectHeight }}px">
+                        <div class="plan-line plan-line--project{{ $isCompact ? ' plan-line--small' : '' }}{{ $projectOver ? ' plan-line--hour-over' : '' }}" style="min-height: {{ $projectHeight }}px">
                             <div class="plan-frozen">
                                 <div class="plan-cell plan-cell--werk{{ ! empty($projectRow['missing_craftsman']) ? ' has-missing-craftsman' : '' }}">
                                     <div class="plan-project-meta">
                                         <a href="{{ route('projects.show', $projectRow['id']) }}" class="hover:text-nicon-orange">
                                             @if (! empty($projectRow['badge']))
-                                                <span class="plan-winkel-badge">{{ $projectRow['badge'] }}</span>
+                                                <span class="plan-small-badge plan-small-badge--{{ $projectRow['kind'] ?? 'klein' }}">{{ $projectRow['badge'] }}</span>
                                             @endif
-                                            @if (! empty($projectRow['numbers_short']))
+                                            @if (! $isCompact && ! empty($projectRow['numbers_short']))
                                                 <span class="plan-project-numbers">{{ $projectRow['numbers_short'] }}</span>
                                             @endif
-                                            <span class="plan-project-title">{{ $projectRow['title'] }}</span>
+                                            <span class="plan-project-title">{{ $projectRow['title'] }}@if ($isCompact && ! empty($projectRow['hours_label'])) | {{ $projectRow['hours_label'] }}@endif</span>
                                         </a>
+                                        @if (! $isCompact && ! empty($projectRow['labor']['extra_summary']))
+                                            <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['labor']['extra_summary'] }}</div>
+                                        @endif
                                         @if (! empty($projectRow['subtitle']))
                                             <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['subtitle'] }}</div>
                                         @endif
-                                        @if ($projectRow['naw_line'] ?? $projectRow['city'])
+                                        @if (! $isCompact && ($projectRow['naw_line'] ?? $projectRow['city']))
                                             <div class="text-xs font-normal text-nicon-muted">
                                                 {{ $projectRow['naw_line'] ?? $projectRow['city'] }}
                                                 @if (! empty($projectRow['maps_url']))
@@ -337,9 +357,10 @@
                             </div>
                             @include('planning.partials.plan-days', [
                                 'projectId' => $projectRow['id'],
-                                'workItemId' => null,
+                                'workItemId' => $isCompact ? ($projectRow['work_item_id'] ?? null) : null,
+                                'plannedHours' => $isCompact ? ($projectRow['planned_hours'] ?? null) : null,
                                 'personBars' => $projectRow['person_bars'],
-                                'showPeriod' => true,
+                                'showPeriod' => (bool) $projectHasPeriod,
                                 'periodBar' => $projectRow['bar'],
                                 'startMarker' => $projectRow['start_marker'],
                                 'endMarker' => $projectRow['end_marker'],
@@ -392,7 +413,7 @@
             <input type="hidden" name="project_id" id="plan-project-id">
             <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Wie</label>
             <select name="who" id="plan-who" required class="w-full border border-nicon-line px-2 py-1.5 bg-white">
-                <option value="">Kies team</option>
+                <option value="">Kies vakman of team</option>
                 @foreach ($workers as $worker)
                     <option value="worker:{{ $worker->id }}" data-men="{{ $worker->peopleCount() }}">{{ $worker->planName() }}</option>
                 @endforeach

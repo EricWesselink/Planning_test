@@ -672,6 +672,49 @@ a.plan-missing-craftsman:hover {
     letter-spacing: 0.12em;
 }
 
+.plan-line--small {
+    font-size: 0.75rem;
+    background: #f7f4ee;
+}
+
+.plan-line--small .plan-frozen {
+    font-weight: 500;
+}
+
+.plan-small-badge {
+    display: inline-block;
+    margin-right: 6px;
+    margin-bottom: 0;
+    padding: 1px 6px;
+    background: var(--color-nicon-ink);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    vertical-align: 1px;
+}
+
+.plan-small-badge--service {
+    background: var(--color-nicon-ink);
+}
+
+.plan-small-badge--extra {
+    background: var(--color-nicon-orange);
+}
+
+.plan-small-badge--klein {
+    background: #57534e;
+}
+
+.plan-line--small .plan-project-title {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    white-space: nowrap;
+    display: inline;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .plan-cell--werk .plan-project-numbers {
     display: block;
     max-width: 100%;

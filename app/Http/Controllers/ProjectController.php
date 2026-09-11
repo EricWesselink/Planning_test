@@ -204,6 +204,16 @@ class ProjectController extends Controller
             ]);
         }
 
+        if ($project->isSmallWork()) {
+            $project->load(['customer', 'workItems', 'assignments.worker']);
+
+            return view('projects.small', [
+                'project' => $project,
+                'labor' => $labor->for($project),
+                'hourOptions' => [2, 4, 6, 8],
+            ]);
+        }
+
         $setup->ensureProject($project);
         if ($request->user()?->canViewLaborCosts()) {
             $project->load(['calculationLines.workItem']);
@@ -279,7 +289,6 @@ class ProjectController extends Controller
 
         return view('projects.show', [
             'project' => $project,
-            'labor' => $labor->for($project),
             'workers' => $workers,
             'progressWorkers' => $progressWorkers,
             'orderTypes' => WorkOrderType::cases(),

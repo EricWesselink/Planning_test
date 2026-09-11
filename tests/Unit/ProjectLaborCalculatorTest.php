@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\Worker;
@@ -247,6 +248,113 @@ class ProjectLaborCalculatorTest extends TestCase
         $this->assertSame('Begroot 80u | Ingepland 24u | Gemaakt 92u | Budget over -12u', $labor['budget_summary']);
         $this->assertSame(-12.0, $labor['budget_remaining']);
         $this->assertTrue($labor['budget_remaining_over']);
+    }
+
+    public function test_paid_extra_work_hours_are_kept_out_of_the_original_budget(): void
+    {
+        [$project, $worker, $item] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-09',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            completedM2: 600,
+            orderedM2: 600,
+            actualHours: 80,
+        );
+        $item->update(['begrote_uren' => 80, 'begrote_hoeveelheid' => 600]);
+
+        $extra = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'extra egaliseren',
+            'unit' => 'uren',
+            'ordered_quantity' => 16,
+            'begrote_uren' => 16,
+            'is_extra_work' => true,
+            'planned_start_date' => '2026-09-10',
+            'planned_end_date' => '2026-09-11',
+            'status' => 'gepland',
+        ]);
+        $assignment = new WorkerAssignment([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $extra->id,
+            'people_count' => 1,
+        ]);
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-10'),
+            Carbon::parse('2026-09-11'),
+            '08:00:00',
+            '16:00:00',
+        );
+        $assignment->save();
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+
+        $this->assertSame(80.0, $labor['budget_hours']);
+        $this->assertSame(24.0, $labor['planned_hours']);
+        $this->assertSame(80.0, $labor['actual_hours']);
+        $this->assertSame(80.0, $labor['used_hours']);
+        $this->assertSame(0.0, $labor['overrun_hours']);
+        $this->assertSame(16.0, $labor['extra_planned_hours']);
+        $this->assertSame(16.0, $labor['extra_budget_hours']);
+        $this->assertSame('Extra werk 16u (niet in oorspronkelijke begroting)', $labor['extra_summary']);
+        $this->assertSame('Begroot 80u | Ingepland 24u | Gemaakt 80u | Budget over 0u', $labor['budget_summary']);
+    }
+
+    public function test_service_work_uses_48_euro_even_without_a_stored_rate(): void
+    {
+        $customer = Customer::query()->create(['name' => 'Gemeente Deventer']);
+        $project = Project::query()->create([
+            'project_number' => '2026-001',
+            'customer_id' => $customer->id,
+            'name' => 'plint herstellen',
+            'city' => 'Deventer',
+            'kind' => ProjectKind::Service,
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-11',
+            'planned_end_date' => '2026-09-11',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'plint herstellen',
+            'unit' => 'uren',
+            'ordered_quantity' => 4,
+            'begrote_uren' => 4,
+            'status' => 'gepland',
+        ]);
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+
+        $this->assertSame(48.0, $labor['hourly_rate']);
+        $this->assertSame(192.0, $labor['budget_labor_cost']);
+        $this->assertSame(48.0, $labor['items'][0]['hourly_rate']);
+    }
+
+    public function test_extra_work_uses_48_euro_when_the_project_rate_is_different(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-07',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+        );
+        $extra = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'extra egaliseren',
+            'unit' => 'uren',
+            'ordered_quantity' => 4,
+            'begrote_uren' => 4,
+            'is_extra_work' => true,
+            'status' => 'gepland',
+        ]);
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+
+        $this->assertSame(45.0, $labor['hourly_rate']);
+        $this->assertSame(48.0, $labor['items_by_id'][$extra->id]['hourly_rate']);
+        $this->assertSame(192.0, $labor['items_by_id'][$extra->id]['budget_labor_cost']);
     }
 
     public function test_hour_delta_is_planned_minus_actual_and_warns_on_overrun(): void

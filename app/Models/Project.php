@@ -150,6 +150,11 @@ class Project extends Model
         return $this->kind === ProjectKind::Winkel;
     }
 
+    public function isSmallWork(): bool
+    {
+        return $this->kind?->isSmallWork() ?? false;
+    }
+
     public function assignments(): HasMany
     {
         return $this->hasMany(WorkerAssignment::class);
@@ -304,6 +309,10 @@ class Project extends Model
      */
     public function displayTitle(): string
     {
+        if ($this->isSmallWork()) {
+            return $this->smallWorkHeadline();
+        }
+
         if ($this->isWinkel()) {
             return $this->shopHeadline();
         }
@@ -323,6 +332,22 @@ class Project extends Model
         $parts = array_filter([$customer, $city], fn (string $part): bool => $part !== '');
 
         return $parts === [] ? trim((string) $this->name) : implode(' - ', $parts);
+    }
+
+    public function smallWorkHeadline(): string
+    {
+        $description = trim((string) $this->name);
+        $city = trim((string) $this->city);
+        if ($city !== '' && $description !== '') {
+            return $city.' – '.$description;
+        }
+
+        $customer = trim((string) ($this->customer?->name ?? ''));
+        if ($customer !== '' && $description !== '') {
+            return $customer.' – '.$description;
+        }
+
+        return $description !== '' ? $description : $this->shopHeadline();
     }
 
     public function shopWorkLine(): ?string

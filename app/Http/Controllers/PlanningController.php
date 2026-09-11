@@ -16,7 +16,8 @@ class PlanningController extends Controller
     {
         $this->authorizeRequestedProject($request);
         $data = $board->build($request);
-        $kind = ProjectKind::tryFrom((string) $request->input('kind', ''));
+        $kind = (string) $request->input('kind', '');
+        $kindCase = ProjectKind::tryFrom($kind);
         $staffing = (string) $request->input('staffing', '');
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
 
@@ -24,7 +25,13 @@ class PlanningController extends Controller
             'projects' => Project::query()
                 ->accessibleBy($request->user())
                 ->active()
-                ->when($kind !== null, fn ($q) => $q->where('kind', $kind))
+                ->when($kind === ProjectKind::KLEINE_FILTER, function ($q): void {
+                    $q->where(function ($query): void {
+                        $query->whereIn('kind', ProjectKind::smallWorkCases())
+                            ->orWhereHas('workItems', fn ($items) => $items->where('is_extra_work', true));
+                    });
+                })
+                ->when($kindCase !== null, fn ($q) => $q->where('kind', $kindCase))
                 ->when($staffing === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
                 ->when($staffing === 'planned', fn ($q) => $q->whereHas('assignments'))
                 ->with('workItems')

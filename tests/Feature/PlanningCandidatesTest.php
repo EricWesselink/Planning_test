@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
@@ -81,6 +82,52 @@ class PlanningCandidatesTest extends TestCase
             ->assertJsonFragment([
                 'name' => 'Kees Jansen',
                 'status_label' => 'Geen vakkennis: PVC',
+            ]);
+    }
+
+    public function test_service_work_lists_a_free_craftsman_without_matching_vakkennis(): void
+    {
+        $user = User::factory()->create();
+        $nick = $this->makeWorker('Nick Seine', 'PVC');
+        $item = $this->makeWorkItem('hestel schoon maken');
+        $item->project->update(['kind' => ProjectKind::Service]);
+
+        $this->actingAs($user)
+            ->getJson(route('planning.candidates', [
+                'work_item_id' => $item->id,
+                'start_date' => '2026-09-11',
+                'end_date' => '2026-09-11',
+                'start_time' => '08:00',
+                'end_time' => '12:00',
+            ]))
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $nick->id,
+                'selectable' => true,
+                'status_label' => 'Beschikbaar',
+            ]);
+    }
+
+    public function test_extra_work_lists_a_free_craftsman_without_matching_vakkennis(): void
+    {
+        $user = User::factory()->create();
+        $nick = $this->makeWorker('Nick Seine', 'PVC');
+        $item = $this->makeWorkItem('schoonmaken');
+        $item->update(['is_extra_work' => true]);
+
+        $this->actingAs($user)
+            ->getJson(route('planning.candidates', [
+                'work_item_id' => $item->id,
+                'start_date' => '2026-09-07',
+                'end_date' => '2026-09-07',
+                'start_time' => '08:00',
+                'end_time' => '12:00',
+            ]))
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $nick->id,
+                'selectable' => true,
+                'status_label' => 'Beschikbaar',
             ]);
     }
 

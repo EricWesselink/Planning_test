@@ -13,6 +13,7 @@
                 <a href="{{ route('projects.archived') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm">Archief</a>
             @endunless
             @can('create', \App\Models\Project::class)
+                <a href="{{ route('projects.small.create') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm">Klein werk</a>
                 <a href="{{ route('projects.winkel.create') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm">Nieuw Winkelwerk</a>
                 <a href="{{ route('projects.create') }}" class="bg-nicon-orange text-white px-4 py-2 text-sm">Nieuw project</a>
             @endcan
@@ -60,7 +61,9 @@
                             </form>
                         @endcan
                         <a class="text-nicon-orange-dark font-medium" href="{{ route('projects.show', $project) }}">
-                            @if ($project->isWinkel())
+                            @if ($project->isSmallWork())
+                                {{ $project->kind?->badge() }}
+                            @elseif ($project->isWinkel())
                                 WINKEL
                             @else
                                 {{ $project->workCode() ?: $project->workNumber() }}
@@ -73,6 +76,8 @@
                             @if ($project->shopWorkLine())
                                 <div class="text-xs text-nicon-muted">{{ $project->shopWorkLine() }}</div>
                             @endif
+                        @elseif ($project->isSmallWork())
+                            <div>{{ $project->displayTitle() }}</div>
                         @else
                             @if ($project->workCode() && $project->workNumber() !== '')
                                 <div class="text-xs text-nicon-muted">Werk {{ $project->workNumber() }}</div>
@@ -126,6 +131,8 @@
                     <td class="px-2 py-1.5">
                         @if ($project->isWinkel())
                             {{ $project->shopWorkLine() }}
+                        @elseif ($project->isSmallWork())
+                            {{ \App\Support\PlanningHours::hoursLabel((float) ($project->workItems->first()?->begrote_uren ?? 0)) }}
                         @elseif ($head)
                             {{ \App\Support\Format::qty($head->completedQuantity()) }} / {{ \App\Support\Format::qty($head->ordered_quantity) }} {{ $head->unit->label() }}
                         @endif

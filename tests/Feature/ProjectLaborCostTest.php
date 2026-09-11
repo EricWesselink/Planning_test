@@ -43,7 +43,7 @@ class ProjectLaborCostTest extends TestCase
         $this->assertNull($project->fresh()->basis_uurtarief);
     }
 
-    public function test_planner_saves_the_hourly_rate_and_sees_labor_on_the_project(): void
+    public function test_planner_saves_the_hourly_rate_and_sees_labor_on_the_planning_board(): void
     {
         $user = User::factory()->create();
         [$project] = $this->makeScheduledProject();
@@ -61,11 +61,18 @@ class ProjectLaborCostTest extends TestCase
             ->get(route('projects.show', $project))
             ->assertOk()
             ->assertSee('Basis uurtarief')
-            ->assertSee('Ingepland: 48u')
-            ->assertSee('Gemaakt: 40u')
-            ->assertSee('Tarief: €45/u')
-            ->assertSee('Gereed: 240 m²')
-            ->assertSee('Werkelijk €/m²: €7,50');
+            ->assertSee('Project bewerken')
+            ->assertDontSee('Ingepland: 48u')
+            ->assertDontSee('Tarief: €45/u');
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('Ingepland')
+            ->assertSee('Gemaakt')
+            ->assertSee('48u')
+            ->assertSee('40u')
+            ->assertSee('€7,50');
     }
 
     public function test_rejects_a_negative_hourly_rate(): void
@@ -298,9 +305,17 @@ class ProjectLaborCostTest extends TestCase
         $this->actingAs($user)
             ->get(route('projects.show', $project))
             ->assertOk()
-            ->assertSee('Begroot 80u | Ingepland 48u | Gemaakt 40u | Budget over 40u')
-            ->assertSee('Linoleum | Begroot 80u | Ingepland 48u | Gemaakt 40u | Budget over 40u')
-            ->assertSee('48 / 80 uur');
+            ->assertDontSee('Begroot 80u | Ingepland 48u | Gemaakt 40u | Budget over 40u')
+            ->assertDontSee('Linoleum | Begroot 80u | Ingepland 48u | Gemaakt 40u | Budget over 40u')
+            ->assertDontSee('48 / 80 uur');
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('Begroot')
+            ->assertSee('80u')
+            ->assertSee('48u')
+            ->assertSee('40u');
     }
 
     public function test_planning_board_shows_hour_bar_and_keeps_hours_on_the_scheduled_work(): void

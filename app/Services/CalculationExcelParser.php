@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\WorkUnit;
 use App\Support\DutchNumber;
+use App\Support\WorkType;
 
 class CalculationExcelParser
 {
@@ -255,7 +256,66 @@ class CalculationExcelParser
             }
         }
 
+        return $this->attachPreparationFloorQuantities($lines);
+    }
+
+    /**
+     * Primen/egaliseren-arbeid heeft in Excel vaak alleen uren; de begrote m² staan
+     * op de materiaalregels van harde vloerafwerkingen in dezelfde groep.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @return list<array<string, mixed>>
+     */
+    private function attachPreparationFloorQuantities(array $lines): array
+    {
+        $floorM2ByGroup = [];
+        foreach ($lines as $line) {
+            if ($line['is_labor'] || $this->floorUnit((string) ($line['unit'] ?? '')) !== 'm2') {
+                continue;
+            }
+            if ($line['quantity'] === null || (float) $line['quantity'] <= 0.0001) {
+                continue;
+            }
+            if (! WorkType::requiresPrimingLeveling((string) ($line['production_description'] ?? ''))) {
+                continue;
+            }
+
+            $group = mb_strtolower(trim((string) ($line['group_code'] ?? '')));
+            $floorM2ByGroup[$group] = ($floorM2ByGroup[$group] ?? 0.0) + (float) $line['quantity'];
+        }
+
+        foreach ($lines as $index => $line) {
+            if (! $line['is_labor'] || ($line['quantity_status'] ?? '') === 'linked') {
+                continue;
+            }
+            if (! $this->isPreparationLabor($line)) {
+                continue;
+            }
+
+            $group = mb_strtolower(trim((string) ($line['group_code'] ?? '')));
+            $m2 = $floorM2ByGroup[$group] ?? 0.0;
+            if ($m2 <= 0.0001) {
+                continue;
+            }
+
+            $lines[$index]['quantity'] = round($m2, 4);
+            $lines[$index]['quantity_unit'] = WorkUnit::SquareMeter->value;
+            $lines[$index]['quantity_status'] = 'linked';
+        }
+
         return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function isPreparationLabor(array $line): bool
+    {
+        $flat = mb_strtolower(trim(
+            (string) ($line['production_description'] ?? '').' '.(string) ($line['article_description'] ?? '')
+        ));
+
+        return (bool) preg_match('/schuur|primer|primen|egalis|voorber/u', $flat);
     }
 
     /**

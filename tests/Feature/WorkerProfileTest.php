@@ -399,7 +399,7 @@ class WorkerProfileTest extends TestCase
             ->get(route('planning'))
             ->assertOk()
             ->assertSee('value="worker:'.$worker->id.'" data-men="2"', false)
-            ->assertSee('Kies team')
+            ->assertSee('Kies vakman of team')
             ->assertSee('>Jansen Vloeren</option>', false)
             ->assertDontSee('ZZP Jansen Vloeren')
             ->assertDontSee('Kies vakman of ploeg');

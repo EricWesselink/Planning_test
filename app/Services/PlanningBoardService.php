@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
+use App\Enums\SmallWorkType;
 use App\Enums\WorkPhase;
 use App\Enums\WorkUnit;
 use App\Models\Project;
@@ -14,6 +15,7 @@ use App\Support\PlanningHours;
 use App\Support\PlanningLaborForecast;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
@@ -93,7 +95,7 @@ class PlanningBoardService
                 'workOrders.worker',
                 'workOrders.workItem',
             ])
-            ->when($kindFilter !== null, fn ($q) => $q->where('kind', $kindFilter))
+            ->when($kindFilter !== null, fn ($q) => $this->constrainKind($q, $kindFilter))
             ->when($request->filled('project_id'), fn ($q) => $q->where('id', $request->integer('project_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
@@ -111,9 +113,7 @@ class PlanningBoardService
             ->with(['worker', 'workItem', 'team', 'crewMembers'])
             ->whereHas('project', function ($q) use ($request, $kindFilter): void {
                 $q->active()->accessibleBy($request->user());
-                if ($kindFilter !== null) {
-                    $q->where('kind', $kindFilter);
-                }
+                $this->constrainKind($q, $kindFilter);
             })
             ->whereDate('end_date', '>=', $days->first())
             ->whereDate('start_date', '<=', $days->last())
@@ -139,12 +139,25 @@ class PlanningBoardService
                 'overrun_label' => null,
             ];
 
+            if ($project->isSmallWork()) {
+                $rows[] = $this->smallProjectRow($project, $projectAssignments, $days, $doubleBooked, $labor, $canViewLabor);
+
+                continue;
+            }
+
+            $extraItems = $project->workItems
+                ->filter(fn (WorkItem $item): bool => $item->isExtraWork())
+                ->values();
+
             if ($project->isWinkel()) {
                 [$workRows, $usedIds] = $this->winkelWorkRows($project, $projectAssignments, $days, $doubleBooked, $usedIds);
             } else {
-                foreach ($project->workItems->groupBy(fn (WorkItem $item) => $item->typeKey())->sortBy(
-                    fn (Collection $items) => $items->min(fn (WorkItem $item) => $item->phase()->sort())
-                ) as $packageKey => $items) {
+                foreach ($project->workItems
+                    ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
+                    ->groupBy(fn (WorkItem $item) => $item->typeKey())
+                    ->sortBy(
+                        fn (Collection $items) => $items->min(fn (WorkItem $item) => $item->phase()->sort())
+                    ) as $packageKey => $items) {
                     $isOndergrond = $packageKey === 'ondergrond';
                     $primary = $isOndergrond
                         ? $this->primaryWorkItem($items)
@@ -240,6 +253,17 @@ class PlanningBoardService
                 ));
             }
 
+            [$extraRows, $usedIds] = $this->extraCompactRows(
+                $project,
+                $extraItems,
+                $projectAssignments,
+                $days,
+                $doubleBooked,
+                $usedIds,
+                $labor,
+                $canViewLabor,
+            );
+
             $leftoverBars = [];
             foreach ($projectAssignments as $assignment) {
                 if (in_array($assignment->id, $usedIds, true)) {
@@ -267,47 +291,55 @@ class PlanningBoardService
                 : null;
             $quantities = $this->projectQuantities($workRows);
 
-            $rows[] = [
-                'type' => 'project',
-                'id' => $project->id,
-                'kind' => $project->kind?->value,
-                'badge' => $project->isWinkel() ? $project->kind?->badge() : null,
-                'number' => $project->project_number,
-                'work_code' => $project->isWinkel() ? null : $project->workCode(),
-                'numbers_label' => $project->isWinkel() ? '' : $project->labeledNumbersLine(),
-                'numbers_short' => $project->isWinkel() ? '' : implode(' · ', array_values(array_filter([
-                    $project->workCode(),
-                    $project->workNumber() !== '' ? $project->workNumber() : null,
-                ]))),
-                'title' => $project->displayTitle(),
-                'subtitle' => $project->isWinkel() ? $project->shopWorkLine() : null,
-                'customer' => $project->customer?->name,
-                'address' => $project->address,
-                'postal_code' => $project->postal_code,
-                'city' => $project->city,
-                'naw_line' => $project->nawLine(),
-                'maps_url' => $project->googleMapsUrl(),
-                'who' => $executors,
-                'status' => $project->status->label(),
-                'bar' => $period['bar'],
-                'start_marker' => $period['start_marker'],
-                'end_marker' => $period['end_marker'],
-                'missing_craftsman' => $period['missing_craftsman'],
-                'start_week' => $startWeek,
-                'person_bars' => $leftoverBars,
-                'bar_count' => count($leftoverBars),
-                'warnings' => array_values(array_unique(array_filter([
-                    ...$projectWarnings,
-                    $labor['overrun_label'] ?? null,
-                ]))),
-                'ordered' => $quantities['ordered'],
-                'completed' => $quantities['completed'],
-                'remaining' => $quantities['remaining'],
-                'percent' => $quantities['percent'],
-                'unit' => $quantities['unit'],
-                'labor' => $canViewLabor ? $labor : null,
-                'children' => $workRows,
-            ];
+            if ($kindFilter !== ProjectKind::KLEINE_FILTER) {
+                $rows[] = [
+                    'type' => 'project',
+                    'id' => $project->id,
+                    'kind' => $project->kind?->value,
+                    'badge' => $project->isWinkel() ? $project->kind?->badge() : null,
+                    'compact' => false,
+                    'sort_date' => $project->planned_start_date?->toDateString() ?? '',
+                    'number' => $project->project_number,
+                    'work_code' => $project->isWinkel() ? null : $project->workCode(),
+                    'numbers_label' => $project->isWinkel() ? '' : $project->labeledNumbersLine(),
+                    'numbers_short' => $project->isWinkel() ? '' : implode(' · ', array_values(array_filter([
+                        $project->workCode(),
+                        $project->workNumber() !== '' ? $project->workNumber() : null,
+                    ]))),
+                    'title' => $project->displayTitle(),
+                    'subtitle' => $project->isWinkel() ? $project->shopWorkLine() : null,
+                    'customer' => $project->customer?->name,
+                    'address' => $project->address,
+                    'postal_code' => $project->postal_code,
+                    'city' => $project->city,
+                    'naw_line' => $project->nawLine(),
+                    'maps_url' => $project->googleMapsUrl(),
+                    'who' => $executors,
+                    'status' => $project->status->label(),
+                    'bar' => $period['bar'],
+                    'start_marker' => $period['start_marker'],
+                    'end_marker' => $period['end_marker'],
+                    'missing_craftsman' => $period['missing_craftsman'],
+                    'start_week' => $startWeek,
+                    'person_bars' => $leftoverBars,
+                    'bar_count' => count($leftoverBars),
+                    'warnings' => array_values(array_unique(array_filter([
+                        ...$projectWarnings,
+                        $labor['overrun_label'] ?? null,
+                    ]))),
+                    'ordered' => $quantities['ordered'],
+                    'completed' => $quantities['completed'],
+                    'remaining' => $quantities['remaining'],
+                    'percent' => $quantities['percent'],
+                    'unit' => $quantities['unit'],
+                    'labor' => $canViewLabor ? $labor : null,
+                    'children' => $workRows,
+                ];
+            }
+
+            foreach ($extraRows as $extraRow) {
+                $rows[] = $extraRow;
+            }
         }
 
         $rows = $this->groupRowsByKind($rows, $kindFilter);
@@ -340,6 +372,7 @@ class PlanningBoardService
             'weekRangeLabel' => $this->periodRangeLabel($printPeriod, $requestedStart, $weekBands),
             'prevWeek' => $requestedStart->copy()->subWeeks($this->weeks($request))->toDateString(),
             'nextWeek' => $requestedStart->copy()->addWeeks($this->weeks($request))->toDateString(),
+            'thisWeek' => now()->startOfWeek(Carbon::MONDAY)->startOfDay()->toDateString(),
             'days' => $days,
             'dayCount' => $days->count(),
             'dayMin' => $weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56)),
@@ -351,7 +384,7 @@ class PlanningBoardService
                 'week' => $requestedStart->toDateString(),
                 'weeks' => $printPeriod === '' ? $weeks : $this->weeks($request),
                 'period' => $printPeriod,
-                'kind' => $kindFilter?->value ?? '',
+                'kind' => $kindFilter instanceof ProjectKind ? $kindFilter->value : (string) ($kindFilter ?? ''),
                 'project_id' => $request->input('project_id'),
                 'worker_id' => $workerId,
                 'status' => $request->input('status'),
@@ -466,9 +499,30 @@ class PlanningBoardService
         };
     }
 
-    private function kindFilter(Request $request): ?ProjectKind
+    private function kindFilter(Request $request): ProjectKind|string|null
     {
-        return ProjectKind::tryFrom((string) $request->input('kind', ''));
+        $value = (string) $request->input('kind', '');
+        if ($value === ProjectKind::KLEINE_FILTER) {
+            return $value;
+        }
+
+        return ProjectKind::tryFrom($value);
+    }
+
+    private function constrainKind(Builder $query, ProjectKind|string|null $kindFilter): void
+    {
+        if ($kindFilter instanceof ProjectKind) {
+            $query->where('kind', $kindFilter);
+
+            return;
+        }
+
+        if ($kindFilter === ProjectKind::KLEINE_FILTER) {
+            $query->where(function (Builder $inner): void {
+                $inner->whereIn('kind', ProjectKind::smallWorkCases())
+                    ->orWhereHas('workItems', fn (Builder $items) => $items->where('is_extra_work', true));
+            });
+        }
     }
 
     private function staffingFilter(Request $request): ?string
@@ -482,34 +536,56 @@ class PlanningBoardService
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
      */
-    private function groupRowsByKind(array $rows, ?ProjectKind $kindFilter): array
+    private function groupRowsByKind(array $rows, ProjectKind|string|null $kindFilter): array
     {
-        if ($kindFilter !== null || $rows === []) {
-            return $rows;
-        }
-
-        $projects = [];
+        $main = [];
         $winkel = [];
         foreach ($rows as $row) {
             if (($row['kind'] ?? ProjectKind::Project->value) === ProjectKind::Winkel->value) {
                 $winkel[] = $row;
             } else {
-                $projects[] = $row;
+                $main[] = $row;
             }
         }
 
-        if ($projects === [] || $winkel === []) {
-            return array_values([...$projects, ...$winkel]);
+        $main = $this->sortRowsByDate($main);
+        $winkel = $this->sortRowsByDate($winkel);
+
+        if ($kindFilter !== null || $main === [] || $winkel === []) {
+            return array_values([...$main, ...$winkel]);
         }
 
         return [
-            ...$projects,
+            ...$main,
             [
                 'type' => 'section',
                 'title' => 'WINKELWERK',
             ],
             ...$winkel,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function sortRowsByDate(array $rows): array
+    {
+        usort($rows, function (array $left, array $right): int {
+            $date = strcmp((string) ($left['sort_date'] ?? ''), (string) ($right['sort_date'] ?? ''));
+            if ($date !== 0) {
+                return $date;
+            }
+
+            $kind = strcmp((string) ($left['kind'] ?? ''), (string) ($right['kind'] ?? ''));
+            if ($kind !== 0) {
+                return $kind;
+            }
+
+            return ((int) ($left['id'] ?? 0)) <=> ((int) ($right['id'] ?? 0));
+        });
+
+        return $rows;
     }
 
     private function optionalInt(mixed $value): ?int
@@ -837,6 +913,215 @@ class PlanningBoardService
      * @param  Collection<int, WorkerAssignment>  $projectAssignments
      * @param  Collection<int, Carbon>  $days
      * @param  array<int, array<string, mixed>>  $doubleBooked
+     * @param  array<string, mixed>  $labor
+     * @return array<string, mixed>
+     */
+    private function smallProjectRow(
+        Project $project,
+        Collection $projectAssignments,
+        Collection $days,
+        array $doubleBooked,
+        array $labor,
+        bool $canViewLabor,
+    ): array {
+        $item = $project->workItems->first();
+        $personBars = [];
+        foreach ($projectAssignments as $assignment) {
+            $bar = $this->assignmentBar($assignment, $days);
+            if (! $bar) {
+                continue;
+            }
+            $personBars[] = $this->personBar(
+                $assignment,
+                $bar,
+                $doubleBooked,
+                $days,
+                $item?->name ?? $project->name,
+                $project->displayTitle(),
+            );
+        }
+        $budgetHours = $item?->begrote_uren === null ? 0.0 : round((float) $item->begrote_uren, 2);
+        $personBars = $this->decorateBarsWithBudget(
+            $personBars,
+            $projectAssignments,
+            $item ? [(int) $item->id] : [],
+            $budgetHours,
+            $project->workOrders,
+        );
+        $hours = $budgetHours > 0.0001
+            ? $budgetHours
+            : round((float) $projectAssignments->sum(fn (WorkerAssignment $assignment): float => $assignment->plannedPersonHours()), 2);
+
+        return $this->compactBoardRow(
+            $project,
+            $item,
+            $project->kind?->badge() ?? 'KLEIN',
+            $project->kind?->value ?? SmallWorkType::Klein->value,
+            $project->displayTitle(),
+            $hours,
+            $personBars,
+            $canViewLabor ? ($item ? ($labor['items_by_id'][$item->id] ?? $labor) : $labor) : null,
+            $project->planned_start_date?->toDateString() ?? '',
+            $days,
+        );
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $extraItems
+     * @param  Collection<int, WorkerAssignment>  $projectAssignments
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<int, array<string, mixed>>  $doubleBooked
+     * @param  list<int>  $usedIds
+     * @param  array<string, mixed>  $labor
+     * @return array{0: list<array<string, mixed>>, 1: list<int>}
+     */
+    private function extraCompactRows(
+        Project $project,
+        Collection $extraItems,
+        Collection $projectAssignments,
+        Collection $days,
+        array $doubleBooked,
+        array $usedIds,
+        array $labor,
+        bool $canViewLabor,
+    ): array {
+        $rows = [];
+
+        foreach ($extraItems as $item) {
+            $personBars = [];
+            foreach ($projectAssignments as $assignment) {
+                if ((int) $assignment->work_item_id !== (int) $item->id) {
+                    continue;
+                }
+                $bar = $this->assignmentBar($assignment, $days);
+                if (! $bar) {
+                    continue;
+                }
+                $usedIds[] = $assignment->id;
+                $personBars[] = $this->personBar(
+                    $assignment,
+                    $bar,
+                    $doubleBooked,
+                    $days,
+                    $item->name,
+                    $project->displayTitle(),
+                );
+            }
+
+            $budgetHours = $item->begrote_uren === null ? 0.0 : round((float) $item->begrote_uren, 2);
+            $personBars = $this->decorateBarsWithBudget(
+                $personBars,
+                $projectAssignments,
+                [(int) $item->id],
+                $budgetHours,
+                $project->workOrders,
+            );
+
+            $periodBar = $this->bar($item->planned_start_date, $item->planned_end_date, $days);
+            if ($periodBar === null && $personBars === []) {
+                continue;
+            }
+
+            $hours = $budgetHours > 0.0001
+                ? $budgetHours
+                : round((float) collect($personBars)->sum('planned_hours'), 2);
+            $sortDate = $item->planned_start_date?->toDateString()
+                ?? collect($personBars)->min('start_date')
+                ?? '';
+
+            $type = $item->small_work_type ?? SmallWorkType::Extra;
+            $rows[] = $this->compactBoardRow(
+                $project,
+                $item,
+                $type->badge(),
+                $type->value,
+                $project->displayTitle().' – '.$item->name,
+                $hours,
+                $personBars,
+                $canViewLabor ? ($labor['items_by_id'][$item->id] ?? null) : null,
+                (string) $sortDate,
+                $days,
+            );
+        }
+
+        return [$rows, $usedIds];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $personBars
+     * @param  array<string, mixed>|null  $labor
+     * @param  Collection<int, Carbon>  $days
+     * @return array<string, mixed>
+     */
+    private function compactBoardRow(
+        Project $project,
+        ?WorkItem $item,
+        string $badge,
+        string $kind,
+        string $title,
+        float $hours,
+        array $personBars,
+        ?array $labor,
+        string $sortDate,
+        Collection $days,
+    ): array {
+        $start = $item?->planned_start_date ?? $project->planned_start_date;
+        $end = $item?->planned_end_date ?? $project->planned_end_date ?? $start;
+        $startWeek = $start?->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
+        $endMarker = null;
+        if ($end !== null && ($start === null || $end->toDateString() !== $start->toDateString())) {
+            $endMarker = $this->dateMarker($end, $days);
+            if ($endMarker !== null) {
+                $endMarker['done'] = in_array($project->status, [ProjectStatus::Gereed, ProjectStatus::Opgeleverd], true);
+            }
+        }
+
+        return [
+            'type' => 'small',
+            'id' => $project->id,
+            'work_item_id' => $item?->id,
+            'kind' => $kind,
+            'badge' => $badge,
+            'compact' => true,
+            'sort_date' => $sortDate,
+            'number' => $project->project_number,
+            'work_code' => null,
+            'numbers_label' => '',
+            'numbers_short' => '',
+            'title' => $title,
+            'hours_label' => $hours > 0.0001 ? PlanningHours::hoursLabel($hours) : null,
+            'planned_hours' => $hours > 0.0001 ? $hours : null,
+            'subtitle' => null,
+            'customer' => $project->customer?->name,
+            'address' => $project->address,
+            'postal_code' => $project->postal_code,
+            'city' => $project->city,
+            'naw_line' => null,
+            'maps_url' => $project->googleMapsUrl(),
+            'who' => collect($personBars)->pluck('label')->filter()->unique()->values(),
+            'status' => $project->status->label(),
+            'bar' => $this->bar($start, $end, $days),
+            'start_marker' => $this->dateMarker($start, $days),
+            'end_marker' => $endMarker,
+            'missing_craftsman' => $personBars === [],
+            'start_week' => $startWeek,
+            'person_bars' => $personBars,
+            'bar_count' => count($personBars),
+            'warnings' => [],
+            'ordered' => null,
+            'completed' => null,
+            'remaining' => null,
+            'percent' => null,
+            'unit' => '',
+            'labor' => $labor,
+            'children' => [],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $projectAssignments
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<int, array<string, mixed>>  $doubleBooked
      * @param  list<int>  $usedIds
      * @return array{0: list<array<string, mixed>>, 1: list<int>}
      */
@@ -845,6 +1130,9 @@ class PlanningBoardService
         $workRows = [];
 
         foreach ($project->workItems->sortBy('sort_order') as $item) {
+            if ($item->isExtraWork()) {
+                continue;
+            }
             $personBars = [];
             foreach ($projectAssignments as $assignment) {
                 if ((int) $assignment->work_item_id !== (int) $item->id) {
