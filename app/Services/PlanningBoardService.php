@@ -81,25 +81,34 @@ class PlanningBoardService
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         $workerId = $scheduledWorkerId ?? ($request->filled('worker_id') ? $request->integer('worker_id') : null);
         $canViewLabor = $request->user()?->canViewLaborCosts() ?? false;
+        $windowStart = $days->first();
+        $windowEnd = $days->last();
 
-        $projects = Project::query()
+        $relations = [
+            'customer',
+            'workActivities.category',
+            'workItems.progressEntries',
+            'workItems.workOrders.worker',
+            'workOrders.worker',
+            'workOrders.workItem',
+        ];
+        if ($canViewLabor) {
+            $relations[] = 'assignments.worker';
+            $relations[] = 'assignments.crewMembers';
+        }
+
+        $projectQuery = Project::query()
             ->accessibleBy($request->user())
             ->active()
-            ->with([
-                'customer',
-                'workActivities.category',
-                'workItems.progressEntries',
-                'workItems.workOrders.worker',
-                'assignments.worker',
-                'assignments.crewMembers',
-                'workOrders.worker',
-                'workOrders.workItem',
-            ])
+            ->with($relations)
             ->when($kindFilter !== null, fn ($q) => $this->constrainKind($q, $kindFilter))
             ->when($request->filled('project_id'), fn ($q) => $q->where('id', $request->integer('project_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
-            ->when($staffingFilter === 'planned', fn ($q) => $q->whereHas('assignments'))
+            ->when($staffingFilter === 'planned', fn ($q) => $q->whereHas('assignments'));
+        $this->constrainToVisiblePeriod($projectQuery, $windowStart, $windowEnd, $request);
+
+        $projects = $projectQuery
             ->orderBy('planned_start_date')
             ->get()
             ->sortBy([
@@ -115,8 +124,8 @@ class PlanningBoardService
                 $q->active()->accessibleBy($request->user());
                 $this->constrainKind($q, $kindFilter);
             })
-            ->whereDate('end_date', '>=', $days->first())
-            ->whereDate('start_date', '<=', $days->last())
+            ->where('end_date', '>=', $windowStart->toDateString())
+            ->where('start_date', '<=', $windowEnd->toDateString())
             ->when($workerId, fn ($q) => $q->where('worker_id', $workerId))
             ->get();
 
@@ -377,6 +386,7 @@ class PlanningBoardService
             'dayCount' => $days->count(),
             'dayMin' => $weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56)),
             'rows' => $rows,
+            'projects' => $this->filterProjects($request, $kindFilter, $staffingFilter, $scheduledWorkerId),
             'warnings' => array_values($warnings),
             'period' => $printPeriod,
             'periodFallback' => $request->input('period') === 'work' && $printPeriod !== 'work',
@@ -523,6 +533,72 @@ class PlanningBoardService
                     ->orWhereHas('workItems', fn (Builder $items) => $items->where('is_extra_work', true));
             });
         }
+    }
+
+    /**
+     * Keep the board to the visible week/period without dropping undated work
+     * that can still be planned, or extra/klein/service rows that overlap.
+     */
+    private function constrainToVisiblePeriod(Builder $query, CarbonInterface $from, CarbonInterface $to, Request $request): void
+    {
+        if ($request->filled('project_id')) {
+            return;
+        }
+
+        $fromDate = $from->toDateString();
+        $toDate = $to->toDateString();
+
+        $query->where(function (Builder $visible) use ($fromDate, $toDate): void {
+            $visible
+                ->where(function (Builder $undated): void {
+                    $undated->whereNull('planned_start_date')->whereNull('planned_end_date');
+                })
+                ->orWhere(function (Builder $projectDates) use ($fromDate, $toDate): void {
+                    $projectDates
+                        ->where(function (Builder $start) use ($toDate): void {
+                            $start->whereNull('planned_start_date')
+                                ->orWhere('planned_start_date', '<=', $toDate);
+                        })
+                        ->where(function (Builder $end) use ($fromDate): void {
+                            $end->whereNull('planned_end_date')
+                                ->orWhere('planned_end_date', '>=', $fromDate);
+                        });
+                })
+                ->orWhereHas('workItems', function (Builder $items) use ($fromDate, $toDate): void {
+                    $items
+                        ->whereNotNull('planned_start_date')
+                        ->where('planned_start_date', '<=', $toDate)
+                        ->where(function (Builder $end) use ($fromDate): void {
+                            $end->whereNull('planned_end_date')
+                                ->orWhere('planned_end_date', '>=', $fromDate);
+                        });
+                })
+                ->orWhereHas('assignments', function (Builder $assignments) use ($fromDate, $toDate): void {
+                    $assignments
+                        ->where('start_date', '<=', $toDate)
+                        ->where('end_date', '>=', $fromDate);
+                });
+        });
+    }
+
+    /**
+     * @return Collection<int, Project>
+     */
+    private function filterProjects(
+        Request $request,
+        ProjectKind|string|null $kindFilter,
+        ?string $staffingFilter,
+        ?int $scheduledWorkerId,
+    ): Collection {
+        return Project::query()
+            ->accessibleBy($request->user())
+            ->active()
+            ->with('workItems')
+            ->when($kindFilter !== null, fn (Builder $query) => $this->constrainKind($query, $kindFilter))
+            ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn (Builder $query) => $query->whereDoesntHave('assignments'))
+            ->when($staffingFilter === 'planned', fn (Builder $query) => $query->whereHas('assignments'))
+            ->orderBy('project_number')
+            ->get();
     }
 
     private function staffingFilter(Request $request): ?string

@@ -44,6 +44,8 @@ if (board) {
     const dates = [...board.querySelectorAll('.plan-line--head [data-date]')].map((el) => el.dataset.date);
     let lastCandidates = [];
     let candidatesAbort = null;
+    let saving = false;
+    const submitBtn = form.querySelector('button[type="submit"]');
     const dayCount = dates.length;
     const dayWidth = () => (board.querySelector('.plan-day')?.getBoundingClientRect().width || 132);
 
@@ -63,6 +65,12 @@ if (board) {
     }
 
     async function save(url, method, body) {
+        if (saving) {
+            return false;
+        }
+        saving = true;
+        submitBtn?.setAttribute('disabled', 'disabled');
+
         const send = async (confirmConflict = false) => {
             const { response, json } = await request(url, method, { ...body, confirm_conflict: confirmConflict });
             if (response.status === 409 && json.conflict) {
@@ -79,10 +87,12 @@ if (board) {
             return true;
         };
 
-        if (await send(false)) {
-            return true;
+        try {
+            return await send(false);
+        } finally {
+            saving = false;
+            submitBtn?.removeAttribute('disabled');
         }
-        return false;
     }
 
     function assignmentUrl(id) {
@@ -753,6 +763,9 @@ if (board) {
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
+        if (saving) {
+            return;
+        }
         const [kind, id] = (whoSelect.value || '').split(':');
         if (!kind || !id) {
             return;

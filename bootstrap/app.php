@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureFirstRunSetup;
 use App\Http\Middleware\EnsureProjectAccess;
+use App\Http\Middleware\EnsureUserIsActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,6 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(fn () => route('login'));
+        $middleware->web(append: [
+            EnsureUserIsActive::class,
+        ]);
         $middleware->alias([
             'first-run' => EnsureFirstRunSetup::class,
             'project.access' => EnsureProjectAccess::class,

@@ -268,6 +268,39 @@ class PlanningAssignmentTest extends TestCase
         $this->assertSame($linoleum->id, $assignment->fresh()->work_item_id);
     }
 
+    public function test_repeating_the_same_store_request_does_not_create_a_second_assignment(): void
+    {
+        $user = User::factory()->create();
+        [$assignment, $linoleum] = $this->makeAssignmentOnTwoWorkItems();
+
+        $payload = [
+            'worker_id' => $assignment->worker_id,
+            'project_id' => $assignment->project_id,
+            'work_item_id' => $linoleum->id,
+            'start_date' => '2026-09-10',
+            'end_date' => '2026-09-10',
+            'people_count' => 1,
+            'hours' => 8,
+            'start_time' => '08:00',
+            'end_time' => '16:00',
+            'confirm_conflict' => true,
+        ];
+
+        $this->actingAs($user)->postJson(route('planning.assignments.store'), $payload)->assertOk();
+        $this->actingAs($user)->postJson(route('planning.assignments.store'), $payload)->assertOk();
+
+        $this->assertSame(
+            1,
+            WorkerAssignment::query()
+                ->where('worker_id', $assignment->worker_id)
+                ->where('work_item_id', $linoleum->id)
+                ->whereDate('start_date', '2026-09-10')
+                ->where('start_time', '08:00:00')
+                ->where('end_time', '16:00:00')
+                ->count(),
+        );
+    }
+
     public function test_allows_one_person_per_onderdeel_when_the_team_has_two_people(): void
     {
         $user = User::factory()->create();

@@ -22,6 +22,8 @@ class FloorPlanParser
 
         try {
             $parsed = $this->colors()->enrich($path, $parsed, $originalName);
+        } catch (\InvalidArgumentException $e) {
+            throw $e;
         } catch (\Throwable) {
         }
 

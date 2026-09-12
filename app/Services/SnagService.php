@@ -253,12 +253,35 @@ class SnagService
             $snag->save();
         }
 
+        $this->refreshPublicAccess($snag);
         $this->notifier->assigned($snag->load(['project.customer', 'area', 'photos']), $worker, $snag->publicUrl());
     }
 
     public function notifyRework(SnagItem $snag, Worker $worker, ?string $note = null): void
     {
+        $this->refreshPublicAccess($snag);
         $this->notifier->rework($snag->load(['project.customer', 'area', 'photos']), $worker, $snag->publicUrl(), $note);
+    }
+
+    public function refreshPublicAccess(SnagItem $snag): SnagItem
+    {
+        if (! $snag->publicAccessIsActive()) {
+            $snag->public_token = Str::lower(Str::random(48));
+            $snag->public_token_revoked_at = null;
+        }
+
+        $snag->public_token_expires_at = now()->addDays((int) config('snags.public_token_ttl_days', 30));
+        $snag->save();
+
+        return $snag;
+    }
+
+    public function revokePublicAccess(SnagItem $snag): SnagItem
+    {
+        $snag->public_token_revoked_at = now();
+        $snag->save();
+
+        return $snag;
     }
 
     public function nearestArea(Project $project, int $page, float $x, float $y): ?ProjectArea

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\ProjectKind;
 use App\Models\Project;
 use App\Models\Worker;
 use App\Services\InternalPlanningExcelService;
@@ -22,27 +21,9 @@ class PlanningController extends Controller
     {
         $this->authorizeRequestedProject($request);
         $data = $board->build($request);
-        $kind = (string) $request->input('kind', '');
-        $kindCase = ProjectKind::tryFrom($kind);
-        $staffing = (string) $request->input('staffing', '');
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
 
         return view('planning.index', array_merge($data, [
-            'projects' => Project::query()
-                ->accessibleBy($request->user())
-                ->active()
-                ->when($kind === ProjectKind::KLEINE_FILTER, function ($q): void {
-                    $q->where(function ($query): void {
-                        $query->whereIn('kind', ProjectKind::smallWorkCases())
-                            ->orWhereHas('workItems', fn ($items) => $items->where('is_extra_work', true));
-                    });
-                })
-                ->when($kindCase !== null, fn ($q) => $q->where('kind', $kindCase))
-                ->when($staffing === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
-                ->when($staffing === 'planned', fn ($q) => $q->whereHas('assignments'))
-                ->with('workItems')
-                ->orderBy('project_number')
-                ->get(),
             'workers' => Worker::query()
                 ->where('active', true)
                 ->withLogin()

@@ -45,10 +45,13 @@ Route::middleware(['first-run', 'guest'])->group(function () {
 
 Route::middleware('throttle:public-snag')->group(function () {
     Route::get('/oplever/{token}', [PublicSnagController::class, 'show'])->name('snags.public.show');
+    Route::get('/oplever/{token}/foto/{photo}', [PublicSnagController::class, 'photo'])->name('snags.public.photo');
+});
+
+Route::middleware('throttle:public-snag-write')->group(function () {
     Route::post('/oplever/{token}/opmerking', [PublicSnagController::class, 'comment'])->name('snags.public.comment');
     Route::post('/oplever/{token}/in-behandeling', [PublicSnagController::class, 'progress'])->name('snags.public.progress');
     Route::post('/oplever/{token}/gereed', [PublicSnagController::class, 'complete'])->name('snags.public.complete');
-    Route::get('/oplever/{token}/foto/{photo}', [PublicSnagController::class, 'photo'])->name('snags.public.photo');
 });
 
 Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
@@ -130,6 +133,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/projecten/{project}/opleverpunten/{snag}/gereed', [SnagController::class, 'report'])->name('projects.snags.report');
     Route::post('/projecten/{project}/opleverpunten/{snag}/goedkeuren', [SnagController::class, 'approve'])->name('projects.snags.approve');
     Route::post('/projecten/{project}/opleverpunten/{snag}/afkeuren', [SnagController::class, 'reject'])->name('projects.snags.reject');
+    Route::post('/projecten/{project}/opleverpunten/{snag}/link-intrekken', [SnagController::class, 'revokePublicLink'])->name('projects.snags.revoke');
     Route::get('/gebruikers', [UserController::class, 'index'])->name('users.index');
     Route::get('/gebruikers/nieuw', [UserController::class, 'create'])->name('users.create');
     Route::post('/gebruikers', [UserController::class, 'store'])->name('users.store');

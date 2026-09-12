@@ -23,7 +23,7 @@ class PublicSnagController extends Controller
 
     public function comment(Request $request, string $token, SnagService $snags): RedirectResponse
     {
-        $snag = $this->snag($token);
+        $snag = $this->snag($token, forWrite: true);
         $request->validate([
             'note' => ['required', 'string', 'max:1000'],
         ]);
@@ -34,8 +34,7 @@ class PublicSnagController extends Controller
 
     public function progress(string $token, SnagService $snags): RedirectResponse
     {
-        $snag = $this->snag($token);
-        abort_if($snag->status->isFinished(), 403);
+        $snag = $this->snag($token, forWrite: true);
         $snags->startProgress($snag);
 
         return back()->with('status', 'Status: In behandeling.');
@@ -43,8 +42,7 @@ class PublicSnagController extends Controller
 
     public function complete(Request $request, string $token, SnagService $snags): RedirectResponse
     {
-        $snag = $this->snag($token);
-        abort_if($snag->status->isFinished(), 403);
+        $snag = $this->snag($token, forWrite: true);
 
         $request->validate([
             'note' => ['nullable', 'string', 'max:1000'],
@@ -81,13 +79,18 @@ class PublicSnagController extends Controller
         return Storage::disk('local')->response($photo->file_path, $photo->original_filename);
     }
 
-    private function snag(string $token): SnagItem
+    private function snag(string $token, bool $forWrite = false): SnagItem
     {
         abort_unless(strlen($token) >= 24, 404);
 
-        return SnagItem::query()
+        $snag = SnagItem::query()
             ->where('public_token', $token)
             ->with(['project', 'area', 'assignee', 'photos', 'history'])
             ->firstOrFail();
+
+        abort_unless($snag->publicAccessIsActive(), 404);
+        abort_if($forWrite && $snag->status->isFinished(), 403);
+
+        return $snag;
     }
 }

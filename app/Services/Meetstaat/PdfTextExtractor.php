@@ -6,6 +6,8 @@ use Smalot\PdfParser\Parser;
 
 class PdfTextExtractor
 {
+    public function __construct(private PdfMemoryGuard $memory = new PdfMemoryGuard) {}
+
     /**
      * @return array{text: string, engine: string, needs_ocr: bool}
      */
@@ -50,12 +52,24 @@ class PdfTextExtractor
 
     private function viaSmalot(string $path): string
     {
+        if (! is_file($path) || filesize($path) < 1) {
+            return '';
+        }
+
+        $this->memory->ensureCanParse($path);
+
+        $pdf = null;
         try {
             $pdf = (new Parser)->parseFile($path);
 
             return (string) $pdf->getText();
+        } catch (\InvalidArgumentException $e) {
+            throw $e;
         } catch (\Throwable) {
             return '';
+        } finally {
+            unset($pdf);
+            $this->memory->release();
         }
     }
 

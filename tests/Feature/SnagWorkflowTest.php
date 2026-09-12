@@ -90,6 +90,7 @@ class SnagWorkflowTest extends TestCase
 
         $snag = SnagItem::query()->first();
         $this->assertNotEmpty($snag->public_token);
+        $this->assertNotNull($snag->public_token_expires_at);
         $this->assertDatabaseCount('snag_photos', 2);
         $this->assertSame(SnagPhotoType::Issue, $snag->photos->first()->photo_type);
 
@@ -810,6 +811,101 @@ class SnagWorkflowTest extends TestCase
         ])->assertForbidden();
 
         $this->assertSame(SnagStatus::Closed, $snag->fresh()->status);
+    }
+
+    public function test_public_link_cannot_comment_on_a_finished_snag(): void
+    {
+        [$user, $project, $albert] = $this->makeProject();
+        $snag = $this->makeSnag($project, $albert, SnagStatus::ReportedDone);
+
+        $this->post(route('snags.public.comment', $snag->public_token), [
+            'note' => 'Toch nog iets.',
+        ])->assertForbidden();
+
+        $this->assertDatabaseMissing('snag_history', [
+            'snag_item_id' => $snag->id,
+            'action' => 'note',
+            'note' => 'Toch nog iets.',
+        ]);
+    }
+
+    public function test_existing_public_link_without_expiry_stays_valid(): void
+    {
+        [$user, $project, $albert] = $this->makeProject();
+        $snag = $this->makeSnag($project, $albert, SnagStatus::Assigned);
+        $snag->forceFill(['public_token_expires_at' => null])->save();
+
+        $this->travelTo(now()->addYears(2));
+
+        $this->get(route('snags.public.show', $snag->public_token))
+            ->assertOk()
+            ->assertSee('Gereed melden');
+    }
+
+    public function test_expired_public_link_returns_404(): void
+    {
+        [$user, $project, $albert] = $this->makeProject();
+        $snag = $this->makeSnag($project, $albert, SnagStatus::Assigned);
+        $snag->forceFill(['public_token_expires_at' => now()->subMinute()])->save();
+
+        $this->get(route('snags.public.show', $snag->public_token))->assertNotFound();
+        $this->post(route('snags.public.progress', $snag->public_token))->assertNotFound();
+        $this->assertSame(SnagStatus::Assigned, $snag->fresh()->status);
+    }
+
+    public function test_revoking_a_public_link_blocks_the_old_url(): void
+    {
+        [$user, $project, $albert] = $this->makeProject();
+        $snag = $this->makeSnag($project, $albert, SnagStatus::Assigned);
+        $token = $snag->public_token;
+
+        $this->actingAs($user)
+            ->from(route('projects.snags.index', $project))
+            ->post(route('projects.snags.revoke', [$project, $snag]))
+            ->assertRedirect(route('projects.snags.index', $project));
+
+        $this->assertNotNull($snag->fresh()->public_token_revoked_at);
+        $this->get(route('snags.public.show', $token))->assertNotFound();
+        $this->post(route('snags.public.complete', $token), [
+            'note' => 'Hersteld',
+        ])->assertNotFound();
+        $this->assertSame(SnagStatus::Assigned, $snag->fresh()->status);
+    }
+
+    public function test_guest_cannot_revoke_a_public_link(): void
+    {
+        [$user, $project, $albert] = $this->makeProject();
+        $snag = $this->makeSnag($project, $albert, SnagStatus::Assigned);
+
+        $this->post(route('projects.snags.revoke', [$project, $snag]))
+            ->assertRedirect(route('login'));
+
+        $this->assertNull($snag->fresh()->public_token_revoked_at);
+        $this->get(route('snags.public.show', $snag->public_token))->assertOk();
+    }
+
+    public function test_notifying_again_after_revoke_issues_a_new_working_link(): void
+    {
+        Notification::fake();
+        [$user, $project, $albert] = $this->makeProject();
+        $snag = $this->makeSnag($project, $albert, SnagStatus::Assigned);
+        $oldToken = $snag->public_token;
+
+        $this->actingAs($user)
+            ->post(route('projects.snags.revoke', [$project, $snag]))
+            ->assertRedirect();
+
+        $this->actingAs($user)
+            ->patchJson(route('projects.snags.update', [$project, $snag]), [
+                'notify' => '1',
+            ])
+            ->assertOk();
+
+        $snag->refresh();
+        $this->assertNotSame($oldToken, $snag->public_token);
+        $this->assertNull($snag->public_token_revoked_at);
+        $this->get(route('snags.public.show', $oldToken))->assertNotFound();
+        $this->get(route('snags.public.show', $snag->public_token))->assertOk();
     }
 
     /** @return array{0: User, 1: Project, 2: Worker} */

@@ -42,6 +42,10 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(30)->by($request->ip());
         });
 
+        RateLimiter::for('public-snag-write', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip().'|'.$request->route('token'));
+        });
+
         RateLimiter::for('voucher-mail', function (Request $request) {
             return Limit::perMinute(6)->by(($request->user()?->id ?: $request->ip()).'|'.$request->ip());
         });

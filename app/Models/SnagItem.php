@@ -13,7 +13,8 @@ use Illuminate\Support\Str;
 
 #[Fillable([
     'project_id', 'project_area_id', 'document_id', 'drawing_page', 'x', 'y', 'number',
-    'public_token', 'description', 'assigned_worker_id', 'priority', 'due_date',
+    'public_token', 'public_token_expires_at', 'public_token_revoked_at', 'description',
+    'assigned_worker_id', 'priority', 'due_date',
     'logged_on', 'status', 'created_by', 'completed_at', 'approved_at', 'closed_at', 'closed_by',
 ])]
 class SnagItem extends Model
@@ -23,6 +24,7 @@ class SnagItem extends Model
         static::creating(function (SnagItem $snag): void {
             $snag->public_token ??= Str::lower(Str::random(48));
             $snag->logged_on ??= now()->toDateString();
+            $snag->public_token_expires_at ??= now()->addDays((int) config('snags.public_token_ttl_days', 30));
         });
     }
 
@@ -39,6 +41,8 @@ class SnagItem extends Model
             'completed_at' => 'datetime',
             'approved_at' => 'datetime',
             'closed_at' => 'datetime',
+            'public_token_expires_at' => 'datetime',
+            'public_token_revoked_at' => 'datetime',
         ];
     }
 
@@ -109,5 +113,23 @@ class SnagItem extends Model
     public function publicPhotoUrl(SnagPhoto $photo): string
     {
         return route('snags.public.photo', [$this->public_token, $photo]);
+    }
+
+    public function publicAccessIsActive(): bool
+    {
+        if ($this->public_token === null || $this->public_token === '') {
+            return false;
+        }
+
+        if ($this->public_token_revoked_at !== null) {
+            return false;
+        }
+
+        return $this->public_token_expires_at === null || $this->public_token_expires_at->isFuture();
+    }
+
+    public function publicAccessAllowsChanges(): bool
+    {
+        return $this->publicAccessIsActive() && ! $this->status->isFinished();
     }
 }

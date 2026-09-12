@@ -11,6 +11,8 @@ use Smalot\PdfParser\XObject\Form;
 
 class PdfPageGeometry
 {
+    public function __construct(private PdfMemoryGuard $memory = new PdfMemoryGuard) {}
+
     /**
      * @return array{
      *     pages: list<array{
@@ -25,32 +27,46 @@ class PdfPageGeometry
      */
     public function extract(string $path): array
     {
+        if (! is_file($path) || ! is_readable($path) || filesize($path) < 1) {
+            return ['pages' => []];
+        }
+
+        $this->memory->ensureCanParse($path);
+
+        $document = null;
         try {
             $document = (new Parser)->parseFile($path);
+        } catch (\InvalidArgumentException $e) {
+            throw $e;
         } catch (\Throwable) {
             return ['pages' => []];
         }
 
-        $pages = [];
-        foreach (array_values($document->getPages()) as $index => $page) {
-            $pages[] = $this->extractPage($page, $index + 1);
-        }
-
-        $bbox = $this->textsFromBBox($path);
-        foreach ($pages as &$page) {
-            $words = $bbox['texts'][$page['page']] ?? [];
-            if ($this->preferBBox($page['texts'], $words)) {
-                $page['texts'] = $words;
+        try {
+            $pages = [];
+            foreach (array_values($document->getPages()) as $index => $page) {
+                $pages[] = $this->extractPage($page, $index + 1);
             }
-            $size = $bbox['sizes'][$page['page']] ?? null;
-            if (is_array($size)) {
-                $page['width'] = max($page['width'], (float) $size['width']);
-                $page['height'] = max($page['height'], (float) $size['height']);
-            }
-        }
-        unset($page);
 
-        return ['pages' => $pages];
+            $bbox = $this->textsFromBBox($path);
+            foreach ($pages as &$page) {
+                $words = $bbox['texts'][$page['page']] ?? [];
+                if ($this->preferBBox($page['texts'], $words)) {
+                    $page['texts'] = $words;
+                }
+                $size = $bbox['sizes'][$page['page']] ?? null;
+                if (is_array($size)) {
+                    $page['width'] = max($page['width'], (float) $size['width']);
+                    $page['height'] = max($page['height'], (float) $size['height']);
+                }
+            }
+            unset($page);
+
+            return ['pages' => $pages];
+        } finally {
+            unset($document);
+            $this->memory->release();
+        }
     }
 
     /**

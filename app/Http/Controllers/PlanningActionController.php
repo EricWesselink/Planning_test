@@ -15,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -647,20 +648,77 @@ class PlanningActionController extends Controller
         int $peopleCount,
         array $crewIds,
     ): WorkerAssignment {
-        $assignment = new WorkerAssignment([
-            'worker_id' => $workerId,
-            'project_id' => $projectId,
-            'work_item_id' => $workItemId,
-            'team_id' => $teamId,
-            'people_count' => max(1, $peopleCount),
+        $startTime = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
+        $endTime = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
+        $fingerprint = implode(':', [
+            $workerId,
+            $projectId,
+            $workItemId ?? 0,
+            $start->toDateString(),
+            $end->toDateString(),
+            $startTime,
+            $endTime,
         ]);
-        $assignment->applySchedule($start, $end, $startTime, $endTime);
-        $assignment->save();
-        if ($crewIds !== []) {
-            $assignment->syncPresentCrew($crewIds);
-        }
 
-        return $assignment;
+        return Cache::lock('planning-assignment:'.$fingerprint, 15)->block(10, function () use (
+            $workerId,
+            $projectId,
+            $workItemId,
+            $teamId,
+            $start,
+            $end,
+            $startTime,
+            $endTime,
+            $peopleCount,
+            $crewIds,
+        ): WorkerAssignment {
+            return DB::transaction(function () use (
+                $workerId,
+                $projectId,
+                $workItemId,
+                $teamId,
+                $start,
+                $end,
+                $startTime,
+                $endTime,
+                $peopleCount,
+                $crewIds,
+            ): WorkerAssignment {
+                $existing = WorkerAssignment::query()
+                    ->where('worker_id', $workerId)
+                    ->where('project_id', $projectId)
+                    ->when(
+                        $workItemId === null,
+                        fn ($query) => $query->whereNull('work_item_id'),
+                        fn ($query) => $query->where('work_item_id', $workItemId),
+                    )
+                    ->whereDate('start_date', $start->toDateString())
+                    ->whereDate('end_date', $end->toDateString())
+                    ->where('start_time', $startTime)
+                    ->where('end_time', $endTime)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($existing) {
+                    return $existing;
+                }
+
+                $assignment = new WorkerAssignment([
+                    'worker_id' => $workerId,
+                    'project_id' => $projectId,
+                    'work_item_id' => $workItemId,
+                    'team_id' => $teamId,
+                    'people_count' => max(1, $peopleCount),
+                ]);
+                $assignment->applySchedule($start, $end, $startTime, $endTime);
+                $assignment->save();
+                if ($crewIds !== []) {
+                    $assignment->syncPresentCrew($crewIds);
+                }
+
+                return $assignment;
+            });
+        });
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Models\WorkItem;
 use App\Services\PlanningBoardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -259,6 +260,107 @@ class PlanningProjectPeriodTest extends TestCase
             ->assertSee('▶ Start', false)
             ->assertSee('21-09-2026')
             ->assertDontSee('14-09-2026');
+    }
+
+    public function test_week_view_without_project_filter_omits_projects_outside_the_period(): void
+    {
+        $user = User::factory()->create();
+        $visible = $this->makePeriodProject('250200015', 'TWC studentenhuisvesting Utrecht');
+        $later = $this->makePeriodProject('250200099', 'Toekomstig werk Almere');
+        $later->forceFill([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ])->save();
+        $later->workItems()->update([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ]);
+
+        $this->actingAs($user);
+        $request = Request::create('/planning', 'GET', [
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+        ]);
+        $request->setUserResolver(fn () => $user);
+
+        $board = app(PlanningBoardService::class)->build($request);
+        $titles = collect($board['rows'])
+            ->where('type', 'project')
+            ->pluck('title')
+            ->all();
+
+        $this->assertContains('TWC studentenhuisvesting Utrecht', $titles);
+        $this->assertNotContains('Toekomstig werk Almere', $titles);
+        $this->assertTrue($board['projects']->contains('id', $visible->id));
+        $this->assertTrue($board['projects']->contains('id', $later->id));
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        app(PlanningBoardService::class)->build($request);
+        $withOneOutside = count(DB::getQueryLog());
+
+        for ($index = 0; $index < 8; $index++) {
+            $extra = $this->makePeriodProject('2502010'.str_pad((string) $index, 2, '0', STR_PAD_LEFT), 'Later werk '.$index);
+            $extra->forceFill([
+                'planned_start_date' => '2026-11-02',
+                'planned_end_date' => '2026-11-20',
+            ])->save();
+            $extra->workItems()->update([
+                'planned_start_date' => '2026-11-02',
+                'planned_end_date' => '2026-11-20',
+            ]);
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $again = app(PlanningBoardService::class)->build($request);
+        $withManyOutside = count(DB::getQueryLog());
+
+        $this->assertCount(
+            1,
+            collect($again['rows'])->where('type', 'project'),
+        );
+        $this->assertLessThanOrEqual($withOneOutside + 2, $withManyOutside);
+    }
+
+    public function test_extra_work_in_the_visible_week_keeps_the_parent_project_on_the_board(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makePeriodProject('250200080', 'Hoofdwerk later');
+        $project->forceFill([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ])->save();
+        $project->workItems()->update([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Nacalculatie plinten',
+            'unit' => 'm1',
+            'ordered_quantity' => 40,
+            'is_extra_work' => true,
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-16',
+            'status' => 'gepland',
+        ]);
+
+        $this->actingAs($user);
+        $request = Request::create('/planning', 'GET', [
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+        ]);
+        $request->setUserResolver(fn () => $user);
+
+        $board = app(PlanningBoardService::class)->build($request);
+        $titles = collect($board['rows'])->pluck('title')->all();
+
+        $this->assertTrue(collect($titles)->contains(
+            fn (mixed $title): bool => is_string($title) && str_contains($title, 'Nacalculatie plinten')
+        ));
     }
 
     /** @return array<string, array{0: int}> */

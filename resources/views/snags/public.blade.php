@@ -60,7 +60,7 @@
             <p class="ok">{{ session('status') }}</p>
         @endif
 
-        @if ($snag->status->isOpenWork())
+        @if ($snag->publicAccessAllowsChanges())
             @if ($snag->status !== \App\Enums\SnagStatus::InProgress)
                 <form method="POST" action="{{ route('snags.public.progress', $snag->public_token) }}">
                     @csrf

@@ -81,6 +81,9 @@
                     <th class="px-3 py-2">Datum</th>
                     <th class="px-3 py-2">Deadline</th>
                     <th class="px-3 py-2">Status</th>
+                    @if (auth()->user()?->canUpdateSnags())
+                        <th class="px-3 py-2">Publieke link</th>
+                    @endif
                     @if (auth()->user()?->canDeleteSnags())
                         <th class="px-3 py-2"></th>
                     @endif
@@ -125,6 +128,20 @@
                             @endcan
                         @endif
                     </td>
+                    @if (auth()->user()?->canUpdateSnags())
+                        <td class="px-3 py-2">
+                            @if ($snag->publicAccessIsActive())
+                                <form method="POST" action="{{ route('projects.snags.revoke', [$project, $snag]) }}" onsubmit="return confirm('Deze publieke ZZP-link intrekken? De oude link werkt daarna niet meer.')">
+                                    @csrf
+                                    <button class="text-nicon-danger text-xs">Intrekken</button>
+                                </form>
+                            @elseif ($snag->public_token_revoked_at)
+                                <span class="text-xs text-nicon-muted">Ingetrokken</span>
+                            @else
+                                <span class="text-xs text-nicon-muted">Verlopen</span>
+                            @endif
+                        </td>
+                    @endif
                     @if (auth()->user()?->canDeleteSnags())
                         <td class="px-3 py-2">
                             <form method="POST" action="{{ route('projects.snags.destroy', [$project, $snag]) }}" onsubmit="return confirm('Dit opleverpunt definitief verwijderen?')">
@@ -136,7 +153,7 @@
                     @endif
                 </tr>
             @empty
-                <tr><td colspan="{{ auth()->user()?->canDeleteSnags() ? 9 : 8 }}" class="px-3 py-6 text-nicon-muted">Nog geen opleverpunten. Plaats er een op de tekening.</td></tr>
+                <tr><td colspan="{{ 8 + (auth()->user()?->canUpdateSnags() ? 1 : 0) + (auth()->user()?->canDeleteSnags() ? 1 : 0) }}" class="px-3 py-6 text-nicon-muted">Nog geen opleverpunten. Plaats er een op de tekening.</td></tr>
             @endforelse
             </tbody>
         </table>

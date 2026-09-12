@@ -205,6 +205,15 @@ class SnagController extends Controller
         return back()->with('status', 'Opleverpunt teruggestuurd naar de vakman.');
     }
 
+    public function revokePublicLink(Request $request, Project $project, SnagItem $snag, SnagService $snags): RedirectResponse
+    {
+        abort_unless((int) $snag->project_id === (int) $project->id, 404);
+        Gate::authorize('update', $snag);
+        $snags->revokePublicAccess($snag);
+
+        return back()->with('status', 'De publieke link is ingetrokken.');
+    }
+
     public function destroy(Request $request, Project $project, SnagItem $snag, SnagService $snags): JsonResponse|RedirectResponse
     {
         abort_unless((int) $snag->project_id === (int) $project->id, 404);
