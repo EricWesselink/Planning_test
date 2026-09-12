@@ -24,6 +24,8 @@ import {
     focusViewport,
     exactRoomHitForArea,
     roomContour,
+    roomVisualContour,
+    contourBox,
     pointInPolygon,
     hitTestContours,
 } from '../../resources/js/room-geometry.js';
@@ -368,4 +370,35 @@ test('hits the smaller room polygon when contours overlap', () => {
     assert.equal(hitTestContours({ x: 0.12, y: 0.12 }, rooms).id, 1);
     assert.equal(hitTestContours({ x: 0.90, y: 0.90 }, rooms), null);
     assert.equal(roomContour({ marker: { page: 1, x: 0.2, y: 0.3, width: 0.1, height: 0.05 } }).type, 'box');
+});
+
+test('visual selection follows stored geometry instead of the inflated label box', () => {
+    const withPolygon = {
+        marker: {
+            page: 1,
+            x: 0.20,
+            y: 0.30,
+            width: 0.08,
+            height: 0.04,
+            polygon: [
+                { x: 0.18, y: 0.28 },
+                { x: 0.22, y: 0.28 },
+                { x: 0.22, y: 0.33 },
+                { x: 0.18, y: 0.33 },
+            ],
+        },
+    };
+    const visual = roomVisualContour(withPolygon);
+    const box = contourBox(visual);
+
+    assert.equal(visual.type, 'polygon');
+    assert.equal(Number(box.w.toFixed(2)), 0.04);
+    assert.ok(box.w < displayBox(withPolygon).w);
+
+    const noPolygonMarker = { page: 1, x: 0.20, y: 0.30, width: 0.04, height: 0.02 };
+    const noPolygon = roomVisualContour({ marker: noPolygonMarker });
+
+    assert.equal(noPolygon.type, 'box');
+    assert.equal(noPolygon.box.w, 0.04);
+    assert.ok(displayBox({ marker: noPolygonMarker }).w > noPolygon.box.w);
 });

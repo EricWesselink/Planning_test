@@ -22,6 +22,8 @@ import {
     exactRoomHitForArea,
     hitTestContours,
     roomContour,
+    roomVisualContour,
+    contourBox,
 } from './room-geometry';
 import {
     OCR_DPI,
@@ -38,6 +40,7 @@ import {
     measureSelectedWorks,
     measureSelectedRooms,
     roomSelectionSummaryLabel,
+    roomMeasureChipLabel,
     shortWorkLabel,
     workFilterSummaryLabel,
 } from './drawing-work-selection';
@@ -81,7 +84,8 @@ function boot() {
     const pickWorkRoomsBtn = document.getElementById('pick-work-rooms');
     const pickRoomsBtn = document.getElementById('pick-rooms-btn');
     const roomMeasureBar = document.getElementById('room-measure-bar');
-    const roomMeasureLabel = document.getElementById('room-measure-label');
+    const roomMeasureCount = document.getElementById('room-measure-count');
+    const roomMeasureQty = document.getElementById('room-measure-qty');
     const roomMeasureViewBtn = document.getElementById('room-measure-view');
     const roomMeasureClearBtn = document.getElementById('room-measure-clear');
     const roomMeasurePanel = document.getElementById('room-measure-panel');
@@ -253,6 +257,9 @@ function boot() {
         document.querySelectorAll('.room-name-overlay').forEach((label) => {
             label.style.transform = nameOverlayTransform();
         });
+        document.querySelectorAll('.room-measure-chip').forEach((chip) => {
+            chip.style.transform = measureChipTransform();
+        });
         document.querySelectorAll('.snag-pin').forEach((pin) => {
             pin.style.transform = snagPinTransform();
         });
@@ -273,6 +280,10 @@ function boot() {
 
     function nameOverlayTransform() {
         return `translate(-50%, -100%) scale(${1 / Math.max(scale, 0.01)})`;
+    }
+
+    function measureChipTransform() {
+        return `translate(0, -100%) scale(${1 / Math.max(scale, 0.01)})`;
     }
 
     function setTool(next) {
@@ -619,7 +630,7 @@ function boot() {
         if (!selected && areaIsFilteredOut(area)) {
             return;
         }
-        const contour = roomContour(area);
+        const contour = roomVisualContour(area);
         if (!contour) {
             return;
         }
@@ -643,6 +654,24 @@ function boot() {
         shape.addEventListener('mousemove', (event) => showTip(area, event));
         shape.addEventListener('mouseleave', hideTip);
         hitEl.append(shape);
+        if (selected) {
+            appendRoomMeasureChip(area, contour);
+        }
+    }
+
+    function appendRoomMeasureChip(area, contour) {
+        const box = contourBox(contour);
+        if (!box) {
+            return;
+        }
+        const chip = document.createElement('div');
+        chip.className = 'room-measure-chip';
+        chip.textContent = roomMeasureChipLabel(area);
+        chip.style.left = `${Number(box.x) * 100}%`;
+        chip.style.top = `${Number(box.y) * 100}%`;
+        chip.style.transform = measureChipTransform();
+        chip.dataset.areaId = String(area.id);
+        markersEl.append(chip);
     }
 
     function appendLabelRect(area, box, extraClass = '') {
@@ -2566,8 +2595,14 @@ function boot() {
     function syncRoomMeasureBar() {
         const measure = currentRoomMeasure();
         const count = measure.rooms.length;
-        if (roomMeasureLabel) {
-            roomMeasureLabel.textContent = roomSelectionSummaryLabel(count, measure.total_m2);
+        if (roomMeasureCount) {
+            roomMeasureCount.textContent = count === 1 ? '1 ruimte' : `${count} ruimtes`;
+        }
+        if (roomMeasureQty) {
+            roomMeasureQty.textContent = measure.m2_label;
+        }
+        if (roomMeasureBar) {
+            roomMeasureBar.setAttribute('aria-label', roomSelectionSummaryLabel(count, measure.total_m2));
         }
         roomMeasureBar?.classList.toggle('hidden', !roomMeasureMode && count === 0);
         if (roomMeasureClearBtn) {

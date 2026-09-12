@@ -1743,17 +1743,48 @@ button.plan-labor-toggle:hover {
 }
 
 #draw-hit .room-measure-shape {
-    fill: rgba(37, 99, 235, 0.05);
-    stroke: rgba(37, 99, 235, 0.4);
-    stroke-width: 0.002;
+    fill: transparent;
+    stroke: none;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
     pointer-events: fill;
     cursor: pointer;
 }
 
+.draw-stage.is-room-measure #draw-hit .room-measure-shape:hover:not(.is-on) {
+    fill: rgba(37, 99, 235, 0.06);
+    stroke: rgba(37, 99, 235, 0.5);
+    stroke-width: 1.5px;
+}
+
 #draw-hit .room-measure-shape.is-on {
-    fill: rgba(37, 99, 235, 0.28);
-    stroke: rgba(29, 78, 216, 0.95);
-    stroke-width: 0.0035;
+    fill: rgba(37, 99, 235, 0.12);
+    stroke: rgba(37, 99, 235, 0.88);
+    stroke-width: 2px;
+}
+
+.room-measure-chip {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    max-width: 10rem;
+    padding: 0.06rem 0.32rem;
+    background: rgba(255, 255, 255, 0.94);
+    color: #1d4ed8;
+    border: 1px solid rgba(37, 99, 235, 0.4);
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 650;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    z-index: 8;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+    transform-origin: left bottom;
 }
 
 .room-selection-outline {
@@ -2160,11 +2191,19 @@ button.plan-labor-toggle:hover {
     white-space: nowrap;
 }
 
+.room-measure-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.65rem 0.9rem;
+    min-width: 0;
+}
+
 .room-measure-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.35rem 0.5rem;
+    gap: 0.5rem 0.75rem;
     min-width: 0;
 }
 
@@ -2172,10 +2211,24 @@ button.plan-labor-toggle:hover {
     display: none;
 }
 
-#room-measure-label {
+#room-measure-count {
+    font-size: 0.8125rem;
+    color: var(--color-nicon-ink);
+    white-space: nowrap;
+}
+
+.room-measure-qty {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.42rem;
+    background: #eff6ff;
+    color: #1e3a8a;
     font-size: 0.8125rem;
     font-weight: 700;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    border-radius: 4px;
 }
 
 .room-measure-bar button {

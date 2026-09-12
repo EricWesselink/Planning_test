@@ -520,20 +520,9 @@ export function hitTestLabels(point, rooms) {
 }
 
 export function roomContour(area) {
-    const poly = Array.isArray(area?.marker?.polygon) ? area.marker.polygon : null;
-    if (poly && poly.length >= 3) {
-        const points = [];
-        poly.forEach((point) => {
-            const x = Number(point?.x);
-            const y = Number(point?.y);
-            if (!Number.isFinite(x) || !Number.isFinite(y)) {
-                return;
-            }
-            points.push({ x, y });
-        });
-        if (points.length >= 3) {
-            return { type: 'polygon', points };
-        }
+    const points = polygonPointsFrom(area);
+    if (points) {
+        return { type: 'polygon', points };
     }
     const box = storedJumpTarget(area)?.box || displayBox(area);
     if (!box) {
@@ -541,6 +530,65 @@ export function roomContour(area) {
     }
 
     return { type: 'box', box };
+}
+
+function polygonPointsFrom(area) {
+    const poly = Array.isArray(area?.marker?.polygon) ? area.marker.polygon : null;
+    if (!poly || poly.length < 3) {
+        return null;
+    }
+    const points = [];
+    poly.forEach((point) => {
+        const x = Number(point?.x);
+        const y = Number(point?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return;
+        }
+        points.push({ x, y });
+    });
+
+    return points.length >= 3 ? points : null;
+}
+
+export function roomVisualContour(area) {
+    const points = polygonPointsFrom(area);
+    if (points) {
+        return { type: 'polygon', points };
+    }
+    const box = roomFocusBox(area?.marker) || storedJumpTarget(area)?.box;
+    if (!box || !(Number(box.w) > 0.001) || !(Number(box.h) > 0.001)) {
+        return null;
+    }
+
+    return { type: 'box', box };
+}
+
+export function contourBox(contour) {
+    if (!contour) {
+        return null;
+    }
+    if (contour.type === 'box') {
+        return contour.box || null;
+    }
+    const points = contour.points || [];
+    if (points.length < 3) {
+        return null;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    points.forEach((point) => {
+        minX = Math.min(minX, Number(point.x));
+        minY = Math.min(minY, Number(point.y));
+        maxX = Math.max(maxX, Number(point.x));
+        maxY = Math.max(maxY, Number(point.y));
+    });
+    if (!(maxX > minX) || !(maxY > minY)) {
+        return null;
+    }
+
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
 export function contourArea(contour) {

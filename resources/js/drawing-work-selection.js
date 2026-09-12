@@ -322,9 +322,25 @@ export function measureSelectedRooms(areas) {
 }
 
 export function roomSelectionSummaryLabel(count, m2) {
-    const rooms = count === 1 ? '1 ruimte geselecteerd' : `${count} ruimtes geselecteerd`;
+    const rooms = count === 1 ? '1 ruimte' : `${count} ruimtes`;
 
-    return `${rooms} | ${formatBoardQty(m2)} m²`;
+    return `${rooms} · ${formatBoardQty(m2)} m²`;
+}
+
+export function roomMeasureChipLabel(area) {
+    const name = String(area?.unique_name || area?.name || area?.number || '').trim();
+    const qty = String(area?.m2_label || '').trim();
+    if (name && qty) {
+        return `✓ ${name} · ${qty}`;
+    }
+    if (name) {
+        return `✓ ${name}`;
+    }
+    if (qty) {
+        return `✓ ${qty}`;
+    }
+
+    return '✓';
 }
 
 export function buildOutsourceSelection({

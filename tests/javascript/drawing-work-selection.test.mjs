@@ -8,6 +8,7 @@ import {
     measureSelectedWorks,
     measureSelectedRooms,
     roomSelectionSummaryLabel,
+    roomMeasureChipLabel,
     shortWorkLabel,
     workFilterSummaryLabel,
 } from '../../resources/js/drawing-work-selection.js';
@@ -259,7 +260,7 @@ test('sums selected rooms from stored meetstaat quantities and never from polygo
     assert.equal(measure.rooms.length, 4);
     assert.equal(measure.total_m2, 361.97);
     assert.equal(measure.label, '361,97 m²');
-    assert.equal(roomSelectionSummaryLabel(measure.rooms.length, measure.total_m2), '4 ruimtes geselecteerd | 361,97 m²');
+    assert.equal(roomSelectionSummaryLabel(measure.rooms.length, measure.total_m2), '4 ruimtes · 361,97 m²');
     assert.equal(measure.lines.find((line) => line.key === 'ondergrond').quantity, 361.97);
     assert.equal(measure.lines.find((line) => line.key === 'vloer|1').quantity, 210.4);
     assert.equal(measure.lines.find((line) => line.key === 'vloer|3').quantity, 98.22);
@@ -312,6 +313,17 @@ test('does not fill missing work quantity from room m2 when selecting rooms', ()
 
     assert.equal(measure.total_m2, 999);
     assert.equal(measure.lines.length, 0);
+});
+
+test('builds a compact checkmark label from the stored room name and m2', () => {
+    assert.equal(roomMeasureChipLabel({
+        unique_name: 'oefenruimte',
+        m2_label: '62,00 m²',
+    }), '✓ oefenruimte · 62,00 m²');
+    assert.equal(roomMeasureChipLabel({
+        name: 'cabine',
+        m2_label: '6,31 m²',
+    }), '✓ cabine · 6,31 m²');
 });
 
 test('prepares a room outsource payload without creating a job', () => {
