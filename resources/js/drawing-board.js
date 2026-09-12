@@ -2427,7 +2427,6 @@ function boot() {
 
     function closeWorkPanel() {
         workFilterPanel?.classList.remove('is-open');
-        workFilterPanel?.removeAttribute('hidden');
         workSelect?.classList.remove('is-open');
         workFilterToggle?.setAttribute('aria-expanded', 'false');
     }

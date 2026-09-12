@@ -202,27 +202,27 @@
                         <button type="button" id="draw-work-toggle" class="draw-work-summary" aria-expanded="false" aria-haspopup="true" aria-controls="draw-work-panel">
                             <span id="draw-work-label">Materialen kiezen</span>
                         </button>
-                        <div id="draw-work-panel" class="draw-work-panel">
-                            <div class="draw-work-panel-head">Materialen selecteren</div>
-                            <label class="draw-work-option is-all">
-                                <input type="checkbox" data-work-all>
-                                <span>Alles selecteren</span>
-                            </label>
-                            <div id="draw-work-list" class="draw-work-panel-list">
-                                @foreach (($board['work_filters'] ?? []) as $work)
-                                    <label class="draw-work-option">
-                                        <input type="checkbox" data-work-key="{{ $work['key'] }}">
-                                        <span class="draw-work-option-name">{{ $work['label'] }}</span>
-                                        <span class="draw-work-option-qty"></span>
-                                    </label>
-                                @endforeach
-                            </div>
-                            <div class="draw-work-panel-foot">
-                                <div id="draw-work-panel-total" class="draw-work-panel-total">Geselecteerd: 0,00 m²</div>
-                                <div class="draw-work-panel-actions">
-                                    <button type="button" id="draw-work-clear">Wis selectie</button>
-                                    <button type="button" id="draw-work-apply">Toepassen</button>
-                                </div>
+                    </div>
+                    <div id="draw-work-panel" class="draw-work-panel">
+                        <div class="draw-work-panel-head">Materialen selecteren</div>
+                        <label class="draw-work-option is-all">
+                            <input type="checkbox" data-work-all>
+                            <span>Alles selecteren</span>
+                        </label>
+                        <div id="draw-work-list" class="draw-work-panel-list">
+                            @foreach (($board['work_filters'] ?? []) as $work)
+                                <label class="draw-work-option">
+                                    <input type="checkbox" data-work-key="{{ $work['key'] }}">
+                                    <span class="draw-work-option-name">{{ $work['label'] }}</span>
+                                    <span class="draw-work-option-qty"></span>
+                                </label>
+                            @endforeach
+                        </div>
+                        <div class="draw-work-panel-foot">
+                            <div id="draw-work-panel-total" class="draw-work-panel-total">Geselecteerd: 0,00 m²</div>
+                            <div class="draw-work-panel-actions">
+                                <button type="button" id="draw-work-clear">Wis selectie</button>
+                                <button type="button" id="draw-work-apply">Toepassen</button>
                             </div>
                         </div>
                     </div>
