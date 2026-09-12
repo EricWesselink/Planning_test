@@ -220,6 +220,7 @@ class ProjectController extends Controller
         }
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         $progressWorkers = $project->plannedWorkers();
+        $progressWorkers->load('crewPeople');
         $workers = Worker::query()->where('active', true)->orderBy('name')->get();
         if ($scheduledWorkerId !== null) {
             $progressWorkers = $progressWorkers->where('id', $scheduledWorkerId)->values();
@@ -249,6 +250,7 @@ class ProjectController extends Controller
             'reopen' => route('projects.areas.reopen', [$project, '__AREA__']),
             'approve' => route('projects.areas.approve', [$project, '__AREA__']),
             'processMany' => route('projects.work.process', $project),
+            'processSelection' => route('projects.areas.selection.process', $project),
             'reopenMany' => route('projects.work.reopen', $project),
             'approveMany' => route('projects.work.approve', $project),
             'detect' => $project->plattegrond()

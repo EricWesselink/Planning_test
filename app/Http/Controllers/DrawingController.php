@@ -11,6 +11,8 @@ use App\Models\ProjectDocument;
 use App\Models\Worker;
 use App\Services\ProjectBoardService;
 use App\Services\RoomMarkerMatcher;
+use App\Services\RoomWorkSetup;
+use App\Support\Format;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -408,6 +410,119 @@ class DrawingController extends Controller
 
         return response()->json([
             'areas' => $this->detailsForTasks($project, $tasks, $board),
+        ]);
+    }
+
+    public function processSelection(Request $request, Project $project, ProjectBoardService $board): JsonResponse
+    {
+        $this->authorizeProgress($project);
+        $data = $request->validate([
+            'area_ids' => ['required', 'array', 'min:1', 'max:250'],
+            'area_ids.*' => ['integer'],
+            'work_keys' => ['required', 'array', 'min:1', 'max:100'],
+            'work_keys.*' => ['string', 'max:80'],
+            'worker_id' => $this->workerIdRules($request, $project),
+            'date' => ['required', 'date'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $wantedAreas = collect($data['area_ids'])->map(fn ($id) => (int) $id)->unique()->filter()->values();
+        $workKeys = collect($data['work_keys'])->map(fn ($key) => trim((string) $key))->filter()->unique()->values();
+        if ($wantedAreas->isEmpty() || $workKeys->isEmpty()) {
+            return response()->json(['message' => 'Selecteer minimaal één ruimte en één werkzaamheid.'], 422);
+        }
+
+        $areas = ProjectArea::query()
+            ->where('project_id', $project->id)
+            ->whereIn('id', $wantedAreas->all())
+            ->with(['tasks.workItem', 'project.workItems'])
+            ->orderBy('id')
+            ->get();
+
+        if ($areas->count() !== $wantedAreas->count()) {
+            return response()->json(['message' => 'Een of meer ruimtes horen niet bij dit project.'], 422);
+        }
+
+        $matched = collect();
+        foreach ($areas as $area) {
+            foreach ($area->groupedTasks() as $group) {
+                if (! $workKeys->contains($group['key'])) {
+                    continue;
+                }
+                foreach ($group['tasks'] as $task) {
+                    $matched->push($task);
+                }
+            }
+        }
+
+        if ($matched->isEmpty()) {
+            return response()->json(['message' => 'Deze werkzaamheden horen niet bij de geselecteerde ruimtes.'], 422);
+        }
+
+        $open = $matched
+            ->unique('id')
+            ->filter(fn (AreaTask $task) => ! $task->isDone() && $task->remainingQuantity() > 0)
+            ->values();
+
+        if ($open->isEmpty()) {
+            return response()->json(['message' => 'Deze werkzaamheden zijn in de geselecteerde ruimtes al gereed.'], 422);
+        }
+
+        $worker = $this->progressWorker($request, $project, $data['worker_id'] ?? null);
+        $booked = round((float) $open->sum(fn (AreaTask $task) => $task->remainingQuantity()), 2);
+        $unit = $open->first()?->unit;
+        $sameUnit = $open->every(fn (AreaTask $task) => $task->unit === $unit);
+        $labels = $open
+            ->map(function (AreaTask $task) {
+                $task->loadMissing('workItem');
+                if ($task->phase()->group() === 'ondergrond') {
+                    return RoomWorkSetup::PRIMEN_EGALISEREN;
+                }
+
+                return $task->workItem?->cardLabel() ?? $task->workItem?->name ?? 'Werkzaamheid';
+            })
+            ->unique()
+            ->values()
+            ->all();
+
+        try {
+            DB::transaction(function () use ($open, $worker, $data, $request) {
+                foreach ($open as $task) {
+                    $task->markDone(
+                        $worker,
+                        $data['date'],
+                        $request->user(),
+                        null,
+                        0,
+                        $data['note'] ?? null,
+                    );
+                }
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $refreshed = ProjectArea::query()
+            ->where('project_id', $project->id)
+            ->whereIn('id', $areas->pluck('id'))
+            ->with(['tasks.workItem', 'tasks.completedByWorker', 'floor', 'markers', 'project.documents'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (ProjectArea $area) => $board->areaDetail($area))
+            ->values()
+            ->all();
+
+        return response()->json([
+            'areas' => $refreshed,
+            'summary' => [
+                'area_count' => $open->pluck('project_area_id')->unique()->count(),
+                'labels' => $labels,
+                'quantity' => $sameUnit ? $booked : null,
+                'quantity_label' => $sameUnit && $unit !== null
+                    ? Format::qty($booked, 2).' '.$unit->label()
+                    : null,
+                'worker' => $worker->planName(),
+            ],
         ]);
     }
 

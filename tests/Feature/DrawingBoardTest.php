@@ -49,10 +49,10 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Deze verdieping')
             ->assertSee('Ruimtes selecteren')
             ->assertSee('Selectie bekijken')
-            ->assertSee('Wis selectie')
-            ->assertSee('Geselecteerde ruimtes')
+            ->assertSee('Werkzaamheden bijwerken')
             ->assertSee('Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.')
             ->assertSee('tik om extra aan te vinken')
+            ->assertSee('Geselecteerde ruimtes')
             ->assertDontSee('id="draw-link"', false)
             ->assertSee('Positie aanpassen')
             ->assertDontSee('id="edit-area-number"', false)
@@ -77,6 +77,7 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Alle zichtbare')
             ->assertSee('id="pick-work-rooms"', false)
             ->assertSee('id="draw-work-panel"', false)
+            ->assertSee('class="draw-work-panel" hidden', false)
             ->assertSee('Alles selecteren')
             ->assertSee('Wis selectie')
             ->assertSee('Toepassen')
@@ -117,6 +118,10 @@ class DrawingBoardTest extends TestCase
             ->assertDontSee('Deze verdieping')
             ->assertDontSee('id="pick-all-rooms"', false)
             ->assertDontSee('id="pick-work-rooms"', false)
+            ->assertDontSee('id="pick-rooms-btn"', false)
+            ->assertDontSee('Ruimtes selecteren')
+            ->assertDontSee('Werkzaamheden bijwerken')
+            ->assertDontSee('id="room-progress-form"', false)
             ->assertDontSee('Alle zichtbare')
             ->assertDontSee('placeholder="Aantal"', false)
             ->assertDontSee('Zelfde vakman? Vink extra ruimtes en onderdelen aan.')
@@ -219,6 +224,9 @@ class DrawingBoardTest extends TestCase
         $ondergrond = collect($first['works'] ?? [])->firstWhere('key', 'ondergrond');
         $secondOndergrond = collect($second['works'] ?? [])->firstWhere('key', 'ondergrond');
         $this->assertSame(50.97, (float) ($ondergrond['quantity'] ?? 0));
+        $this->assertSame(50.97, (float) ($ondergrond['remaining'] ?? 0));
+        $this->assertSame(0.0, (float) ($ondergrond['completed'] ?? 1));
+        $this->assertFalse((bool) ($ondergrond['done'] ?? true));
         $this->assertSame('m2', $ondergrond['unit'] ?? null);
         $this->assertSame(59.0, (float) ($secondOndergrond['quantity'] ?? 0));
         $this->assertSame(10.0, (float) ($coatingWork['quantity'] ?? 0));
@@ -335,6 +343,7 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('.draw-work-qty', $css);
         $this->assertStringContainsString('.draw-work-menu', $css);
         $this->assertStringContainsString('.draw-work-panel', $css);
+        $this->assertStringContainsString('.draw-work-panel[hidden]', $css);
         $this->assertStringContainsString('.draw-work-panel.is-open', $css);
         $this->assertStringContainsString('max-height: 400px', $css);
         $this->assertStringContainsString('#dc2626', $css);
@@ -349,6 +358,7 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString("getElementById('pick-rooms-btn')", $js);
         $this->assertStringContainsString('function setRoomMeasureMode', $js);
         $this->assertStringContainsString('function toggleMeasuredRoom', $js);
+        $this->assertStringContainsString('togglePickedRoom(id)', $js);
         $this->assertStringContainsString('measureSelectedRooms', $js);
         $this->assertStringContainsString('hitTestContours', $js);
         $this->assertStringContainsString('roomContour', $js);
@@ -356,8 +366,17 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('room-measure-shape', $js);
         $this->assertStringContainsString('Ruimtes selecteren', $view);
         $this->assertStringContainsString('Selectie bekijken', $view);
+        $this->assertStringContainsString('Werkzaamheden bijwerken', $view);
+        $this->assertStringContainsString('id="complete-form"', $view);
+        $this->assertStringContainsString('id="complete-worker"', $view);
+        $this->assertStringContainsString('Opslaan en verwerken', $view);
+        $this->assertStringContainsString('class="draw-work-panel" hidden', $view);
         $this->assertStringContainsString('Wis selectie', $view);
         $this->assertStringContainsString('id="room-measure-panel"', $view);
+        $this->assertStringContainsString('id="room-progress-panel"', $view);
+        $this->assertStringContainsString('function saveRoomSelectionProgress', $js);
+        $this->assertStringContainsString('processSelection', $js);
+        $this->assertStringContainsString('selectedRoomProgressWorks', $js);
         $this->assertStringContainsString('#draw-hit .room-measure-shape', $css);
         $this->assertStringContainsString('#draw-hit .room-measure-shape.is-on', $css);
         $this->assertMatchesRegularExpression('/#draw-hit \.room-measure-shape\.is-on\s*\{[^}]*stroke:\s*none/s', $css);
@@ -502,6 +521,7 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('function togglePickedRoom', $js);
         $this->assertStringContainsString('function workSaveError', $js);
         $this->assertStringContainsString('processMany', $js);
+        $this->assertStringContainsString('processSelection', $js);
         $this->assertStringContainsString('approveMany', $js);
         $this->assertDoesNotMatchRegularExpression("/showSnags = layer !== 'rooms' \\|\\|/", $js);
     }

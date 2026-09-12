@@ -327,6 +327,90 @@ export function roomSelectionSummaryLabel(count, m2) {
     return `${rooms} · ${formatBoardQty(m2)} m²`;
 }
 
+/**
+ * Werkzaamheden van geselecteerde ruimtes, met restant per area_task (nooit het selectietotaal).
+ *
+ * @param {object[]} areas
+ */
+export function selectedRoomProgressWorks(areas) {
+    const unique = uniqueAreasById(areas);
+    const linesByKey = new Map();
+
+    unique.forEach((area) => {
+        const seenKeys = new Set();
+        (area.works || []).forEach((work) => {
+            const key = String(work?.key || '');
+            if (key === '' || seenKeys.has(key)) {
+                return;
+            }
+            seenKeys.add(key);
+            const ordered = work.quantity != null && work.quantity !== ''
+                ? roundBoardQty(work.quantity)
+                : 0;
+            const remaining = work.remaining != null && work.remaining !== ''
+                ? roundBoardQty(work.remaining)
+                : (work.done ? 0 : ordered);
+            const completed = work.completed != null && work.completed !== ''
+                ? roundBoardQty(work.completed)
+                : roundBoardQty(Math.max(0, ordered - remaining));
+            const existing = linesByKey.get(key);
+            if (existing) {
+                existing.ordered = roundBoardQty(existing.ordered + ordered);
+                existing.remaining = roundBoardQty(existing.remaining + remaining);
+                existing.completed = roundBoardQty(existing.completed + completed);
+                existing.rooms += 1;
+                if (remaining <= 0) {
+                    existing.doneRooms += 1;
+                }
+                return;
+            }
+            linesByKey.set(key, {
+                key,
+                label: work.label || key,
+                unit: work.unit || 'm2',
+                color_key: work.color_key || '',
+                ordered,
+                remaining,
+                completed,
+                rooms: 1,
+                doneRooms: remaining <= 0 ? 1 : 0,
+            });
+        });
+    });
+
+    return [...linesByKey.values()]
+        .map((line) => {
+            const done = line.remaining <= 0;
+            const partial = !done && line.completed > 0;
+            const unitLabel = workUnitLabel(line.unit);
+            const display = shortWorkLabel(line.label) || line.label;
+            let status = 'open';
+            let statusLabel = `${formatBoardQty(line.remaining)} ${unitLabel}`;
+            let detail = display;
+            if (done) {
+                status = 'done';
+                statusLabel = 'reeds gereed';
+                detail = `${display} – reeds gereed`;
+            } else if (partial) {
+                status = 'partial';
+                statusLabel = `${formatBoardQty(line.remaining)} ${unitLabel}`;
+                detail = `${display} – ${formatBoardQty(line.completed)} / ${formatBoardQty(line.ordered)} ${unitLabel} gereed`;
+            }
+
+            return {
+                ...line,
+                display_label: display,
+                qty_label: `${formatBoardQty(done ? line.ordered : line.remaining)} ${unitLabel}`,
+                status,
+                status_label: statusLabel,
+                detail,
+                bookable: !done && line.remaining > 0,
+            };
+        })
+        .sort((left, right) => familyRank(left) - familyRank(right)
+            || left.label.localeCompare(right.label, 'nl'));
+}
+
 export function roomMeasureChipLabel(area) {
     const name = String(area?.unique_name || area?.name || area?.number || '').trim();
     const qty = String(area?.m2_label || '').trim();

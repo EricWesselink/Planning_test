@@ -202,43 +202,44 @@
                         <button type="button" id="draw-work-toggle" class="draw-work-summary" aria-expanded="false" aria-haspopup="true" aria-controls="draw-work-panel">
                             <span id="draw-work-label">Materialen kiezen</span>
                         </button>
-                    </div>
-                    <div id="draw-work-panel" class="draw-work-panel">
-                        <div class="draw-work-panel-head">Materialen selecteren</div>
-                        <label class="draw-work-option is-all">
-                            <input type="checkbox" data-work-all>
-                            <span>Alles selecteren</span>
-                        </label>
-                        <div id="draw-work-list" class="draw-work-panel-list">
-                            @foreach (($board['work_filters'] ?? []) as $work)
-                                <label class="draw-work-option">
-                                    <input type="checkbox" data-work-key="{{ $work['key'] }}">
-                                    <span class="draw-work-option-name">{{ $work['label'] }}</span>
-                                    <span class="draw-work-option-qty"></span>
-                                </label>
-                            @endforeach
-                        </div>
-                        <div class="draw-work-panel-foot">
-                            <div id="draw-work-panel-total" class="draw-work-panel-total">Geselecteerd: 0,00 m²</div>
-                            <div class="draw-work-panel-actions">
-                                <button type="button" id="draw-work-clear">Wis selectie</button>
-                                <button type="button" id="draw-work-apply">Toepassen</button>
+                        <div id="draw-work-panel" class="draw-work-panel" hidden>
+                            <div class="draw-work-panel-head">Materialen selecteren</div>
+                            <label class="draw-work-option is-all">
+                                <input type="checkbox" data-work-all>
+                                <span>Alles selecteren</span>
+                            </label>
+                            <div id="draw-work-list" class="draw-work-panel-list">
+                                @foreach (($board['work_filters'] ?? []) as $work)
+                                    <label class="draw-work-option">
+                                        <input type="checkbox" data-work-key="{{ $work['key'] }}">
+                                        <span class="draw-work-option-name">{{ $work['label'] }}</span>
+                                        <span class="draw-work-option-qty"></span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <div class="draw-work-panel-foot">
+                                <div id="draw-work-panel-total" class="draw-work-panel-total">Geselecteerd: 0,00 m²</div>
+                                <div class="draw-work-panel-actions">
+                                    <button type="button" id="draw-work-clear">Wis selectie</button>
+                                    <button type="button" id="draw-work-apply">Toepassen</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                     <span id="draw-work-qty" class="draw-work-qty" aria-live="polite" title="Totaal van de aangevinkte onderdelen op deze verdieping"></span>
                     @if ($canEnterProgress)
                         <button type="button" id="pick-work-rooms" class="room-pick-btn hidden">Alle zichtbare</button>
+                        <div class="room-measure-group">
+                        <button type="button" id="pick-rooms-btn" class="room-measure-btn" aria-pressed="false">Ruimtes selecteren</button>
+                        <div id="room-measure-bar" class="room-measure-bar hidden" aria-live="polite">
+                            <span id="room-measure-count">0 ruimtes</span>
+                            <span id="room-measure-qty" class="room-measure-qty">0,00 m²</span>
+                            <button type="button" id="room-measure-view" aria-expanded="false" aria-controls="room-measure-panel">Selectie bekijken</button>
+                            <button type="button" id="room-progress-open">Werkzaamheden bijwerken</button>
+                            <button type="button" id="room-measure-clear">Wis selectie</button>
+                        </div>
+                        </div>
                     @endif
-                    <div class="room-measure-group">
-                    <button type="button" id="pick-rooms-btn" class="room-measure-btn" aria-pressed="false">Ruimtes selecteren</button>
-                    <div id="room-measure-bar" class="room-measure-bar hidden" aria-live="polite">
-                        <span id="room-measure-count">0 ruimtes</span>
-                        <span id="room-measure-qty" class="room-measure-qty">0,00 m²</span>
-                        <button type="button" id="room-measure-view" aria-expanded="false" aria-controls="room-measure-panel">Selectie bekijken</button>
-                        <button type="button" id="room-measure-clear">Wis selectie</button>
-                    </div>
-                    </div>
                 </div>
                 <div class="flex items-center gap-1">
                     <button type="button" id="draw-hand" class="tool-btn is-on" title="Verschuiven">✋</button>
@@ -537,4 +538,75 @@
         <div class="room-measure-panel-head">Totalen</div>
         <div id="room-measure-totals" class="room-measure-totals"></div>
     </div>
+    @if ($canEnterProgress)
+        <div id="room-progress-panel" class="room-progress-panel" hidden>
+            <div class="room-progress-head">
+                <div class="room-progress-head-copy">
+                    <h2>Geselecteerde ruimtes bijwerken</h2>
+                    <p id="room-progress-meta">0 ruimtes geselecteerd | 0,00 m²</p>
+                </div>
+                <button type="button" id="room-progress-close" class="room-progress-close" aria-label="Sluiten">×</button>
+            </div>
+            <div class="room-progress-tabs" role="tablist">
+                <button type="button" class="is-on" data-progress-tab="works" role="tab" aria-selected="true">Werkzaamheden afronden</button>
+                <button type="button" data-progress-tab="rooms" role="tab" aria-selected="false">Geselecteerde ruimtes</button>
+                <button type="button" data-progress-tab="totals" role="tab" aria-selected="false">Totalen</button>
+            </div>
+            <form id="room-progress-form" class="room-progress-form">
+                <div class="room-progress-body">
+                    <div data-progress-pane="works">
+                        <div class="room-progress-step">
+                            <div class="room-progress-step-head">
+                                <span>1. Kies werkzaamheden die klaar zijn</span>
+                                <span>Hoeveelheid</span>
+                            </div>
+                            <div id="room-progress-works" class="room-progress-works"></div>
+                        </div>
+                        <div class="room-progress-step">
+                            <div class="room-progress-step-title">2. Door wie is het uitgevoerd?</div>
+                            <div class="room-progress-who">
+                                <label>
+                                    <span>Team / Vakman</span>
+                                    <select name="worker_id" id="room-progress-worker" @disabled($lockedWorkerId || $progressWorkers->isEmpty())>
+                                        @forelse ($progressWorkers as $worker)
+                                            @php
+                                                $crewNames = $worker->crewPeople
+                                                    ->map(fn ($member) => trim((string) $member->name))
+                                                    ->filter()
+                                                    ->implode(' / ');
+                                                $workerLabel = $crewNames !== '' ? $worker->planName().' – '.$crewNames : $worker->planName();
+                                            @endphp
+                                            <option value="{{ $worker->id }}" @selected($lockedWorkerId === $worker->id)>{{ $workerLabel }}</option>
+                                        @empty
+                                            <option value="" disabled selected>Niemand ingepland op dit werk</option>
+                                        @endforelse
+                                    </select>
+                                </label>
+                                <label>
+                                    <span>Uitvoerdatum</span>
+                                    <input type="date" name="date" id="room-progress-date" value="{{ now()->toDateString() }}">
+                                </label>
+                            </div>
+                        </div>
+                        <div class="room-progress-step">
+                            <div class="room-progress-step-title">3. Opmerkingen (optioneel)</div>
+                            <textarea name="note" id="room-progress-note" maxlength="500" rows="3" placeholder="Bijv. bijzonderheden, afwerking, etc..."></textarea>
+                            <div id="room-progress-note-count" class="room-progress-note-count">0 / 500</div>
+                        </div>
+                    </div>
+                    <div data-progress-pane="rooms" hidden>
+                        <div id="room-progress-rooms" class="room-progress-list"></div>
+                    </div>
+                    <div data-progress-pane="totals" hidden>
+                        <div id="room-progress-totals" class="room-progress-list"></div>
+                    </div>
+                </div>
+                <p id="room-progress-error" class="room-progress-error" hidden></p>
+                <div class="room-progress-actions">
+                    <button type="submit" id="room-progress-submit" class="room-progress-submit" disabled>Markeer geselecteerde werkzaamheden als gereed</button>
+                    <button type="button" id="room-progress-cancel">Annuleren</button>
+                </div>
+            </form>
+        </div>
+    @endif
 @endsection

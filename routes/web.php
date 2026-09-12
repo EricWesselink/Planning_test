@@ -118,6 +118,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/projecten/{project}/ruimtes/{area}/heropenen', [DrawingController::class, 'reopen'])->name('projects.areas.reopen');
     Route::post('/projecten/{project}/ruimtes/{area}/akkoord', [DrawingController::class, 'approve'])->name('projects.areas.approve');
     Route::post('/projecten/{project}/werkzaamheden/verwerken', [DrawingController::class, 'processMany'])->name('projects.work.process');
+    Route::post('/projecten/{project}/werkzaamheden/selectie/verwerken', [DrawingController::class, 'processSelection'])->name('projects.areas.selection.process');
     Route::post('/projecten/{project}/werkzaamheden/heropenen', [DrawingController::class, 'reopenMany'])->name('projects.work.reopen');
     Route::post('/projecten/{project}/werkzaamheden/akkoord', [DrawingController::class, 'approveMany'])->name('projects.work.approve');
     Route::post('/projecten/{project}/ruimtes/{area}/marker', [DrawingController::class, 'place'])->name('projects.areas.marker');

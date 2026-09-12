@@ -9,6 +9,7 @@ import {
     measureSelectedRooms,
     roomSelectionSummaryLabel,
     roomMeasureChipLabel,
+    selectedRoomProgressWorks,
     shortWorkLabel,
     workFilterSummaryLabel,
 } from '../../resources/js/drawing-work-selection.js';
@@ -346,4 +347,49 @@ test('prepares a room outsource payload without creating a job', () => {
     assert.ok(payload.materials.some((line) => line.key === 'ondergrond'));
     assert.ok(payload.materials.some((line) => line.key === 'vloer|1'));
     assert.ok(payload.materials.some((line) => line.key === 'vloer|2'));
+});
+
+test('lists remaining work of selected rooms and skips already done items', () => {
+    const works = selectedRoomProgressWorks([
+        {
+            id: 1,
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 83.65, remaining: 83.65, completed: 0, unit: 'm2' },
+                { key: 'vloer|1', label: 'IVC Ultimo Chapman Oak, PVC', quantity: 53.42, remaining: 0, completed: 53.42, done: true, unit: 'm2' },
+            ],
+        },
+        {
+            id: 2,
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 16.31, remaining: 16.31, completed: 0, unit: 'm2' },
+                { key: 'vloer|2', label: 'IVC Ultimo Trasimeno, PVC', quantity: 16.31, remaining: 16.31, completed: 0, unit: 'm2' },
+            ],
+        },
+        {
+            id: 3,
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 25, remaining: 7, completed: 18, unit: 'm2' },
+            ],
+        },
+        {
+            id: 4,
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 26.72, remaining: 26.72, completed: 0, unit: 'm2' },
+            ],
+        },
+    ]);
+
+    const egaliseren = works.find((line) => line.key === 'ondergrond');
+    const chapman = works.find((line) => line.key === 'vloer|1');
+    const trasimeno = works.find((line) => line.key === 'vloer|2');
+
+    assert.equal(egaliseren.remaining, 133.68);
+    assert.equal(egaliseren.completed, 18);
+    assert.equal(egaliseren.status, 'partial');
+    assert.equal(egaliseren.bookable, true);
+    assert.match(egaliseren.detail, /18,00 \/ 151,68/);
+    assert.equal(chapman.status, 'done');
+    assert.equal(chapman.bookable, false);
+    assert.equal(trasimeno.remaining, 16.31);
+    assert.equal(trasimeno.bookable, true);
 });

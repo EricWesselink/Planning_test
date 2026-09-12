@@ -299,7 +299,7 @@ class ProjectBoardService
     }
 
     /**
-     * @return list<array{key: string, label: string, color_key: string, done: bool, quantity: float, unit: string}>
+     * @return list<array{key: string, label: string, color_key: string, done: bool, quantity: float, remaining: float, completed: float, unit: string}>
      */
     private function areaWorks(ProjectArea $area): array
     {
@@ -322,6 +322,8 @@ class ProjectBoardService
                     'color_key' => WorkColor::key($group['key'], $typeLabel, $group['label']),
                     'done' => $tasks->every(fn (AreaTask $task) => $task->isDone()),
                     'quantity' => $measured['quantity'],
+                    'remaining' => $measured['remaining'],
+                    'completed' => $measured['completed'],
                     'unit' => $measured['unit'],
                 ];
             })
@@ -332,16 +334,20 @@ class ProjectBoardService
 
     /**
      * @param  Collection<int, AreaTask>  $tasks
-     * @return array{quantity: float, unit: string}
+     * @return array{quantity: float, remaining: float, completed: float, unit: string}
      */
     private function workGroupMeasure(Collection $tasks): array
     {
         $square = $tasks->filter(fn (AreaTask $task) => $task->unit === WorkUnit::SquareMeter);
         $measured = $square->isNotEmpty() ? $square : $tasks;
         $unit = $measured->first()?->unit ?? WorkUnit::SquareMeter;
+        $quantity = round((float) $measured->sum(fn (AreaTask $task) => (float) $task->ordered_quantity), 2);
+        $remaining = round((float) $measured->sum(fn (AreaTask $task) => $task->remainingQuantity()), 2);
 
         return [
-            'quantity' => round((float) $measured->sum(fn (AreaTask $task) => (float) $task->ordered_quantity), 2),
+            'quantity' => $quantity,
+            'remaining' => $remaining,
+            'completed' => max(0, round($quantity - $remaining, 2)),
             'unit' => $unit->value,
         ];
     }
