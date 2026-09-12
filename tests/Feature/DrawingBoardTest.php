@@ -360,7 +360,7 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('id="room-measure-panel"', $view);
         $this->assertStringContainsString('#draw-hit .room-measure-shape', $css);
         $this->assertStringContainsString('#draw-hit .room-measure-shape.is-on', $css);
-        $this->assertStringContainsString('stroke-width: 2px', $css);
+        $this->assertMatchesRegularExpression('/#draw-hit \.room-measure-shape\.is-on\s*\{[^}]*stroke:\s*none/s', $css);
         $this->assertStringContainsString('.room-measure-chip', $css);
         $this->assertStringContainsString('.room-measure-qty', $css);
         $this->assertStringContainsString('room-measure-chip', $js);
