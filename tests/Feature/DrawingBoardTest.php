@@ -365,6 +365,9 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('.room-measure-qty', $css);
         $this->assertStringContainsString('room-measure-chip', $js);
         $this->assertStringContainsString('roomVisualContour', $js);
+        $this->assertStringContainsString("if (tool === 'select' || snagMode || moveMode) {", $js);
+        $this->assertStringNotContainsString('moveMode || roomMeasureMode', $js);
+        $this->assertStringContainsString('sleep om te verschuiven', $js);
         $this->assertStringContainsString('.room-measure-btn.is-on', $css);
         $this->assertStringNotContainsString('.room-select-fill', $css);
         $this->assertStringNotContainsString('Selectie uitbesteden', $view);

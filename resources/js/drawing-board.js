@@ -343,7 +343,7 @@ function boot() {
         } else if (moveMode) {
             setHint('Sleep de marker of tik op de nieuwe plek.');
         } else if (roomMeasureMode) {
-            setHint('Tik ruimtes aan op de tekening. Opnieuw tikken haalt ze uit de selectie.');
+            setHint('Tik ruimtes aan op de tekening, of sleep om te verschuiven. Opnieuw tikken haalt ze uit de selectie.');
         } else {
             setHint('');
         }
@@ -2653,13 +2653,11 @@ function boot() {
         if (roomMeasureMode) {
             setModes({});
             roomMeasureMode = true;
-            setTool('select');
-            setHint('Tik ruimtes aan op de tekening. Opnieuw tikken haalt ze uit de selectie.');
+            setHint('Tik ruimtes aan op de tekening, of sleep om te verschuiven. Opnieuw tikken haalt ze uit de selectie.');
             closeWorkPanel();
         } else {
             closeRoomMeasurePanel();
             if (!snagMode && !moveMode && !linkModeAreaId) {
-                setTool('hand');
                 setHint('');
             }
         }
@@ -2820,10 +2818,13 @@ function boot() {
         if (event.button !== 0) {
             return;
         }
-        if (event.target.closest('.snag-pin, .snag-popup, .snag-photo-preview, button, select, a, input, textarea, label, .room-label, .status-badge')) {
+        if (event.target.closest('.snag-pin, .snag-popup, .snag-photo-preview, button, select, a, input, textarea, label, .status-badge')) {
             return;
         }
-        if (tool === 'select' || snagMode || moveMode || roomMeasureMode) {
+        if (event.target.closest('.room-label') && !roomMeasureMode) {
+            return;
+        }
+        if (tool === 'select' || snagMode || moveMode) {
             return;
         }
         dragging = true;
