@@ -202,7 +202,7 @@
                         <button type="button" id="draw-work-toggle" class="draw-work-summary" aria-expanded="false" aria-haspopup="true" aria-controls="draw-work-panel">
                             <span id="draw-work-label">Materialen kiezen</span>
                         </button>
-                        <div id="draw-work-panel" class="draw-work-panel" hidden>
+                        <div id="draw-work-panel" class="draw-work-panel">
                             <div class="draw-work-panel-head">Materialen selecteren</div>
                             <label class="draw-work-option is-all">
                                 <input type="checkbox" data-work-all>
@@ -234,6 +234,7 @@
                         <div id="room-measure-bar" class="room-measure-bar hidden" aria-live="polite">
                             <span id="room-measure-count">0 ruimtes</span>
                             <span id="room-measure-qty" class="room-measure-qty">0,00 m²</span>
+                            <span id="room-measure-active" class="room-measure-active hidden"></span>
                             <button type="button" id="room-measure-view" aria-expanded="false" aria-controls="room-measure-panel">Selectie bekijken</button>
                             <button type="button" id="room-progress-open">Werkzaamheden bijwerken</button>
                             <button type="button" id="room-measure-clear">Wis selectie</button>
@@ -546,6 +547,12 @@
                     <p id="room-progress-meta">0 ruimtes geselecteerd | 0,00 m²</p>
                 </div>
                 <button type="button" id="room-progress-close" class="room-progress-close" aria-label="Sluiten">×</button>
+            </div>
+            <div id="room-progress-active" class="room-progress-active">
+                <div class="room-progress-active-title">Actieve selectie</div>
+                <div id="room-progress-active-lines">
+                    <p class="room-progress-active-empty">Kies bovenin een werkzaamheid of materiaal. Die selectie wordt hier overgenomen.</p>
+                </div>
             </div>
             <div class="room-progress-tabs" role="tablist">
                 <button type="button" class="is-on" data-progress-tab="works" role="tab" aria-selected="true">Werkzaamheden afronden</button>

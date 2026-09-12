@@ -327,6 +327,88 @@ export function roomSelectionSummaryLabel(count, m2) {
     return `${rooms} · ${formatBoardQty(m2)} m²`;
 }
 
+export function isProcessWorkItem(work) {
+    const key = String(work?.key || '');
+    if (key === 'ondergrond' || key.startsWith('plinten')) {
+        return true;
+    }
+    const family = workFamily(work);
+
+    return family === '' || family === 'Plinten';
+}
+
+export function groupedRoomProgressWorks(works) {
+    const werkzaamheden = [];
+    const materialen = [];
+    (works || []).forEach((work) => {
+        if (isProcessWorkItem(work)) {
+            werkzaamheden.push(work);
+        } else {
+            materialen.push(work);
+        }
+    });
+
+    return { werkzaamheden, materialen };
+}
+
+export function checkedKeysFromWorkFilter(works, filterKeys) {
+    if (!filterKeys?.length) {
+        return [];
+    }
+    const allowed = new Set(filterKeys);
+
+    return (works || [])
+        .filter((work) => work.bookable && allowed.has(work.key))
+        .map((work) => work.key);
+}
+
+export function activeSelectionFromFilter(works, filterKeys, filters = []) {
+    if (!filterKeys?.length) {
+        return [];
+    }
+    const byKey = new Map((works || []).map((work) => [work.key, work]));
+    const filterByKey = new Map((filters || []).map((item) => [item.key, item]));
+
+    return filterKeys.map((key) => {
+        const work = byKey.get(key);
+        if (work) {
+            return {
+                ...work,
+                in_rooms: true,
+                active_detail: `${work.qty_label} in geselecteerde ruimtes`,
+            };
+        }
+        const filter = filterByKey.get(key);
+        const label = shortWorkLabel(filter?.label) || filter?.label || key;
+
+        return {
+            key,
+            display_label: label,
+            label: filter?.label || key,
+            in_rooms: false,
+            qty_label: '0,00 m²',
+            active_detail: 'niet in geselecteerde ruimtes',
+            bookable: false,
+        };
+    });
+}
+
+export function activeWorkBarLabel(activeLines) {
+    if (!activeLines?.length) {
+        return '';
+    }
+    if (activeLines.length === 1) {
+        const line = activeLines[0];
+        if (line.in_rooms === false) {
+            return line.display_label || line.label || '';
+        }
+
+        return `${line.display_label || line.label} · ${line.qty_label}`;
+    }
+
+    return `${activeLines.length} onderdelen geselecteerd`;
+}
+
 /**
  * Werkzaamheden van geselecteerde ruimtes, met restant per area_task (nooit het selectietotaal).
  *

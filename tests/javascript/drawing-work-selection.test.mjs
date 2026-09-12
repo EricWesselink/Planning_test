@@ -10,6 +10,10 @@ import {
     roomSelectionSummaryLabel,
     roomMeasureChipLabel,
     selectedRoomProgressWorks,
+    groupedRoomProgressWorks,
+    checkedKeysFromWorkFilter,
+    activeSelectionFromFilter,
+    activeWorkBarLabel,
     shortWorkLabel,
     workFilterSummaryLabel,
 } from '../../resources/js/drawing-work-selection.js';
@@ -392,4 +396,87 @@ test('lists remaining work of selected rooms and skips already done items', () =
     assert.equal(chapman.bookable, false);
     assert.equal(trasimeno.remaining, 16.31);
     assert.equal(trasimeno.bookable, true);
+});
+
+const fourRooms = [
+    {
+        id: 1,
+        m2: 83.65,
+        works: [
+            { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 83.65, remaining: 83.65, completed: 0, unit: 'm2' },
+            { key: 'vloer|pvc1', label: 'IVC Ultimo Chapman Oak, 24245, PVC - LVT', quantity: 53.42, remaining: 53.42, completed: 0, unit: 'm2' },
+            { key: 'plinten|9', label: 'Plinten wit', quantity: 40, remaining: 40, completed: 0, unit: 'm1' },
+        ],
+    },
+    {
+        id: 2,
+        m2: 16.31,
+        works: [
+            { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 16.31, remaining: 16.31, completed: 0, unit: 'm2' },
+            { key: 'vloer|pvc2', label: 'IVC Ultimo Trasimeno, 46906, PVC - LVT', quantity: 16.31, remaining: 16.31, completed: 0, unit: 'm2' },
+            { key: 'plinten|9', label: 'Plinten wit', quantity: 18, remaining: 18, completed: 0, unit: 'm1' },
+        ],
+    },
+    {
+        id: 3,
+        m2: 16.33,
+        works: [
+            { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 16.33, remaining: 16.33, completed: 0, unit: 'm2' },
+            { key: 'vloer|mar', label: 'Marmoleum Real, 3120 rosato, Linoleum', quantity: 16.33, remaining: 16.33, completed: 0, unit: 'm2' },
+        ],
+    },
+    {
+        id: 4,
+        m2: 26.72,
+        works: [
+            { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 26.72, remaining: 26.72, completed: 0, unit: 'm2' },
+            { key: 'vloer|pvc1', label: 'IVC Ultimo Chapman Oak, 24245, PVC - LVT', quantity: 0, remaining: 0, completed: 0, unit: 'm2' },
+        ],
+    },
+];
+
+test('one material filter plus four rooms checks only that work with room quantities', () => {
+    const works = selectedRoomProgressWorks(fourRooms);
+    const checked = checkedKeysFromWorkFilter(works, ['ondergrond']);
+    const active = activeSelectionFromFilter(works, ['ondergrond']);
+    const grouped = groupedRoomProgressWorks(works);
+
+    assert.deepEqual(checked, ['ondergrond']);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].remaining, 143.01);
+    assert.equal(active[0].active_detail, '143,01 m² in geselecteerde ruimtes');
+    assert.equal(activeWorkBarLabel(active), 'Primer & Egaliseren · 143,01 m²');
+    assert.ok(grouped.werkzaamheden.some((line) => line.key === 'ondergrond'));
+    assert.ok(grouped.werkzaamheden.some((line) => line.key === 'plinten|9'));
+    assert.ok(grouped.materialen.some((line) => line.key === 'vloer|pvc1'));
+    assert.ok(!checked.includes('vloer|pvc1'));
+    assert.ok(!checked.includes('plinten|9'));
+});
+
+test('two material filters plus four rooms check both and keep other works unchecked', () => {
+    const works = selectedRoomProgressWorks(fourRooms);
+    const keys = ['ondergrond', 'vloer|pvc1'];
+    const checked = checkedKeysFromWorkFilter(works, keys);
+    const active = activeSelectionFromFilter(works, keys);
+
+    assert.deepEqual(checked, ['ondergrond', 'vloer|pvc1']);
+    assert.equal(active.length, 2);
+    assert.equal(active[0].remaining, 143.01);
+    assert.equal(active[1].remaining, 53.42);
+    assert.equal(activeWorkBarLabel(active), '2 onderdelen geselecteerd');
+    assert.ok(!checked.includes('vloer|pvc2'));
+    assert.ok(!checked.includes('vloer|mar'));
+    assert.ok(!checked.includes('plinten|9'));
+});
+
+test('changing the top filter replaces which progress rows are checked', () => {
+    const works = selectedRoomProgressWorks(fourRooms);
+
+    assert.deepEqual(checkedKeysFromWorkFilter(works, ['ondergrond']), ['ondergrond']);
+    assert.deepEqual(checkedKeysFromWorkFilter(works, ['vloer|pvc1', 'vloer|pvc2']), ['vloer|pvc1', 'vloer|pvc2']);
+    assert.deepEqual(checkedKeysFromWorkFilter(works, []), []);
+
+    const active = activeSelectionFromFilter(works, ['vloer|pvc1']);
+    assert.equal(active[0].remaining, 53.42);
+    assert.equal(activeWorkBarLabel(active), 'IVC Ultimo Chapman Oak, 24245 · 53,42 m²');
 });

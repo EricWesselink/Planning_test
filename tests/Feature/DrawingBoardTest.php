@@ -77,7 +77,7 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Alle zichtbare')
             ->assertSee('id="pick-work-rooms"', false)
             ->assertSee('id="draw-work-panel"', false)
-            ->assertSee('class="draw-work-panel" hidden', false)
+            ->assertDontSee('class="draw-work-panel" hidden', false)
             ->assertSee('Alles selecteren')
             ->assertSee('Wis selectie')
             ->assertSee('Toepassen')
@@ -345,6 +345,7 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('.draw-work-panel', $css);
         $this->assertStringContainsString('.draw-work-panel[hidden]', $css);
         $this->assertStringContainsString('.draw-work-panel.is-open', $css);
+        $this->assertMatchesRegularExpression('/\.draw-work-panel\.is-open\s*\{[^}]*display:\s*flex\s*!important/s', $css);
         $this->assertStringContainsString('max-height: 400px', $css);
         $this->assertStringContainsString('#dc2626', $css);
     }
@@ -370,14 +371,22 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('id="complete-form"', $view);
         $this->assertStringContainsString('id="complete-worker"', $view);
         $this->assertStringContainsString('Opslaan en verwerken', $view);
-        $this->assertStringContainsString('class="draw-work-panel" hidden', $view);
+        $this->assertStringContainsString('id="draw-work-panel"', $view);
+        $this->assertStringNotContainsString('class="draw-work-panel" hidden', $view);
         $this->assertStringContainsString('Wis selectie', $view);
         $this->assertStringContainsString('id="room-measure-panel"', $view);
         $this->assertStringContainsString('id="room-progress-panel"', $view);
         $this->assertStringContainsString('function saveRoomSelectionProgress', $js);
         $this->assertStringContainsString('processSelection', $js);
         $this->assertStringContainsString('selectedRoomProgressWorks', $js);
+        $this->assertStringContainsString('checkedKeysFromWorkFilter', $js);
+        $this->assertStringContainsString('syncRoomMeasureMode();', $js);
+        $this->assertStringContainsString('id="room-progress-active"', $view);
+        $this->assertStringContainsString('id="room-progress-active-lines"', $view);
+        $this->assertStringContainsString('id="room-measure-active"', $view);
+        $this->assertStringContainsString('Actieve selectie', $view);
         $this->assertStringContainsString('#draw-hit .room-measure-shape', $css);
+        $this->assertStringContainsString('.draw-stage.is-room-measure #draw-hit .room-measure-shape', $css);
         $this->assertStringContainsString('#draw-hit .room-measure-shape.is-on', $css);
         $this->assertMatchesRegularExpression('/#draw-hit \.room-measure-shape\.is-on\s*\{[^}]*stroke:\s*none/s', $css);
         $this->assertStringContainsString('.room-measure-chip', $css);

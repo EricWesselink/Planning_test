@@ -1598,7 +1598,7 @@ button.plan-labor-toggle:hover {
 }
 
 .draw-work-panel.is-open {
-    display: flex;
+    display: flex !important;
 }
 
 .draw-work-panel-head {
@@ -1752,6 +1752,10 @@ button.plan-labor-toggle:hover {
     stroke-linejoin: round;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.draw-stage.is-room-measure #draw-hit .room-measure-shape {
     pointer-events: fill;
     cursor: pointer;
 }
@@ -2234,6 +2238,26 @@ button.plan-labor-toggle:hover {
     border-radius: 4px;
 }
 
+.room-measure-active {
+    display: inline-flex;
+    align-items: center;
+    max-width: 16rem;
+    padding: 0.12rem 0.42rem;
+    background: #ecfdf3;
+    color: #166534;
+    font-size: 0.8125rem;
+    font-weight: 650;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 4px;
+}
+
+.room-measure-active.hidden {
+    display: none;
+}
+
 .room-measure-bar button {
     border: 1px solid var(--color-nicon-line);
     background: white;
@@ -2326,8 +2350,12 @@ button.plan-labor-toggle:hover {
     box-shadow: 0 16px 40px rgba(28, 25, 23, 0.18);
 }
 
+.room-progress-panel[hidden] {
+    display: none !important;
+}
+
 .room-progress-panel.is-open {
-    display: flex;
+    display: flex !important;
 }
 
 .room-progress-head {
@@ -2372,6 +2400,54 @@ button.plan-labor-toggle:hover {
     margin: 0;
     font-size: 0.75rem;
     color: var(--color-nicon-muted);
+}
+
+.room-progress-active {
+    padding: 0.7rem 1rem 0.75rem;
+    border-bottom: 1px solid var(--color-nicon-line);
+    background: #f0fdf4;
+}
+
+.room-progress-active-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #166534;
+    margin-bottom: 0.35rem;
+}
+
+.room-progress-active-line {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    padding: 0.2rem 0;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+}
+
+.room-progress-active-line span {
+    font-size: 0.75rem;
+    color: var(--color-nicon-muted);
+}
+
+.room-progress-active-empty {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--color-nicon-muted);
+}
+
+.room-progress-group-title {
+    margin: 0.55rem 0 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-nicon-muted);
+}
+
+.room-progress-group-title:first-child {
+    margin-top: 0;
 }
 
 .room-progress-close {
@@ -2458,6 +2534,14 @@ button.plan-labor-toggle:hover {
 
 .room-progress-option.is-done {
     color: var(--color-nicon-ok);
+}
+
+.room-progress-option.is-active {
+    background: #eff6ff;
+    margin: 0 -0.35rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    border-radius: 6px;
 }
 
 .room-progress-option input {
