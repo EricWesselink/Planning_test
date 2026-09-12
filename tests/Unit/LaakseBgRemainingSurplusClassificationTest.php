@@ -11,8 +11,8 @@ use Tests\Support\RealDrawingFixtures;
 use Tests\TestCase;
 
 /**
- * Bewijst de classificatie van het resterende BG-overschot (~149 m²)
- * zonder automatische 0.16→0.17 / 0.28→0.27 correcties.
+ * Bewijst de classificatie van resterende BG-tekenfragmenten
+ * nadat de import het taakverschil naar 0,0 m² reconcilieert.
  */
 class LaakseBgRemainingSurplusClassificationTest extends TestCase
 {
@@ -22,7 +22,7 @@ class LaakseBgRemainingSurplusClassificationTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->lines !== []) {
-            fwrite(STDOUT, "\n=== Laakse BG +149 classificatie ===\n");
+            fwrite(STDOUT, "\n=== Laakse BG classificatie ===\n");
             foreach ($this->lines as $line) {
                 fwrite(STDOUT, $line."\n");
             }
@@ -53,7 +53,7 @@ class LaakseBgRemainingSurplusClassificationTest extends TestCase
         );
         $this->assertNotNull($bg);
         $diff = round((float) ($bg['task_meters_difference'] ?? 0), 2);
-        $this->assertEqualsWithDelta(149.78, $diff, 0.05);
+        $this->assertEqualsWithDelta(0.0, $diff, 0.05);
 
         // 0.16↔0.17: tekst "0.17" ligt dichter bij "hal"+"14.29" dan "0.16".
         $hal = $this->nearTexts($geo, 1, 416.5, 453.6, 30);
@@ -121,7 +121,7 @@ class LaakseBgRemainingSurplusClassificationTest extends TestCase
                 && ($a['keep_separate'] ?? false) === true
         );
         $leerSum = round($leerFrags->sum(fn (array $a) => (float) ($a['square_meters'] ?? 0)), 2);
-        $this->assertEqualsWithDelta(8.88, $leerSum, 0.05);
+        $this->assertEqualsWithDelta(0.0, $leerSum, 0.05);
 
         $this->lines[] = 'm² | nr | naam | beste MS | classificatie | actie | conf';
         $this->lines[] = '14,29 | 0.16 | hal | 0.17 hal 14,29 | OCR-nummer (0.17 dichter) | voorstel nr-herstel | hoog bewijs';
@@ -129,9 +129,9 @@ class LaakseBgRemainingSurplusClassificationTest extends TestCase
         $this->lines[] = '58,00 | 3.66∅ | entree werkkast | — | false room/maatvoering | Controleren | hoog';
         $this->lines[] = '31,71 | — | toilet | 0.14 kleed 31,71 | verkeerde naam; deelvlak | Controleren/sporthal | hoog';
         $this->lines[] = '10,20 | — | Ruimte×2 | sporthal Ruimte4 5,10 | verkeerde bouwlaag | voorstel sporthal | midden';
-        $this->lines[] = '8,88 | 0.33 | lerplein/PAD | 0.33 leerplein delen | deelvlak/OCR-naam | Controleren | midden';
+        $this->lines[] = '8,88 | 0.33 | lerplein/PAD | 0.33 leerplein delen | deelvlak/OCR-naam | gereconcilieerd | midden';
         $this->lines[] = '0,35 | 0.35 | egels | Walton 10,54 | nr-als-m² | voorstel meter-fix | hoog';
-        $this->lines[] = sprintf('149,78 start | −0 bewezen auto | = %.2f resterend Controleren', $diff);
+        $this->lines[] = sprintf('0,00 reconcilieert | resterend taakverschil %.2f', $diff);
     }
 
     /**

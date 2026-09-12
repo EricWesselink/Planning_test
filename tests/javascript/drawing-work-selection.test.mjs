@@ -6,6 +6,8 @@ import {
     formatBoardQty,
     groupedWorkFilters,
     measureSelectedWorks,
+    measureSelectedRooms,
+    roomSelectionSummaryLabel,
     shortWorkLabel,
     workFilterSummaryLabel,
 } from '../../resources/js/drawing-work-selection.js';
@@ -193,4 +195,143 @@ test('prepares an outsource payload without creating a job yet', () => {
     assert.equal(payload.worker_name, null);
     assert.ok(payload.rooms.every((room) => room.floor === 'begane grond'));
     assert.ok(payload.rooms.length >= 2);
+});
+
+test('sums selected rooms from stored meetstaat quantities and never from polygon size', () => {
+    const selected = [
+        {
+            id: 1,
+            number: '0.07',
+            name: 'groepsruimte',
+            unique_name: 'groepsruimte',
+            floor: 'begane grond',
+            floor_id: 1,
+            m2: 50.97,
+            marker: { polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }] },
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 50.97, unit: 'm2' },
+                { key: 'vloer|1', label: 'Marmoleum Real, 3120 rosato, Linoleum', quantity: 50.97, unit: 'm2' },
+                { key: 'plinten|9', label: 'Plinten wit', quantity: 42, unit: 'm1' },
+            ],
+        },
+        {
+            id: 2,
+            number: '0.09',
+            name: 'groepsruimte',
+            unique_name: 'groepsruimte 2',
+            floor: 'begane grond',
+            floor_id: 1,
+            m2: 159.38,
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 159.38, unit: 'm2' },
+                { key: 'vloer|1', label: 'Marmoleum Real, 3120 rosato, Linoleum', quantity: 159.43, unit: 'm2' },
+                { key: 'plinten|9', label: 'Plinten wit', quantity: 80, unit: 'm1' },
+            ],
+        },
+        {
+            id: 3,
+            number: '0.21',
+            name: 'hal',
+            floor: 'begane grond',
+            m2: 98.22,
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 98.22, unit: 'm2' },
+                { key: 'vloer|3', label: 'Marmoleum Walton, 3355 rosemary green, Linoleum', quantity: 98.22, unit: 'm2' },
+                { key: 'plinten|9', label: 'Plinten wit', quantity: 40, unit: 'm1' },
+            ],
+        },
+        {
+            id: 4,
+            number: '0.12',
+            name: 'lokaal',
+            floor: 'begane grond',
+            m2: 53.4,
+            works: [
+                { key: 'ondergrond', label: 'Primen & Egaliseren', quantity: 53.4, unit: 'm2' },
+                { key: 'vloer|2', label: 'Marmoleum Walton, 3352 berlin red, Linoleum', quantity: 53.35, unit: 'm2' },
+                { key: 'plinten|9', label: 'Plinten wit', quantity: 22.5, unit: 'm1' },
+            ],
+        },
+    ];
+    const duplicated = [...selected, selected[0], { ...selected[1], id: 2 }];
+    const measure = measureSelectedRooms(duplicated);
+
+    assert.equal(measure.rooms.length, 4);
+    assert.equal(measure.total_m2, 361.97);
+    assert.equal(measure.label, '361,97 m²');
+    assert.equal(roomSelectionSummaryLabel(measure.rooms.length, measure.total_m2), '4 ruimtes geselecteerd | 361,97 m²');
+    assert.equal(measure.lines.find((line) => line.key === 'ondergrond').quantity, 361.97);
+    assert.equal(measure.lines.find((line) => line.key === 'vloer|1').quantity, 210.4);
+    assert.equal(measure.lines.find((line) => line.key === 'vloer|3').quantity, 98.22);
+    assert.equal(measure.lines.find((line) => line.key === 'vloer|2').quantity, 53.35);
+    assert.equal(measure.lines.find((line) => line.key === 'plinten|9').quantity, 184.5);
+    assert.equal(measure.lines.find((line) => line.key === 'plinten|9').unit, 'm1');
+    assert.equal(measure.lines.find((line) => line.key === 'plinten|9').qty_label, '184,50 m¹');
+    assert.deepEqual(measure.lines.map((line) => line.key), ['ondergrond', 'vloer|1', 'vloer|2', 'vloer|3', 'plinten|9']);
+});
+
+test('keeps pvc, tapijt and marmoleum types separate in a room selection', () => {
+    const measure = measureSelectedRooms([
+        {
+            id: 8,
+            number: '1.10',
+            name: 'lokaal',
+            m2: 40,
+            works: [
+                { key: 'vloer|pvc', label: 'PVC, 4002 oak, PVC', quantity: 22, unit: 'm2' },
+                { key: 'vloer|tap', label: 'Tapijt, loop, Tapijt', quantity: 18, unit: 'm2' },
+            ],
+        },
+        {
+            id: 9,
+            number: '1.11',
+            name: 'gang',
+            m2: 12,
+            works: [
+                { key: 'vloer|pvc', label: 'PVC, 4002 oak, PVC', quantity: 12, unit: 'm2' },
+            ],
+        },
+    ]);
+
+    assert.equal(measure.lines.find((line) => line.key === 'vloer|pvc').quantity, 34);
+    assert.equal(measure.lines.find((line) => line.key === 'vloer|tap').quantity, 18);
+    assert.equal(measure.total_m2, 52);
+});
+
+test('does not fill missing work quantity from room m2 when selecting rooms', () => {
+    const measure = measureSelectedRooms([
+        {
+            id: 10,
+            number: '0.30',
+            name: 'berging',
+            m2: 999,
+            marker: { polygon: [{ x: 0, y: 0 }, { x: 0.9, y: 0 }, { x: 0.9, y: 0.9 }] },
+            works: [{ key: 'vloer|1', label: 'Marmoleum Real, 3120 rosato, Linoleum', unit: 'm2' }],
+        },
+    ]);
+
+    assert.equal(measure.total_m2, 999);
+    assert.equal(measure.lines.length, 0);
+});
+
+test('prepares a room outsource payload without creating a job', () => {
+    const selected = [rooms[0], rooms[1]];
+    const measure = measureSelectedRooms(selected);
+    const payload = buildOutsourceSelection({
+        project: { id: 12, name: 'Laakse Tuinen', number: '260200090' },
+        floor: 'begane grond',
+        keys: measure.lines.map((line) => line.key),
+        measure,
+        source: 'rooms',
+    });
+
+    assert.equal(payload.source, 'rooms');
+    assert.equal(payload.project_id, 12);
+    assert.equal(payload.floor, 'begane grond');
+    assert.equal(payload.total_m2, 109.97);
+    assert.equal(payload.rooms.length, 2);
+    assert.equal(payload.worker_id, null);
+    assert.ok(payload.materials.some((line) => line.key === 'ondergrond'));
+    assert.ok(payload.materials.some((line) => line.key === 'vloer|1'));
+    assert.ok(payload.materials.some((line) => line.key === 'vloer|2'));
 });

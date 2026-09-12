@@ -11,8 +11,8 @@ use Tests\Support\RealDrawingFixtures;
 use Tests\TestCase;
 
 /**
- * Diagnoseert het BG taak-overschot zonder iets te corrigeren.
- * Bewaakt alleen dat extras − ontbrekend = rapportverschil.
+ * Diagnoseert het BG taak-overschot.
+ * Bewaakt dat extras − ontbrekend = rapportverschil, en dat begane grond op 0,0 reconcilieert.
  */
 class LaakseBgTaskSurplusDiagnosisTest extends TestCase
 {
@@ -129,10 +129,10 @@ class LaakseBgTaskSurplusDiagnosisTest extends TestCase
             'Na sporthal-bouwlaagherstel moet BG-extra onder +209,42 dalen.'
         );
         $this->assertEqualsWithDelta(
-            149.78,
+            0.0,
             $reportedDiff,
             0.05,
-            'Zonder nieuwe auto-fixes blijft BG-extra op +149,78.'
+            'Begane grond reconcilieert naar 0,0 m² extra.',
         );
 
         $sporthal = collect($preview['import_report']['floors'] ?? [])->first(

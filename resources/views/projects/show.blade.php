@@ -230,6 +230,12 @@
                     @if ($canEnterProgress)
                         <button type="button" id="pick-work-rooms" class="room-pick-btn hidden">Alle zichtbare</button>
                     @endif
+                    <button type="button" id="pick-rooms-btn" class="room-measure-btn" aria-pressed="false">Ruimtes selecteren</button>
+                    <div id="room-measure-bar" class="room-measure-bar hidden">
+                        <span id="room-measure-label" aria-live="polite">0 ruimtes geselecteerd | 0,00 m²</span>
+                        <button type="button" id="room-measure-view" aria-expanded="false" aria-controls="room-measure-panel">Selectie bekijken</button>
+                        <button type="button" id="room-measure-clear">Wis selectie</button>
+                    </div>
                 </div>
                 <div class="flex items-center gap-1">
                     <button type="button" id="draw-hand" class="tool-btn is-on" title="Verschuiven">✋</button>
@@ -522,4 +528,10 @@
 
     <script type="application/json" id="board-data">{!! json_encode($board, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) !!}</script>
     <script type="application/json" id="outsource-selection-data">{}</script>
+    <div id="room-measure-panel" class="room-measure-panel">
+        <div class="room-measure-panel-head">Geselecteerde ruimtes</div>
+        <div id="room-measure-rooms" class="room-measure-rooms"></div>
+        <div class="room-measure-panel-head">Totalen</div>
+        <div id="room-measure-totals" class="room-measure-totals"></div>
+    </div>
 @endsection

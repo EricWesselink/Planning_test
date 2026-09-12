@@ -47,6 +47,10 @@ class DrawingBoardTest extends TestCase
             ->assertSee('Linoleum')
             ->assertSee('Hele werk')
             ->assertSee('Deze verdieping')
+            ->assertSee('Ruimtes selecteren')
+            ->assertSee('Selectie bekijken')
+            ->assertSee('Wis selectie')
+            ->assertSee('Geselecteerde ruimtes')
             ->assertSee('Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.')
             ->assertSee('tik om extra aan te vinken')
             ->assertDontSee('id="draw-link"', false)
@@ -334,6 +338,32 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('.draw-work-panel.is-open', $css);
         $this->assertStringContainsString('max-height: 400px', $css);
         $this->assertStringContainsString('#dc2626', $css);
+    }
+
+    public function test_drawing_board_selects_rooms_for_meetstaat_totals(): void
+    {
+        $js = file_get_contents(resource_path('js/drawing-board.js'));
+        $css = file_get_contents(resource_path('css/app.css'));
+        $view = file_get_contents(resource_path('views/projects/show.blade.php'));
+
+        $this->assertStringContainsString("getElementById('pick-rooms-btn')", $js);
+        $this->assertStringContainsString('function setRoomMeasureMode', $js);
+        $this->assertStringContainsString('function toggleMeasuredRoom', $js);
+        $this->assertStringContainsString('measureSelectedRooms', $js);
+        $this->assertStringContainsString('hitTestContours', $js);
+        $this->assertStringContainsString('roomContour', $js);
+        $this->assertStringContainsString("source: 'rooms'", $js);
+        $this->assertStringContainsString('room-measure-shape', $js);
+        $this->assertStringContainsString('Ruimtes selecteren', $view);
+        $this->assertStringContainsString('Selectie bekijken', $view);
+        $this->assertStringContainsString('Wis selectie', $view);
+        $this->assertStringContainsString('id="room-measure-panel"', $view);
+        $this->assertStringContainsString('#draw-hit .room-measure-shape', $css);
+        $this->assertStringContainsString('#draw-hit .room-measure-shape.is-on', $css);
+        $this->assertStringContainsString('.room-measure-btn.is-on', $css);
+        $this->assertStringNotContainsString('.room-select-fill', $css);
+        $this->assertStringNotContainsString('Selectie uitbesteden', $view);
+        $this->assertStringNotContainsString('Selectie uitbesteden', $js);
     }
 
     public function test_progress_form_shows_the_team_name_instead_of_the_company(): void

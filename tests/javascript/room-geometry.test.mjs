@@ -23,6 +23,9 @@ import {
     storedJumpTarget,
     focusViewport,
     exactRoomHitForArea,
+    roomContour,
+    pointInPolygon,
+    hitTestContours,
 } from '../../resources/js/room-geometry.js';
 
 test('finds exact room numbers and ignores square meters', () => {
@@ -339,4 +342,30 @@ test('stored jump target prefers the persisted jump_target on the area id', () =
     assert.equal(jump.box.x, 0.20);
     assert.equal(jump.drawing_marker_id, 44);
     assert.equal(jump.geometry, 'marker:44');
+});
+
+test('hits the smaller room polygon when contours overlap', () => {
+    const square = [
+        { x: 0.10, y: 0.10 },
+        { x: 0.40, y: 0.10 },
+        { x: 0.40, y: 0.40 },
+        { x: 0.10, y: 0.40 },
+    ];
+    const inner = [
+        { x: 0.18, y: 0.18 },
+        { x: 0.28, y: 0.18 },
+        { x: 0.28, y: 0.28 },
+        { x: 0.18, y: 0.28 },
+    ];
+    const rooms = [
+        { id: 1, contour: roomContour({ marker: { polygon: square } }) },
+        { id: 2, contour: roomContour({ marker: { polygon: inner } }) },
+    ];
+
+    assert.equal(pointInPolygon({ x: 0.23, y: 0.23 }, square), true);
+    assert.equal(pointInPolygon({ x: 0.05, y: 0.05 }, square), false);
+    assert.equal(hitTestContours({ x: 0.23, y: 0.23 }, rooms).id, 2);
+    assert.equal(hitTestContours({ x: 0.12, y: 0.12 }, rooms).id, 1);
+    assert.equal(hitTestContours({ x: 0.90, y: 0.90 }, rooms), null);
+    assert.equal(roomContour({ marker: { page: 1, x: 0.2, y: 0.3, width: 0.1, height: 0.05 } }).type, 'box');
 });

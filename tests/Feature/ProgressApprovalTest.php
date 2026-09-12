@@ -99,7 +99,7 @@ class ProgressApprovalTest extends TestCase
 
     public function test_vakman_cannot_mark_progress_on_a_project_where_he_is_not_scheduled(): void
     {
-        [$project, $area, $worker] = $this->makeBoard();
+        [$project, $area, $worker] = $this->makeBoard(assign: false);
         $other = $this->makeBoard()[0];
         $vakman = User::factory()->vakman($worker->id)->create();
         $this->assignWorker($worker, $other);
@@ -112,6 +112,8 @@ class ProgressApprovalTest extends TestCase
                 'date' => '2026-09-08',
             ])
             ->assertForbidden();
+
+        $this->assertSame(AreaStatus::NietGestart, $task->fresh()->status);
     }
 
     public function test_planner_cannot_mark_progress(): void
@@ -296,7 +298,7 @@ class ProgressApprovalTest extends TestCase
     /**
      * @return array{0: Project, 1: ProjectArea, 2: Worker}
      */
-    private function makeBoard(): array
+    private function makeBoard(bool $assign = true): array
     {
         $worker = Worker::query()->create([
             'name' => 'Albert',
@@ -340,7 +342,9 @@ class ProgressApprovalTest extends TestCase
         ]);
         app(RoomWorkSetup::class)->ensureProject($project);
 
-        $this->assignWorker($worker, $project);
+        if ($assign) {
+            $this->assignWorker($worker, $project);
+        }
 
         return [$project->fresh(), $area->fresh(['tasks.workItem']), $worker];
     }

@@ -20,6 +20,8 @@ import {
     storedJumpTarget,
     focusViewport,
     exactRoomHitForArea,
+    hitTestContours,
+    roomContour,
 } from './room-geometry';
 import {
     OCR_DPI,
@@ -34,6 +36,8 @@ import {
     buildOutsourceSelection,
     groupedWorkFilters,
     measureSelectedWorks,
+    measureSelectedRooms,
+    roomSelectionSummaryLabel,
     shortWorkLabel,
     workFilterSummaryLabel,
 } from './drawing-work-selection';
@@ -75,6 +79,17 @@ function boot() {
         document.body.appendChild(workFilterPanel);
     }
     const pickWorkRoomsBtn = document.getElementById('pick-work-rooms');
+    const pickRoomsBtn = document.getElementById('pick-rooms-btn');
+    const roomMeasureBar = document.getElementById('room-measure-bar');
+    const roomMeasureLabel = document.getElementById('room-measure-label');
+    const roomMeasureViewBtn = document.getElementById('room-measure-view');
+    const roomMeasureClearBtn = document.getElementById('room-measure-clear');
+    const roomMeasurePanel = document.getElementById('room-measure-panel');
+    const roomMeasureRoomsEl = document.getElementById('room-measure-rooms');
+    const roomMeasureTotalsEl = document.getElementById('room-measure-totals');
+    if (roomMeasurePanel && roomMeasurePanel.parentElement !== document.body) {
+        document.body.appendChild(roomMeasurePanel);
+    }
     const outsourceSelectionData = document.getElementById('outsource-selection-data');
     const hint = document.getElementById('draw-hint');
     const groupsEl = document.getElementById('room-groups');
@@ -147,6 +162,8 @@ function boot() {
     let moveMode = false;
     let selectedId = Number(root.dataset.selected || areas[0]?.id || 0);
     let pickedIds = new Set(selectedId ? [selectedId] : []);
+    let roomMeasureMode = false;
+    let roomMeasureIds = new Set();
     let selectToken = 0;
     let pickedToken = 0;
     let savingWork = false;
@@ -306,13 +323,20 @@ function boot() {
         moveMode = move;
         document.getElementById('draw-snag')?.classList.toggle('is-on', snagMode);
         stage.classList.toggle('is-snag', snagMode || moveMode);
+        if (snagMode || moveMode) {
+            roomMeasureMode = false;
+            closeRoomMeasurePanel();
+        }
         if (snagMode) {
             setHint('Tik op de exacte plek van het opleverpunt.');
         } else if (moveMode) {
             setHint('Sleep de marker of tik op de nieuwe plek.');
+        } else if (roomMeasureMode) {
+            setHint('Tik ruimtes aan op de tekening. Opnieuw tikken haalt ze uit de selectie.');
         } else {
             setHint('');
         }
+        syncRoomMeasureBar();
         renderMarkers();
     }
 
@@ -544,6 +568,10 @@ function boot() {
             event.preventDefault();
             event.stopPropagation();
             hideTip();
+            if (roomMeasureMode) {
+                toggleMeasuredRoom(area.id);
+                return;
+            }
             selectArea(area.id, { fromPin: true });
         });
         mark.addEventListener('mouseenter', (event) => showTip(area, event));
@@ -580,6 +608,41 @@ function boot() {
             bg: `#${value}`,
             fg: luma > 0.62 ? '#1c1917' : '#fff',
         };
+    }
+
+    function appendRoomMeasureShape(area) {
+        const areaId = Number(area.id);
+        const selected = roomMeasureIds.has(areaId);
+        if (!selected && !roomMeasureMode) {
+            return;
+        }
+        if (!selected && areaIsFilteredOut(area)) {
+            return;
+        }
+        const contour = roomContour(area);
+        if (!contour) {
+            return;
+        }
+        let shape;
+        if (contour.type === 'polygon') {
+            shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            shape.setAttribute('points', contour.points.map((point) => `${point.x},${point.y}`).join(' '));
+        } else {
+            shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            shape.setAttribute('x', String(contour.box.x));
+            shape.setAttribute('y', String(contour.box.y));
+            shape.setAttribute('width', String(contour.box.w));
+            shape.setAttribute('height', String(contour.box.h));
+        }
+        shape.setAttribute('class', `room-label room-measure-shape${selected ? ' is-on' : ''}`);
+        shape.dataset.areaId = String(area.id);
+        if (!roomMeasureMode) {
+            shape.style.pointerEvents = 'none';
+        }
+        shape.addEventListener('mouseenter', (event) => showTip(area, event));
+        shape.addEventListener('mousemove', (event) => showTip(area, event));
+        shape.addEventListener('mouseleave', hideTip);
+        hitEl.append(shape);
     }
 
     function appendLabelRect(area, box, extraClass = '') {
@@ -639,6 +702,10 @@ function boot() {
             event.preventDefault();
             event.stopPropagation();
             hideTip();
+            if (roomMeasureMode) {
+                toggleMeasuredRoom(area.id);
+                return;
+            }
             if (event.ctrlKey || event.metaKey || pickedIds.size > 1) {
                 addPickedRoom(area.id, { focus: true });
                 return;
@@ -761,6 +828,9 @@ function boot() {
         const showSnags = layerShowsSnags(layer);
 
         if (showRooms) {
+            uniqueAreasOnPage(areas, page).forEach((area) => {
+                appendRoomMeasureShape(area);
+            });
             const marked = new Set();
             // Geselecteerde/picked ruimtes: ALTIJD opgeslagen marker/contour van dat area-id.
             areas.forEach((area) => {
@@ -896,6 +966,7 @@ function boot() {
             const area = areaById(id);
             row.classList.toggle('is-on', id === selectedId);
             row.classList.toggle('is-picked', pickedIds.has(id));
+            row.classList.toggle('is-measured', roomMeasureIds.has(id));
             if (area) {
                 row.dataset.tone = area.tone;
                 if (Array.isArray(area.works)) {
@@ -1490,8 +1561,12 @@ function boot() {
 
     function startManualLink(areaId) {
         linkModeAreaId = Number(areaId);
+        roomMeasureMode = false;
+        closeRoomMeasurePanel();
         setTool('select');
         setHint('Tik de ruimte aan op de tekening.');
+        syncRoomMeasureBar();
+        renderMarkers();
     }
 
     async function finishManualLink(point) {
@@ -2393,23 +2468,181 @@ function boot() {
     }
 
     function storeOutsourceSelection() {
-        if (!outsourceSelectionData || !hasWorkFilter()) {
-            if (outsourceSelectionData && !hasWorkFilter()) {
-                outsourceSelectionData.textContent = '{}';
-            }
+        if (!outsourceSelectionData) {
             return;
         }
         const workerSelect = document.getElementById('complete-worker');
         const workerOption = workerSelect?.selectedOptions?.[0];
+        const workerId = workerSelect?.value ? Number(workerSelect.value) : null;
+        const workerName = workerOption?.textContent?.trim() || null;
+        if (roomMeasureIds.size > 0) {
+            const measure = currentRoomMeasure();
+            const payload = buildOutsourceSelection({
+                project: data.project || {},
+                floor: selectedFloorName(),
+                keys: measure.lines.map((line) => line.key),
+                measure,
+                workerId,
+                workerName,
+                source: 'rooms',
+            });
+            outsourceSelectionData.textContent = JSON.stringify(payload);
+            return;
+        }
+        if (!hasWorkFilter()) {
+            outsourceSelectionData.textContent = '{}';
+            return;
+        }
         const payload = buildOutsourceSelection({
             project: data.project || {},
             floor: selectedFloorName(),
             keys: workFilterKeys,
             measure: selectedWorkMeasure(),
-            workerId: workerSelect?.value ? Number(workerSelect.value) : null,
-            workerName: workerOption?.textContent?.trim() || null,
+            workerId,
+            workerName,
+            source: 'materials',
         });
         outsourceSelectionData.textContent = JSON.stringify(payload);
+    }
+
+    function currentRoomMeasure() {
+        return measureSelectedRooms([...roomMeasureIds].map((id) => areaById(id)).filter(Boolean));
+    }
+
+    function roomMeasurePanelIsOpen() {
+        return Boolean(roomMeasurePanel?.classList.contains('is-open'));
+    }
+
+    function closeRoomMeasurePanel() {
+        roomMeasurePanel?.classList.remove('is-open');
+        roomMeasureViewBtn?.setAttribute('aria-expanded', 'false');
+    }
+
+    function positionRoomMeasurePanel() {
+        if (!roomMeasurePanel || !roomMeasureViewBtn) {
+            return;
+        }
+        const rect = roomMeasureViewBtn.getBoundingClientRect();
+        const width = Math.min(360, window.innerWidth - 24);
+        let left = rect.left;
+        if (left + width > window.innerWidth - 12) {
+            left = Math.max(12, window.innerWidth - width - 12);
+        }
+        roomMeasurePanel.style.left = `${left}px`;
+        roomMeasurePanel.style.top = `${rect.bottom + 4}px`;
+        roomMeasurePanel.style.width = `${width}px`;
+    }
+
+    function renderRoomMeasurePanel(measure = currentRoomMeasure()) {
+        if (!roomMeasureRoomsEl || !roomMeasureTotalsEl) {
+            return;
+        }
+        if (!measure.rooms.length) {
+            roomMeasureRoomsEl.innerHTML = '<p class="room-measure-empty">Nog geen ruimtes geselecteerd.</p>';
+        } else {
+            roomMeasureRoomsEl.innerHTML = measure.rooms.map((room) => {
+                const title = `${room.number || ''} ${room.name || ''}`.trim() || `Ruimte ${room.id}`;
+
+                return `<button type="button" class="room-measure-room" data-measure-area-id="${room.id}"><span>${escapeHtml(title)}</span></button>`;
+            }).join('');
+        }
+        const netLine = `<div class="room-measure-line"><span>Netto vloeroppervlak</span><span>${escapeHtml(measure.m2_label)}</span></div>`;
+        const workLines = measure.lines.map((line) => (
+            `<div class="room-measure-line"><span>${escapeHtml(line.display_label || line.label)}</span><span>${escapeHtml(line.qty_label)}</span></div>`
+        )).join('');
+        roomMeasureTotalsEl.innerHTML = netLine + (workLines || '<p class="room-measure-empty">Geen werkzaamheden gekoppeld.</p>');
+    }
+
+    function openRoomMeasurePanel() {
+        if (!roomMeasurePanel) {
+            return;
+        }
+        renderRoomMeasurePanel();
+        roomMeasurePanel.classList.add('is-open');
+        roomMeasureViewBtn?.setAttribute('aria-expanded', 'true');
+        positionRoomMeasurePanel();
+    }
+
+    function syncRoomMeasureBar() {
+        const measure = currentRoomMeasure();
+        const count = measure.rooms.length;
+        if (roomMeasureLabel) {
+            roomMeasureLabel.textContent = roomSelectionSummaryLabel(count, measure.total_m2);
+        }
+        roomMeasureBar?.classList.toggle('hidden', !roomMeasureMode && count === 0);
+        if (roomMeasureClearBtn) {
+            roomMeasureClearBtn.disabled = count === 0;
+        }
+        pickRoomsBtn?.classList.toggle('is-on', roomMeasureMode);
+        pickRoomsBtn?.setAttribute('aria-pressed', roomMeasureMode ? 'true' : 'false');
+        stage.classList.toggle('is-room-measure', roomMeasureMode);
+        if (roomMeasurePanelIsOpen()) {
+            renderRoomMeasurePanel(measure);
+            positionRoomMeasurePanel();
+        }
+        storeOutsourceSelection();
+    }
+
+    function refreshRoomMeasure() {
+        syncRoomMeasureBar();
+        highlightList();
+        renderMarkers();
+    }
+
+    function toggleMeasuredRoom(id) {
+        const areaId = Number(id);
+        if (!Number.isFinite(areaId) || areaId <= 0) {
+            return;
+        }
+        const area = areaById(areaId);
+        if (!area || (areaIsFilteredOut(area) && !roomMeasureIds.has(areaId))) {
+            return;
+        }
+        if (roomMeasureIds.has(areaId)) {
+            roomMeasureIds.delete(areaId);
+        } else {
+            roomMeasureIds.add(areaId);
+        }
+        refreshRoomMeasure();
+    }
+
+    function clearMeasuredRooms() {
+        roomMeasureIds = new Set();
+        closeRoomMeasurePanel();
+        refreshRoomMeasure();
+        setHint(roomMeasureMode ? 'Selectie gewist. Tik ruimtes aan op de tekening.' : 'Ruimteselectie gewist.');
+    }
+
+    function setRoomMeasureMode(on) {
+        roomMeasureMode = Boolean(on);
+        if (roomMeasureMode) {
+            setModes({});
+            roomMeasureMode = true;
+            setTool('select');
+            setHint('Tik ruimtes aan op de tekening. Opnieuw tikken haalt ze uit de selectie.');
+            closeWorkPanel();
+        } else {
+            closeRoomMeasurePanel();
+            if (!snagMode && !moveMode && !linkModeAreaId) {
+                setTool('hand');
+                setHint('');
+            }
+        }
+        refreshRoomMeasure();
+    }
+
+    function clickableMeasureRooms() {
+        return uniqueAreasOnPage(areas, page)
+            .filter((area) => !areaIsFilteredOut(area) || roomMeasureIds.has(Number(area.id)))
+            .map((area) => {
+                const contour = roomContour(area);
+                if (!contour) {
+                    return null;
+                }
+
+                return { id: area.id, contour };
+            })
+            .filter(Boolean);
     }
 
     workFilterToggle?.addEventListener('click', (event) => {
@@ -2463,9 +2696,21 @@ function boot() {
         }
         closeWorkPanel();
     });
+    document.addEventListener('pointerdown', (event) => {
+        if (!roomMeasurePanelIsOpen()) {
+            return;
+        }
+        if (roomMeasurePanel?.contains(event.target) || roomMeasureViewBtn?.contains(event.target) || roomMeasureBar?.contains(event.target)) {
+            return;
+        }
+        closeRoomMeasurePanel();
+    });
     window.addEventListener('resize', () => {
         if (workPanelIsOpen()) {
             positionWorkPanel();
+        }
+        if (roomMeasurePanelIsOpen()) {
+            positionRoomMeasurePanel();
         }
     });
     document.addEventListener('keydown', (event) => {
@@ -2475,6 +2720,33 @@ function boot() {
     });
     pickWorkRoomsBtn?.addEventListener('click', () => {
         pickVisibleRooms();
+    });
+    pickRoomsBtn?.addEventListener('click', () => {
+        setRoomMeasureMode(!roomMeasureMode);
+    });
+    roomMeasureViewBtn?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (roomMeasurePanelIsOpen()) {
+            closeRoomMeasurePanel();
+        } else {
+            openRoomMeasurePanel();
+        }
+    });
+    roomMeasureClearBtn?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        clearMeasuredRooms();
+    });
+    roomMeasurePanel?.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    roomMeasurePanel?.addEventListener('click', (event) => {
+        const row = event.target.closest('[data-measure-area-id]');
+        if (!row) {
+            return;
+        }
+        toggleMeasuredRoom(row.dataset.measureAreaId);
     });
 
     document.querySelectorAll('.layer-btn').forEach((button) => {
@@ -2516,7 +2788,7 @@ function boot() {
         if (event.target.closest('.snag-pin, .snag-popup, .snag-photo-preview, button, select, a, input, textarea, label, .room-label, .status-badge')) {
             return;
         }
-        if (tool === 'select' || snagMode || moveMode) {
+        if (tool === 'select' || snagMode || moveMode || roomMeasureMode) {
             return;
         }
         dragging = true;
@@ -2598,6 +2870,14 @@ function boot() {
             }
             if (popupSnagId) {
                 closeSnagPopup();
+                return;
+            }
+            if (roomMeasurePanelIsOpen()) {
+                closeRoomMeasurePanel();
+                return;
+            }
+            if (roomMeasureMode) {
+                setRoomMeasureMode(false);
                 return;
             }
             if (snagMode || moveMode || pendingSnag || editingSnagId) {
@@ -2897,6 +3177,18 @@ function boot() {
             return;
         }
         const label = event.target.closest?.('.room-label, .status-badge, .status-mark');
+        if (roomMeasureMode) {
+            const fromLabel = Number(label?.dataset?.areaId || 0);
+            const hit = fromLabel
+                || hitTestContours(point, clickableMeasureRooms())?.id
+                || hitTestLabels(point, clickableRooms())?.id;
+            if (hit) {
+                hideTip();
+                closeSnagPopup();
+                toggleMeasuredRoom(hit);
+            }
+            return;
+        }
         const areaId = Number(label?.dataset?.areaId || 0) || hitTestLabels(point, clickableRooms())?.id;
         if (areaId) {
             hideTip();

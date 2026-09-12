@@ -81,6 +81,9 @@ export function workFamily(filter) {
     if (key === 'entreemat' || label.includes('entreemat') || label.includes('coral')) {
         return 'Entreemat';
     }
+    if (key === 'tapijt' || label.includes('tapijt')) {
+        return 'Tapijt';
+    }
     if (key === 'gietvloer' || label.includes('gietvloer') || key === 'coating') {
         return 'PU gietvloer';
     }
@@ -91,7 +94,7 @@ export function workFamily(filter) {
     return 'Overig';
 }
 
-const FAMILY_ORDER = ['', 'Marmoleum', 'PVC', 'Entreemat', 'PU gietvloer', 'Plinten', 'Overig'];
+const FAMILY_ORDER = ['', 'Marmoleum', 'PVC', 'Tapijt', 'Entreemat', 'PU gietvloer', 'Plinten', 'Overig'];
 const ALWAYS_GROUP = new Set(['', 'Marmoleum', 'PVC']);
 
 export function groupedWorkFilters(filters) {
@@ -220,6 +223,110 @@ export function measureSelectedWorks(areas, keys, filters = []) {
     };
 }
 
+export function uniqueAreasById(areas) {
+    const seen = new Set();
+    const unique = [];
+    (areas || []).forEach((area) => {
+        const id = Number(area?.id);
+        if (!Number.isFinite(id) || id <= 0 || seen.has(id)) {
+            return;
+        }
+        seen.add(id);
+        unique.push(area);
+    });
+
+    return unique;
+}
+
+function familyRank(line) {
+    const family = workFamily({
+        key: line?.key,
+        label: line?.label,
+        color_key: line?.color_key,
+    });
+    const index = FAMILY_ORDER.indexOf(family);
+
+    return index === -1 ? FAMILY_ORDER.length : index;
+}
+
+/**
+ * Netto meetstaat-hoeveelheden van handmatig aangeklikte ruimtes.
+ * Telt elke project_area één keer; gebruikt area.m2 en area_tasks, nooit de tekenvorm.
+ *
+ * @param {object[]} areas
+ */
+export function measureSelectedRooms(areas) {
+    const unique = uniqueAreasById(areas);
+    const linesByKey = new Map();
+
+    unique.forEach((area) => {
+        const seenKeys = new Set();
+        (area.works || []).forEach((work) => {
+            const key = String(work?.key || '');
+            if (key === '' || seenKeys.has(key)) {
+                return;
+            }
+            seenKeys.add(key);
+            const quantity = work.quantity != null && work.quantity !== ''
+                ? Number(work.quantity) || 0
+                : 0;
+            const existing = linesByKey.get(key);
+            if (existing) {
+                existing.quantity = roundBoardQty(existing.quantity + quantity);
+                if (work.unit) {
+                    existing.unit = work.unit;
+                }
+                return;
+            }
+            linesByKey.set(key, {
+                key,
+                label: work.label || key,
+                quantity: roundBoardQty(quantity),
+                unit: work.unit || 'm2',
+                color_key: work.color_key || '',
+            });
+        });
+    });
+
+    const lines = [...linesByKey.values()]
+        .filter((line) => line.quantity !== 0)
+        .map((line) => ({
+            ...line,
+            quantity: roundBoardQty(line.quantity),
+            qty_label: `${formatBoardQty(line.quantity)} ${workUnitLabel(line.unit)}`,
+            display_label: shortWorkLabel(line.label) || line.label,
+        }))
+        .sort((left, right) => familyRank(left) - familyRank(right)
+            || left.label.localeCompare(right.label, 'nl'));
+
+    const totalM2 = roundBoardQty(unique.reduce((sum, area) => sum + (Number(area.m2) || 0), 0));
+    const rooms = unique.map((area) => ({
+        id: area.id,
+        number: area.number || '',
+        name: area.unique_name || area.name || '',
+        floor: area.floor || '',
+        floor_id: area.floor_id ?? null,
+        m2: Number(area.m2) || 0,
+    })).sort((left, right) => String(left.number).localeCompare(String(right.number), 'nl', { numeric: true })
+        || String(left.name).localeCompare(String(right.name), 'nl'));
+
+    return {
+        lines,
+        rooms,
+        total: totalM2,
+        total_m2: totalM2,
+        unit: 'm2',
+        label: `${formatBoardQty(totalM2)} m²`,
+        m2_label: `${formatBoardQty(totalM2)} m²`,
+    };
+}
+
+export function roomSelectionSummaryLabel(count, m2) {
+    const rooms = count === 1 ? '1 ruimte geselecteerd' : `${count} ruimtes geselecteerd`;
+
+    return `${rooms} | ${formatBoardQty(m2)} m²`;
+}
+
 export function buildOutsourceSelection({
     project = {},
     floor = '',
@@ -227,10 +334,15 @@ export function buildOutsourceSelection({
     measure = null,
     workerId = null,
     workerName = null,
+    source = 'materials',
 } = {}) {
     const result = measure || { lines: [], rooms: [], total: 0, unit: 'm2', label: formatBoardQty(0) + ' m²' };
+    const totalM2 = result.total_m2 != null
+        ? result.total_m2
+        : (result.unit === 'm2' ? result.total : 0);
 
     return {
+        source,
         project_id: project.id ?? null,
         project_name: project.name || '',
         project_number: project.number || '',
@@ -243,7 +355,7 @@ export function buildOutsourceSelection({
             unit: line.unit,
         })),
         material_keys: [...keys],
-        total_m2: result.unit === 'm2' ? result.total : 0,
+        total_m2: totalM2,
         total_quantity: result.total,
         total_unit: result.unit,
         total_label: result.label,

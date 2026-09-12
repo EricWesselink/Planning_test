@@ -519,6 +519,100 @@ export function hitTestLabels(point, rooms) {
     return hits[0] || null;
 }
 
+export function roomContour(area) {
+    const poly = Array.isArray(area?.marker?.polygon) ? area.marker.polygon : null;
+    if (poly && poly.length >= 3) {
+        const points = [];
+        poly.forEach((point) => {
+            const x = Number(point?.x);
+            const y = Number(point?.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return;
+            }
+            points.push({ x, y });
+        });
+        if (points.length >= 3) {
+            return { type: 'polygon', points };
+        }
+    }
+    const box = storedJumpTarget(area)?.box || displayBox(area);
+    if (!box) {
+        return null;
+    }
+
+    return { type: 'box', box };
+}
+
+export function contourArea(contour) {
+    if (!contour) {
+        return 0;
+    }
+    if (contour.type === 'box') {
+        return (Number(contour.box?.w) || 0) * (Number(contour.box?.h) || 0);
+    }
+    const points = contour.points || [];
+    if (points.length < 3) {
+        return 0;
+    }
+    let sum = 0;
+    for (let index = 0; index < points.length; index += 1) {
+        const current = points[index];
+        const next = points[(index + 1) % points.length];
+        sum += (current.x * next.y) - (next.x * current.y);
+    }
+
+    return Math.abs(sum) / 2;
+}
+
+export function pointInPolygon(point, points) {
+    if (!point || !Array.isArray(points) || points.length < 3) {
+        return false;
+    }
+    const x = Number(point.x);
+    const y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return false;
+    }
+    let inside = false;
+    for (let index = 0, previous = points.length - 1; index < points.length; previous = index, index += 1) {
+        const current = points[index];
+        const last = points[previous];
+        const xi = Number(current.x);
+        const yi = Number(current.y);
+        const xj = Number(last.x);
+        const yj = Number(last.y);
+        if (!Number.isFinite(xi) || !Number.isFinite(yi) || !Number.isFinite(xj) || !Number.isFinite(yj)) {
+            continue;
+        }
+        const intersect = ((yi > y) !== (yj > y))
+            && (x < (((xj - xi) * (y - yi)) / ((yj - yi) || Number.EPSILON)) + xi);
+        if (intersect) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
+export function pointInContour(point, contour) {
+    if (!contour) {
+        return false;
+    }
+    if (contour.type === 'polygon') {
+        return pointInPolygon(point, contour.points);
+    }
+
+    return pointInLabel(point, contour.box);
+}
+
+export function hitTestContours(point, rooms) {
+    const hits = (rooms || [])
+        .filter((room) => pointInContour(point, room.contour))
+        .sort((left, right) => contourArea(left.contour) - contourArea(right.contour));
+
+    return hits[0] || null;
+}
+
 export function uniqueAreasOnPage(areas, page) {
     // Elke project_area met eigen marker blijft zichtbaar — nooit dedupe op ruimtenaam.
     // Alleen exact dezelfde page+punt+id-groep: bij echt gedeelde coords blijft elk uniek area-id.
