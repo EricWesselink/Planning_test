@@ -15,7 +15,7 @@ class WorkerVoucherMail extends Mailable
 
     public function __construct(public Voucher $voucher)
     {
-        $this->voucher->loadMissing(['worker', 'project', 'lines', 'parent']);
+        $this->voucher->loadMissing(['worker', 'project', 'lines.area', 'parent']);
     }
 
     public function envelope(): Envelope

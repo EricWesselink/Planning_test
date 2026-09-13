@@ -13,6 +13,10 @@ enum FlooringSpecialty: string
     case Coating = 'coating';
     case Entreemat = 'entreemat';
     case Plinten = 'plinten';
+    case Inmeten = 'inmeten';
+    case Montage = 'montage';
+    case Reparatie = 'reparatie';
+    case Service = 'service';
 
     public function label(): string
     {
@@ -26,6 +30,18 @@ enum FlooringSpecialty: string
             self::Coating => 'Coating',
             self::Entreemat => 'Entreemat',
             self::Plinten => 'Plinten',
+            self::Inmeten => 'Inmeten',
+            self::Montage => 'Montage',
+            self::Reparatie => 'Reparatie',
+            self::Service => 'Service',
+        };
+    }
+
+    public function hasQuantityRate(): bool
+    {
+        return match ($this) {
+            self::Inmeten, self::Montage, self::Reparatie, self::Service => false,
+            default => true,
         };
     }
 

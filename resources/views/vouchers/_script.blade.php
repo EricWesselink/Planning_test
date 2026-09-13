@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!form || !tbody) return;
 
     const money = (value) => '€ ' + value.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const qty = (value) => value.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const number = (value) => Number(String(value).replace(/\s/g, '').replace(',', '.')) || 0;
 
     const syncKind = (row) => {
@@ -28,15 +29,68 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const roomsOf = (groupKey) => tbody.querySelectorAll('.voucher-room[data-group="'+groupKey+'"]');
+
+    const syncGroup = (header) => {
+        syncKind(header);
+        const groupKey = header.dataset.group;
+        const kind = header.querySelector('.voucher-kind')?.value || 'unit';
+        const unit = header.querySelector('.voucher-unit')?.value || 'm2';
+        const name = header.querySelector('.voucher-activity-name')?.value || '';
+        const price = number(header.querySelector('.voucher-price')?.value);
+        const rooms = [...roomsOf(groupKey)];
+        const totalQty = rooms.reduce((sum, row) => sum + number(row.querySelector('.voucher-qty')?.value), 0);
+        let groupAmount = totalQty * price;
+        if (kind === 'fixed') {
+            groupAmount = number(header.querySelector('.voucher-fixed-amount')?.value);
+        }
+
+        const qtyCell = header.querySelector('.voucher-group-qty');
+        if (qtyCell) qtyCell.textContent = qty(totalQty);
+        const amountCell = header.querySelector('.voucher-amount');
+        if (amountCell) amountCell.textContent = money(groupAmount);
+
+        let allocated = 0;
+        rooms.forEach((row, index) => {
+            const roomQty = number(row.querySelector('.voucher-qty')?.value);
+            const descriptionField = row.querySelector('.voucher-activity-description');
+            if (descriptionField) descriptionField.value = name;
+            const unitField = row.querySelector('.voucher-unit-value');
+            if (unitField) unitField.value = unit;
+            const kindField = row.querySelector('.voucher-kind-value');
+            if (kindField) kindField.value = kind;
+            const priceField = row.querySelector('.voucher-price');
+            if (priceField) priceField.value = header.querySelector('.voucher-price')?.value ?? '';
+            let roomAmount = roomQty * price;
+            if (kind === 'fixed') {
+                if (index === rooms.length - 1) {
+                    roomAmount = Math.round((groupAmount - allocated) * 100) / 100;
+                } else if (totalQty > 0) {
+                    roomAmount = Math.round((roomQty / totalQty) * groupAmount * 100) / 100;
+                    allocated += roomAmount;
+                } else {
+                    roomAmount = 0;
+                }
+            }
+            const amountField = row.querySelector('.voucher-fixed-amount');
+            if (amountField) amountField.value = roomAmount > 0 ? roomAmount.toFixed(2).replace('.', ',') : '';
+        });
+
+        return groupAmount;
+    };
+
     const recount = () => {
         let total = 0;
-        tbody.querySelectorAll('.voucher-line').forEach((row) => {
+        tbody.querySelectorAll('.voucher-group').forEach((header) => {
+            total += syncGroup(header);
+        });
+        tbody.querySelectorAll('.voucher-line:not(.voucher-room)').forEach((row) => {
             syncKind(row);
             const kind = row.querySelector('.voucher-kind')?.value || 'unit';
-            const qty = number(row.querySelector('.voucher-qty')?.value);
+            const qtyValue = number(row.querySelector('.voucher-qty')?.value);
             const price = number(row.querySelector('.voucher-price')?.value);
             const amountInput = row.querySelector('.voucher-fixed-amount');
-            let amount = qty * price;
+            let amount = qtyValue * price;
             if (kind === 'fixed') {
                 amount = number(amountInput?.value);
             } else if (amountInput && document.activeElement !== amountInput) {
@@ -59,19 +113,40 @@ document.addEventListener('DOMContentLoaded', () => {
         return max + 1;
     };
 
+    const ensureLine = () => {
+        if (tbody.querySelector('.voucher-line') || !template) return;
+        const html = template.innerHTML.replaceAll('__INDEX__', String(nextIndex()));
+        tbody.insertAdjacentHTML('beforeend', html);
+    };
+
     form.addEventListener('input', recount);
     form.addEventListener('change', recount);
     tbody.addEventListener('click', (event) => {
+        const groupButton = event.target.closest('.voucher-remove-group');
+        if (groupButton) {
+            const header = groupButton.closest('.voucher-group');
+            const groupKey = header?.dataset.group;
+            header?.remove();
+            roomsOf(groupKey).forEach((row) => row.remove());
+            ensureLine();
+            recount();
+            return;
+        }
         const button = event.target.closest('.voucher-remove');
         if (!button) return;
+        const row = button.closest('.voucher-line');
+        const groupKey = row?.dataset.group;
         const rows = tbody.querySelectorAll('.voucher-line');
         if (rows.length <= 1) {
-            const row = button.closest('.voucher-line');
             row.querySelectorAll('input[type="text"]').forEach((input) => { input.value = ''; });
             recount();
             return;
         }
-        button.closest('.voucher-line')?.remove();
+        row?.remove();
+        if (groupKey && roomsOf(groupKey).length === 0) {
+            tbody.querySelector('.voucher-group[data-group="'+groupKey+'"]')?.remove();
+            ensureLine();
+        }
         recount();
     });
 

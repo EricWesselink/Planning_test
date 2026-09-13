@@ -5,7 +5,7 @@
 @section('content')
     <a href="{{ route('workers.index') }}" class="text-sm text-nicon-muted">← Vakmensen</a>
     <h1 class="mt-2 text-2xl font-semibold">Nieuwe vakman</h1>
-    <p class="text-sm text-nicon-muted">Vakkennis, kleur, NAW en e-mail komen terug in de lijst, de planning en op de vakmanpagina.</p>
+    <p class="text-sm text-nicon-muted">Vakkennis, teamgrootte en NAW komen in de lijst en de planning. Inlog via e-mail mag nu of later.</p>
 
     @if ($errors->any())
         <ul class="mt-4 text-sm text-nicon-danger list-disc pl-5">

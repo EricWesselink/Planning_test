@@ -70,7 +70,7 @@ class PlanningAvailabilityTest extends TestCase
             ->assertSee('planning-available-free">10 vrij</span>', false);
     }
 
-    public function test_planning_page_omits_teams_without_a_login(): void
+    public function test_planning_page_includes_teams_without_a_login(): void
     {
         $user = User::factory()->create();
         $this->makeWorker('Harm Wesselink');
@@ -86,8 +86,8 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Harm Wesselink</span>', false)
-            ->assertSee('planning-available-count">5</span>', false)
-            ->assertDontSee('planning-available-name">Kees Jansen</span>', false);
+            ->assertSee('planning-available-name">Kees Jansen</span>', false)
+            ->assertSee('planning-available-count">20</span>', false);
     }
 
     public function test_planning_page_omits_own_staff_from_the_man_day_overview(): void

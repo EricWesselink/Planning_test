@@ -10,6 +10,7 @@
             'price_kind' => \App\Enums\VoucherPriceKind::Unit->value,
         ]];
     }
+    $groups = \App\Support\VoucherActivityGroups::fromFormLines($formLines);
 @endphp
 <div class="overflow-x-auto border border-nicon-line bg-white">
     <table class="w-full text-sm" id="voucher-table">
@@ -25,14 +26,18 @@
             </tr>
         </thead>
         <tbody id="voucher-lines">
-            @foreach ($formLines as $index => $line)
-                @include('vouchers._line', ['index' => $index, 'line' => $line])
+            @foreach ($groups as $group)
+                @if ($group['has_rooms'])
+                    @include('vouchers._group', ['group' => $group])
+                @else
+                    @include('vouchers._line', ['index' => $group['entries'][0]['index'], 'line' => $group['entries'][0]['line']])
+                @endif
             @endforeach
         </tbody>
         <tfoot>
             <tr class="border-t border-nicon-line font-medium">
                 <td class="px-4 py-3" colspan="5">Totaal</td>
-                <td class="px-4 py-3 text-right" id="voucher-total">{{ \App\Support\Format::money(collect($formLines)->sum(fn ($line) => (float) ($line['amount'] ?? 0))) }}</td>
+                <td class="px-4 py-3 text-right" id="voucher-total">{{ \App\Support\Format::money(collect($groups)->sum('amount')) }}</td>
                 <td></td>
             </tr>
         </tfoot>

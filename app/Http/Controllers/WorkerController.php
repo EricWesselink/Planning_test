@@ -4,15 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Enums\EmploymentType;
 use App\Enums\FlooringSpecialty;
+use App\Enums\UserRole;
 use App\Enums\WorkUnit;
+use App\Mail\WorkerPlanningInviteMail;
 use App\Models\SpecialtyOption;
+use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkerRate;
 use App\Services\ProductionOverviewService;
 use App\Services\VoucherDraftService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -22,8 +27,8 @@ class WorkerController extends Controller
     {
         Gate::authorize('viewAny', Worker::class);
         $workers = Worker::query()
-            ->withLogin()
             ->with(['crewPeople', 'availabilities', 'users'])
+            ->orderByDesc('active')
             ->orderBy('employment_type')
             ->orderBy('name')
             ->get();
@@ -62,11 +67,21 @@ class WorkerController extends Controller
     public function store(Request $request): RedirectResponse
     {
         Gate::authorize('create', Worker::class);
-        Worker::query()->create($this->payload($request));
+
+        $account = null;
+        $worker = DB::transaction(function () use ($request, &$account): Worker {
+            $worker = Worker::query()->create($this->payload($request, creating: true));
+            if ($request->filled('email') && $request->filled('password')) {
+                $account = $this->createLogin($worker, $request);
+            }
+
+            return $worker;
+        });
+        $this->sendPlanningInvite($request, $worker, $account);
 
         return redirect()
             ->route('workers.index')
-            ->with('status', 'Vakman opgeslagen.');
+            ->with('status', $this->savedStatus($request, $account));
     }
 
     public function show(Request $request, Worker $worker, ProductionOverviewService $overview, VoucherDraftService $drafts): View
@@ -76,6 +91,7 @@ class WorkerController extends Controller
             'assignments.project',
             'crewPeople',
             'availabilities',
+            'users',
             'workOrders.project',
             'workOrders.workItem',
             'rates',
@@ -111,6 +127,67 @@ class WorkerController extends Controller
             ->with('status', 'Gegevens opgeslagen.');
     }
 
+    public function storeLogin(Request $request, Worker $worker): RedirectResponse
+    {
+        Gate::authorize('update', $worker);
+
+        if ($worker->users()->exists()) {
+            return redirect()
+                ->route('workers.show', $worker)
+                ->with('status', 'Dit team heeft al een inlog.');
+        }
+
+        $this->loginRules($request, required: true);
+        $account = DB::transaction(function () use ($request, $worker): User {
+            $email = strtolower(trim($request->string('email')->toString()));
+            $worker->forceFill(['email' => $email])->save();
+
+            return $this->createLogin($worker->fresh(), $request);
+        });
+        $this->sendPlanningInvite($request, $worker->fresh(), $account);
+
+        return redirect()
+            ->route('workers.show', $worker)
+            ->with('status', $this->savedStatus($request, $account, createdWorker: false));
+    }
+
+    public function updateActive(Request $request, Worker $worker): RedirectResponse
+    {
+        Gate::authorize('update', $worker);
+        $active = $request->boolean('active');
+
+        DB::transaction(function () use ($worker, $active): void {
+            $worker->update(['active' => $active]);
+            $worker->users()->update(['active' => $active]);
+        });
+
+        return back()->with(
+            'status',
+            $active ? $worker->name.' is weer actief.' : $worker->name.' is inactief gezet.',
+        );
+    }
+
+    public function destroy(Worker $worker): RedirectResponse
+    {
+        Gate::authorize('delete', $worker);
+
+        if ($worker->vouchers()->exists()) {
+            return back()->withErrors([
+                'worker' => $worker->name.' heeft bonnen. Zet het team inactief in plaats van te verwijderen.',
+            ]);
+        }
+
+        $name = $worker->name;
+        DB::transaction(function () use ($worker): void {
+            $worker->users()->delete();
+            $worker->delete();
+        });
+
+        return redirect()
+            ->route('workers.index')
+            ->with('status', $name.' is verwijderd.');
+    }
+
     public function storeSpecialty(Request $request): RedirectResponse
     {
         Gate::authorize('create', Worker::class);
@@ -141,15 +218,17 @@ class WorkerController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function payload(Request $request): array
+    private function payload(Request $request, bool $creating = false): array
     {
-        $data = $request->validate([
+        $rules = [
             'name' => ['required', 'string', 'max:255'],
             'employment_type' => ['required', Rule::enum(EmploymentType::class)],
             'company' => ['nullable', 'string', 'max:255'],
             'contact_name' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:64'],
-            'email' => ['nullable', 'email', 'max:255'],
+            'email' => $creating
+                ? $this->emailRules($request, required: false)
+                : ['nullable', 'email', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'city' => ['nullable', 'string', 'max:255'],
@@ -164,8 +243,19 @@ class WorkerController extends Controller
             'active' => ['sometimes', 'boolean'],
             'friday_off' => ['sometimes', 'boolean'],
             'unavailable' => ['sometimes', 'boolean'],
-        ], [
+        ];
+        if ($creating) {
+            $rules['password'] = $this->passwordRules($request, required: false);
+            $rules['invite'] = ['sometimes', 'boolean'];
+        }
+
+        $data = $request->validate($rules, [
+            'email.required' => 'Vul een e-mailadres in voor de inlog.',
             'email.email' => 'Vul een geldig e-mailadres in.',
+            'email.unique' => 'Dit e-mailadres is al in gebruik.',
+            'password.required' => 'Vul een tijdelijk wachtwoord in.',
+            'password.min' => 'Het wachtwoord moet minstens 8 tekens zijn.',
+            'password.confirmed' => 'De wachtwoorden komen niet overeen.',
             'people_count.min' => 'Er moet minstens 1 persoon zijn.',
             'specialties.*.max' => 'Een onderdeel mag maximaal 64 tekens zijn.',
             'specialties.*.not_regex' => 'Gebruik geen komma in een onderdeel.',
@@ -198,7 +288,10 @@ class WorkerController extends Controller
         $data['phone'] = Worker::firstCrewPhone($members);
         $data['specialty'] = FlooringSpecialty::storedLabels($data['specialties'] ?? []);
         SpecialtyOption::rememberMany($data['specialties'] ?? []);
-        unset($data['specialties']);
+        unset($data['specialties'], $data['password'], $data['password_confirmation'], $data['invite']);
+        if ($creating && filled($data['email'] ?? null)) {
+            $data['email'] = strtolower(trim((string) $data['email']));
+        }
 
         $type = EmploymentType::tryFrom((string) $data['employment_type']);
         if ($type?->isExternal() && blank($data['company'] ?? null)) {
@@ -267,6 +360,10 @@ class WorkerController extends Controller
 
         $rows = [];
         foreach ($cases as $case) {
+            if (! $case->hasQuantityRate()) {
+                continue;
+            }
+
             $unit = $case === FlooringSpecialty::Plinten ? WorkUnit::LinearMeter : WorkUnit::SquareMeter;
             $key = $case->value.'|'.$unit->value;
             $rate = $existing->get($key);
@@ -321,5 +418,104 @@ class WorkerController extends Controller
         }
 
         return $rows;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function loginRules(Request $request, bool $required): array
+    {
+        return $request->validate([
+            'email' => $this->emailRules($request, $required),
+            'password' => $this->passwordRules($request, $required),
+            'invite' => ['sometimes', 'boolean'],
+        ], [
+            'email.required' => 'Vul een e-mailadres in voor de inlog.',
+            'email.email' => 'Vul een geldig e-mailadres in.',
+            'email.unique' => 'Dit e-mailadres is al in gebruik.',
+            'password.required' => 'Vul een tijdelijk wachtwoord in.',
+            'password.min' => 'Het wachtwoord moet minstens 8 tekens zijn.',
+            'password.confirmed' => 'De wachtwoorden komen niet overeen.',
+        ]);
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function emailRules(Request $request, bool $required): array
+    {
+        $needsLogin = $required
+            || $request->filled('password')
+            || $request->boolean('invite');
+
+        return [
+            $needsLogin ? 'required' : 'nullable',
+            'email',
+            'max:255',
+            Rule::unique('users', 'email'),
+        ];
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function passwordRules(Request $request, bool $required): array
+    {
+        $needsLogin = $required
+            || $request->filled('email')
+            || $request->boolean('invite');
+
+        return [
+            Rule::requiredIf($needsLogin),
+            'nullable',
+            'string',
+            'min:8',
+            'confirmed',
+        ];
+    }
+
+    private function createLogin(Worker $worker, Request $request): User
+    {
+        return User::query()->create([
+            'name' => $worker->name,
+            'email' => strtolower(trim((string) $worker->email)),
+            'password' => $request->string('password')->toString(),
+            'role' => UserRole::Vakman,
+            'active' => true,
+            'can_access_all_projects' => false,
+            'worker_id' => $worker->id,
+            'email_verified_at' => now(),
+        ]);
+    }
+
+    private function sendPlanningInvite(Request $request, Worker $worker, ?User $account): void
+    {
+        if (! $request->boolean('invite') || $account === null) {
+            return;
+        }
+
+        Mail::to($account->email)->send(new WorkerPlanningInviteMail(
+            $worker,
+            $account,
+            route('login'),
+            $request->string('password')->toString(),
+        ));
+    }
+
+    private function savedStatus(Request $request, ?User $account, bool $createdWorker = true): string
+    {
+        if ($request->boolean('invite') && $account !== null) {
+            return $createdWorker
+                ? 'Vakman opgeslagen. Uitnodiging voor de planning is verstuurd.'
+                : 'Inlog is klaar. Uitnodiging voor de planning is verstuurd.';
+        }
+
+        if ($account !== null) {
+            return $createdWorker
+                ? 'Vakman opgeslagen. Inlog is klaar.'
+                : 'Inlog is klaar.';
+        }
+
+        return 'Vakman opgeslagen.';
     }
 }

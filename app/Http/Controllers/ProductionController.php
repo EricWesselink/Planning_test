@@ -41,6 +41,10 @@ class ProductionController extends Controller
         ];
         $vouchersByKey = $this->vouchersByKey($request->user(), $workerId, $projectId);
         $allVouchers = $vouchersByKey->collapse();
+        $sheetsByKey = $drafts->sheetsByWorkerProject($allVouchers);
+        $downloadVoucher = $sheetsByKey->count() === 1
+            ? ($sheetsByKey->first()['opdracht'] ?? null)
+            : null;
 
         return view('production.index', [
             'groups' => $data['groups'],
@@ -51,7 +55,8 @@ class ProductionController extends Controller
             'canCreateVouchers' => $request->user()?->canManageProjects() ?? false,
             'vouchersByKey' => $vouchersByKey,
             'billingByKey' => $drafts->billingByWorkerProject($allVouchers),
-            'sheetsByKey' => $drafts->sheetsByWorkerProject($allVouchers),
+            'sheetsByKey' => $sheetsByKey,
+            'downloadVoucher' => $downloadVoucher,
             'canApproveProgress' => $request->user()?->canApproveProgress() ?? false,
             'ownWorker' => $workerId
                 ? $data['workers']->firstWhere('id', $workerId)

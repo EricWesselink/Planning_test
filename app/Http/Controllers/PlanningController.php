@@ -26,7 +26,6 @@ class PlanningController extends Controller
         return view('planning.index', array_merge($data, [
             'workers' => Worker::query()
                 ->where('active', true)
-                ->withLogin()
                 ->when($scheduledWorkerId, fn ($q) => $q->whereKey($scheduledWorkerId))
                 ->with('crewPeople')
                 ->orderBy('name')

@@ -14,6 +14,7 @@ use App\Models\WorkItem;
 use App\Services\PlanningFitService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PlanningFitServiceTest extends TestCase
@@ -51,6 +52,17 @@ class PlanningFitServiceTest extends TestCase
         $item = $this->makeWorkItem('Marmoleum');
 
         $this->assertSame('linoleum', $item->requiredSpecialty()['key']);
+    }
+
+    #[DataProvider('shopActivitySpecialties')]
+    public function test_shop_activity_work_requires_that_vakkennis(string $name, string $key, string $label): void
+    {
+        $item = $this->makeWorkItem($name);
+
+        $this->assertSame([
+            'key' => $key,
+            'label' => $label,
+        ], $item->requiredSpecialty());
     }
 
     public function test_rails_plaatsen_uses_the_registered_vakkennis(): void
@@ -157,7 +169,7 @@ class PlanningFitServiceTest extends TestCase
         $this->assertSame('Jan heeft geen vakkennis voor Linoleum.', $message);
     }
 
-    public function test_omits_a_team_without_a_login(): void
+    public function test_includes_a_team_without_a_login(): void
     {
         $this->makeWorker('Wepro', 'Linoleum');
         Worker::query()->create([
@@ -176,7 +188,7 @@ class PlanningFitServiceTest extends TestCase
             '16:00:00',
         );
 
-        $this->assertSame(['Wepro'], collect($payload['workers'])->pluck('name')->all());
+        $this->assertSame(['Kees Jansen', 'Wepro'], collect($payload['workers'])->pluck('name')->all());
     }
 
     /**
@@ -268,5 +280,18 @@ class PlanningFitServiceTest extends TestCase
         }
 
         return $candidate;
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string}>
+     */
+    public static function shopActivitySpecialties(): array
+    {
+        return [
+            'inmeten' => ['Inmeten', 'inmeten', 'Inmeten'],
+            'montage' => ['Montage', 'montage', 'Montage'],
+            'reparatie' => ['Reparatie', 'reparatie', 'Reparatie'],
+            'service' => ['Service', 'service', 'Service'],
+        ];
     }
 }

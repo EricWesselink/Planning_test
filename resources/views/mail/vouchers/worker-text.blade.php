@@ -5,8 +5,13 @@ Hierbij de {{ strtolower($voucher->type->label()) }} {{ $voucher->number }} voor
 Voeg deze bon bij je factuur.
 @endif
 
-@foreach ($voucher->lines as $line)
-- {{ $line->description }}: {{ \App\Support\Format::qty($line->quantity, 2) }} {{ $line->unit?->label() }} × {{ \App\Support\Format::money($line->unit_price) }} = {{ \App\Support\Format::money($line->amount) }}
+@foreach (\App\Support\VoucherActivityGroups::fromVoucher($voucher) as $group)
+- {{ $group['description'] }}: {{ \App\Support\VoucherActivityGroups::quantityLabel($group) }} × {{ \App\Support\VoucherActivityGroups::priceLabel($group) }} = {{ \App\Support\Format::money($group['amount']) }}
+@if ($group['has_rooms'])
+@foreach ($group['entries'] as $entry)
+  {{ $entry['room_label'] }}: {{ \App\Support\Format::qty($entry['quantity'], 2) }} {{ \App\Support\VoucherActivityGroups::unitLabel($group['unit']) }}
+@endforeach
+@endif
 @endforeach
 
 {{ $attachToInvoice ? 'Totaal te factureren' : 'Totaal' }}: {{ \App\Support\Format::money($voucher->total_amount) }}

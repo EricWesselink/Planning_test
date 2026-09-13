@@ -30,13 +30,23 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach ($voucher->lines as $line)
+                @foreach (\App\Support\VoucherActivityGroups::fromVoucher($voucher) as $group)
                     <tr>
-                        <td style="padding: 8px 6px; border-bottom: 1px solid #e7e0d4;">{{ $line->description }}</td>
-                        <td style="padding: 8px 6px; border-bottom: 1px solid #e7e0d4; text-align: right; white-space: nowrap;">{{ \App\Support\Format::qty($line->quantity, 2) }} {{ $line->unit?->label() }}</td>
-                        <td style="padding: 8px 6px; border-bottom: 1px solid #e7e0d4; text-align: right; white-space: nowrap;">{{ \App\Support\Format::money($line->unit_price) }}</td>
-                        <td style="padding: 8px 6px; border-bottom: 1px solid #e7e0d4; text-align: right; white-space: nowrap;">{{ \App\Support\Format::money($line->amount) }}</td>
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }};">{{ $group['description'] }}</td>
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }}; text-align: right; white-space: nowrap;">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }}; text-align: right; white-space: nowrap;">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }}; text-align: right; white-space: nowrap;">{{ \App\Support\Format::money($group['amount']) }}</td>
                     </tr>
+                    @if ($group['has_rooms'])
+                        @foreach ($group['entries'] as $entry)
+                            <tr>
+                                <td style="padding: 2px 6px 2px 18px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; font-size: 12px; color: #78716c; height: 22px;">{{ $entry['room_label'] }}</td>
+                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; font-size: 12px; color: #78716c; text-align: right; white-space: nowrap; height: 22px;">{{ \App\Support\Format::qty($entry['quantity'], 2) }} {{ \App\Support\VoucherActivityGroups::unitLabel($group['unit']) }}</td>
+                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; height: 22px;"></td>
+                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; height: 22px;"></td>
+                            </tr>
+                        @endforeach
+                    @endif
                 @endforeach
                 <tr>
                     <td colspan="3" style="padding: 8px 6px; font-weight: 700; border-top: 2px solid #1c1917;">

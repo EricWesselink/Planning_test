@@ -194,6 +194,10 @@ class VoucherDraftService
      */
     private function rowsFromInput(array $lines, VoucherType $type, array $draftLines, array $invoiced = []): array
     {
+        if ($type === VoucherType::Opdracht) {
+            $lines = $this->unifyOpdrachtActivityPrices($lines);
+        }
+
         $allowed = collect($draftLines)->keyBy(
             fn (array $line): string => VoucherLine::lineKey($line['project_area_id'], $line['work_item_id'])
         );
@@ -327,6 +331,40 @@ class VoucherDraftService
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lines
+     * @return list<array<string, mixed>>
+     */
+    private function unifyOpdrachtActivityPrices(array $lines): array
+    {
+        $indexes = [];
+        foreach ($lines as $index => $line) {
+            $itemId = isset($line['work_item_id']) && $line['work_item_id'] !== '' ? (int) $line['work_item_id'] : null;
+            if ($itemId === null) {
+                continue;
+            }
+            $unit = (string) ($line['unit'] ?? '');
+            $indexes[$itemId.'|'.$unit][] = $index;
+        }
+
+        foreach ($indexes as $groupIndexes) {
+            if (count($groupIndexes) < 2) {
+                continue;
+            }
+            $first = $lines[$groupIndexes[0]];
+            $kind = $this->priceKindFrom($first, null, VoucherType::Opdracht);
+            $price = $first['unit_price'] ?? null;
+            foreach ($groupIndexes as $index) {
+                $lines[$index]['price_kind'] = $kind->value;
+                if (! $kind->isFixed() && $price !== null && $price !== '') {
+                    $lines[$index]['unit_price'] = $price;
+                }
+            }
+        }
+
+        return $lines;
     }
 
     private function priceKindFrom(array $input, ?array $source, VoucherType $type): VoucherPriceKind

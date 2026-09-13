@@ -28,4 +28,9 @@ class WorkerPolicy
     {
         return $user->canManageWorkers();
     }
+
+    public function delete(User $user, Worker $worker): bool
+    {
+        return $user->canManageWorkers();
+    }
 }

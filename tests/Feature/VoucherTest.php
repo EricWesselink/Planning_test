@@ -16,9 +16,11 @@ use App\Models\WorkerRate;
 use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Models\WorkProgressEntry;
+use App\Services\VoucherPdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Smalot\PdfParser\Parser;
 use Tests\TestCase;
 
 class VoucherTest extends TestCase
@@ -643,6 +645,7 @@ class VoucherTest extends TestCase
             ->assertSee('images/nicon-vloeren.png', false)
             ->assertSee('alt="Nicon Vloeren"', false)
             ->assertSee('Vul eerst het e-mailadres van de vakman in')
+            ->assertSee('Download PDF')
             ->assertDontSee('Verstuur naar vakman');
     }
 
@@ -1177,6 +1180,333 @@ class VoucherTest extends TestCase
         $this->assertSame('Plinten wit', $bon->lines()->first()->description);
     }
 
+    public function test_create_form_groups_rooms_under_one_activity_price(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->addCompletedRoom($project, $area, $item, $worker, '0.03', 'groepsruimte', 51.16);
+        WorkerRate::query()->create([
+            'worker_id' => $worker->id,
+            'specialty' => 'primen_egaliseren',
+            'unit' => 'm2',
+            'unit_price' => 2.00,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('vouchers.create', [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => 'opdracht',
+            ]))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('0.02 groepsruimte')
+            ->assertSee('0.03 groepsruimte')
+            ->assertSee('101,41')
+            ->assertSee('name="activity_prices['.$item->id.'][m2][unit_price]"', false)
+            ->assertSee('name="lines[0][room_label]"', false)
+            ->assertSee('name="lines[1][room_label]"', false)
+            ->assertDontSee('<details', false);
+    }
+
+    public function test_opdrachtbon_applies_one_agreed_price_to_every_room_of_the_activity(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $other = $this->addCompletedRoom($project, $area, $item, $worker, '0.03', 'groepsruimte', 51.16);
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => VoucherType::Opdracht->value,
+                'activity_prices' => [
+                    $item->id => [
+                        'm2' => [
+                            'description' => 'Primen & Egaliseren',
+                            'price_kind' => 'unit',
+                            'unit_price' => '2.00',
+                            'unit' => 'm2',
+                        ],
+                    ],
+                ],
+                'lines' => [
+                    [
+                        'project_area_id' => $area->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.02 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '50.25',
+                        'unit' => 'm2',
+                        'unit_price' => '9.00',
+                    ],
+                    [
+                        'project_area_id' => $other->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.03 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '51.16',
+                        'unit' => 'm2',
+                        'unit_price' => '9.00',
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $voucher = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+        $this->assertNotNull($voucher);
+        $this->assertSame('202.82', $voucher->total_amount);
+        $this->assertSame(2, $voucher->lines()->count());
+        $this->assertSame(['2.00', '2.00'], $voucher->lines()->orderBy('id')->pluck('unit_price')->all());
+        $this->assertSame('0.02 groepsruimte · Primen & Egaliseren', $voucher->lines()->orderBy('id')->first()->description);
+
+        $this->actingAs($user)
+            ->get(route('vouchers.show', $voucher))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('101,41 m²')
+            ->assertSee('€ 2,00/m²')
+            ->assertSee('€ 202,82')
+            ->assertSee('0.02 groepsruimte')
+            ->assertSee('0.03 groepsruimte')
+            ->assertSee('50,25 m²')
+            ->assertSee('51,16 m²')
+            ->assertDontSee('€ 100,50')
+            ->assertDontSee('<details', false);
+    }
+
+    public function test_unauthenticated_pdf_redirects_to_login(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area);
+        $voucher = Voucher::query()->first();
+        $this->assertNotNull($voucher);
+
+        $this->app['auth']->forgetGuards();
+
+        $this->get(route('vouchers.pdf', $voucher))->assertRedirect(route('login'));
+    }
+
+    public function test_storing_an_opdrachtbon_opens_the_pdf(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+
+        $response = $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Opdracht, '50.25'));
+
+        $voucher = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+        $this->assertNotNull($voucher);
+        $response->assertRedirect(route('vouchers.pdf', $voucher));
+    }
+
+    public function test_pdf_lists_rooms_under_the_activity_without_per_room_prices(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $other = $this->addCompletedRoom($project, $area, $item, $worker, '0.03', 'groepsruimte', 51.16);
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => VoucherType::Opdracht->value,
+                'activity_prices' => [
+                    $item->id => [
+                        'm2' => [
+                            'description' => 'Primen & Egaliseren',
+                            'price_kind' => 'unit',
+                            'unit_price' => '2.00',
+                            'unit' => 'm2',
+                        ],
+                    ],
+                ],
+                'lines' => [
+                    [
+                        'project_area_id' => $area->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.02 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '50.25',
+                        'unit' => 'm2',
+                        'unit_price' => '2.00',
+                    ],
+                    [
+                        'project_area_id' => $other->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.03 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '51.16',
+                        'unit' => 'm2',
+                        'unit_price' => '2.00',
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $voucher = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+        $this->assertNotNull($voucher);
+
+        $response = $this->actingAs($user)->get(route('vouchers.pdf', $voucher));
+
+        $response
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringContainsString('attachment', (string) $response->headers->get('Content-Disposition'));
+        $this->assertStringContainsString(
+            'Opdrachtbon_Harm-Wesselink_260200090.pdf',
+            (string) $response->headers->get('Content-Disposition'),
+        );
+        $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
+
+        $text = $this->pdfText($response);
+        $this->assertStringContainsString('OPDRACHTBON', $text);
+        $this->assertStringContainsString('Nicon Vloeren', $text);
+        $this->assertStringContainsString('Manenbergring 9', $text);
+        $this->assertStringContainsString('Harm Wesselink', $text);
+        $this->assertStringContainsString('Primen & Egaliseren', $text);
+        $this->assertStringContainsString('0.02 groepsruimte', $text);
+        $this->assertStringContainsString('0.03 groepsruimte', $text);
+        $this->assertStringContainsString('101,41', $text);
+        $this->assertStringContainsString('202,82', $text);
+        $this->assertStringContainsString('Totaal opdracht', $text);
+        $this->assertStringContainsString('Opdracht verstrekt door', $text);
+        $this->assertStringNotContainsString('100,50', $text);
+        $this->assertStringNotContainsString('Productie · Nicon Planning', $text);
+        $this->assertStringNotContainsString('nicon-planning.test', $text);
+    }
+
+    public function test_pdf_totals_four_rooms_at_the_activity_price(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item] = $this->seedWesselinkProduction();
+        $areas = $project->areas()->orderBy('area_number')->get();
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => VoucherType::Opdracht->value,
+                'activity_prices' => [
+                    $item->id => [
+                        'm2' => [
+                            'description' => 'Primen & Egaliseren',
+                            'price_kind' => 'unit',
+                            'unit_price' => '2.00',
+                            'unit' => 'm2',
+                        ],
+                    ],
+                ],
+                'lines' => $areas->map(fn (ProjectArea $area): array => [
+                    'project_area_id' => $area->id,
+                    'work_item_id' => $item->id,
+                    'room_label' => $area->label(),
+                    'description' => 'Primen & Egaliseren',
+                    'quantity' => (string) $area->square_meters,
+                    'unit' => 'm2',
+                    'unit_price' => '2.00',
+                ])->all(),
+            ])
+            ->assertRedirect();
+
+        $voucher = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+        $this->assertNotNull($voucher);
+
+        $response = $this->actingAs($user)->get(route('vouchers.pdf', $voucher));
+
+        $response
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringContainsString('attachment', (string) $response->headers->get('Content-Disposition'));
+        $this->assertStringContainsString(
+            'Opdrachtbon_Wesselink-Media_11P241267_250100010.pdf',
+            (string) $response->headers->get('Content-Disposition'),
+        );
+
+        $text = $this->pdfText($response);
+        $this->assertStringContainsString('Wesselink Media', $text);
+        $this->assertStringContainsString('Gezondheidscentrum Laren', $text);
+        $this->assertStringContainsString('11P241267', $text);
+        $this->assertStringContainsString('250100010', $text);
+        $this->assertStringContainsString('Primen & Egaliseren', $text);
+        $this->assertStringContainsString('143,01', $text);
+        $this->assertStringContainsString('2,00', $text);
+        $this->assertStringContainsString('286,02', $text);
+        $this->assertStringContainsString('1.62 oefenruimte', $text);
+        $this->assertStringContainsString('83,65', $text);
+        $this->assertStringContainsString('1.64 cabine', $text);
+        $this->assertStringContainsString('16,31', $text);
+        $this->assertStringContainsString('1.65 cabine 3', $text);
+        $this->assertStringContainsString('16,33', $text);
+        $this->assertStringContainsString('1.67 behandelkamer groot/kracht', $text);
+        $this->assertStringContainsString('26,72', $text);
+        $this->assertStringNotContainsString('167,30', $text);
+        $this->assertStringNotContainsString('32,62', $text);
+        $this->assertStringNotContainsString('32,66', $text);
+        $this->assertStringNotContainsString('53,44', $text);
+        $this->assertStringNotContainsString('Productie · Nicon Planning', $text);
+        $this->assertStringNotContainsString('nicon-planning.test', $text);
+    }
+
+    public function test_production_page_has_download_pdf_next_to_print(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area, '2.00', '50.25');
+        $voucher = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+        $this->assertNotNull($voucher);
+
+        $this->actingAs($user)
+            ->get(route('production.index', [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Printen')
+            ->assertSee('Download PDF')
+            ->assertSee(route('vouchers.pdf', $voucher), false);
+    }
+
+    public function test_vakman_cannot_download_another_workers_pdf(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area);
+        $voucher = Voucher::query()->first();
+        $this->assertNotNull($voucher);
+
+        $other = Worker::query()->create([
+            'name' => 'Fabian',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        $vakman = User::factory()->vakman($other->id)->create([
+            'can_access_all_projects' => true,
+        ]);
+
+        $this->actingAs($vakman)
+            ->get(route('vouchers.pdf', $voucher))
+            ->assertForbidden();
+    }
+
+    public function test_escapes_dangerous_names_in_the_opdrachtbon_html(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $worker->update(['company' => '<script>alert("xss")</script>']);
+        $project->update(['name' => '<img src=x onerror=alert(1)>']);
+        $this->storeOpdracht($user, $worker, $project, $item, $area);
+        $voucher = Voucher::query()->first();
+        $this->assertNotNull($voucher);
+
+        $html = view('vouchers.pdf', app(VoucherPdfService::class)->build($voucher->fresh(['worker', 'project', 'lines.area'])))->render();
+
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringNotContainsString('<script>alert("xss")</script>', $html);
+        $this->assertStringNotContainsString('<img src=x onerror=alert(1)>', $html);
+    }
+
     /** @return array<string, array{0: UserRole, 1: bool}> */
     public static function createRoles(): array
     {
@@ -1186,6 +1516,67 @@ class VoucherTest extends TestCase
             'planner' => [UserRole::Planner, true],
             'uitvoerder' => [UserRole::Uitvoerder, false],
         ];
+    }
+
+    /**
+     * @return array{0: Worker, 1: Project, 2: WorkItem}
+     */
+    private function seedWesselinkProduction(): array
+    {
+        $worker = Worker::query()->create([
+            'name' => 'Wepro',
+            'employment_type' => 'zzp',
+            'company' => 'Wesselink Media',
+            'active' => true,
+        ]);
+        $customer = Customer::query()->create(['name' => 'Gezondheidscentrum Laren']);
+        $project = Project::query()->create([
+            'project_number' => '250100010',
+            'customer_id' => $customer->id,
+            'name' => '11P241267 Gezondheidscentrum Laren',
+            'city' => 'Laren',
+            'status' => 'in_uitvoering',
+        ]);
+        $floor = ProjectFloor::query()->create([
+            'project_id' => $project->id,
+            'name' => '1e verdieping',
+            'sort_order' => 1,
+        ]);
+        $item = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Primen & Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 143.01,
+            'status' => 'in_uitvoering',
+            'sort_order' => 1,
+        ]);
+        foreach ([
+            ['1.62', 'oefenruimte', 83.65],
+            ['1.64', 'cabine', 16.31],
+            ['1.65', 'cabine 3', 16.33],
+            ['1.67', 'behandelkamer groot/kracht', 26.72],
+        ] as $room) {
+            $area = ProjectArea::query()->create([
+                'project_id' => $project->id,
+                'project_floor_id' => $floor->id,
+                'area_number' => $room[0],
+                'name' => $room[1],
+                'square_meters' => $room[2],
+                'status' => 'in_uitvoering',
+            ]);
+            WorkProgressEntry::query()->create([
+                'project_id' => $project->id,
+                'work_item_id' => $item->id,
+                'project_area_id' => $area->id,
+                'worker_id' => $worker->id,
+                'date' => '2026-09-12',
+                'completed_quantity' => $room[2],
+                'unit' => 'm2',
+                'worked_hours' => 8,
+            ]);
+        }
+
+        return [$worker, $project, $item];
     }
 
     /**
@@ -1242,6 +1633,37 @@ class VoucherTest extends TestCase
         return [$worker, $project, $item, $area];
     }
 
+    private function addCompletedRoom(
+        Project $project,
+        ProjectArea $sibling,
+        WorkItem $item,
+        Worker $worker,
+        string $number,
+        string $name,
+        float $meters,
+    ): ProjectArea {
+        $area = ProjectArea::query()->create([
+            'project_id' => $project->id,
+            'project_floor_id' => $sibling->project_floor_id,
+            'area_number' => $number,
+            'name' => $name,
+            'square_meters' => $meters,
+            'status' => 'in_uitvoering',
+        ]);
+        WorkProgressEntry::query()->create([
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'project_area_id' => $area->id,
+            'worker_id' => $worker->id,
+            'date' => '2026-09-02',
+            'completed_quantity' => $meters,
+            'unit' => 'm2',
+            'worked_hours' => 4,
+        ]);
+
+        return $area;
+    }
+
     private function storeOpdracht(
         User $user,
         Worker $worker,
@@ -1286,5 +1708,12 @@ class VoucherTest extends TestCase
             'type' => $type->value,
             'lines' => [$line],
         ];
+    }
+
+    private function pdfText($response): string
+    {
+        $text = (new Parser)->parseContent($response->getContent())->getText();
+
+        return preg_replace('/\s+/u', ' ', $text) ?? '';
     }
 }

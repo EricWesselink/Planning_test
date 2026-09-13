@@ -73,6 +73,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/productie/bonnen/{voucher}/aanpassen', [VoucherController::class, 'edit'])->name('vouchers.edit');
     Route::patch('/productie/bonnen/{voucher}', [VoucherController::class, 'update'])->name('vouchers.update');
     Route::post('/productie/bonnen/{voucher}/mail', [VoucherController::class, 'send'])->middleware('throttle:voucher-mail')->name('vouchers.send');
+    Route::get('/productie/bonnen/{voucher}/pdf', [VoucherController::class, 'pdf'])->name('vouchers.pdf');
     Route::get('/productie/bonnen/{voucher}', [VoucherController::class, 'show'])->name('vouchers.show');
     Route::get('/voortgang', [ProgressController::class, 'create'])->name('progress.create');
     Route::post('/voortgang', [ProgressController::class, 'store'])->name('progress.store');
@@ -151,6 +152,9 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/vakmensen', [WorkerController::class, 'store'])->name('workers.store');
     Route::post('/vakmensen/vakkennis', [WorkerController::class, 'storeSpecialty'])->name('workers.specialties.store');
     Route::get('/vakmensen/{worker}', [WorkerController::class, 'show'])->name('workers.show');
+    Route::post('/vakmensen/{worker}/inlog', [WorkerController::class, 'storeLogin'])->name('workers.login.store');
+    Route::patch('/vakmensen/{worker}/actief', [WorkerController::class, 'updateActive'])->name('workers.active.update');
+    Route::delete('/vakmensen/{worker}', [WorkerController::class, 'destroy'])->name('workers.destroy');
     Route::patch('/vakmensen/{worker}', [WorkerController::class, 'update'])->name('workers.update');
     Route::patch('/vakmensen/{worker}/vrijdag', [WorkerAvailabilityController::class, 'updateFriday'])->name('workers.friday.update');
     Route::patch('/vakmensen/{worker}/beschikbaarheid', [WorkerAvailabilityController::class, 'updateFlags'])->name('workers.availability.update');

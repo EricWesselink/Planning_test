@@ -26,6 +26,11 @@
         th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e7e0d4; vertical-align: top; }
         th { color: #78716c; font-weight: 600; }
         td.num, th.num { text-align: right; white-space: nowrap; }
+        .activity td { padding: 8px 6px; }
+        .activity.has-rooms td { border-bottom: none; }
+        .room td { padding: 2px 6px 2px 18px; font-size: 12px; color: #78716c; height: 22px; border-bottom: none; }
+        .room td.num { color: #78716c; }
+        .room-last td { border-bottom: 1px solid #e7e0d4; }
         .total td { font-weight: 700; border-top: 2px solid #1c1917; }
         .notes { margin-top: 18px; font-size: 13px; }
         .sign { display: flex; gap: 48px; margin-top: 48px; }
@@ -37,7 +42,8 @@
 <body>
     <p class="no-print">
         <a href="{{ route('production.index', array_filter(['worker_id' => $voucher->worker_id, 'project_id' => $voucher->project_id])) }}">Terug naar productie</a>
-        <button onclick="window.print()" style="margin-left:12px">Afdrukken / PDF</button>
+        <a href="{{ route('vouchers.pdf', $voucher) }}" style="margin-left:12px;background:#e4572e;color:#fff;padding:8px 14px;text-decoration:none;">Download PDF</a>
+        <button onclick="window.print()" style="margin-left:12px">Afdrukken</button>
         @if ($canEdit ?? false)
             <a href="{{ route('vouchers.edit', $voucher) }}" style="margin-left:12px">Aanpassen</a>
         @endif
@@ -108,13 +114,23 @@
             </tr>
         </thead>
         <tbody>
-            @foreach ($voucher->lines as $line)
-                <tr>
-                    <td>{{ $line->description }}</td>
-                    <td class="num">{{ \App\Support\Format::qty($line->quantity, 2) }} {{ $line->unit?->label() }}</td>
-                    <td class="num">{{ \App\Support\Format::money($line->unit_price) }}</td>
-                    <td class="num">{{ \App\Support\Format::money($line->amount) }}</td>
+            @foreach (\App\Support\VoucherActivityGroups::fromVoucher($voucher) as $group)
+                <tr class="activity {{ $group['has_rooms'] ? 'has-rooms' : '' }}">
+                    <td>{{ $group['description'] }}</td>
+                    <td class="num">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
+                    <td class="num">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
+                    <td class="num">{{ \App\Support\Format::money($group['amount']) }}</td>
                 </tr>
+                @if ($group['has_rooms'])
+                    @foreach ($group['entries'] as $entry)
+                        <tr class="room {{ $loop->last ? 'room-last' : '' }}">
+                            <td>{{ $entry['room_label'] }}</td>
+                            <td class="num">{{ \App\Support\Format::qty($entry['quantity'], 2) }} {{ \App\Support\VoucherActivityGroups::unitLabel($group['unit']) }}</td>
+                            <td class="num"></td>
+                            <td class="num"></td>
+                        </tr>
+                    @endforeach
+                @endif
             @endforeach
             <tr class="total">
                 <td colspan="3">{{ $voucher->type === \App\Enums\VoucherType::Opdracht ? 'Totaal' : 'Totaal te factureren' }}</td>

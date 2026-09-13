@@ -85,7 +85,7 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assertSame(5.0, $this->available());
     }
 
-    public function test_omits_a_team_without_a_login(): void
+    public function test_includes_a_team_without_a_login(): void
     {
         $this->makeWorker('Harm Wesselink');
         Worker::query()->create([
@@ -96,7 +96,7 @@ class PlanningAvailabilityServiceTest extends TestCase
             'active' => true,
         ]);
 
-        $this->assertSame(5.0, $this->available());
+        $this->assertSame(20.0, $this->available());
     }
 
     public function test_omits_a_zzp_who_is_unavailable_the_whole_week(): void

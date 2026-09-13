@@ -38,7 +38,6 @@ class PlanningAvailabilityService
 
         $workers = Worker::query()
             ->where('active', true)
-            ->withLogin()
             ->with(['crewPeople', 'availabilities'])
             ->orderBy('name')
             ->orderBy('id')

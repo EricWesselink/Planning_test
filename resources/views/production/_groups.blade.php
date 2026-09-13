@@ -64,6 +64,7 @@
                         @if ($canCreateVouchers)
                             @if ($sheet)
                                 <a class="border border-nicon-line bg-white px-3 py-1.5 no-print" href="{{ route('vouchers.edit', $sheet['opdracht']) }}">Opdracht aanpassen</a>
+                                <a class="border border-nicon-line bg-white px-3 py-1.5 no-print" href="{{ route('vouchers.pdf', $sheet['opdracht']) }}">Download PDF</a>
                                 @if ($hasRemaining)
                                     <button type="submit" form="{{ $formId }}" class="bg-nicon-orange text-white px-3 py-1.5 no-print">Bon maken</button>
                                 @endif

@@ -11,9 +11,13 @@ use App\Models\Voucher;
 use App\Models\VoucherLine;
 use App\Models\Worker;
 use App\Services\VoucherDraftService;
+use App\Services\VoucherPdfService;
 use App\Support\Format;
+use App\Support\VoucherActivityGroups;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
@@ -71,6 +75,7 @@ class VoucherController extends Controller
     {
         $this->normalizeDecimals($request);
         $this->dropBlankLines($request);
+        $this->applyActivityPrices($request);
 
         $data = $request->validate($this->lineRules(), $this->lineMessages());
 
@@ -107,18 +112,12 @@ class VoucherController extends Controller
         }
 
         return redirect()
-            ->route('production.index', array_filter([
-                'worker_id' => $worker->id,
-                'project_id' => $project->id,
-                'from' => $data['from'] ?? null,
-                'to' => $data['to'] ?? null,
-            ]))
-            ->with('status', $type->label().' '.$voucher->number.' is klaar.');
+            ->route('vouchers.pdf', $voucher);
     }
 
     public function show(Request $request, Voucher $voucher): View
     {
-        $voucher->load(['worker', 'project.customer', 'lines', 'parent']);
+        $voucher->load(['worker', 'project.customer', 'lines.area', 'parent']);
         Gate::authorize('view', $voucher);
 
         return view('vouchers.show', [
@@ -126,6 +125,23 @@ class VoucherController extends Controller
             'canEdit' => $request->user()?->can('update', $voucher) ?? false,
             'canSend' => $request->user()?->can('send', $voucher) ?? false,
         ]);
+    }
+
+    public function pdf(Voucher $voucher, VoucherPdfService $pdfs): Response
+    {
+        $voucher->load(['worker', 'project.customer', 'lines.area', 'parent']);
+        Gate::authorize('view', $voucher);
+
+        $data = $pdfs->build($voucher);
+        $pdf = Pdf::loadView('vouchers.pdf', $data)
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['documentTitle'].' '.$voucher->number,
+            'Author' => $data['companyName'],
+        ]);
+
+        return $pdf->download($data['filename']);
     }
 
     public function send(Voucher $voucher, VoucherDraftService $drafts): RedirectResponse
@@ -151,20 +167,10 @@ class VoucherController extends Controller
 
     public function edit(Request $request, Voucher $voucher): View
     {
-        $voucher->load(['worker', 'project', 'lines']);
+        $voucher->load(['worker', 'project', 'lines.area']);
         Gate::authorize('update', $voucher);
 
-        $formLines = $voucher->lines->map(fn ($line) => [
-            'project_area_id' => $line->project_area_id,
-            'work_item_id' => $line->work_item_id,
-            'description' => $line->description,
-            'quantity' => $line->quantity,
-            'unit' => $line->unit,
-            'unit_price' => $line->unit_price,
-            'amount' => $line->amount,
-            'price_source' => $line->price_source,
-            'price_kind' => $line->price_kind,
-        ])->all();
+        $formLines = $this->formLinesFromVoucher($voucher);
 
         $extra = $this->opdrachtLineFromQuery($request, $voucher);
         if ($extra !== null && ! $this->formLinesContainKey($formLines, $extra)) {
@@ -182,6 +188,7 @@ class VoucherController extends Controller
         Gate::authorize('update', $voucher);
         $this->normalizeDecimals($request);
         $this->dropBlankLines($request);
+        $this->applyActivityPrices($request);
 
         $data = $request->validate([
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -271,18 +278,138 @@ class VoucherController extends Controller
         $quantity = Format::decimalInput($request->query('quantity'));
         $room = $area?->label() ?? '';
         $name = $item?->cardLabel() ?? $item?->name ?? 'Werk';
-        $description = $room !== '' ? $room.': '.$name : $name;
 
         return [
             'project_area_id' => $area?->id,
             'work_item_id' => $item?->id,
-            'description' => $description,
+            'room_label' => $room,
+            'description' => $name,
             'quantity' => $quantity === '' || $quantity === null ? null : $quantity,
             'unit' => $item?->unit ?? WorkUnit::SquareMeter,
             'unit_price' => null,
             'amount' => null,
             'price_kind' => VoucherPriceKind::Unit,
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function formLinesFromVoucher(Voucher $voucher): array
+    {
+        $voucher->loadMissing('lines.area');
+
+        return $voucher->lines->map(function (VoucherLine $line): array {
+            $payload = [
+                'project_area_id' => $line->project_area_id,
+                'work_item_id' => $line->work_item_id,
+                'room_label' => $line->area?->label() ?? '',
+                'description' => $line->description,
+                'quantity' => $line->quantity,
+                'unit' => $line->unit,
+                'unit_price' => $line->unit_price,
+                'amount' => $line->amount,
+                'price_source' => $line->price_source,
+                'price_kind' => $line->price_kind,
+            ];
+            $payload['room_label'] = VoucherActivityGroups::roomLabel($payload);
+            $payload['description'] = VoucherActivityGroups::activityName($payload);
+
+            return $payload;
+        })->all();
+    }
+
+    private function applyActivityPrices(Request $request): void
+    {
+        $prices = $request->input('activity_prices', []);
+        $lines = $request->input('lines', []);
+        if (! is_array($prices) || $prices === [] || ! is_array($lines)) {
+            return;
+        }
+
+        foreach ($prices as $itemId => $byUnit) {
+            if (! is_array($byUnit)) {
+                continue;
+            }
+            foreach ($byUnit as $unitKey => $group) {
+                if (! is_array($group)) {
+                    continue;
+                }
+                foreach (['unit_price', 'amount'] as $field) {
+                    if (array_key_exists($field, $group)) {
+                        $prices[$itemId][$unitKey][$field] = Format::decimalInput($group[$field]);
+                    }
+                }
+            }
+        }
+
+        $members = [];
+        foreach ($lines as $index => $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+            $itemId = $line['work_item_id'] ?? null;
+            if ($itemId === null || $itemId === '') {
+                continue;
+            }
+            $unit = (string) ($line['unit'] ?? '');
+            $group = is_array($prices[$itemId][$unit] ?? null) ? $prices[$itemId][$unit] : null;
+            if ($group === null && isset($prices[$itemId]) && is_array($prices[$itemId])) {
+                $only = array_values(array_filter($prices[$itemId], 'is_array'));
+                $group = count($only) === 1 ? $only[0] : null;
+            }
+            if (! is_array($group)) {
+                continue;
+            }
+
+            $members[(string) $itemId.'.'.$unit][] = $index;
+            if (isset($group['description']) && trim((string) $group['description']) !== '') {
+                $lines[$index]['description'] = trim((string) $group['description']);
+            }
+            if (isset($group['unit']) && $group['unit'] !== '') {
+                $lines[$index]['unit'] = $group['unit'];
+            }
+            if (isset($group['price_kind'])) {
+                $lines[$index]['price_kind'] = $group['price_kind'];
+            }
+            if (array_key_exists('unit_price', $group) && $group['unit_price'] !== '' && $group['unit_price'] !== null) {
+                $lines[$index]['unit_price'] = $group['unit_price'];
+            }
+        }
+
+        foreach ($members as $indexes) {
+            $first = $lines[$indexes[0]];
+            $kind = (string) ($first['price_kind'] ?? VoucherPriceKind::Unit->value);
+            if ($kind !== VoucherPriceKind::Fixed->value) {
+                continue;
+            }
+            $itemId = $first['work_item_id'];
+            $unit = (string) ($first['unit'] ?? '');
+            $group = is_array($prices[$itemId][$unit] ?? null)
+                ? $prices[$itemId][$unit]
+                : (isset($prices[$itemId]) && is_array($prices[$itemId]) ? reset($prices[$itemId]) : null);
+            $groupAmount = round((float) ($group['amount'] ?? 0), 2);
+            $totalQty = 0.0;
+            foreach ($indexes as $index) {
+                $totalQty += round((float) ($lines[$index]['quantity'] ?? 0), 2);
+            }
+            $allocated = 0.0;
+            $last = count($indexes) - 1;
+            foreach ($indexes as $i => $index) {
+                $qty = round((float) ($lines[$index]['quantity'] ?? 0), 2);
+                if ($i === $last) {
+                    $share = round($groupAmount - $allocated, 2);
+                } elseif ($totalQty > 0.001) {
+                    $share = round($qty / $totalQty * $groupAmount, 2);
+                    $allocated += $share;
+                } else {
+                    $share = 0.0;
+                }
+                $lines[$index]['amount'] = $share;
+            }
+        }
+
+        $request->merge(['lines' => $lines]);
     }
 
     /**

@@ -18,7 +18,12 @@
                 <p class="text-sm text-nicon-muted">Elk team en elke ZZP heeft een eigen productiepagina. Open die om snel te zien wat zij klaar hebben gemeld en akkoord te geven.</p>
             @endif
         </div>
-        <button type="button" onclick="window.print()" class="border border-nicon-line bg-white px-4 py-2 text-sm">Printen</button>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="window.print()" class="border border-nicon-line bg-white px-4 py-2 text-sm">Printen</button>
+            @if ($downloadVoucher ?? null)
+                <a href="{{ route('vouchers.pdf', $downloadVoucher) }}" class="border border-nicon-ink bg-nicon-ink px-4 py-2 text-sm text-white">Download PDF</a>
+            @endif
+        </div>
     </div>
 
     @if (session('status'))

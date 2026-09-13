@@ -4,6 +4,7 @@
     $allowAdd = $allowAdd ?? true;
     $filterAction = $filterAction ?? null;
     $storeAction = $storeAction ?? null;
+    $heading = $heading ?? 'Vakkennis';
     $hint = $hint ?? 'Wat voorkomt in projectstoffering. Meerdere keuzes mogelijk.';
     $specialtyCatalog = $specialtyCatalog ?? \App\Enums\FlooringSpecialty::catalog(old('specialties', $worker->specialtyValues()));
     $selected = collect($selected ?? old('specialties', $worker->specialtyValues()))->map(fn ($value) => (string) $value);
@@ -17,7 +18,7 @@
 <div class="border border-nicon-line bg-nicon-sand/60 {{ $compact ? 'p-3' : 'p-4' }}" data-specialty-picker @if ($filterAction) data-specialty-reset="{{ $filterAction }}" @endif>
     <div class="flex flex-wrap items-start justify-between gap-2">
         <div>
-            <div class="text-xs uppercase tracking-wide text-nicon-muted">Vakkennis</div>
+            <div class="text-xs uppercase tracking-wide text-nicon-muted">{{ $heading }}</div>
             <p class="mt-1 text-[11px] text-nicon-muted">{{ $hint }}</p>
         </div>
         <button type="button" data-specialty-toggle class="border border-nicon-line bg-white {{ $compact ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm' }} shrink-0">{{ $allSelected ? 'Alles uitvinken' : 'Alles aanvinken' }}</button>

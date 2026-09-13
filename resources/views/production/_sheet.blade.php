@@ -82,6 +82,7 @@
         <div class="min-w-56 border-2 border-nicon-orange px-4 py-3 text-sm">
             <div class="text-xs uppercase tracking-wide text-nicon-muted">Opdrachtbon nr.</div>
             <div class="font-semibold">{{ $opdracht->number }}</div>
+            <a class="mt-1 inline-block text-sm text-nicon-orange-dark underline-offset-2 hover:underline no-print" href="{{ route('vouchers.pdf', $opdracht) }}">Download PDF</a>
             <dl class="mt-2 space-y-1">
                 <div class="flex justify-between gap-4">
                     <dt>Totaal opdracht</dt>

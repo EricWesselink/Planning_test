@@ -40,7 +40,7 @@
     @endif
 
     @if ($type === \App\Enums\VoucherType::Opdracht)
-        <p class="mt-4 text-sm text-nicon-muted">Leg vast welke werkzaamheden, hoeveelheden en prijzen zijn opgedragen. De hoeveelheid is het maximum; op elke latere bon vul je zelf in wat deze keer mag, tot dat maximum op is. Per regel kies je eenheidsprijs (m²/m¹/st × prijs) of een vaste afgesproken prijs.</p>
+        <p class="mt-4 text-sm text-nicon-muted">Leg vast welke werkzaamheden, hoeveelheden en prijzen zijn opgedragen. De hoeveelheid is het maximum; op elke latere bon vul je zelf in wat deze keer mag, tot dat maximum op is. Per werkzaamheid kies je één prijs (m²/m¹/st × prijs of een vaste afgesproken prijs). Daaronder staan de ruimtes met hun m² ter controle.</p>
     @elseif ($opdracht)
         <p class="mt-4 text-sm text-nicon-muted">Alleen onderdelen van opdrachtbon {{ $opdracht->number }}. Vul in wat hij deze keer indient; je kunt nooit meer opgeven dan er nog openstaat.</p>
     @endif
@@ -56,6 +56,7 @@
                     <a class="border border-nicon-line bg-white px-2 py-1" href="{{ route('vouchers.show', $voucher) }}">
                         {{ $voucher->type->label() }} {{ $voucher->number }} · {{ \App\Support\Format::money($voucher->total_amount) }}
                     </a>
+                    <a class="text-nicon-muted" href="{{ route('vouchers.pdf', $voucher) }}">Download PDF</a>
                     <a class="text-nicon-muted" href="{{ route('vouchers.edit', $voucher) }}">aanpassen</a>
                 </span>
             @endforeach

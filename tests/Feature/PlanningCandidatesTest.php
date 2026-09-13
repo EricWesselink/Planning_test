@@ -227,7 +227,7 @@ class PlanningCandidatesTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_candidates_omit_teams_without_a_login(): void
+    public function test_candidates_include_teams_without_a_login(): void
     {
         $user = User::factory()->create();
         $this->makeWorker('Wepro', 'Linoleum');
@@ -249,14 +249,14 @@ class PlanningCandidatesTest extends TestCase
             ]))
             ->assertOk()
             ->assertJsonFragment(['name' => 'Wepro'])
-            ->assertJsonMissing(['name' => 'Kees Jansen']);
+            ->assertJsonFragment(['name' => 'Kees Jansen', 'selectable' => true]);
     }
 
-    public function test_planning_picker_omits_teams_without_a_login(): void
+    public function test_planning_picker_includes_teams_without_a_login(): void
     {
         $user = User::factory()->create();
         $listed = $this->makeWorker('Wepro', 'Linoleum');
-        $hidden = Worker::query()->create([
+        $withoutLogin = Worker::query()->create([
             'name' => 'Kees Jansen',
             'employment_type' => 'eigen',
             'specialty' => 'Linoleum',
@@ -268,8 +268,8 @@ class PlanningCandidatesTest extends TestCase
             ->assertOk()
             ->assertSee('value="worker:'.$listed->id.'"', false)
             ->assertSee('>Wepro</option>', false)
-            ->assertDontSee('value="worker:'.$hidden->id.'"', false)
-            ->assertDontSee('>Kees Jansen</option>', false);
+            ->assertSee('value="worker:'.$withoutLogin->id.'"', false)
+            ->assertSee('>Kees Jansen</option>', false);
     }
 
     private function makeWorker(string $name, string $specialty): Worker

@@ -27,6 +27,12 @@
                 <p class="text-sm text-nicon-muted">{{ $worker->nawLine() }}</p>
             @endif
         </div>
+        <div class="flex flex-wrap items-center gap-3">
+            @if (! $worker->active)
+                <span class="border border-nicon-line bg-nicon-paper px-2 py-0.5 text-xs">Inactief</span>
+            @endif
+            @include('workers._status-actions', ['worker' => $worker])
+        </div>
     </div>
 
     @if (session('status'))
@@ -39,6 +45,37 @@
             @endforeach
         </ul>
     @endif
+
+    @can('update', $worker)
+        @if ($worker->users->isEmpty())
+            <section class="mt-6 max-w-2xl border border-nicon-line bg-white p-5 space-y-3">
+                <h2 class="font-semibold">Inlog</h2>
+                <p class="text-sm text-nicon-muted">Nog geen inlog. Vul e-mail en een tijdelijk wachtwoord in. Optioneel stuur je meteen een uitnodiging voor de planning.</p>
+                <form method="POST" action="{{ route('workers.login.store', $worker) }}" class="space-y-3">
+                    @csrf
+                    <div>
+                        <label class="text-xs uppercase tracking-wide text-nicon-muted" for="login-email">E-mail (inlog)</label>
+                        <input id="login-email" type="email" name="email" value="{{ old('email', $worker->email) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="off">
+                    </div>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="text-xs uppercase tracking-wide text-nicon-muted" for="login-password">Tijdelijk wachtwoord</label>
+                            <input id="login-password" type="password" name="password" required minlength="8" autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+                        </div>
+                        <div>
+                            <label class="text-xs uppercase tracking-wide text-nicon-muted" for="login-password-confirmation">Wachtwoord herhalen</label>
+                            <input id="login-password-confirmation" type="password" name="password_confirmation" required minlength="8" autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+                        </div>
+                    </div>
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox" name="invite" value="1" @checked((int) old('invite') === 1) class="size-4 accent-nicon-ok">
+                        Stuur uitnodiging voor de planning
+                    </label>
+                    <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Inlog opslaan</button>
+                </form>
+            </section>
+        @endif
+    @endcan
 
     <section class="mt-6 max-w-2xl border border-nicon-line bg-white p-5 space-y-3">
         <h2 class="font-semibold">Beschikbaarheid</h2>

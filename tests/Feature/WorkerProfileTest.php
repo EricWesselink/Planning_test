@@ -2,16 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Enums\UserRole;
+use App\Enums\VoucherType;
+use App\Mail\WorkerPlanningInviteMail;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\Team;
 use App\Models\User;
+use App\Models\Voucher;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Services\PlanningBoardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class WorkerProfileTest extends TestCase
@@ -87,6 +93,13 @@ class WorkerProfileTest extends TestCase
             ->assertSee('Primen & egaliseren')
             ->assertSee('PVC')
             ->assertSee('Plinten')
+            ->assertSee('Inmeten')
+            ->assertSee('Montage')
+            ->assertSee('Reparatie')
+            ->assertSee('Service')
+            ->assertSee('E-mail (inlog, optioneel)')
+            ->assertSee('Tijdelijk wachtwoord')
+            ->assertSee('Stuur uitnodiging voor de planning')
             ->assertDontSee('name="team_ids[]"', false)
             ->assertDontSee('Kleur in de planning')
             ->assertDontSee('name="color"', false);
@@ -102,6 +115,8 @@ class WorkerProfileTest extends TestCase
                 'employment_type' => 'zzp',
                 'company' => 'Sander Vloeren',
                 'email' => 'sander@example.nl',
+                'password' => 'wachtwoord123',
+                'password_confirmation' => 'wachtwoord123',
                 'address' => 'Kerkstraat 2',
                 'postal_code' => '8011 AA',
                 'city' => 'Zwolle',
@@ -113,6 +128,11 @@ class WorkerProfileTest extends TestCase
         $worker = Worker::query()->where('name', 'Sander')->first();
         $this->assertNotNull($worker);
         $this->assertSame('sander@example.nl', $worker->email);
+        $login = User::query()->where('email', 'sander@example.nl')->first();
+        $this->assertNotNull($login);
+        $this->assertSame(UserRole::Vakman, $login->role);
+        $this->assertSame($worker->id, $login->worker_id);
+        $this->assertTrue(Hash::check('wachtwoord123', $login->password));
         $this->assertSame('Zwolle', $worker->city);
         $this->assertSame('PVC', $worker->specialty);
         $this->assertNotNull($worker->color);
@@ -192,10 +212,23 @@ class WorkerProfileTest extends TestCase
             ->assertSee('PVC, Plinten')
             ->assertSee('Primen & egaliseren')
             ->assertSee('Naam van het team')
+            ->assertSee('E-mail (inlog)')
+            ->assertSee('Tijdelijk wachtwoord')
+            ->assertSee('Stuur uitnodiging voor de planning')
+            ->assertSee('Vakkennis van dit team')
+            ->assertSee('Inmeten')
+            ->assertSee('Montage')
+            ->assertSee('Reparatie')
+            ->assertSee('Service')
+            ->assertSee('Zoeken op vakkennis')
+            ->assertSee('name="specialties[]"', false)
+            ->assertSee('Inlog is optioneel')
             ->assertSee('name="vakkennis[]"', false)
             ->assertSee('Alles staat aan')
             ->assertSee('Alles uitvinken')
             ->assertSee('Onderdeel toevoegen')
+            ->assertSee('Inactief zetten')
+            ->assertSee('Verwijderen')
             ->assertDontSee('Namen van het team')
             ->assertDontSee('Naam persoon 1')
             ->assertDontSee('Ploeg toevoegen')
@@ -358,6 +391,26 @@ class WorkerProfileTest extends TestCase
             ->assertDontSee('<script>alert(1)</script>', false);
     }
 
+    public function test_planner_can_save_inmeten_montage_reparatie_and_service_vakkennis(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->post(route('workers.store'), [
+                'name' => 'Team Service',
+                'employment_type' => 'eigen',
+                'people_count' => '1',
+                'specialties' => ['inmeten', 'montage', 'reparatie', 'service'],
+            ])
+            ->assertRedirect(route('workers.index'));
+
+        $this->assertDatabaseHas('workers', [
+            'name' => 'Team Service',
+            'specialty' => 'Inmeten, Montage, Reparatie, Service',
+        ]);
+    }
+
     public function test_planner_can_add_worker_from_the_overview(): void
     {
         $user = User::factory()->create();
@@ -381,6 +434,115 @@ class WorkerProfileTest extends TestCase
             'crew_names' => 'Kees, Piet',
             'specialty' => 'PVC, Plinten',
         ]);
+        $this->assertDatabaseMissing('users', ['name' => 'Jansen Vloeren']);
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('Jansen Vloeren')
+            ->assertSee('Nog geen inlog')
+            ->assertSee('PVC, Plinten');
+    }
+
+    public function test_planner_can_add_a_worker_with_a_temporary_login(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->post(route('workers.store'), [
+                'name' => 'Team Wespro',
+                'employment_type' => 'zzp',
+                'people_count' => '3',
+                'specialties' => ['vinyl'],
+                'email' => 'wespro@niconvloeren.nl',
+                'password' => 'tijdelijk1',
+                'password_confirmation' => 'tijdelijk1',
+            ])
+            ->assertRedirect(route('workers.index'));
+
+        $worker = Worker::query()->where('name', 'Team Wespro')->first();
+        $this->assertNotNull($worker);
+        $this->assertSame('Vinyl', $worker->specialty);
+        $this->assertSame(3, $worker->people_count);
+        $login = User::query()->where('email', 'wespro@niconvloeren.nl')->first();
+        $this->assertNotNull($login);
+        $this->assertSame(UserRole::Vakman, $login->role);
+        $this->assertSame($worker->id, $login->worker_id);
+        $this->assertTrue(Hash::check('tijdelijk1', $login->password));
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('Team Wespro')
+            ->assertDontSee('Nog geen inlog');
+    }
+
+    public function test_planning_invite_is_sent_when_requested(): void
+    {
+        Mail::fake();
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->post(route('workers.store'), [
+                'name' => 'Team Wespro',
+                'employment_type' => 'zzp',
+                'people_count' => '2',
+                'specialties' => ['pvc'],
+                'email' => 'wespro@niconvloeren.nl',
+                'password' => 'tijdelijk1',
+                'password_confirmation' => 'tijdelijk1',
+                'invite' => '1',
+            ])
+            ->assertRedirect(route('workers.index'));
+
+        Mail::assertSent(WorkerPlanningInviteMail::class, function (WorkerPlanningInviteMail $mail): bool {
+            return $mail->hasTo('wespro@niconvloeren.nl')
+                && $mail->temporaryPassword === 'tijdelijk1'
+                && $mail->worker->name === 'Team Wespro';
+        });
+    }
+
+    public function test_planning_invite_without_login_email_is_rejected(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->post(route('workers.store'), [
+                'name' => 'Team Wespro',
+                'employment_type' => 'eigen',
+                'people_count' => '1',
+                'invite' => '1',
+            ])
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHasErrors([
+                'email' => 'Vul een e-mailadres in voor de inlog.',
+                'password' => 'Vul een tijdelijk wachtwoord in.',
+            ]);
+
+        $this->assertDatabaseMissing('workers', ['name' => 'Team Wespro']);
+    }
+
+    public function test_adding_a_worker_with_a_taken_email_is_rejected(): void
+    {
+        $user = User::factory()->create(['email' => 'wespro@niconvloeren.nl']);
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->post(route('workers.store'), [
+                'name' => 'Team Wespro',
+                'employment_type' => 'eigen',
+                'people_count' => '1',
+                'email' => 'wespro@niconvloeren.nl',
+                'password' => 'wachtwoord123',
+                'password_confirmation' => 'wachtwoord123',
+            ])
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHasErrors(['email' => 'Dit e-mailadres is al in gebruik.']);
+
+        $this->assertDatabaseMissing('workers', ['name' => 'Team Wespro']);
     }
 
     public function test_planning_picker_defaults_to_the_worker_people_count(): void
@@ -415,6 +577,9 @@ class WorkerProfileTest extends TestCase
                 'name' => 'Albert',
                 'employment_type' => 'eigen',
                 'people_count' => '0',
+                'email' => 'albert@niconvloeren.nl',
+                'password' => 'wachtwoord123',
+                'password_confirmation' => 'wachtwoord123',
             ])
             ->assertRedirect(route('workers.index'))
             ->assertSessionHasErrors('people_count');
@@ -433,6 +598,123 @@ class WorkerProfileTest extends TestCase
                 'people_count' => '1',
             ])
             ->assertForbidden();
+    }
+
+    public function test_planner_can_deactivate_and_reactivate_a_worker(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Fabian',
+            'employment_type' => 'zzp',
+            'active' => true,
+        ]);
+        $login = User::factory()->vakman($worker->id)->create([
+            'name' => 'Fabian',
+            'email' => 'fabian@niconvloeren.nl',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->patch(route('workers.active.update', $worker), ['active' => '0'])
+            ->assertRedirect(route('workers.index'));
+
+        $this->assertFalse($worker->fresh()->active);
+        $this->assertFalse($login->fresh()->active);
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('Fabian')
+            ->assertSee('Inactief')
+            ->assertSee('Actief maken');
+
+        $this->actingAs($user)
+            ->get(route('planning'))
+            ->assertOk()
+            ->assertDontSee('value="worker:'.$worker->id.'"', false);
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->patch(route('workers.active.update', $worker), ['active' => '1'])
+            ->assertRedirect(route('workers.index'));
+
+        $this->assertTrue($worker->fresh()->active);
+        $this->assertTrue($login->fresh()->active);
+    }
+
+    public function test_planner_can_delete_a_worker(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'N.D.N Seine (Nick)',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        User::factory()->vakman($worker->id)->create([
+            'name' => 'Nick',
+            'email' => 'nick@niconvloeren.nl',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->delete(route('workers.destroy', $worker))
+            ->assertRedirect(route('workers.index'));
+
+        $this->assertDatabaseMissing('workers', ['name' => 'N.D.N Seine (Nick)']);
+        $this->assertDatabaseMissing('users', ['email' => 'nick@niconvloeren.nl']);
+    }
+
+    public function test_worker_with_vouchers_cannot_be_deleted(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Fabian',
+            'employment_type' => 'zzp',
+            'active' => true,
+        ]);
+        $customer = Customer::query()->create(['name' => 'TMZ']);
+        $project = Project::query()->create([
+            'project_number' => '2026-001',
+            'customer_id' => $customer->id,
+            'name' => 'TMZ',
+            'status' => 'in_uitvoering',
+        ]);
+        Voucher::query()->create([
+            'number' => 'BON-2026-0001',
+            'type' => VoucherType::Facturatie,
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'issued_on' => '2026-09-12',
+            'total_amount' => 10,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->delete(route('workers.destroy', $worker))
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHasErrors(['worker' => 'Fabian heeft bonnen. Zet het team inactief in plaats van te verwijderen.']);
+
+        $this->assertDatabaseHas('workers', ['id' => $worker->id, 'name' => 'Fabian']);
+    }
+
+    public function test_uitvoerder_cannot_deactivate_or_delete_a_worker(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Fabian',
+            'employment_type' => 'zzp',
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('workers.active.update', $worker), ['active' => '0'])
+            ->assertForbidden();
+        $this->actingAs($user)
+            ->delete(route('workers.destroy', $worker))
+            ->assertForbidden();
+
+        $this->assertTrue($worker->fresh()->active);
+        $this->assertDatabaseHas('workers', ['id' => $worker->id]);
     }
 
     public function test_planning_bar_uses_worker_color(): void
@@ -859,7 +1141,7 @@ class WorkerProfileTest extends TestCase
             ->assertDontSee('<script>alert(1)</script>', false);
     }
 
-    public function test_vakmensen_overview_omits_teams_without_a_login(): void
+    public function test_vakmensen_overview_shows_teams_without_a_login(): void
     {
         $user = User::factory()->create();
         Worker::query()->create([
@@ -877,8 +1159,62 @@ class WorkerProfileTest extends TestCase
             ->get(route('workers.index'))
             ->assertOk()
             ->assertSee('Nick Seine')
-            ->assertDontSee('Zonder Inlog')
-            ->assertSee('Alleen teams met een inlog');
+            ->assertSee('Zonder Inlog')
+            ->assertSee('Nog geen inlog')
+            ->assertSee('Inlog via e-mail mag nu of later');
+    }
+
+    public function test_planner_can_add_a_login_later(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Team Wespro',
+            'employment_type' => 'zzp',
+            'people_count' => 2,
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('workers.show', $worker))
+            ->assertOk()
+            ->assertSee('Nog geen inlog')
+            ->assertSee('Stuur uitnodiging voor de planning');
+
+        $this->actingAs($user)
+            ->from(route('workers.show', $worker))
+            ->post(route('workers.login.store', $worker), [
+                'email' => 'wespro@niconvloeren.nl',
+                'password' => 'tijdelijk1',
+                'password_confirmation' => 'tijdelijk1',
+            ])
+            ->assertRedirect(route('workers.show', $worker));
+
+        $login = User::query()->where('email', 'wespro@niconvloeren.nl')->first();
+        $this->assertNotNull($login);
+        $this->assertSame($worker->id, $login->worker_id);
+        $this->assertTrue(Hash::check('tijdelijk1', $login->password));
+        $this->assertSame('wespro@niconvloeren.nl', $worker->fresh()->email);
+    }
+
+    public function test_uitvoerder_cannot_add_a_login_later(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Team Wespro',
+            'employment_type' => 'zzp',
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('workers.login.store', $worker), [
+                'email' => 'wespro@niconvloeren.nl',
+                'password' => 'tijdelijk1',
+                'password_confirmation' => 'tijdelijk1',
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('users', ['email' => 'wespro@niconvloeren.nl']);
     }
 
     /**
