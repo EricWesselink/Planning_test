@@ -144,7 +144,8 @@ class ProjectPlanningWeeksTest extends TestCase
             ->assertOk()
             ->assertSee('Start werk')
             ->assertSee('Klaar werk')
-            ->assertSee('Weeknummer');
+            ->assertSee('Weeknummer')
+            ->assertSee('wanneer het klaar moet zijn');
     }
 
     public function test_edit_form_shows_start_and_klaar_week_fields_for_existing_projects(): void

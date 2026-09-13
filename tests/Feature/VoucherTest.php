@@ -404,6 +404,52 @@ class VoucherTest extends TestCase
         $this->assertSame('5.50', $voucher->lines()->first()->unit_price);
     }
 
+    public function test_facturatiebon_stores_ticked_weekdays_and_shows_them(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area, '5.50', '50.25');
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50') + [
+                'worked_year' => '2026',
+                'worked_week' => '44',
+                'worked_weekdays' => ['1', '2'],
+            ])
+            ->assertRedirect();
+
+        $voucher = Voucher::query()->where('type', VoucherType::Facturatie)->first();
+        $this->assertNotNull($voucher);
+        $this->assertSame(['2026-10-26', '2026-10-27'], $voucher->worked_dates);
+
+        $this->actingAs($user)
+            ->get(route('vouchers.show', $voucher))
+            ->assertOk()
+            ->assertSee('ma 26-10-2026 – di 27-10-2026 · week 44');
+
+        $this->actingAs($user)
+            ->get(route('vouchers.edit', $voucher))
+            ->assertOk()
+            ->assertSee('Uitgevoerd: ma 26-10-2026, di 27-10-2026')
+            ->assertSee('26-10')
+            ->assertSee('27-10');
+    }
+
+    public function test_weekdays_without_a_week_number_are_rejected(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area, '5.50', '50.25');
+
+        $this->actingAs($user)
+            ->from(route('production.index'))
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50') + [
+                'worked_weekdays' => ['1'],
+            ])
+            ->assertRedirect(route('production.index'))
+            ->assertSessionHasErrors('worked_week');
+    }
+
     public function test_manual_price_overrides_the_agreed_rate(): void
     {
         $user = User::factory()->create();
@@ -1317,6 +1363,9 @@ class VoucherTest extends TestCase
             ->assertOk()
             ->assertSee('Bon maken')
             ->assertSee('Deze bon')
+            ->assertSee('Gewerkt')
+            ->assertSee('name="worked_week"', false)
+            ->assertSee('name="worked_weekdays[]"', false)
             ->assertSee('+ Opmerking toevoegen')
             ->assertSee('name="lines[0][quantity]" value=""', false)
             ->assertSee('placeholder="max. 300,00"', false)

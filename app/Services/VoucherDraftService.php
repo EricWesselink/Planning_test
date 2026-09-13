@@ -89,6 +89,7 @@ class VoucherDraftService
 
     /**
      * @param  list<array<string, mixed>>  $lines
+     * @param  list<string>  $workedDates
      */
     public function store(
         Worker $worker,
@@ -99,8 +100,9 @@ class VoucherDraftService
         ?string $notes,
         ?string $from = null,
         ?string $to = null,
+        array $workedDates = [],
     ): Voucher {
-        return DB::transaction(function () use ($worker, $project, $type, $lines, $user, $notes, $from, $to) {
+        return DB::transaction(function () use ($worker, $project, $type, $lines, $user, $notes, $from, $to, $workedDates) {
             Voucher::query()
                 ->where('worker_id', $worker->id)
                 ->where('project_id', $project->id)
@@ -130,6 +132,7 @@ class VoucherDraftService
                 'parent_id' => $type === VoucherType::Facturatie ? $draft['opdracht']?->id : null,
                 'created_by' => $user?->id,
                 'issued_on' => now()->toDateString(),
+                'worked_dates' => $workedDates === [] ? null : $workedDates,
                 'total_amount' => round((float) $total, 2),
                 'notes' => $notes,
             ]);
@@ -144,10 +147,11 @@ class VoucherDraftService
 
     /**
      * @param  list<array<string, mixed>>  $lines
+     * @param  list<string>  $workedDates
      */
-    public function replaceLines(Voucher $voucher, array $lines, ?string $notes, ?User $user): Voucher
+    public function replaceLines(Voucher $voucher, array $lines, ?string $notes, ?User $user, array $workedDates = []): Voucher
     {
-        return DB::transaction(function () use ($voucher, $lines, $notes, $user) {
+        return DB::transaction(function () use ($voucher, $lines, $notes, $user, $workedDates) {
             $voucher = Voucher::query()->whereKey($voucher->id)->lockForUpdate()->firstOrFail();
             Voucher::query()
                 ->where('worker_id', $voucher->worker_id)
@@ -181,6 +185,7 @@ class VoucherDraftService
             $voucher->forceFill([
                 'total_amount' => round((float) $total, 2),
                 'notes' => $notes,
+                'worked_dates' => $workedDates === [] ? null : $workedDates,
             ])->save();
 
             return $voucher->fresh(['worker', 'project.customer', 'lines', 'parent']);

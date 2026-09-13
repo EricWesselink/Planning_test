@@ -43,6 +43,7 @@
         }
     }
     $agreedUnit = $sheet['agreed_unit'] ?? null;
+    $filters = $filters ?? ['from' => null, 'to' => null];
 @endphp
 
 @if ($canCreateVouchers && $hasRemaining)
@@ -151,7 +152,24 @@
     </div>
 
     @if ($canCreateVouchers && $hasRemaining)
-        <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-1 text-sm">
+        <div class="flex flex-wrap items-end justify-between gap-3 px-3 py-2 text-sm">
+            @php
+                $klaarFallback = collect($klaarStatus)
+                    ->pluck('klaar_on')
+                    ->filter()
+                    ->map(function ($value) {
+                        try {
+                            return \Carbon\Carbon::createFromFormat('d-m-Y', (string) $value)->toDateString();
+                        } catch (\Throwable) {
+                            return null;
+                        }
+                    })
+                    ->filter()
+                    ->first();
+            @endphp
+            @include('vouchers._worked_period', [
+                'workedFallbackDate' => $klaarFallback ?? ($filters['from'] ?? null),
+            ])
             <details @if (old('notes')) open @endif>
                 <summary class="cursor-pointer text-nicon-orange-dark select-none">+ Opmerking toevoegen</summary>
                 <textarea name="notes" rows="2" class="mt-1 w-full min-w-72 border border-nicon-line px-2 py-1">{{ old('notes') }}</textarea>

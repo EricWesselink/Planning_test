@@ -6,6 +6,8 @@ use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
 use App\Enums\WorkUnit;
 use App\Support\PlanningWeek;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -441,6 +443,48 @@ class Project extends Model
         }
 
         return 'https://www.google.com/maps/dir/?api=1&destination='.rawurlencode($line).'&travelmode=driving';
+    }
+
+    /**
+     * @return array<string, int|string>
+     */
+    public function planningBoardQuery(): array
+    {
+        return array_filter([
+            'project_id' => $this->id,
+            'week' => $this->planned_start_date?->copy()->startOfWeek(Carbon::MONDAY)->toDateString(),
+            'period' => $this->planned_end_date ? 'work' : null,
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    public function daysUntilKlaar(?CarbonInterface $from = null): ?int
+    {
+        if ($this->planned_end_date === null) {
+            return null;
+        }
+
+        $fromDay = ($from ?? now())->copy()->startOfDay();
+        $untilDay = $this->planned_end_date->copy()->startOfDay();
+
+        return (int) round($fromDay->diffInDays($untilDay));
+    }
+
+    public function remainingDaysLabel(?CarbonInterface $from = null): ?string
+    {
+        $days = $this->daysUntilKlaar($from);
+        if ($days === null) {
+            return null;
+        }
+        if ($days === 0) {
+            return 'Vandaag klaar';
+        }
+        if ($days > 0) {
+            return $days === 1 ? 'Nog 1 dag' : 'Nog '.$days.' dagen';
+        }
+
+        $late = abs($days);
+
+        return $late === 1 ? '1 dag te laat' : $late.' dagen te laat';
     }
 
     public function planningStartYear(): ?int

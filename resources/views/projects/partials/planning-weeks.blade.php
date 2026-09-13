@@ -75,5 +75,5 @@
 </div>
 @endif
 @if ($side === 'both' && ! $compact && ! $table)
-    <p class="text-xs text-nicon-muted">Optioneel. Vul een datum in, of een jaar + weeknummer. De planning gebruikt deze periode.</p>
+    <p class="text-xs text-nicon-muted">Vul in wanneer het werk start en wanneer het klaar moet zijn (datum, of jaar + weeknummer). Op het dashboard zie je hoeveel dagen er nog over zijn.</p>
 @endif

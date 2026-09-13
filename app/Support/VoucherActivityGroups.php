@@ -127,7 +127,22 @@ class VoucherActivityGroups
             ];
         })->all();
 
-        return self::fromFormLines($lines);
+        $groups = self::fromFormLines($lines);
+        $override = VoucherWorkedPeriod::range($voucher->worked_dates);
+        if ($override['from'] === null) {
+            return $groups;
+        }
+
+        foreach ($groups as $index => $group) {
+            $groups[$index]['worked_from'] = $override['from'];
+            $groups[$index]['worked_to'] = $override['to'];
+            foreach ($group['entries'] as $entryIndex => $entry) {
+                $groups[$index]['entries'][$entryIndex]['line']['worked_on'] = $override['from'];
+                $groups[$index]['entries'][$entryIndex]['line']['worked_to'] = $override['to'];
+            }
+        }
+
+        return $groups;
     }
 
     /**

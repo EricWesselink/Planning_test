@@ -15,7 +15,9 @@ use App\Models\WorkProgressEntry;
 use App\Services\VoucherDraftService;
 use App\Services\VoucherPdfService;
 use App\Support\Format;
+use App\Support\PlanningWeek;
 use App\Support\VoucherActivityGroups;
+use App\Support\VoucherWorkedPeriod;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class VoucherController extends Controller
@@ -100,6 +103,7 @@ class VoucherController extends Controller
             $data['notes'] ?? null,
             $data['from'] ?? null,
             $data['to'] ?? null,
+            $this->workedDatesFromValidated($data),
         );
 
         if ($type === VoucherType::Facturatie) {
@@ -257,7 +261,7 @@ class VoucherController extends Controller
         $this->dropBlankLines($request);
         $this->applyActivityPrices($request);
 
-        $data = $request->validate([
+        $data = $request->validate(array_merge([
             'notes' => ['nullable', 'string', 'max:2000'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.project_area_id' => ['nullable', 'integer'],
@@ -268,12 +272,18 @@ class VoucherController extends Controller
             'lines.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'lines.*.amount' => ['nullable', 'numeric', 'min:0'],
             'lines.*.price_kind' => ['nullable', Rule::enum(VoucherPriceKind::class)],
-        ], $this->lineMessages());
+        ], $this->workedPeriodRules()), $this->lineMessages());
 
         $voucher->loadMissing('project');
         $this->assertLinesBelongToProject($voucher->project, $data['lines']);
 
-        $voucher = $drafts->replaceLines($voucher, $data['lines'], $data['notes'] ?? null, $request->user());
+        $voucher = $drafts->replaceLines(
+            $voucher,
+            $data['lines'],
+            $data['notes'] ?? null,
+            $request->user(),
+            $this->workedDatesFromValidated($data),
+        );
 
         return redirect()
             ->route('vouchers.show', $voucher)
@@ -526,6 +536,11 @@ class VoucherController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'worked_on' => ['nullable', 'date'],
+            'worked_year' => ['nullable', 'integer', 'min:'.PlanningWeek::MIN_YEAR, 'max:'.PlanningWeek::MAX_YEAR],
+            'worked_week' => ['nullable', 'integer', 'min:1', 'max:53', 'required_with:worked_weekdays'],
+            'worked_weekdays' => ['nullable', 'array'],
+            'worked_weekdays.*' => ['integer', 'min:1', 'max:7'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.project_area_id' => ['nullable', 'integer'],
             'lines.*.work_item_id' => ['nullable', 'integer'],
@@ -552,7 +567,52 @@ class VoucherController extends Controller
             'lines.*.unit_price.required' => 'Vul een prijs in, of zet eerst een afgesproken prijs bij de vakman.',
             'lines.*.unit_price.min' => 'Een prijs kan niet lager zijn dan 0.',
             'lines.*.amount.min' => 'Een bedrag kan niet lager zijn dan 0.',
+            'worked_week.required_with' => 'Vul een weeknummer in bij de gekozen dagen.',
         ];
+    }
+
+    /**
+     * @return array<string, list<mixed>>
+     */
+    private function workedPeriodRules(): array
+    {
+        return [
+            'worked_on' => ['nullable', 'date'],
+            'worked_year' => ['nullable', 'integer', 'min:'.PlanningWeek::MIN_YEAR, 'max:'.PlanningWeek::MAX_YEAR],
+            'worked_week' => ['nullable', 'integer', 'min:1', 'max:53', 'required_with:worked_weekdays'],
+            'worked_weekdays' => ['nullable', 'array'],
+            'worked_weekdays.*' => ['integer', 'min:1', 'max:7'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    private function workedDatesFromValidated(array $data): array
+    {
+        $week = PlanningWeek::optionalInt($data['worked_week'] ?? null);
+        $year = PlanningWeek::optionalInt($data['worked_year'] ?? null);
+        if ($week !== null) {
+            $year ??= (int) now()->isoWeekYear();
+            if (! PlanningWeek::weekExists($year, $week)) {
+                throw ValidationException::withMessages([
+                    'worked_week' => 'Dit weeknummer bestaat niet in '.$year.'.',
+                ]);
+            }
+        }
+
+        $weekdays = $data['worked_weekdays'] ?? [];
+        if (! is_array($weekdays)) {
+            $weekdays = [];
+        }
+
+        return VoucherWorkedPeriod::datesFromInput(
+            isset($data['worked_on']) ? (string) $data['worked_on'] : null,
+            $year,
+            $week,
+            $weekdays,
+        );
     }
 
     /**

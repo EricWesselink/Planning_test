@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'number', 'type', 'worker_id', 'project_id', 'parent_id', 'created_by',
-    'issued_on', 'total_amount', 'notes',
+    'issued_on', 'worked_dates', 'total_amount', 'notes',
 ])]
 class Voucher extends Model
 {
@@ -19,6 +19,7 @@ class Voucher extends Model
         return [
             'type' => VoucherType::class,
             'issued_on' => 'date',
+            'worked_dates' => 'array',
             'total_amount' => 'decimal:2',
         ];
     }

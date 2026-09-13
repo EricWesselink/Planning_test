@@ -45,13 +45,21 @@
             <h2 class="bg-nicon-ink px-4 py-3 text-white font-semibold">Lopende werken</h2>
             <div class="divide-y">
                 @forelse ($running as $project)
-                    @php $head = $project->headlineWorkItem(); @endphp
+                    @php
+                        $head = $project->headlineWorkItem();
+                        $remaining = $project->remainingDaysLabel($today);
+                    @endphp
                     <a href="{{ route('projects.show', $project) }}" class="block px-4 py-3 hover:bg-nicon-sand">
                         @if ($project->isWinkel())
                             <div class="text-[11px] font-semibold tracking-[0.14em]">WINKEL</div>
                         @endif
                         <div class="font-medium">{{ $project->name }}</div>
-                        <div class="text-sm text-nicon-muted">Eind {{ $project->planned_end_date?->format('d-m') }}</div>
+                        <div class="text-sm text-nicon-muted">
+                            Eind {{ $project->planned_end_date?->format('d-m') }}
+                            @if ($remaining)
+                                · {{ $remaining }}
+                            @endif
+                        </div>
                         @if ($head && ! $project->isWinkel())
                             <div class="mt-1 text-sm">{{ $head->name }} {{ \App\Support\Format::qty($head->completedQuantity()) }} / {{ \App\Support\Format::qty($head->ordered_quantity) }} {{ $head->unit->label() }}</div>
                         @elseif ($project->isWinkel() && $project->shopWorkLine())
@@ -71,15 +79,32 @@
             <h2 class="bg-nicon-ink px-4 py-3 text-white font-semibold">Nieuwe werken</h2>
             <div class="divide-y">
                 @forelse ($upcoming as $project)
-                    @php $manned = $project->assignments->isNotEmpty() || $project->workOrders->isNotEmpty(); @endphp
-                    <a href="{{ route('projects.show', $project) }}" class="block px-4 py-3 hover:bg-nicon-sand">
+                    @php
+                        $manned = $project->assignments->isNotEmpty() || $project->workOrders->isNotEmpty();
+                        $daysLeft = $project->daysUntilKlaar($today);
+                        $remaining = $project->remainingDaysLabel($today);
+                    @endphp
+                    <a href="{{ route('planning', $project->planningBoardQuery()) }}" class="block px-4 py-3 hover:bg-nicon-sand">
                         @if ($project->isWinkel())
                             <div class="text-[11px] font-semibold tracking-[0.14em]">WINKEL</div>
                         @endif
                         <div class="font-medium">{{ $project->name }}</div>
-                        <div class="text-sm text-nicon-muted">Start {{ $project->planned_start_date?->format('d-m') }} · {{ $project->city }}</div>
+                        <div class="text-sm text-nicon-muted">
+                            Start {{ $project->planned_start_date?->format('d-m') }}
+                            @if ($project->planned_end_date)
+                                · Klaar {{ $project->planned_end_date->format('d-m') }}
+                            @endif
+                            @if ($project->city)
+                                · {{ $project->city }}
+                            @endif
+                        </div>
                         @if ($project->isWinkel() && $project->shopWorkLine())
                             <div class="text-sm text-nicon-muted">{{ $project->shopWorkLine() }}</div>
+                        @endif
+                        @if ($remaining)
+                            <div @class(['text-sm', 'text-nicon-danger' => $daysLeft !== null && $daysLeft < 0, 'text-nicon-muted' => $daysLeft === null || $daysLeft >= 0])>
+                                {{ $remaining }}
+                            </div>
                         @endif
                         <div class="mt-1 text-sm {{ $manned ? 'text-nicon-ok' : 'text-nicon-danger' }}">
                             {{ $manned ? 'Bemand' : 'Nog niet bemand' }}

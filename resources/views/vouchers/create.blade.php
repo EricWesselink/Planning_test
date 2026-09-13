@@ -77,6 +77,12 @@
 
         @include('vouchers._lines', ['formLines' => $lines, 'canAddLines' => $canAddLines ?? ($type === \App\Enums\VoucherType::Opdracht)])
 
+        <div class="mt-4">
+            @include('vouchers._worked_period', [
+                'workedFallbackDate' => $filters['from'] ?? null,
+            ])
+        </div>
+
         <div class="mt-4 max-w-xl">
             <label class="text-xs uppercase tracking-wide text-nicon-muted" for="notes">Toelichting</label>
             <textarea name="notes" id="notes" rows="2" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">{{ old('notes') }}</textarea>
