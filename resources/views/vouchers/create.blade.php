@@ -40,7 +40,7 @@
     @endif
 
     @if ($type === \App\Enums\VoucherType::Opdracht)
-        <p class="mt-4 text-sm text-nicon-muted">Leg vast welke werkzaamheden, hoeveelheden en prijzen zijn opgedragen. De hoeveelheid is het maximum; op elke latere bon vul je zelf in wat deze keer mag, tot dat maximum op is. Per werkzaamheid kies je één prijs (m²/m¹/st × prijs of een vaste afgesproken prijs). Daaronder staan de ruimtes met hun m² ter controle.</p>
+        <p class="mt-4 text-sm text-nicon-muted">Leg vast welke werkzaamheden, hoeveelheden en prijzen zijn opgedragen. De hoeveelheid is het maximum; op elke latere bon vul je zelf in wat deze keer mag, tot dat maximum op is. Per werkzaamheid kies je één prijs (m²/m¹/st/uren × prijs of een vaste afgesproken prijs). Bij uren vul je het aantal uren in; de ruimtes blijven ter controle met hun m² staan.</p>
     @elseif ($opdracht)
         <p class="mt-4 text-sm text-nicon-muted">Alleen onderdelen van opdrachtbon {{ $opdracht->number }}. Vul in wat hij deze keer indient; je kunt nooit meer opgeven dan er nog openstaat.</p>
     @endif
@@ -63,7 +63,7 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('vouchers.store') }}" class="mt-6" id="voucher-form">
+    <form method="POST" action="{{ route('vouchers.store') }}" class="mt-6" id="voucher-form" data-hourly-rate="{{ $worker->hourlyRate()?->unit_price }}">
         @csrf
         <input type="hidden" name="worker_id" value="{{ $worker->id }}">
         <input type="hidden" name="project_id" value="{{ $project->id }}">

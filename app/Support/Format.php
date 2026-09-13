@@ -77,6 +77,34 @@ class Format
         return $date->translatedFormat('D j M');
     }
 
+    public static function dayAndWeek(CarbonInterface $from, ?CarbonInterface $to = null): string
+    {
+        $from = $from->copy()->startOfDay();
+        $to = ($to ?? $from)->copy()->startOfDay();
+
+        $fromDay = rtrim($from->translatedFormat('D'), '.');
+        $toDay = rtrim($to->translatedFormat('D'), '.');
+
+        $days = $from->equalTo($to)
+            ? $fromDay.' '.$from->format('d-m-Y')
+            : $fromDay.' '.$from->format('d-m-Y').' – '.$toDay.' '.$to->format('d-m-Y');
+
+        $fromWeek = (int) $from->isoWeek();
+        $toWeek = (int) $to->isoWeek();
+        $fromYear = (int) $from->isoWeekYear();
+        $toYear = (int) $to->isoWeekYear();
+
+        if ($fromYear === $toYear && $fromWeek === $toWeek) {
+            return $days.' · week '.$fromWeek;
+        }
+
+        if ($fromYear === $toYear) {
+            return $days.' · week '.$fromWeek.'–'.$toWeek;
+        }
+
+        return $days.' · week '.$fromWeek.' '.$fromYear.' – week '.$toWeek.' '.$toYear;
+    }
+
     /** @return list<string> */
     public static function workerPalette(): array
     {

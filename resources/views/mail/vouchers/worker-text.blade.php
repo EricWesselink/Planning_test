@@ -6,10 +6,10 @@ Voeg deze bon bij je factuur.
 @endif
 
 @foreach (\App\Support\VoucherActivityGroups::fromVoucher($voucher) as $group)
-- {{ $group['description'] }}: {{ \App\Support\VoucherActivityGroups::quantityLabel($group) }} × {{ \App\Support\VoucherActivityGroups::priceLabel($group) }} = {{ \App\Support\Format::money($group['amount']) }}
+- {{ $group['description'] }}@if ($period = \App\Support\VoucherActivityGroups::periodLabel($group)) ({{ $period }})@endif: {{ \App\Support\VoucherActivityGroups::quantityLabel($group) }} × {{ \App\Support\VoucherActivityGroups::priceLabel($group) }} = {{ \App\Support\Format::money($group['amount']) }}
 @if ($group['has_rooms'])
 @foreach ($group['entries'] as $entry)
-  {{ $entry['room_label'] }}: {{ \App\Support\Format::qty($entry['quantity'], 2) }} {{ \App\Support\VoucherActivityGroups::unitLabel($group['unit']) }}
+  {{ $entry['room_label'] }}: {{ \App\Support\VoucherActivityGroups::roomQuantityLabel($group, $entry) }}
 @endforeach
 @endif
 @endforeach

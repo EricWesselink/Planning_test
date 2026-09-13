@@ -14,6 +14,7 @@ use App\Models\Worker;
 use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Support\Format;
+use App\Support\VoucherActivityGroups;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -199,10 +200,12 @@ class VoucherDraftService
         }
 
         $allowed = collect($draftLines)->keyBy(
-            fn (array $line): string => VoucherLine::lineKey($line['project_area_id'], $line['work_item_id'])
+            fn (array $line): string => VoucherActivityGroups::activityKeyFromLine($line)
         );
         $invoicedMap = $invoiced['map'] ?? [];
         $invoicedAmounts = $invoiced['amount_map'] ?? [];
+        $usedQty = [];
+        $usedAmount = [];
 
         $rows = [];
 
@@ -210,7 +213,7 @@ class VoucherDraftService
             $quantity = round((float) ($input['quantity'] ?? 0), 2);
             $areaId = isset($input['project_area_id']) && $input['project_area_id'] !== '' ? (int) $input['project_area_id'] : null;
             $itemId = isset($input['work_item_id']) && $input['work_item_id'] !== '' ? (int) $input['work_item_id'] : null;
-            $key = VoucherLine::lineKey($areaId ?: null, $itemId ?: null);
+            $key = VoucherActivityGroups::activityKeyFromLine($input);
             $source = $allowed->get($key);
             $kind = $this->priceKindFrom($input, $source, $type);
 
@@ -221,8 +224,8 @@ class VoucherDraftService
                     ]);
                 }
 
-                $maxQty = (float) ($source['remaining'] ?? $source['quantity'] ?? 0);
-                $maxAmount = (float) ($source['remaining_amount'] ?? 0);
+                $maxQty = round((float) ($source['remaining'] ?? $source['quantity'] ?? 0) - ($usedQty[$key] ?? 0), 2);
+                $maxAmount = round((float) ($source['remaining_amount'] ?? 0) - ($usedAmount[$key] ?? 0), 2);
 
                 if ($quantity - $maxQty > 0.001) {
                     throw ValidationException::withMessages([
@@ -257,44 +260,44 @@ class VoucherDraftService
                     $amount = round($quantity * $price, 2);
                 }
             } else {
+                $isHoursSpecRoom = $quantity <= 0.001
+                    && $areaId !== null
+                    && (string) ($input['unit'] ?? '') === WorkUnit::Hours->value;
+
                 if ($kind->isFixed()) {
                     $amount = round((float) ($input['amount'] ?? 0), 2);
-                    if ($amount <= 0) {
+                    if ($isHoursSpecRoom && $amount <= 0.001) {
+                        $price = round((float) ($input['unit_price'] ?? 0), 2);
+                        $amount = 0.0;
+                    } elseif ($amount <= 0) {
                         throw ValidationException::withMessages([
                             'lines.'.$index.'.amount' => 'Vul het afgesproken vaste bedrag in.',
                         ]);
-                    }
-                    if ($quantity <= 0) {
+                    } elseif ($quantity <= 0) {
                         throw ValidationException::withMessages([
                             'lines.'.$index.'.quantity' => 'Vul het maximale opdrachtaantal in.',
                         ]);
+                    } else {
+                        $price = round($amount / $quantity, 2);
                     }
-                    $price = round($amount / $quantity, 2);
                 } else {
                     if ($quantity <= 0) {
-                        continue;
+                        if (! $isHoursSpecRoom) {
+                            continue;
+                        }
+                        $price = round((float) ($input['unit_price'] ?? 0), 2);
+                        $amount = 0.0;
+                    } else {
+                        if (! array_key_exists('unit_price', $input) || $input['unit_price'] === '' || $input['unit_price'] === null) {
+                            throw ValidationException::withMessages([
+                                'lines.'.$index.'.unit_price' => 'Vul een prijs in, of zet eerst een afgesproken prijs bij de vakman.',
+                            ]);
+                        }
+                        $price = round((float) $input['unit_price'], 2);
+                        $amount = round($quantity * $price, 2);
                     }
-                    if (! array_key_exists('unit_price', $input) || $input['unit_price'] === '' || $input['unit_price'] === null) {
-                        throw ValidationException::withMessages([
-                            'lines.'.$index.'.unit_price' => 'Vul een prijs in, of zet eerst een afgesproken prijs bij de vakman.',
-                        ]);
-                    }
-                    $price = round((float) $input['unit_price'], 2);
-                    $amount = round($quantity * $price, 2);
                 }
 
-                $alreadyQty = (float) ($invoicedMap[$key] ?? 0);
-                $alreadyAmount = (float) ($invoicedAmounts[$key] ?? 0);
-                if ($alreadyQty > 0.001 && ($alreadyQty - $quantity) > 0.001) {
-                    throw ValidationException::withMessages([
-                        'lines.'.$index.'.quantity' => 'Er is al '.Format::qty($alreadyQty, 2).' gefactureerd op dit onderdeel.',
-                    ]);
-                }
-                if ($alreadyAmount > 0.001 && ($alreadyAmount - $amount) > 0.001) {
-                    throw ValidationException::withMessages([
-                        'lines.'.$index.'.amount' => 'Er is al '.Format::money($alreadyAmount).' gefactureerd op dit onderdeel.',
-                    ]);
-                }
             }
 
             $item = $itemId ? WorkItem::query()->find($itemId) : null;
@@ -322,6 +325,15 @@ class VoucherDraftService
                 'price_source' => $sourceEnum,
                 'price_kind' => $kind,
             ];
+
+            if ($type === VoucherType::Facturatie) {
+                $usedQty[$key] = ($usedQty[$key] ?? 0) + $quantity;
+                $usedAmount[$key] = ($usedAmount[$key] ?? 0) + $amount;
+            }
+        }
+
+        if ($type === VoucherType::Opdracht) {
+            $this->assertOpdrachtCoversInvoiced($rows, $invoicedMap, $invoicedAmounts);
         }
 
         if ($rows === []) {
@@ -331,6 +343,42 @@ class VoucherDraftService
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  array<string, float>  $invoicedMap
+     * @param  array<string, float>  $invoicedAmounts
+     */
+    private function assertOpdrachtCoversInvoiced(array $rows, array $invoicedMap, array $invoicedAmounts): void
+    {
+        $qtyByKey = [];
+        $amountByKey = [];
+        $firstIndex = [];
+
+        foreach ($rows as $index => $row) {
+            $key = VoucherActivityGroups::activityKeyFromLine($row);
+            $qtyByKey[$key] = ($qtyByKey[$key] ?? 0) + (float) $row['quantity'];
+            $amountByKey[$key] = ($amountByKey[$key] ?? 0) + (float) $row['amount'];
+            $firstIndex[$key] ??= $index;
+        }
+
+        foreach ($qtyByKey as $key => $quantity) {
+            $alreadyQty = (float) ($invoicedMap[$key] ?? 0);
+            $alreadyAmount = (float) ($invoicedAmounts[$key] ?? 0);
+            $index = $firstIndex[$key];
+
+            if ($alreadyQty > 0.001 && ($alreadyQty - $quantity) > 0.001) {
+                throw ValidationException::withMessages([
+                    'lines.'.$index.'.quantity' => 'Er is al '.Format::qty($alreadyQty, 2).' gefactureerd op dit onderdeel.',
+                ]);
+            }
+            if ($alreadyAmount > 0.001 && ($alreadyAmount - $amountByKey[$key]) > 0.001) {
+                throw ValidationException::withMessages([
+                    'lines.'.$index.'.amount' => 'Er is al '.Format::money($alreadyAmount).' gefactureerd op dit onderdeel.',
+                ]);
+            }
+        }
     }
 
     /**
@@ -435,7 +483,7 @@ class VoucherDraftService
             $cells = [];
             foreach ($bons as $bon) {
                 $matched = $bon->lines->filter(
-                    fn (VoucherLine $voucherLine): bool => $voucherLine->key() === $key
+                    fn (VoucherLine $voucherLine): bool => $voucherLine->activityKey() === $key
                 );
                 $cells[] = [
                     'quantity' => round((float) $matched->sum('quantity'), 2),
@@ -463,6 +511,8 @@ class VoucherDraftService
                 'project_area_id' => $line['project_area_id'],
                 'work_item_id' => $line['work_item_id'],
                 'specialty_key' => $line['specialty_key'],
+                'rooms' => $line['rooms'] ?? [],
+                'room_keys' => $line['room_keys'] ?? [],
                 'cells' => $cells,
                 'received_quantity' => $received,
                 'received_amount' => $receivedAmount,
@@ -674,6 +724,7 @@ class VoucherDraftService
                 'amount' => null,
                 'price_source' => VoucherPriceSource::Voucher,
                 'price_kind' => $kind,
+                'rooms' => $line['rooms'] ?? [],
             ];
         }
 
@@ -730,6 +781,7 @@ class VoucherDraftService
                             'amount' => $price === null ? 0.0 : round($quantity * $price, 2),
                             'price_source' => $resolved['source'],
                             'price_kind' => VoucherPriceKind::Unit,
+                            'spec_m2' => $room['area']?->square_meters,
                         ];
                     }
                 }
@@ -749,15 +801,17 @@ class VoucherDraftService
      *     work_item_id: ?int,
      *     specialty_key: ?string,
      *     unit_price: float,
-     *     price_kind: VoucherPriceKind
+     *     price_kind: VoucherPriceKind,
+     *     rooms: list<array{key: string, project_area_id: ?int, label: string, quantity: float}>,
+     *     room_keys: list<string>
      * }>
      */
     private function groupedOpdrachtLines(Voucher $opdracht): array
     {
-        $opdracht->loadMissing('lines');
+        $opdracht->loadMissing('lines.area');
 
         return $opdracht->lines
-            ->groupBy(fn (VoucherLine $line): string => $line->key())
+            ->groupBy(fn (VoucherLine $line): string => $line->activityKey())
             ->map(function (Collection $group): array {
                 /** @var VoucherLine $first */
                 $first = $group->first();
@@ -768,17 +822,49 @@ class VoucherDraftService
                 $amount = $kind->isFixed()
                     ? round((float) $group->sum('amount'), 2)
                     : round($quantity * (float) $first->unit_price, 2);
+                $payload = [
+                    'project_area_id' => $first->project_area_id,
+                    'work_item_id' => $first->work_item_id,
+                    'room_label' => $first->area?->label() ?? '',
+                    'description' => $first->description,
+                ];
+                $rooms = $group
+                    ->map(function (VoucherLine $line): ?array {
+                        $label = $line->area?->label()
+                            ?? VoucherActivityGroups::roomLabel([
+                                'project_area_id' => $line->project_area_id,
+                                'room_label' => $line->area?->label() ?? '',
+                                'description' => $line->description,
+                            ]);
+                        if ($label === '' && $line->project_area_id === null) {
+                            return null;
+                        }
+
+                        return [
+                            'key' => $line->key(),
+                            'project_area_id' => $line->project_area_id ? (int) $line->project_area_id : null,
+                            'label' => $label,
+                            'quantity' => $line->unit === WorkUnit::Hours
+                                ? round((float) ($line->area?->square_meters ?? $line->quantity), 2)
+                                : round((float) $line->quantity, 2),
+                        ];
+                    })
+                    ->filter()
+                    ->values()
+                    ->all();
 
                 return [
                     'quantity' => $quantity,
                     'amount' => $amount,
-                    'description' => $first->description,
+                    'description' => VoucherActivityGroups::activityName($payload),
                     'unit' => $first->unit,
-                    'project_area_id' => $first->project_area_id ? (int) $first->project_area_id : null,
+                    'project_area_id' => count($rooms) === 1 ? ($rooms[0]['project_area_id'] ?? null) : null,
                     'work_item_id' => $first->work_item_id ? (int) $first->work_item_id : null,
                     'specialty_key' => $first->specialty_key,
                     'unit_price' => (float) $first->unit_price,
                     'price_kind' => $kind,
+                    'rooms' => $rooms,
+                    'room_keys' => collect($rooms)->pluck('key')->filter()->values()->all(),
                 ];
             })
             ->all();
@@ -809,11 +895,11 @@ class VoucherDraftService
     {
         return [
             'map' => $lines
-                ->groupBy(fn (VoucherLine $line): string => $line->key())
+                ->groupBy(fn (VoucherLine $line): string => $line->activityKey())
                 ->map(fn (Collection $group): float => (float) $group->sum('quantity'))
                 ->all(),
             'amount_map' => $lines
-                ->groupBy(fn (VoucherLine $line): string => $line->key())
+                ->groupBy(fn (VoucherLine $line): string => $line->activityKey())
                 ->map(fn (Collection $group): float => (float) $group->sum('amount'))
                 ->all(),
             'amount' => round((float) $lines->sum('amount'), 2),

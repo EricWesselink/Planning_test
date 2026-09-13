@@ -16,13 +16,15 @@
         $priceSourceLabel = null;
     }
     $pricePrefix = 'activity_prices['.$itemId.']['.$unitValue.']';
+    $isHours = $unitValue === \App\Enums\WorkUnit::Hours->value;
 @endphp
 <tr class="border-t border-nicon-line align-middle voucher-group" data-group="{{ $group['key'] }}">
     <td class="px-4 py-2">
         <input type="text" name="{{ $pricePrefix }}[description]" value="{{ $group['description'] }}" class="w-full min-w-48 border border-nicon-line px-2 py-1 bg-white voucher-activity-name" placeholder="Omschrijving, bijv. Primen & Egaliseren">
     </td>
     <td class="px-4 py-2 whitespace-nowrap">
-        <div class="voucher-group-qty tabular-nums">{{ \App\Support\Format::qty($group['quantity'], 2) }}</div>
+        <div class="voucher-group-qty tabular-nums {{ $isHours ? 'hidden' : '' }}">{{ \App\Support\Format::qty($group['quantity'], 2) }}</div>
+        <input type="text" inputmode="decimal" name="{{ $pricePrefix }}[quantity]" value="{{ $isHours ? $group['quantity'] : '' }}" class="voucher-hours-qty w-24 border border-nicon-line px-2 py-1 bg-white {{ $isHours ? '' : 'hidden' }}" placeholder="uren">
     </td>
     <td class="px-4 py-2 whitespace-nowrap">
         <select name="{{ $pricePrefix }}[unit]" class="border border-nicon-line px-2 py-1 bg-white voucher-unit">

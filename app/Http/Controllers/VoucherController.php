@@ -6,10 +6,12 @@ use App\Enums\VoucherPriceKind;
 use App\Enums\VoucherType;
 use App\Enums\WorkUnit;
 use App\Mail\WorkerVoucherMail;
+use App\Models\AreaTask;
 use App\Models\Project;
 use App\Models\Voucher;
 use App\Models\VoucherLine;
 use App\Models\Worker;
+use App\Models\WorkProgressEntry;
 use App\Services\VoucherDraftService;
 use App\Services\VoucherPdfService;
 use App\Support\Format;
@@ -18,6 +20,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
@@ -124,6 +127,7 @@ class VoucherController extends Controller
             'voucher' => $voucher,
             'canEdit' => $request->user()?->can('update', $voucher) ?? false,
             'canSend' => $request->user()?->can('send', $voucher) ?? false,
+            'canDelete' => $request->user()?->can('delete', $voucher) ?? false,
         ]);
     }
 
@@ -165,9 +169,72 @@ class VoucherController extends Controller
         );
     }
 
+    public function destroy(Voucher $voucher): RedirectResponse
+    {
+        Gate::authorize('delete', $voucher);
+        $voucher->loadMissing(['worker', 'project', 'lines']);
+
+        if ($voucher->type === VoucherType::Opdracht && $voucher->children()->exists()) {
+            return back()->withErrors([
+                'voucher' => 'Verwijder eerst de bonnen bij deze opdrachtbon.',
+            ]);
+        }
+
+        $label = $voucher->type->label().' '.$voucher->number;
+        $query = array_filter([
+            'worker_id' => $voucher->worker_id,
+            'project_id' => $voucher->project_id,
+        ]);
+        $clearsRooms = $voucher->type === VoucherType::Opdracht;
+
+        DB::transaction(function () use ($voucher, $clearsRooms): void {
+            if ($clearsRooms) {
+                $this->reopenRoomsCoveredByOpdracht($voucher);
+            }
+
+            $voucher->delete();
+        });
+
+        $status = $label.' is verwijderd.';
+        if ($clearsRooms) {
+            $status .= ' Ruimtes staan weer open.';
+        }
+
+        return redirect()
+            ->route('production.index', $query)
+            ->with('status', $status);
+    }
+
+    private function reopenRoomsCoveredByOpdracht(Voucher $voucher): void
+    {
+        foreach ($voucher->lines as $line) {
+            $areaId = $line->project_area_id ? (int) $line->project_area_id : null;
+            $itemId = $line->work_item_id ? (int) $line->work_item_id : null;
+            if ($areaId === null || $itemId === null) {
+                continue;
+            }
+
+            $task = AreaTask::query()
+                ->where('project_area_id', $areaId)
+                ->where('work_item_id', $itemId)
+                ->first();
+
+            if ($task !== null) {
+                $task->reopen();
+
+                continue;
+            }
+
+            WorkProgressEntry::query()
+                ->where('project_area_id', $areaId)
+                ->where('work_item_id', $itemId)
+                ->delete();
+        }
+    }
+
     public function edit(Request $request, Voucher $voucher): View
     {
-        $voucher->load(['worker', 'project', 'lines.area']);
+        $voucher->load(['worker.rates', 'project', 'lines.area']);
         Gate::authorize('update', $voucher);
 
         $formLines = $this->formLinesFromVoucher($voucher);
@@ -311,6 +378,7 @@ class VoucherController extends Controller
                 'amount' => $line->amount,
                 'price_source' => $line->price_source,
                 'price_kind' => $line->price_kind,
+                'spec_m2' => $line->area?->square_meters,
             ];
             $payload['room_label'] = VoucherActivityGroups::roomLabel($payload);
             $payload['description'] = VoucherActivityGroups::activityName($payload);
@@ -335,7 +403,7 @@ class VoucherController extends Controller
                 if (! is_array($group)) {
                     continue;
                 }
-                foreach (['unit_price', 'amount'] as $field) {
+                foreach (['unit_price', 'amount', 'quantity'] as $field) {
                     if (array_key_exists($field, $group)) {
                         $prices[$itemId][$unitKey][$field] = Format::decimalInput($group[$field]);
                     }
@@ -379,16 +447,26 @@ class VoucherController extends Controller
 
         foreach ($members as $indexes) {
             $first = $lines[$indexes[0]];
-            $kind = (string) ($first['price_kind'] ?? VoucherPriceKind::Unit->value);
-            if ($kind !== VoucherPriceKind::Fixed->value) {
-                continue;
-            }
             $itemId = $first['work_item_id'];
             $unit = (string) ($first['unit'] ?? '');
             $group = is_array($prices[$itemId][$unit] ?? null)
                 ? $prices[$itemId][$unit]
                 : (isset($prices[$itemId]) && is_array($prices[$itemId]) ? reset($prices[$itemId]) : null);
-            $groupAmount = round((float) ($group['amount'] ?? 0), 2);
+            $kind = (string) ($first['price_kind'] ?? VoucherPriceKind::Unit->value);
+
+            if ($unit === WorkUnit::Hours->value) {
+                $hours = is_array($group) && filled($group['quantity'] ?? null)
+                    ? round((float) $group['quantity'], 2)
+                    : 0.0;
+                foreach ($indexes as $i => $index) {
+                    $lines[$index]['quantity'] = $i === 0 ? $hours : 0;
+                }
+            }
+
+            if ($kind !== VoucherPriceKind::Fixed->value) {
+                continue;
+            }
+            $groupAmount = round((float) ((is_array($group) ? ($group['amount'] ?? 0) : 0)), 2);
             $totalQty = 0.0;
             foreach ($indexes as $index) {
                 $totalQty += round((float) ($lines[$index]['quantity'] ?? 0), 2);
@@ -535,11 +613,12 @@ class VoucherController extends Controller
             $kind = (string) ($line['price_kind'] ?? VoucherPriceKind::Unit->value);
             $hasQty = $quantity !== '' && (float) $quantity > 0;
             $hasAmount = $amount !== '' && (float) $amount > 0;
+            $hasRoom = filled($line['project_area_id'] ?? null) || filled($line['room_label'] ?? null);
             if ($kind === VoucherPriceKind::Fixed->value) {
-                if (! $hasQty && ! $hasAmount) {
+                if (! $hasQty && ! $hasAmount && ! $hasRoom) {
                     continue;
                 }
-            } elseif (! $hasQty) {
+            } elseif (! $hasQty && ! $hasRoom) {
                 continue;
             }
 

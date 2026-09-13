@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\VoucherPriceKind;
 use App\Enums\VoucherPriceSource;
 use App\Enums\WorkUnit;
+use App\Support\VoucherActivityGroups;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -52,6 +53,15 @@ class VoucherLine extends Model
         return self::lineKey(
             $this->project_area_id ? (int) $this->project_area_id : null,
             $this->work_item_id ? (int) $this->work_item_id : null,
+        );
+    }
+
+    public function activityKey(): string
+    {
+        return VoucherActivityGroups::activityKey(
+            $this->work_item_id ? (int) $this->work_item_id : null,
+            $this->unit,
+            (string) $this->description,
         );
     }
 

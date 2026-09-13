@@ -418,21 +418,23 @@
                 @endforeach
             </div>
             @if ($canEnterProgress)
-                <form id="complete-form" class="border-t border-nicon-line p-3 space-y-2 text-sm bg-white">
-                    <div class="text-xs font-medium" id="complete-task-name">Kies een of meer werkzaamheden</div>
-                    <p class="text-[11px] text-nicon-muted" id="complete-hint">@if ($lockedWorkerId)Klaar blijft voorlopig tot de projectleider akkoord geeft. Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.@elseif ($canApproveProgress)Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype. Voorlopig klaar: klik en geef akkoord. Definitief gereed kun je uitzetten.@else Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype. Klik op Gereed om het weer open te zetten.@endif</p>
-                    <div class="grid grid-cols-2 gap-2">
-                        <select name="worker_id" id="complete-worker" class="border border-nicon-line px-2 py-1" @disabled($lockedWorkerId || $progressWorkers->isEmpty())>
+                <form id="complete-form" class="border-t border-nicon-line px-3 py-2 space-y-1.5 text-sm bg-white">
+                    <div class="text-sm font-medium leading-snug" id="complete-task-name">Kies een of meer werkzaamheden</div>
+                    @if ($lockedWorkerId)
+                        <p class="text-sm leading-snug text-nicon-muted">Klaar blijft voorlopig tot de projectleider akkoord geeft.</p>
+                    @endif
+                    <div class="grid grid-cols-2 gap-1.5">
+                        <select name="worker_id" id="complete-worker" class="border border-nicon-line px-2 py-1.5" @disabled($lockedWorkerId || $progressWorkers->isEmpty())>
                             @forelse ($progressWorkers as $worker)
                                 <option value="{{ $worker->id }}" @selected($lockedWorkerId === $worker->id)>{{ $worker->planName() }}</option>
                             @empty
                                 <option value="" disabled selected>Niemand ingepland op dit werk</option>
                             @endforelse
                         </select>
-                        <input type="date" name="date" id="complete-date" value="{{ now()->toDateString() }}" class="border border-nicon-line px-2 py-1">
+                        <input type="date" name="date" id="complete-date" value="{{ now()->toDateString() }}" class="border border-nicon-line px-2 py-1.5">
                     </div>
-                    <input name="quantity" id="complete-qty" type="number" step="0.01" min="0" placeholder="Aantal" class="w-full border border-nicon-line px-2 py-1">
-                    <input name="note" id="complete-note" placeholder="Opmerking" class="w-full border border-nicon-line px-2 py-1">
+                    <input name="quantity" id="complete-qty" type="number" step="0.01" min="0" placeholder="Aantal" class="w-full border border-nicon-line px-2 py-1.5">
+                    <input name="note" id="complete-note" placeholder="Opmerking" class="w-full border border-nicon-line px-2 py-1.5">
                     <button class="w-full bg-nicon-ink text-white py-2" id="complete-submit" disabled>{{ $lockedWorkerId ? 'Klaar melden (voorlopig)' : 'Opslaan en verwerken' }}</button>
                     <button type="button" class="w-full border border-nicon-line py-2 hidden" id="complete-reopen" hidden>Weer openzetten</button>
                 </form>

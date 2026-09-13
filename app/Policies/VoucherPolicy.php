@@ -50,4 +50,9 @@ class VoucherPolicy
     {
         return $this->update($user, $voucher);
     }
+
+    public function delete(User $user, Voucher $voucher): bool
+    {
+        return $this->update($user, $voucher);
+    }
 }

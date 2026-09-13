@@ -31,28 +31,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const roomsOf = (groupKey) => tbody.querySelectorAll('.voucher-room[data-group="'+groupKey+'"]');
 
+    const fillHourlyRate = (header) => {
+        const unit = header.querySelector('.voucher-unit')?.value || 'm2';
+        const priceInput = header.querySelector('.voucher-price');
+        const hourly = number(form.dataset.hourlyRate);
+        if (unit === 'uren' && hourly > 0 && priceInput && number(priceInput.value) <= 0) {
+            priceInput.value = String(hourly).replace('.', ',');
+        }
+    };
+
+    const syncHoursMode = (header) => {
+        const isHours = (header.querySelector('.voucher-unit')?.value || 'm2') === 'uren';
+        const wasHours = header.dataset.hoursMode === '1';
+        const knownMode = header.dataset.hoursMode === '1' || header.dataset.hoursMode === '0';
+        header.querySelector('.voucher-group-qty')?.classList.toggle('hidden', isHours);
+        header.querySelector('.voucher-hours-qty')?.classList.toggle('hidden', ! isHours);
+        roomsOf(header.dataset.group).forEach((row) => {
+            const qtyInput = row.querySelector('.voucher-qty');
+            qtyInput?.classList.toggle('hidden', isHours);
+            if (knownMode && wasHours && ! isHours && qtyInput && row.dataset.specM2) {
+                qtyInput.value = String(row.dataset.specM2).replace('.', ',');
+            }
+            const spec = row.querySelector('.voucher-room-spec');
+            if (spec) {
+                spec.classList.toggle('hidden', ! isHours);
+                if (isHours && spec.textContent.trim() === '') {
+                    const raw = row.dataset.specM2 || qtyInput?.value || '';
+                    const meters = number(raw);
+                    spec.textContent = meters > 0 ? qty(meters) + ' m²' : '';
+                }
+            }
+            const unitLabel = row.querySelector('.voucher-room-unit');
+            if (unitLabel) {
+                unitLabel.textContent = isHours ? 'm²' : (header.querySelector('.voucher-unit')?.selectedOptions[0]?.textContent || '');
+            }
+        });
+        header.dataset.hoursMode = isHours ? '1' : '0';
+        if (isHours) {
+            fillHourlyRate(header);
+        }
+    };
+
     const syncGroup = (header) => {
         syncKind(header);
+        syncHoursMode(header);
         const groupKey = header.dataset.group;
         const kind = header.querySelector('.voucher-kind')?.value || 'unit';
         const unit = header.querySelector('.voucher-unit')?.value || 'm2';
+        const isHours = unit === 'uren';
         const name = header.querySelector('.voucher-activity-name')?.value || '';
         const price = number(header.querySelector('.voucher-price')?.value);
         const rooms = [...roomsOf(groupKey)];
-        const totalQty = rooms.reduce((sum, row) => sum + number(row.querySelector('.voucher-qty')?.value), 0);
+        const roomQty = rooms.reduce((sum, row) => sum + number(row.querySelector('.voucher-qty')?.value), 0);
+        const totalQty = isHours ? number(header.querySelector('.voucher-hours-qty')?.value) : roomQty;
         let groupAmount = totalQty * price;
         if (kind === 'fixed') {
             groupAmount = number(header.querySelector('.voucher-fixed-amount')?.value);
         }
 
         const qtyCell = header.querySelector('.voucher-group-qty');
-        if (qtyCell) qtyCell.textContent = qty(totalQty);
+        if (qtyCell && ! isHours) qtyCell.textContent = qty(roomQty);
         const amountCell = header.querySelector('.voucher-amount');
         if (amountCell) amountCell.textContent = money(groupAmount);
 
         let allocated = 0;
         rooms.forEach((row, index) => {
-            const roomQty = number(row.querySelector('.voucher-qty')?.value);
+            const billedQty = isHours
+                ? (index === 0 ? totalQty : 0)
+                : number(row.querySelector('.voucher-qty')?.value);
             const descriptionField = row.querySelector('.voucher-activity-description');
             if (descriptionField) descriptionField.value = name;
             const unitField = row.querySelector('.voucher-unit-value');
@@ -61,12 +107,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (kindField) kindField.value = kind;
             const priceField = row.querySelector('.voucher-price');
             if (priceField) priceField.value = header.querySelector('.voucher-price')?.value ?? '';
-            let roomAmount = roomQty * price;
+            let roomAmount = billedQty * price;
             if (kind === 'fixed') {
                 if (index === rooms.length - 1) {
                     roomAmount = Math.round((groupAmount - allocated) * 100) / 100;
                 } else if (totalQty > 0) {
-                    roomAmount = Math.round((roomQty / totalQty) * groupAmount * 100) / 100;
+                    roomAmount = Math.round((billedQty / totalQty) * groupAmount * 100) / 100;
                     allocated += roomAmount;
                 } else {
                     roomAmount = 0;

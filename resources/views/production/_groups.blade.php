@@ -7,20 +7,36 @@
     $filters = $filters ?? ['from' => null, 'to' => null];
 @endphp
 @forelse ($groups as $group)
-    <section class="mt-8 border border-nicon-line bg-white">
-        <header class="flex items-end justify-between gap-4 flex-wrap bg-nicon-ink px-4 py-3 text-white">
-            <div>
-                <h2 class="font-semibold flex items-center gap-2">
-                    <span class="inline-block size-2.5 shrink-0 rounded-full" style="background: {{ $group['worker']->planColor() }}"></span>
-                    {{ $group['worker']->displayName() }}
-                </h2>
-                <p class="text-xs text-white/70">{{ $group['worker']->employment_type->label() }}</p>
-            </div>
-            <div class="text-sm text-white/80">
-                {{ $group['room_count'] }} {{ $group['room_count'] === 1 ? 'ruimte' : 'ruimtes' }}
-                · {{ \App\Support\Format::qty($group['total_m2'], 2) }} m²
-                @if ($group['total_m1'] > 0)
-                    · {{ \App\Support\Format::qty($group['total_m1'], 2) }} m¹
+    @php
+        $worker = $group['worker'];
+        $typeLabel = $worker->employment_type->label();
+        $workerTitle = str_starts_with($worker->displayName(), $typeLabel)
+            ? $worker->displayName()
+            : $typeLabel.' '.$worker->planName();
+        $workerSheets = collect($group['projects'])->map(function (array $projectGroup) use ($sheetsByKey, $worker) {
+            return $sheetsByKey[$worker->id.'.'.$projectGroup['project']->id] ?? null;
+        })->filter();
+        $workerOpdracht = (float) $workerSheets->sum(fn (array $sheet) => $sheet['billing']['opdracht_amount']);
+        $workerInvoiced = (float) $workerSheets->sum(fn (array $sheet) => $sheet['billing']['invoiced_amount']);
+        $workerOpen = (float) $workerSheets->sum(fn (array $sheet) => $sheet['billing']['remaining_amount']);
+    @endphp
+    <section class="mt-4 border border-nicon-line bg-white">
+        <header class="flex h-8 items-center justify-between gap-3 bg-nicon-ink px-3 text-sm text-white">
+            <h2 class="flex min-w-0 items-center gap-2 font-semibold leading-none">
+                <span class="inline-block size-2.5 shrink-0 rounded-full" style="background: {{ $worker->planColor() }}"></span>
+                <span class="truncate">{{ $workerTitle }}</span>
+            </h2>
+            <div class="shrink-0 whitespace-nowrap text-xs text-white/80">
+                @if ($workerSheets->isNotEmpty())
+                    Opdracht {{ \App\Support\Format::money($workerOpdracht) }}
+                    | Op bon {{ \App\Support\Format::money($workerInvoiced) }}
+                    | Open {{ $workerOpen > 0.001 ? \App\Support\Format::money($workerOpen) : '—' }}
+                @else
+                    {{ $group['room_count'] }} {{ $group['room_count'] === 1 ? 'ruimte' : 'ruimtes' }}
+                    · {{ \App\Support\Format::qty($group['total_m2'], 2) }} m²
+                    @if ($group['total_m1'] > 0)
+                        · {{ \App\Support\Format::qty($group['total_m1'], 2) }} m¹
+                    @endif
                 @endif
                 @if (($group['provisional_count'] ?? 0) > 0)
                     · {{ $group['provisional_count'] }} {{ $group['provisional_count'] === 1 ? 'wacht op akkoord' : 'wachten op akkoord' }}
@@ -30,57 +46,66 @@
 
         @foreach ($group['projects'] as $projectGroup)
             @php
-                $voucherKey = $group['worker']->id.'.'.$projectGroup['project']->id;
+                $project = $projectGroup['project'];
+                $voucherKey = $worker->id.'.'.$project->id;
                 $sheet = $sheetsByKey[$voucherKey] ?? null;
-                $formId = 'bon-'.$group['worker']->id.'-'.$projectGroup['project']->id;
+                $formId = 'bon-'.$worker->id.'-'.$project->id;
                 $voucherQuery = array_filter([
-                    'worker_id' => $group['worker']->id,
-                    'project_id' => $projectGroup['project']->id,
+                    'worker_id' => $worker->id,
+                    'project_id' => $project->id,
                     'from' => $filters['from'] ?? null,
                     'to' => $filters['to'] ?? null,
                 ], fn ($value) => $value !== null && $value !== '');
                 $hasRemaining = $sheet && ! $sheet['billing']['fully_settled'];
+                $codeParts = array_values(array_filter([
+                    $project->workCode(),
+                    $project->workNumber() !== '' ? $project->workNumber() : null,
+                ]));
+                $projectRef = $codeParts !== [] ? implode(' · ', $codeParts) : $project->labeledNumbersLine();
             @endphp
             <div class="border-t border-nicon-line">
-                <div class="flex items-end justify-between gap-4 flex-wrap px-4 py-3 bg-nicon-sand">
-                    <div>
-                        <a class="font-medium text-nicon-orange-dark" href="{{ route('projects.show', $projectGroup['project']) }}">
-                            <span class="block whitespace-nowrap">{{ $projectGroup['project']->labeledNumbersLine() }}</span>
-                            <span class="block">{{ $projectGroup['project']->displayTitle() }}</span>
-                        </a>
-                        @if ($projectGroup['project']->city)
-                            <div class="text-xs text-nicon-muted">{{ $projectGroup['project']->city }}</div>
+                <div class="flex min-h-8 items-center justify-between gap-3 bg-nicon-sand px-3 py-1 text-sm">
+                    <a class="min-w-0 truncate text-nicon-orange-dark" href="{{ route('projects.show', $project) }}">
+                        @if ($projectRef !== '')
+                            {{ $projectRef }} |
                         @endif
-                    </div>
-                    <div class="flex items-center gap-3 flex-wrap text-sm">
-                        @if (! $sheet)
-                            <span class="text-nicon-muted">
-                                {{ \App\Support\Format::qty($projectGroup['total_m2'], 2) }} m²
-                                @if ($projectGroup['total_m1'] > 0)
-                                    · {{ \App\Support\Format::qty($projectGroup['total_m1'], 2) }} m¹
-                                @endif
-                            </span>
-                        @endif
+                        {{ $project->displayTitle() }}
+                        <span class="text-nicon-muted">
+                            | {{ $projectGroup['room_count'] }} {{ $projectGroup['room_count'] === 1 ? 'ruimte' : 'ruimtes' }}
+                            · {{ \App\Support\Format::qty($projectGroup['total_m2'], 2) }} m²
+                            @if ($projectGroup['total_m1'] > 0)
+                                · {{ \App\Support\Format::qty($projectGroup['total_m1'], 2) }} m¹
+                            @endif
+                        </span>
+                    </a>
+                    <div class="flex shrink-0 items-center gap-1.5 text-xs no-print">
                         @if ($canCreateVouchers)
                             @if ($sheet)
-                                <a class="border border-nicon-line bg-white px-3 py-1.5 no-print" href="{{ route('vouchers.edit', $sheet['opdracht']) }}">Opdracht aanpassen</a>
-                                <a class="border border-nicon-line bg-white px-3 py-1.5 no-print" href="{{ route('vouchers.pdf', $sheet['opdracht']) }}">Download PDF</a>
+                                <a class="border border-nicon-line bg-white px-2 py-0.5" href="{{ route('vouchers.edit', $sheet['opdracht']) }}">Opdracht</a>
+                                <a class="border border-nicon-line bg-white px-2 py-0.5" href="{{ route('vouchers.pdf', $sheet['opdracht']) }}">PDF</a>
+                                @if ($sheet['bons']->isEmpty())
+                                    <form method="POST" action="{{ route('vouchers.destroy', $sheet['opdracht']) }}" onsubmit="return confirm({{ json_encode($sheet['opdracht']->type->label().' '.$sheet['opdracht']->number.' wordt verwijderd. Ruimtes worden weer open gezet.') }})">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="border border-nicon-line bg-white px-2 py-0.5 text-nicon-danger">Verwijderen</button>
+                                    </form>
+                                @endif
                                 @if ($hasRemaining)
-                                    <button type="submit" form="{{ $formId }}" class="bg-nicon-orange text-white px-3 py-1.5 no-print">Bon maken</button>
+                                    <button type="submit" form="{{ $formId }}" class="bg-nicon-orange px-2 py-0.5 text-white">Bon maken</button>
                                 @endif
                             @else
-                                <a class="border border-nicon-line bg-white px-3 py-1.5" href="{{ route('vouchers.create', $voucherQuery + ['type' => 'opdracht']) }}">Opdrachtbon</a>
-                                <span class="text-xs text-nicon-muted">Eerst opdrachtbon</span>
+                                <a class="border border-nicon-line bg-white px-2 py-0.5" href="{{ route('vouchers.create', $voucherQuery + ['type' => 'opdracht']) }}">Opdrachtbon</a>
+                                <span class="text-nicon-muted">Eerst opdrachtbon</span>
                             @endif
                         @endif
                         @if ($canApproveProgress && count($projectGroup['provisional_task_ids'] ?? []) > 0)
-                            <form method="POST" action="{{ route('production.approve') }}" class="no-print">
+                            <form method="POST" action="{{ route('production.approve') }}">
                                 @csrf
-                                <input type="hidden" name="project_id" value="{{ $projectGroup['project']->id }}">
+                                <input type="hidden" name="project_id" value="{{ $project->id }}">
                                 @foreach ($projectGroup['provisional_task_ids'] as $taskId)
                                     <input type="hidden" name="task_ids[]" value="{{ $taskId }}">
                                 @endforeach
-                                <button class="bg-nicon-ink text-white px-3 py-1.5">Akkoord voorlopig werk</button>
+                                <button class="bg-nicon-ink px-2 py-0.5 text-white">Akkoord voorlopig werk</button>
                             </form>
                         @endif
                     </div>
@@ -99,25 +124,25 @@
                         <table class="w-full text-sm">
                             <thead class="text-left text-nicon-muted">
                                 <tr>
-                                    <th class="px-4 py-2 font-medium">Ruimte</th>
-                                    <th class="px-4 py-2 font-medium">m² ruimte</th>
-                                    <th class="px-4 py-2 font-medium">Materialen</th>
-                                    <th class="px-4 py-2 font-medium">Status</th>
+                                    <th class="px-3 py-1 font-medium">Ruimte</th>
+                                    <th class="px-3 py-1 font-medium">m² ruimte</th>
+                                    <th class="px-3 py-1 font-medium">Materialen</th>
+                                    <th class="px-3 py-1 font-medium">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($projectGroup['rooms'] as $room)
                                     <tr class="border-t border-nicon-line align-top">
-                                        <td class="px-4 py-2 font-medium">{{ $room['label'] }}</td>
-                                        <td class="px-4 py-2 whitespace-nowrap">
+                                        <td class="px-3 py-1 font-medium">{{ $room['label'] }}</td>
+                                        <td class="whitespace-nowrap px-3 py-1">
                                             @if ($room['area_m2'] > 0)
                                                 {{ \App\Support\Format::qty($room['area_m2'], 2) }} m²
                                             @else
                                                 —
                                             @endif
                                         </td>
-                                        <td class="px-4 py-2">
-                                            <ul class="space-y-1">
+                                        <td class="px-3 py-1">
+                                            <ul class="flex flex-col gap-0.5">
                                                 @foreach ($room['materials'] as $material)
                                                     <li class="flex items-center gap-2">
                                                         <span class="inline-block size-2.5 shrink-0 rounded-full border border-nicon-line" style="background: {{ $material['display_color'] ?? \App\Support\MaterialColor::resolve(null, $material['label'] ?? null) }}"></span>
@@ -132,8 +157,8 @@
                                                 @endforeach
                                             </ul>
                                         </td>
-                                        <td class="px-4 py-2">
-                                            <ul class="space-y-2">
+                                        <td class="px-3 py-1">
+                                            <ul class="flex flex-col gap-0.5">
                                                 @foreach ($room['materials'] as $material)
                                                     <li class="flex flex-wrap items-center gap-2">
                                                         @if ($material['provisional'] ?? false)
@@ -149,7 +174,7 @@
                                                         @if ($canApproveProgress && ($material['provisional'] ?? false) && ($material['task_id'] ?? null))
                                                             <form method="POST" action="{{ route('production.approve') }}" class="no-print">
                                                                 @csrf
-                                                                <input type="hidden" name="project_id" value="{{ $projectGroup['project']->id }}">
+                                                                <input type="hidden" name="project_id" value="{{ $project->id }}">
                                                                 <input type="hidden" name="task_ids[]" value="{{ $material['task_id'] }}">
                                                                 <button class="text-xs text-nicon-orange-dark underline-offset-2 hover:underline">Akkoord</button>
                                                             </form>
@@ -168,7 +193,7 @@
         @endforeach
     </section>
 @empty
-    <p class="mt-8 border border-nicon-line bg-white px-4 py-6 text-sm text-nicon-muted">
+    <p class="mt-4 border border-nicon-line bg-white px-4 py-4 text-sm text-nicon-muted">
         Nog geen productie. Vink werkzaamheden af op de tekening; ze komen hier per team of ZZP te staan, met klaar gemeld tot jij akkoord geeft.
     </p>
 @endforelse

@@ -84,7 +84,13 @@
             font-size: 8pt;
             color: #5b6570;
         }
-        .rooms .qty { text-align: right; white-space: nowrap; }
+        .activity-head .period {
+            display: block;
+            font-size: 8pt;
+            font-weight: 400;
+            color: #5b6570;
+            padding-top: 1px;
+        }
         .total td {
             border: none;
             border-top: 1.2pt solid #163a5f;
@@ -189,10 +195,18 @@
     @endif
 
     @foreach ($groups as $group)
+        @php
+            $groupPeriod = \App\Support\VoucherActivityGroups::periodLabel($group);
+        @endphp
         <div class="activity">
             <table class="activity-head">
                 <tr>
-                    <td>{{ $group['description'] }}</td>
+                    <td>
+                        {{ $group['description'] }}
+                        @if ($groupPeriod !== '')
+                            <span class="period">{{ $groupPeriod }}</span>
+                        @endif
+                    </td>
                     <td class="num">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
                     <td class="num">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
                     <td class="num">{{ \App\Support\Format::money($group['amount']) }}</td>
@@ -201,9 +215,17 @@
             @if ($group['has_rooms'])
                 <table class="rooms">
                     @foreach ($group['entries'] as $entry)
+                        @php
+                            $roomPeriod = \App\Support\VoucherActivityGroups::roomPeriodLabel($entry);
+                        @endphp
                         <tr>
-                            <td>{{ $entry['room_label'] }}</td>
-                            <td class="qty">{{ \App\Support\Format::qty($entry['quantity'], 2) }} {{ \App\Support\VoucherActivityGroups::unitLabel($group['unit']) }}</td>
+                            <td>
+                                {{ $entry['room_label'] }}
+                                @if ($roomPeriod !== '' && $roomPeriod !== $groupPeriod)
+                                    · {{ $roomPeriod }}
+                                @endif
+                            </td>
+                            <td class="qty">{{ \App\Support\VoucherActivityGroups::roomQuantityLabel($group, $entry) }}</td>
                         </tr>
                     @endforeach
                 </table>

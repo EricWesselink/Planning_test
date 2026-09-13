@@ -73,6 +73,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/productie/bonnen/{voucher}/aanpassen', [VoucherController::class, 'edit'])->name('vouchers.edit');
     Route::patch('/productie/bonnen/{voucher}', [VoucherController::class, 'update'])->name('vouchers.update');
     Route::post('/productie/bonnen/{voucher}/mail', [VoucherController::class, 'send'])->middleware('throttle:voucher-mail')->name('vouchers.send');
+    Route::delete('/productie/bonnen/{voucher}', [VoucherController::class, 'destroy'])->name('vouchers.destroy');
     Route::get('/productie/bonnen/{voucher}/pdf', [VoucherController::class, 'pdf'])->name('vouchers.pdf');
     Route::get('/productie/bonnen/{voucher}', [VoucherController::class, 'show'])->name('vouchers.show');
     Route::get('/voortgang', [ProgressController::class, 'create'])->name('progress.create');

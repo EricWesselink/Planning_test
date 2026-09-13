@@ -47,6 +47,13 @@
         @if ($canEdit ?? false)
             <a href="{{ route('vouchers.edit', $voucher) }}" style="margin-left:12px">Aanpassen</a>
         @endif
+        @if ($canDelete ?? false)
+            <form method="POST" action="{{ route('vouchers.destroy', $voucher) }}" style="display:inline;margin-left:12px" onsubmit="return confirm({{ json_encode($voucher->type === \App\Enums\VoucherType::Opdracht ? $voucher->type->label().' '.$voucher->number.' wordt verwijderd. Ruimtes worden weer open gezet.' : $voucher->type->label().' '.$voucher->number.' wordt verwijderd.') }})">
+                @csrf
+                @method('DELETE')
+                <button type="submit" style="color:#b91c1c;background:none;border:0;padding:0;cursor:pointer">Verwijderen</button>
+            </form>
+        @endif
         @if ($canSend ?? false)
             @if (filled($voucher->worker?->email))
                 <form method="POST" action="{{ route('vouchers.send', $voucher) }}" style="display:inline;margin-left:12px">
@@ -115,17 +122,33 @@
         </thead>
         <tbody>
             @foreach (\App\Support\VoucherActivityGroups::fromVoucher($voucher) as $group)
+                @php
+                    $groupPeriod = \App\Support\VoucherActivityGroups::periodLabel($group);
+                @endphp
                 <tr class="activity {{ $group['has_rooms'] ? 'has-rooms' : '' }}">
-                    <td>{{ $group['description'] }}</td>
+                    <td>
+                        {{ $group['description'] }}
+                        @if ($groupPeriod !== '')
+                            <div class="muted">{{ $groupPeriod }}</div>
+                        @endif
+                    </td>
                     <td class="num">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
                     <td class="num">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
                     <td class="num">{{ \App\Support\Format::money($group['amount']) }}</td>
                 </tr>
                 @if ($group['has_rooms'])
                     @foreach ($group['entries'] as $entry)
+                        @php
+                            $roomPeriod = \App\Support\VoucherActivityGroups::roomPeriodLabel($entry);
+                        @endphp
                         <tr class="room {{ $loop->last ? 'room-last' : '' }}">
-                            <td>{{ $entry['room_label'] }}</td>
-                            <td class="num">{{ \App\Support\Format::qty($entry['quantity'], 2) }} {{ \App\Support\VoucherActivityGroups::unitLabel($group['unit']) }}</td>
+                            <td>
+                                {{ $entry['room_label'] }}
+                                @if ($roomPeriod !== '' && $roomPeriod !== $groupPeriod)
+                                    · {{ $roomPeriod }}
+                                @endif
+                            </td>
+                            <td class="num">{{ \App\Support\VoucherActivityGroups::roomQuantityLabel($group, $entry) }}</td>
                             <td class="num"></td>
                             <td class="num"></td>
                         </tr>

@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AreaStatus;
 use App\Enums\UserRole;
 use App\Enums\VoucherType;
 use App\Mail\WorkerVoucherMail;
+use App\Models\AreaTask;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\ProjectArea;
@@ -201,11 +203,12 @@ class VoucherTest extends TestCase
         $this->actingAs($user)
             ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '35'))
             ->assertRedirect();
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
 
         $this->actingAs($user)
             ->get(route('production.index'))
             ->assertOk()
-            ->assertSee('2e bon')
+            ->assertSee($bon->number)
             ->assertSee('Klaar – nog niet in opdracht')
             ->assertSee('Marmoleum Real')
             ->assertSee('Plinten wit')
@@ -289,7 +292,7 @@ class VoucherTest extends TestCase
             ->get(route('production.index'))
             ->assertOk()
             ->assertSee('Volledig afgerekend')
-            ->assertSee('Totaal ontvangen')
+            ->assertSee('Op bon')
             ->assertSee('276,38')
             ->assertDontSee('Bon maken');
 
@@ -318,16 +321,18 @@ class VoucherTest extends TestCase
             ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '50.25'))
             ->assertRedirect();
 
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
+
         $this->actingAs($user)
             ->get(route('production.index'))
             ->assertOk()
-            ->assertSee('Totaal opdracht')
+            ->assertSee('Opdracht')
             ->assertSee('1.650,00')
-            ->assertSee('Totaal ontvangen')
+            ->assertSee('Op bon')
             ->assertSee('276,38')
-            ->assertSee('Nog te ontvangen')
+            ->assertSee('Open')
             ->assertSee('1.373,62')
-            ->assertSee('1e bon');
+            ->assertSee($bon->number);
     }
 
     public function test_exceeding_the_opdrachtbon_is_rejected(): void
@@ -435,7 +440,7 @@ class VoucherTest extends TestCase
             ->get(route('production.index'))
             ->assertOk()
             ->assertSee('6,00')
-            ->assertSee('1e bon');
+            ->assertSee('Bon maken');
 
         $this->actingAs($user)
             ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '6.00'))
@@ -445,6 +450,139 @@ class VoucherTest extends TestCase
         $this->assertSame($opdracht->id, $bon->parent_id);
         $this->assertSame('6.00', $bon->lines()->first()->unit_price);
         $this->assertSame('voucher', $bon->lines()->first()->price_source->value);
+    }
+
+    public function test_production_groups_rooms_under_one_activity_row(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $other = $this->addCompletedRoom($project, $area, $item, $worker, '0.03', 'groepsruimte', 51.16);
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => VoucherType::Opdracht->value,
+                'activity_prices' => [
+                    $item->id => [
+                        'm2' => [
+                            'description' => 'Primen & Egaliseren',
+                            'price_kind' => 'unit',
+                            'unit_price' => '2.00',
+                            'unit' => 'm2',
+                        ],
+                    ],
+                ],
+                'lines' => [
+                    [
+                        'project_area_id' => $area->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.02 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '50.25',
+                        'unit' => 'm2',
+                        'unit_price' => '2.00',
+                    ],
+                    [
+                        'project_area_id' => $other->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.03 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '51.16',
+                        'unit' => 'm2',
+                        'unit_price' => '2.00',
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('101,41')
+            ->assertSee('202,82')
+            ->assertSee('0.02 groepsruimte – 50,25')
+            ->assertSee('0.03 groepsruimte – 51,16')
+            ->assertSee('name="lines[0][quantity]"', false)
+            ->assertDontSee('name="lines[1][quantity]"', false)
+            ->assertDontSee('€ 100,50')
+            ->assertDontSee('€ 102,32');
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => VoucherType::Facturatie->value,
+                'lines' => [[
+                    'work_item_id' => $item->id,
+                    'description' => 'Primen & Egaliseren',
+                    'quantity' => '40',
+                    'unit' => 'm2',
+                    'unit_price' => '2.00',
+                ]],
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Op bon')
+            ->assertSee('40,00')
+            ->assertSee('80,00')
+            ->assertSee('Open')
+            ->assertSee('61,41')
+            ->assertSee('122,82')
+            ->assertSee('placeholder="max. 61,41"', false);
+    }
+
+    public function test_partial_bons_sum_and_cannot_exceed_the_opdracht(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area, '9.50', '1000');
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '9.50', VoucherType::Facturatie, '300'))
+            ->assertRedirect();
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Opdracht')
+            ->assertSee('1.000,00')
+            ->assertSee('9.500,00')
+            ->assertSee('Op bon')
+            ->assertSee('300,00')
+            ->assertSee('2.850,00')
+            ->assertSee('Open')
+            ->assertSee('700,00')
+            ->assertSee('6.650,00')
+            ->assertSee('placeholder="max. 700,00"', false);
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '9.50', VoucherType::Facturatie, '400'))
+            ->assertRedirect();
+
+        $this->assertSame(2, Voucher::query()->where('type', VoucherType::Facturatie)->count());
+        $this->assertSame('6650.00', number_format((float) Voucher::query()->where('type', VoucherType::Facturatie)->sum('total_amount'), 2, '.', ''));
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Op bon')
+            ->assertSee('700,00')
+            ->assertSee('6.650,00')
+            ->assertSee('Open')
+            ->assertSee('300,00')
+            ->assertSee('2.850,00')
+            ->assertSee('placeholder="max. 300,00"', false);
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '9.50', VoucherType::Facturatie, '301'))
+            ->assertSessionHasErrors(['lines.0.quantity']);
+
+        $this->assertSame(2, Voucher::query()->where('type', VoucherType::Facturatie)->count());
     }
 
     public function test_cannot_invoice_more_than_the_remaining_quantity(): void
@@ -469,12 +607,12 @@ class VoucherTest extends TestCase
         $this->actingAs($user)
             ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '100'))
             ->assertRedirect();
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
 
         $this->actingAs($user)
             ->get(route('production.index'))
             ->assertOk()
-            ->assertSee('1e bon')
-            ->assertSee('2e bon')
+            ->assertSee($bon->number)
             ->assertSee('max. 200,00');
 
         $this->actingAs($user)
@@ -510,13 +648,13 @@ class VoucherTest extends TestCase
         $this->actingAs($user)
             ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '10'))
             ->assertRedirect();
+        $bons = Voucher::query()->where('type', VoucherType::Facturatie)->orderBy('id')->get();
 
         $this->actingAs($user)
             ->get(route('production.index'))
             ->assertOk()
-            ->assertSee('1e bon')
-            ->assertSee('2e bon')
-            ->assertSee('3e bon')
+            ->assertSee($bons[0]->number)
+            ->assertSee($bons[1]->number)
             ->assertSee('45,00')
             ->assertSee('5,25')
             ->assertSee('placeholder="max. 5,25"', false)
@@ -554,11 +692,11 @@ class VoucherTest extends TestCase
         $first['lines'][0]['price_kind'] = 'fixed';
         $first['lines'][0]['amount'] = '550';
         $this->actingAs($user)->post(route('vouchers.store'), $first)->assertRedirect();
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
 
         $this->actingAs($user)
             ->get(route('production.index'))
-            ->assertSee('1e bon')
-            ->assertSee('2e bon')
+            ->assertSee($bon->number)
             ->assertSee('max. 200,00')
             ->assertSee('1.100,00')
             ->assertDontSee('Volledig afgerekend');
@@ -590,10 +728,11 @@ class VoucherTest extends TestCase
         $first['lines'][0]['price_kind'] = 'fixed';
         $first['lines'][0]['amount'] = '800';
         $this->actingAs($user)->post(route('vouchers.store'), $first)->assertRedirect();
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
 
         $this->actingAs($user)
             ->get(route('production.index'))
-            ->assertSee('2e bon')
+            ->assertSee($bon->number)
             ->assertSee('850,00')
             ->assertSee('Bon maken')
             ->assertDontSee('Volledig afgerekend');
@@ -738,6 +877,162 @@ class VoucherTest extends TestCase
         $this->assertSame('1650.00', $voucher->fresh()->total_amount);
     }
 
+    public function test_unauthenticated_delete_redirects_to_login(): void
+    {
+        $this->delete('/productie/bonnen/1')->assertRedirect(route('login'));
+    }
+
+    public function test_uitvoerder_cannot_delete_a_voucher(): void
+    {
+        $planner = User::factory()->create();
+        $uitvoerder = User::factory()->uitvoerder()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($planner, $worker, $project, $item, $area);
+        $this->actingAs($planner)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '50'))
+            ->assertRedirect();
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
+
+        $this->actingAs($uitvoerder)
+            ->delete(route('vouchers.destroy', $bon))
+            ->assertForbidden();
+
+        $this->assertModelExists($bon);
+    }
+
+    public function test_deleting_a_bon_restores_the_open_saldo(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area, '5.50', '300');
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '100'))
+            ->assertRedirect();
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
+        $this->assertNotNull($bon);
+
+        $this->actingAs($user)
+            ->from(route('production.index'))
+            ->delete(route('vouchers.destroy', $bon))
+            ->assertRedirect(route('production.index', [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+            ]))
+            ->assertSessionHas('status');
+
+        $this->assertModelMissing($bon);
+        $this->assertSame(0, Voucher::query()->where('type', VoucherType::Facturatie)->count());
+        $this->assertSame(1, Voucher::query()->where('type', VoucherType::Opdracht)->count());
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Open')
+            ->assertSee('300,00')
+            ->assertSee('1.650,00')
+            ->assertSee('Bon maken')
+            ->assertSee('placeholder="max. 300,00"', false)
+            ->assertDontSee('Volledig afgerekend');
+    }
+
+    public function test_opdrachtbon_with_bons_cannot_be_deleted(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area);
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '50'))
+            ->assertRedirect();
+        $opdracht = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+
+        $this->actingAs($user)
+            ->from(route('vouchers.show', $opdracht))
+            ->delete(route('vouchers.destroy', $opdracht))
+            ->assertRedirect(route('vouchers.show', $opdracht))
+            ->assertSessionHasErrors(['voucher']);
+
+        $this->assertModelExists($opdracht);
+        $this->assertSame(1, Voucher::query()->where('type', VoucherType::Facturatie)->count());
+    }
+
+    public function test_production_shows_delete_for_an_opdrachtbon_without_bons(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area);
+        $opdracht = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Verwijderen')
+            ->assertSee(route('vouchers.destroy', $opdracht), false)
+            ->assertSee('Ruimtes worden weer open gezet');
+    }
+
+    public function test_deleting_an_opdrachtbon_reopens_the_rooms(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $task = AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $item->id,
+            'ordered_quantity' => 50.25,
+            'unit' => 'm2',
+            'status' => 'gereed',
+            'completed_by' => $worker->id,
+            'completed_at' => now(),
+            'approved_at' => now(),
+        ]);
+        $this->storeOpdracht($user, $worker, $project, $item, $area);
+        $opdracht = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+        $this->assertNotNull($opdracht);
+
+        $this->actingAs($user)
+            ->from(route('production.index'))
+            ->delete(route('vouchers.destroy', $opdracht))
+            ->assertRedirect(route('production.index', [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+            ]))
+            ->assertSessionHas('status', function (string $status): bool {
+                return str_contains($status, 'is verwijderd')
+                    && str_contains($status, 'Ruimtes staan weer open');
+            });
+
+        $this->assertModelMissing($opdracht);
+        $this->assertSame(0, Voucher::query()->count());
+        $this->assertSame(0, WorkProgressEntry::query()->count());
+        $this->assertSame(AreaStatus::NietGestart, $task->fresh()->status);
+        $this->assertNull($task->fresh()->completed_at);
+        $this->assertSame(AreaStatus::NietGestart, $area->fresh()->status);
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Nog geen productie')
+            ->assertDontSee('Bon maken')
+            ->assertDontSee('klaar 50,25');
+    }
+
+    public function test_production_shows_delete_for_a_bon(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $this->storeOpdracht($user, $worker, $project, $item, $area);
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '5.50', VoucherType::Facturatie, '50'))
+            ->assertRedirect();
+        $bon = Voucher::query()->where('type', VoucherType::Facturatie)->first();
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('Verwijderen')
+            ->assertSee(route('vouchers.destroy', $bon), false)
+            ->assertDontSee('Ruimtes worden weer open gezet');
+    }
+
     public function test_unauthenticated_send_redirects_to_login(): void
     {
         $this->post('/productie/bonnen/1/mail')->assertRedirect(route('login'));
@@ -832,8 +1127,8 @@ class VoucherTest extends TestCase
                 'project_id' => $project->id,
             ]))
             ->assertOk()
-            ->assertSee('2e bon')
-            ->assertSee('Nog te ontvangen')
+            ->assertSee($voucher->number)
+            ->assertSee('Open')
             ->assertSee('Verstuur');
     }
 
@@ -1021,17 +1316,20 @@ class VoucherTest extends TestCase
             ->get(route('production.index'))
             ->assertOk()
             ->assertSee('Bon maken')
-            ->assertSee('Huidige bon')
+            ->assertSee('Deze bon')
+            ->assertSee('+ Opmerking toevoegen')
             ->assertSee('name="lines[0][quantity]" value=""', false)
             ->assertSee('placeholder="max. 300,00"', false)
-            ->assertSee('1e bon')
-            ->assertSee('Nog te ontvangen')
+            ->assertSee('Open')
             ->assertSee('300,00')
             ->assertDontSee('Eerst opdrachtbon')
-            ->assertDontSee('name="selected[]"', false);
+            ->assertDontSee('name="selected[]"', false)
+            ->assertDontSee('Akkoord onderaannemer')
+            ->assertDontSee('Akkoord opdrachtgever')
+            ->assertDontSee('Bonoverzicht');
     }
 
-    public function test_sheet_shows_each_bon_as_the_next_column(): void
+    public function test_sheet_subtracts_each_bon_from_the_open_saldo(): void
     {
         $user = User::factory()->create();
         [$worker, $project, $item, $area] = $this->seedProduction();
@@ -1054,21 +1352,21 @@ class VoucherTest extends TestCase
         $this->actingAs($user)
             ->post(route('vouchers.store'), $this->payload($worker, $project, $item, $area, '3.00', VoucherType::Facturatie, '30'))
             ->assertRedirect();
+        $bons = Voucher::query()->where('type', VoucherType::Facturatie)->orderBy('id')->get();
 
         $this->actingAs($user)
             ->get(route('production.index'))
             ->assertOk()
-            ->assertSee('Onderaannemer')
-            ->assertSee('Totaal opdracht')
+            ->assertSee($worker->displayName())
+            ->assertSee('Opdracht')
             ->assertSee('600,00')
-            ->assertSee('1e bon')
-            ->assertSee('2e bon')
-            ->assertSee('3e bon')
-            ->assertSee('4e bon')
-            ->assertSee('Totaal ontvangen')
+            ->assertSee($bons[0]->number)
+            ->assertSee($bons[1]->number)
+            ->assertSee($bons[2]->number)
+            ->assertSee('Op bon')
             ->assertSee('180,00')
             ->assertSee('540,00')
-            ->assertSee('Nog te ontvangen')
+            ->assertSee('Open')
             ->assertSee('20,00')
             ->assertSee('60,00')
             ->assertSee('Bon maken');
@@ -1158,8 +1456,7 @@ class VoucherTest extends TestCase
             ->get(route('production.index'))
             ->assertOk()
             ->assertSee('Plinten wit')
-            ->assertSee('Bon maken')
-            ->assertSee('1e bon');
+            ->assertSee('Bon maken');
 
         $this->actingAs($user)
             ->post(route('vouchers.store'), [
@@ -1206,6 +1503,7 @@ class VoucherTest extends TestCase
             ->assertSee('name="activity_prices['.$item->id.'][m2][unit_price]"', false)
             ->assertSee('name="lines[0][room_label]"', false)
             ->assertSee('name="lines[1][room_label]"', false)
+            ->assertSee('value="uren"', false)
             ->assertDontSee('<details', false);
     }
 
@@ -1273,6 +1571,102 @@ class VoucherTest extends TestCase
             ->assertSee('51,16 m²')
             ->assertDontSee('€ 100,50')
             ->assertDontSee('<details', false);
+    }
+
+    public function test_opdrachtbon_can_use_hours_instead_of_square_meters(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item, $area] = $this->seedProduction();
+        $other = $this->addCompletedRoom($project, $area, $item, $worker, '0.03', 'groepsruimte', 51.16);
+        WorkerRate::query()->create([
+            'worker_id' => $worker->id,
+            'specialty' => WorkerRate::HOURLY_SPECIALTY,
+            'unit' => 'uren',
+            'unit_price' => 45,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('vouchers.create', [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => 'opdracht',
+            ]))
+            ->assertOk()
+            ->assertSee('data-hourly-rate="45.00"', false)
+            ->assertSee('m²/m¹/st/uren', false);
+
+        $this->actingAs($user)
+            ->post(route('vouchers.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'type' => VoucherType::Opdracht->value,
+                'activity_prices' => [
+                    $item->id => [
+                        'm2' => [
+                            'description' => 'Primen & Egaliseren',
+                            'price_kind' => 'unit',
+                            'unit_price' => '45',
+                            'unit' => 'uren',
+                            'quantity' => '8',
+                        ],
+                    ],
+                ],
+                'lines' => [
+                    [
+                        'project_area_id' => $area->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.02 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '50.25',
+                        'unit' => 'uren',
+                        'unit_price' => '45',
+                    ],
+                    [
+                        'project_area_id' => $other->id,
+                        'work_item_id' => $item->id,
+                        'room_label' => '0.03 groepsruimte',
+                        'description' => 'Primen & Egaliseren',
+                        'quantity' => '51.16',
+                        'unit' => 'uren',
+                        'unit_price' => '45',
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $voucher = Voucher::query()->where('type', VoucherType::Opdracht)->first();
+        $this->assertNotNull($voucher);
+        $this->assertSame('360.00', $voucher->total_amount);
+        $this->assertSame(2, $voucher->lines()->count());
+        $lines = $voucher->lines()->orderBy('id')->get();
+        $this->assertSame('8.00', $lines[0]->quantity);
+        $this->assertSame('uren', $lines[0]->unit->value);
+        $this->assertSame('45.00', $lines[0]->unit_price);
+        $this->assertSame('0.00', $lines[1]->quantity);
+        $this->assertSame('uren', $lines[1]->unit->value);
+
+        $this->actingAs($user)
+            ->get(route('vouchers.show', $voucher))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('8,00 uren')
+            ->assertSee('€ 45,00/uren')
+            ->assertSee('€ 360,00')
+            ->assertSee('0.02 groepsruimte')
+            ->assertSee('0.03 groepsruimte')
+            ->assertSee('50,25 m²')
+            ->assertSee('51,16 m²')
+            ->assertSee('wo 02-09-2026 · week 36')
+            ->assertDontSee('0,00 uren')
+            ->assertDontSee('50,25 uren');
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('8,00 uren')
+            ->assertSee('50,25 m²')
+            ->assertSee('51,16 m²')
+            ->assertDontSee('50,25 uren');
     }
 
     public function test_unauthenticated_pdf_redirects_to_login(): void
@@ -1371,6 +1765,8 @@ class VoucherTest extends TestCase
         $this->assertStringContainsString('101,41', $text);
         $this->assertStringContainsString('202,82', $text);
         $this->assertStringContainsString('Totaal opdracht', $text);
+        $this->assertStringContainsString('wo 02-09-2026', $text);
+        $this->assertStringContainsString('week 36', $text);
         $this->assertStringContainsString('Opdracht verstrekt door', $text);
         $this->assertStringNotContainsString('100,50', $text);
         $this->assertStringNotContainsString('Productie · Nicon Planning', $text);

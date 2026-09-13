@@ -264,6 +264,7 @@ class ProgressApprovalTest extends TestCase
             ->assertOk()
             ->assertSee('id="complete-form"', false)
             ->assertSee('Klaar blijft voorlopig tot de projectleider akkoord geeft.')
+            ->assertDontSee('Hele verdieping of hele werk aanvinken, daarna egaliseren of een vloertype.')
             ->assertSee('Klaar melden (voorlopig)')
             ->assertSee('Open kring = voorlopig, wacht op akkoord')
             ->assertSee($worker->planName())

@@ -3210,6 +3210,23 @@ button.plan-labor-toggle:hover {
     .board-right {
         right: 0;
         left: auto;
+        width: min(400px, 94vw);
+    }
+
+    #complete-form {
+        font-size: 0.9375rem;
+    }
+
+    #complete-task-name {
+        font-size: 0.9375rem;
+    }
+
+    #complete-form input,
+    #complete-form select,
+    #complete-form button {
+        min-height: 2.5rem;
+        font-size: 0.9375rem;
+        padding: 0.45rem 0.65rem;
     }
 
     .board-panel-toggle {

@@ -64,6 +64,16 @@ class VoucherPolicyTest extends TestCase
         $this->assertSame($allowed, $user->can('send', $voucher));
     }
 
+    #[DataProvider('createRoles')]
+    public function test_delete_permission(UserRole $role, bool $allowed): void
+    {
+        $user = User::factory()->make(['role' => $role]);
+        $voucher = new Voucher;
+        $voucher->setRelation('project', new Project);
+
+        $this->assertSame($allowed, $user->can('delete', $voucher));
+    }
+
     public function test_update_is_denied_for_an_inaccessible_project(): void
     {
         $user = User::factory()->limitedAccess()->make();
@@ -80,6 +90,15 @@ class VoucherPolicyTest extends TestCase
         $voucher->setRelation('project', new Project);
 
         $this->assertFalse($user->can('send', $voucher));
+    }
+
+    public function test_delete_is_denied_for_an_inaccessible_project(): void
+    {
+        $user = User::factory()->limitedAccess()->make();
+        $voucher = new Voucher;
+        $voucher->setRelation('project', new Project);
+
+        $this->assertFalse($user->can('delete', $voucher));
     }
 
     /** @return array<string, array{0: UserRole, 1: bool}> */

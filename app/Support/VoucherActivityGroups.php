@@ -6,6 +6,9 @@ use App\Enums\VoucherPriceKind;
 use App\Enums\WorkUnit;
 use App\Models\Voucher;
 use App\Models\VoucherLine;
+use App\Models\WorkProgressEntry;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 
 class VoucherActivityGroups
 {
@@ -74,9 +77,22 @@ class VoucherActivityGroups
                     || self::intOrNull($entry['line']['project_area_id'] ?? null) !== null
             );
 
+            $worked = collect($group['entries'])
+                ->flatMap(fn (array $entry): array => array_filter([
+                    $entry['line']['worked_on'] ?? null,
+                    $entry['line']['worked_to'] ?? null,
+                ]))
+                ->map(fn (mixed $date): CarbonInterface => $date instanceof CarbonInterface
+                    ? $date->copy()->startOfDay()
+                    : Carbon::parse((string) $date)->startOfDay())
+                ->sortBy(fn (CarbonInterface $date): string => $date->toDateString())
+                ->values();
+
             $group['quantity'] = $quantity;
             $group['amount'] = $amount;
             $group['has_rooms'] = $hasRooms;
+            $group['worked_from'] = $worked->first();
+            $group['worked_to'] = $worked->last();
             $result[] = $group;
         }
 
@@ -89,19 +105,27 @@ class VoucherActivityGroups
     public static function fromVoucher(Voucher $voucher): array
     {
         $voucher->loadMissing('lines.area');
+        $workedOn = self::progressDatesByLine($voucher);
 
-        $lines = $voucher->lines->map(fn (VoucherLine $line): array => [
-            'project_area_id' => $line->project_area_id,
-            'work_item_id' => $line->work_item_id,
-            'room_label' => $line->area?->label() ?? '',
-            'description' => $line->description,
-            'quantity' => $line->quantity,
-            'unit' => $line->unit,
-            'unit_price' => $line->unit_price,
-            'amount' => $line->amount,
-            'price_kind' => $line->price_kind,
-            'price_source' => $line->price_source,
-        ])->all();
+        $lines = $voucher->lines->map(function (VoucherLine $line) use ($workedOn): array {
+            $key = $line->key();
+
+            return [
+                'project_area_id' => $line->project_area_id,
+                'work_item_id' => $line->work_item_id,
+                'room_label' => $line->area?->label() ?? '',
+                'description' => $line->description,
+                'quantity' => $line->quantity,
+                'unit' => $line->unit,
+                'unit_price' => $line->unit_price,
+                'amount' => $line->amount,
+                'price_kind' => $line->price_kind,
+                'price_source' => $line->price_source,
+                'spec_m2' => $line->area?->square_meters,
+                'worked_on' => $workedOn[$key]['from'] ?? null,
+                'worked_to' => $workedOn[$key]['to'] ?? null,
+            ];
+        })->all();
 
         return self::fromFormLines($lines);
     }
@@ -166,6 +190,43 @@ class VoucherActivityGroups
         return WorkUnit::tryFrom((string) $unit)?->label() ?? '';
     }
 
+    public static function isHours(mixed $unit): bool
+    {
+        if ($unit instanceof WorkUnit) {
+            return $unit === WorkUnit::Hours;
+        }
+
+        return (string) $unit === WorkUnit::Hours->value;
+    }
+
+    public static function roomSpecUnitLabel(mixed $activityUnit): string
+    {
+        return self::isHours($activityUnit)
+            ? WorkUnit::SquareMeter->label()
+            : self::unitLabel($activityUnit);
+    }
+
+    /**
+     * @param  array<string, mixed>  $group
+     * @param  array{line?: array<string, mixed>, quantity?: float}  $entry
+     */
+    public static function roomQuantityLabel(array $group, array $entry): string
+    {
+        if (self::isHours($group['unit'] ?? null)) {
+            $meters = $entry['line']['spec_m2'] ?? null;
+            if ($meters === null || $meters === '') {
+                return '';
+            }
+
+            return Format::qty($meters, 2).' '.WorkUnit::SquareMeter->label();
+        }
+
+        return self::quantityLabel([
+            'quantity' => $entry['quantity'] ?? 0,
+            'unit' => $group['unit'] ?? null,
+        ]);
+    }
+
     /**
      * @param  array<string, mixed>  $group
      */
@@ -195,6 +256,64 @@ class VoucherActivityGroups
     }
 
     /**
+     * @param  array<string, mixed>  $group
+     */
+    public static function periodLabel(array $group): string
+    {
+        $from = $group['worked_from'] ?? null;
+        if (! $from instanceof CarbonInterface) {
+            return '';
+        }
+
+        $to = $group['worked_to'] ?? $from;
+
+        return Format::dayAndWeek($from, $to instanceof CarbonInterface ? $to : $from);
+    }
+
+    /**
+     * @param  array{line?: array<string, mixed>}  $entry
+     */
+    public static function roomPeriodLabel(array $entry): string
+    {
+        $from = $entry['line']['worked_on'] ?? null;
+        if (! $from instanceof CarbonInterface && ! is_string($from)) {
+            return '';
+        }
+
+        $fromDate = $from instanceof CarbonInterface ? $from : Carbon::parse($from);
+        $to = $entry['line']['worked_to'] ?? $fromDate;
+        $toDate = $to instanceof CarbonInterface || is_string($to) ? $to : $fromDate;
+
+        return Format::dayAndWeek($fromDate, $toDate instanceof CarbonInterface ? $toDate : Carbon::parse((string) $toDate));
+    }
+
+    public static function activityKey(?int $workItemId, mixed $unit, string $description = ''): string
+    {
+        $unitValue = self::unitValue(['unit' => $unit]);
+        if ($workItemId !== null && $workItemId > 0) {
+            return 'item:'.$workItemId.':'.$unitValue;
+        }
+
+        $name = mb_strtolower(self::activityName(['description' => $description]));
+
+        return $name !== ''
+            ? 'custom:'.$name.':'.$unitValue
+            : 'line:'.$unitValue;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    public static function activityKeyFromLine(array $line): string
+    {
+        return self::activityKey(
+            self::intOrNull($line['work_item_id'] ?? null),
+            $line['unit'] ?? WorkUnit::SquareMeter,
+            (string) ($line['description'] ?? ''),
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $line
      */
     private static function groupKey(array $line, int $index): string
@@ -204,7 +323,7 @@ class VoucherActivityGroups
             return 'line:'.$index;
         }
 
-        return 'item:'.$itemId.':'.self::unitValue($line);
+        return self::activityKey($itemId, $line['unit'] ?? WorkUnit::SquareMeter);
     }
 
     private static function intOrNull(mixed $value): ?int
@@ -216,5 +335,63 @@ class VoucherActivityGroups
         $id = (int) $value;
 
         return $id > 0 ? $id : null;
+    }
+
+    /**
+     * @return array<string, array{from: CarbonInterface, to: CarbonInterface}>
+     */
+    private static function progressDatesByLine(Voucher $voucher): array
+    {
+        $areaIds = $voucher->lines
+            ->pluck('project_area_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $itemIds = $voucher->lines
+            ->pluck('work_item_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($areaIds === [] || $itemIds === [] || ! $voucher->worker_id || ! $voucher->project_id) {
+            return [];
+        }
+
+        $entries = WorkProgressEntry::query()
+            ->where('worker_id', $voucher->worker_id)
+            ->where('project_id', $voucher->project_id)
+            ->whereIn('project_area_id', $areaIds)
+            ->whereIn('work_item_id', $itemIds)
+            ->orderBy('date')
+            ->get(['project_area_id', 'work_item_id', 'date']);
+
+        $dates = [];
+        foreach ($entries as $entry) {
+            if ($entry->date === null) {
+                continue;
+            }
+
+            $key = VoucherLine::lineKey(
+                $entry->project_area_id ? (int) $entry->project_area_id : null,
+                $entry->work_item_id ? (int) $entry->work_item_id : null,
+            );
+            $day = $entry->date->copy()->startOfDay();
+            if (! isset($dates[$key])) {
+                $dates[$key] = ['from' => $day, 'to' => $day];
+
+                continue;
+            }
+
+            if ($day->lt($dates[$key]['from'])) {
+                $dates[$key]['from'] = $day;
+            }
+            if ($day->gt($dates[$key]['to'])) {
+                $dates[$key]['to'] = $day;
+            }
+        }
+
+        return $dates;
     }
 }

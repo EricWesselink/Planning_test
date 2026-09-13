@@ -17,7 +17,7 @@
                 </div>
             @endif
             <div>
-                <span class="text-xs uppercase tracking-wide text-nicon-muted">Gefactureerd</span>
+                <span class="text-xs uppercase tracking-wide text-nicon-muted">Al op bon</span>
                 <div>
                     {{ \App\Support\Format::money($billing['invoiced_amount']) }}
                     @if ($billing['invoiced_m2'] > 0 || $billing['opdracht'])

@@ -23,13 +23,13 @@
 
     <p class="mt-4 text-sm text-nicon-muted">
         @if ($voucher->type === \App\Enums\VoucherType::Opdracht)
-            Pas onderdelen, hoeveelheden, prijssoort en prijzen aan, of voeg een extra onderdeel toe.
+            Pas onderdelen, hoeveelheden, prijssoort en prijzen aan, of voeg een extra onderdeel toe. Je kunt ook overschakelen naar uren × uurtarief; de ruimtes blijven ter controle met hun m² staan.
         @else
             Pas aan wat deze keer wordt ingediend. Je kunt niet meer opgeven dan er nog openstaat op de opdrachtbon.
         @endif
     </p>
 
-    <form method="POST" action="{{ route('vouchers.update', $voucher) }}" class="mt-6" id="voucher-form">
+    <form method="POST" action="{{ route('vouchers.update', $voucher) }}" class="mt-6" id="voucher-form" data-hourly-rate="{{ $voucher->worker?->hourlyRate()?->unit_price }}">
         @csrf
         @method('PATCH')
 
