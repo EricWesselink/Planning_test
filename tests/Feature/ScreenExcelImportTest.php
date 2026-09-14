@@ -234,6 +234,36 @@ class ScreenExcelImportTest extends TestCase
         $this->assertLessThan(1000, (float) $project->areas()->max('square_meters'));
     }
 
+    public function test_screen_calculation_excel_creates_piece_lines_instead_of_the_column_warning(): void
+    {
+        $user = User::factory()->create();
+        $file = $this->screenCalculationXlsx();
+
+        $response = $this->actingAs($user)->post(route('projects.store'), [
+            'customer_name' => 'Koopmans',
+            'name' => 'Zeewolde, Bouw Havenkwartier Zuyd',
+            'address' => 'Flaauwe Werk 2',
+            'postal_code' => '3894 KW',
+            'city' => 'Zeewolde',
+            'excel' => $file,
+        ]);
+
+        $project = Project::query()->where('name', 'Zeewolde, Bouw Havenkwartier Zuyd')->first();
+        $this->assertNotNull($project);
+        $response->assertRedirect(route('projects.show', $project));
+        $response->assertSessionHas('warnings', []);
+        $response->assertSessionHas('status', fn ($status) => is_string($status) && str_contains($status, 'Excelregels verwerkt') && str_contains($status, 'stuks'));
+
+        $this->assertSame(1, $project->documents()->where('document_type', 'opdrachtlijst')->count());
+        $this->assertSame(0, $project->workItems()->where('unit', WorkUnit::SquareMeter)->count());
+        $items = $project->workItems()->orderBy('sort_order')->get();
+        $this->assertCount(2, $items);
+        $this->assertSame('Screen H: 1700 mm B: 960 mm', $items[0]->name);
+        $this->assertSame(12.0, (float) $items[0]->ordered_quantity);
+        $this->assertSame('BNR 11 Screen H: 1574 mm B: 770 mm', $items[1]->name);
+        $this->assertSame(2.0, (float) $items[1]->ordered_quantity);
+    }
+
     public function test_does_not_crash_when_meetstaat_quantities_overflow_the_database_column(): void
     {
         $user = User::factory()->create();
@@ -280,6 +310,27 @@ class ScreenExcelImportTest extends TestCase
         return new UploadedFile(
             $tmp,
             'screen.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            null,
+            true
+        );
+    }
+
+    private function screenCalculationXlsx(): UploadedFile
+    {
+        $xlsx = $this->writeXlsx([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs'],
+            ['L', '4843-1', 'U', 'Screen H: 1700 mm B: 960 mm', 'Arbeid', '12', 'uur', '100'],
+            ['O', '4843-1', 'O', 'Screen H: 1700 mm B: 960 mm', 'inkoop Suncircle', '12', 'st', '338'],
+            ['O', '4843-1', 'O', 'BNR 11 Screen H: 1574 mm B: 770 mm', 'inkoop Suncircle', '2', 'st', '200'],
+            ['M', '4843-1', 'M', 'Kitwerk', 'kit', '3', 'm2', '9'],
+        ]);
+        $tmp = tempnam(sys_get_temp_dir(), 'php');
+        copy($xlsx, $tmp);
+
+        return new UploadedFile(
+            $tmp,
+            '11-ericwesselink7.xlsx',
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             null,
             true

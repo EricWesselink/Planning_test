@@ -232,6 +232,10 @@ class ProjectIntakeService
             $rows = $this->reader->rows($path, $file->getClientOriginalName());
         }
 
+        if (! $this->screenExcel->looksLike($rows) && $this->calculationExcel->looksLike($rows)) {
+            return $this->calculationImport->importFile($project, $file, $user);
+        }
+
         $document = $this->storeDocument($project, $file, 'opdrachtlijst', $user);
 
         if (! $this->screenExcel->looksLike($rows)) {

@@ -72,6 +72,28 @@ class ScreenExcelParserTest extends TestCase
         $this->assertFalse($parser->looksLike($rows));
     }
 
+    public function test_matches_a_screen_calculation_spreadsheet_and_skips_hours(): void
+    {
+        $parsed = (new ScreenExcelParser)->parse([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs'],
+            ['L', '4843-1', 'U', 'Screen H: 1700 mm B: 960 mm', 'Arbeid', '12', 'uur', '100'],
+            ['O', '4843-1', 'O', 'Screen H: 1700 mm B: 960 mm', 'inkoop Suncircle', '12', 'st', '338'],
+            ['O', '4843-1', 'O', 'BNR 11 Screen H: 1574 mm B: 770 mm', 'inkoop Suncircle', '2', 'st', '200'],
+            ['M', '4843-1', 'M', 'Kitwerk', 'kit', '3', 'm2', '9'],
+        ]);
+
+        $this->assertTrue($parsed['matched']);
+        $this->assertTrue($parsed['ready']);
+        $this->assertSame(1, $parsed['skipped_labor']);
+        $this->assertSame(2, $parsed['processed_rows']);
+        $this->assertSame(14.0, $parsed['total_pieces']);
+        $this->assertCount(2, $parsed['lines']);
+        $this->assertSame('Screen H: 1700 mm B: 960 mm', $parsed['lines'][0]['description']);
+        $this->assertSame(12.0, $parsed['lines'][0]['quantity']);
+        $this->assertSame('11', $parsed['lines'][1]['bnr']);
+        $this->assertSame([], $parsed['unrecognized']);
+    }
+
     public function test_marks_unknown_units_and_missing_quantities_as_unrecognized(): void
     {
         $parsed = (new ScreenExcelParser)->parse([

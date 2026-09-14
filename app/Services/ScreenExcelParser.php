@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\WorkUnit;
 use App\Support\DutchNumber;
+use App\Support\WorkType;
 
 class ScreenExcelParser
 {
@@ -47,6 +48,8 @@ class ScreenExcelParser
         $skippedLabor = 0;
         $processedRows = 0;
 
+        $isCalculation = (bool) ($header['calculation'] ?? false);
+
         for ($index = $header['index'] + 1, $count = count($rows); $index < $count; $index++) {
             $row = $rows[$index];
             if ($this->isEmptyRow($row) || $this->isTotalRow($row)) {
@@ -81,6 +84,9 @@ class ScreenExcelParser
             }
 
             if (! $this->isPiecesUnit($unitRaw)) {
+                if ($isCalculation) {
+                    continue;
+                }
                 $unrecognized[] = [
                     'row' => $rowNumber,
                     'description' => $description,
@@ -146,7 +152,7 @@ class ScreenExcelParser
 
     /**
      * @param  list<list<string>>  $rows
-     * @return array{index: int, description: int, quantity: int, unit: int, group: ?int, bnr: ?int}|null
+     * @return array{index: int, description: int, quantity: int, unit: int, group: ?int, bnr: ?int, calculation: bool}|null
      */
     private function findHeader(array $rows): ?array
     {
@@ -154,6 +160,14 @@ class ScreenExcelParser
         for ($index = 0; $index < $limit; $index++) {
             $map = $this->mapHeader($rows[$index]);
             if ($map === null) {
+                continue;
+            }
+            if ($map['calculation'] && ! $this->hasWindowCoveringPieceRows(
+                $rows,
+                $index,
+                $map['description'],
+                $map['unit'],
+            )) {
                 continue;
             }
 
@@ -165,7 +179,7 @@ class ScreenExcelParser
 
     /**
      * @param  list<string>  $cells
-     * @return array{description: int, quantity: int, unit: int, group: ?int, bnr: ?int}|null
+     * @return array{description: int, quantity: int, unit: int, group: ?int, bnr: ?int, calculation: bool}|null
      */
     private function mapHeader(array $cells): ?array
     {
@@ -219,10 +233,6 @@ class ScreenExcelParser
             return null;
         }
 
-        if ($hasCalculationMarkers) {
-            return null;
-        }
-
         if ($hasFloorMarkers && $descriptionScore < 3) {
             return null;
         }
@@ -233,7 +243,28 @@ class ScreenExcelParser
             'unit' => $unit,
             'group' => $group,
             'bnr' => $bnr,
+            'calculation' => $hasCalculationMarkers,
         ];
+    }
+
+    /**
+     * @param  list<list<string>>  $rows
+     */
+    private function hasWindowCoveringPieceRows(array $rows, int $headerIndex, int $descriptionColumn, int $unitColumn): bool
+    {
+        $limit = min($headerIndex + 40, count($rows) - 1);
+        for ($index = $headerIndex + 1; $index <= $limit; $index++) {
+            $row = $rows[$index];
+            if (! $this->isPiecesUnit($this->cell($row, $unitColumn))) {
+                continue;
+            }
+            $name = $this->cell($row, $descriptionColumn);
+            if ($name !== '' && WorkType::isWindowCovering($name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function descriptionHeaderScore(string $header): int

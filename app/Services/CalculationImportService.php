@@ -17,6 +17,7 @@ class CalculationImportService
     public function __construct(
         private SpreadsheetReader $reader,
         private CalculationExcelParser $parser,
+        private ScreenExcelParser $screens,
         private CalculationWorkMatcher $matcher,
         private CalculationSourceReconciler $reconciler,
         private MaterialIdentity $identity,
@@ -58,6 +59,12 @@ class CalculationImportService
             }
 
             if (! $this->parser->looksLike($rows)) {
+                $remaining[] = $upload;
+
+                continue;
+            }
+
+            if ($this->screens->looksLike($rows)) {
                 $remaining[] = $upload;
 
                 continue;

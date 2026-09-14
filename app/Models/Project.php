@@ -66,11 +66,41 @@ class Project extends Model
         }
 
         $like = '%'.addcslashes($term, '%_\\').'%';
-        $query->where(function (Builder $inner) use ($like): void {
-            $inner->where('project_number', 'like', $like)
-                ->orWhere('name', 'like', $like)
-                ->orWhere('notes', 'like', $like);
+        $compact = mb_strtolower((string) preg_replace('/[^a-z0-9]+/iu', '', $term));
+        $compactLike = $compact !== '' ? '%'.addcslashes($compact, '%_\\').'%' : null;
+        $columns = [
+            'project_number', 'name', 'notes', 'address', 'postal_code', 'city',
+            'work_description', 'contact_name',
+        ];
+
+        $query->where(function (Builder $inner) use ($query, $like, $compactLike, $columns): void {
+            foreach ($columns as $index => $column) {
+                $method = $index === 0 ? 'where' : 'orWhere';
+                $inner->{$method}($column, 'like', $like);
+                if ($compactLike !== null) {
+                    $inner->orWhereRaw($this->compactSearchSql($query->qualifyColumn($column)).' like ?', [$compactLike]);
+                }
+            }
+
+            $inner->orWhereHas('customer', function (Builder $customer) use ($like, $compactLike): void {
+                $customer->where(function (Builder $match) use ($customer, $like, $compactLike): void {
+                    $match->where('name', 'like', $like)
+                        ->orWhere('city', 'like', $like);
+                    if ($compactLike !== null) {
+                        $match->orWhereRaw($this->compactSearchSql($customer->qualifyColumn('name')).' like ?', [$compactLike]);
+                    }
+                });
+            });
+
+            $inner->orWhereHas('assignments.worker', function (Builder $worker) use ($like): void {
+                $worker->where('name', 'like', $like);
+            });
         });
+    }
+
+    private function compactSearchSql(string $qualifiedColumn): string
+    {
+        return "replace(replace(replace(replace(replace(lower(coalesce({$qualifiedColumn}, '')), ' ', ''), '-', ''), '.', ''), '/', ''), ',', '')";
     }
 
     public function isArchived(): bool
