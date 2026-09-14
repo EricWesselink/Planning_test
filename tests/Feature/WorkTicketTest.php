@@ -615,7 +615,8 @@ class WorkTicketTest extends TestCase
         $this->actingAs($vakman)
             ->get(route('work-tickets.pdf', $ticket))
             ->assertOk()
-            ->assertSee('%PDF', false);
+            ->assertSee('class="drawing-page"', false)
+            ->assertSee('snag-pdf', false);
     }
 
     public function test_pdf_puts_the_drawing_on_a_following_page(): void
@@ -656,18 +657,56 @@ class WorkTicketTest extends TestCase
         $this->assertStringContainsString('Werkopdracht', $ticketHtml);
         $this->assertStringNotContainsString('class="map"', $ticketHtml);
         $this->assertStringContainsString('class="map"', substr($html, $drawingPos));
+        $this->assertStringContainsString('data:image/png;base64,', substr($html, $drawingPos));
+        $this->assertStringNotContainsString('niconPrintTicket', $html);
+        $this->assertStringNotContainsString('@page { margin: 0', $html);
 
         $this->actingAs($user)
             ->get(route('work-tickets.show', $ticket))
             ->assertOk()
             ->assertSee('class="map"', false)
-            ->assertDontSee('class="drawing-page"', false);
+            ->assertDontSee('class="drawing-page"', false)
+            ->assertSee('niconPrintTicket', false)
+            ->assertSee('@page { margin: 0', false);
 
         $response = $this->actingAs($user)->get(route('work-tickets.pdf', $ticket));
         $response->assertOk();
         $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
         $pages = (new Parser)->parseContent($response->getContent())->getPages();
         $this->assertGreaterThanOrEqual(2, count($pages));
+    }
+
+    public function test_pdf_print_view_keeps_a_pdf_plattegrond_on_a_following_page(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+
+        $this->actingAs($user)->post(route('work-tickets.store', $seed['assignment']), [
+            'floors' => [
+                $seed['floor']->id => [
+                    'included' => '1',
+                    'scope' => 'rooms',
+                    'area_ids' => $seed['areas']->pluck('id')->all(),
+                ],
+            ],
+            'work_item_ids' => [$seed['pvc']->id],
+            'document_ids' => [$seed['drawing']->id],
+        ]);
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.pdf', $ticket))
+            ->assertOk()
+            ->assertSee('class="ticket-page"', false)
+            ->assertSee('class="drawing-page"', false)
+            ->assertSee('Tekening laden')
+            ->assertSee('data-print-when-ready="1"', false)
+            ->assertSee('data-drawing-url="'.route('projects.documents.show', [$seed['project'], $seed['drawing']], false).'"', false)
+            ->assertSee('snag-pdf', false)
+            ->assertSee('niconPrintTicket', false)
+            ->assertSee('@page { margin: 0', false)
+            ->assertDontSee('%PDF', false);
     }
 
     public function test_winkel_ticket_uses_kloppenburg_letterhead(): void

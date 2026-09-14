@@ -117,7 +117,8 @@ class PlanningActionController extends Controller
             'start_date' => $to->toDateString(),
             'end_date' => $to->toDateString(),
             'people_count' => $assignment->people_count ?: 1,
-            'include_weekends' => $assignment->includesWeekends(),
+            'include_saturday' => $assignment->includesSaturday(),
+            'include_sunday' => $assignment->includesSunday(),
         ]);
         $moved->applySchedule($to, $to, $dayStart, $dayEnd);
         $moved->save();
@@ -145,7 +146,8 @@ class PlanningActionController extends Controller
             'slot' => ['nullable', 'in:morning,afternoon,full'],
             'start_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
             'end_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
-            'include_weekends' => ['sometimes', 'boolean'],
+            'include_saturday' => ['sometimes', 'boolean'],
+            'include_sunday' => ['sometimes', 'boolean'],
             'confirm_conflict' => ['sometimes', 'boolean'],
         ]);
 
@@ -157,8 +159,9 @@ class PlanningActionController extends Controller
 
         $start = Carbon::parse($data['start_date']);
         $end = Carbon::parse($data['end_date']);
-        $includeWeekends = $request->boolean('include_weekends');
-        $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeWeekends);
+        $includeSaturday = $request->boolean('include_saturday');
+        $includeSunday = $request->boolean('include_sunday');
+        $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
         if ($emptyRange) {
             return $emptyRange;
         }
@@ -190,7 +193,7 @@ class PlanningActionController extends Controller
         }
 
         foreach ($workers as $worker) {
-            $message = $fit->awayRejection($worker, $start, $end, $includeWeekends);
+            $message = $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
             if ($message) {
                 return response()->json(['message' => $message], 422);
             }
@@ -208,7 +211,8 @@ class PlanningActionController extends Controller
                 $group['crew_ids'],
                 $group['start_time'],
                 $group['end_time'],
-                $includeWeekends,
+                $includeSaturday,
+                $includeSunday,
             );
             if ($blocked) {
                 return $blocked;
@@ -229,7 +233,8 @@ class PlanningActionController extends Controller
                     $group['end_time'],
                     $teamId ? 1 : $group['people_count'],
                     $ids,
-                    $includeWeekends,
+                    $includeSaturday,
+                    $includeSunday,
                 );
             }
         }
@@ -256,16 +261,20 @@ class PlanningActionController extends Controller
             'slot' => ['nullable', 'in:morning,afternoon,full'],
             'start_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
             'end_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
-            'include_weekends' => ['sometimes', 'boolean'],
+            'include_saturday' => ['sometimes', 'boolean'],
+            'include_sunday' => ['sometimes', 'boolean'],
             'confirm_conflict' => ['sometimes', 'boolean'],
         ]);
 
         $start = Carbon::parse($data['start_date']);
         $end = Carbon::parse($data['end_date']);
-        $includeWeekends = $request->exists('include_weekends')
-            ? $request->boolean('include_weekends')
-            : $assignment->includesWeekends();
-        $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeWeekends);
+        $includeSaturday = $request->exists('include_saturday')
+            ? $request->boolean('include_saturday')
+            : $assignment->includesSaturday();
+        $includeSunday = $request->exists('include_sunday')
+            ? $request->boolean('include_sunday')
+            : $assignment->includesSunday();
+        $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
         if ($emptyRange) {
             return $emptyRange;
         }
@@ -304,7 +313,7 @@ class PlanningActionController extends Controller
             return response()->json(['message' => 'Vink aan wie er naar dit werk gaat.'], 422);
         }
 
-        $away = $fit->awayRejection($worker, $start, $end, $includeWeekends);
+        $away = $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
         if ($away) {
             return response()->json(['message' => $away], 422);
         }
@@ -355,7 +364,8 @@ class PlanningActionController extends Controller
                 $group['crew_ids'],
                 $group['start_time'],
                 $group['end_time'],
-                $includeWeekends,
+                $includeSaturday,
+                $includeSunday,
             );
             if ($conflict && ! $request->boolean('confirm_conflict')) {
                 return $this->conflictJson($conflict);
@@ -371,7 +381,8 @@ class PlanningActionController extends Controller
             'end' => $assignment->end_date->copy(),
             'start_time' => $assignment->startTimeValue(),
             'end_time' => $assignment->endTimeValue(),
-            'include_weekends' => $assignment->includesWeekends(),
+            'include_saturday' => $assignment->includesSaturday(),
+            'include_sunday' => $assignment->includesSunday(),
             'hours_by_id' => $this->crewScheduleSnapshot($assignment, $stayingIds),
         ];
 
@@ -392,13 +403,14 @@ class PlanningActionController extends Controller
             $targetWorkItemId,
             $staySnapshot,
             $stayingIds,
-            $includeWeekends,
+            $includeSaturday,
+            $includeSunday,
         ): void {
             $assignment->project_id = $targetProjectId;
             $assignment->work_item_id = $targetWorkItemId;
             $assignment->worker_id = $workerId;
             $assignment->people_count = $first['people_count'];
-            $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time'], $includeWeekends);
+            $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time'], $includeSaturday, $includeSunday);
             $assignment->save();
             if (array_key_exists('crew_member_ids', $data) || $first['crew_ids'] !== [] || $stayingIds !== []) {
                 $assignment->syncPresentCrew($first['crew_ids']);
@@ -420,7 +432,8 @@ class PlanningActionController extends Controller
                     $group['end_time'],
                     $group['people_count'],
                     $group['crew_ids'],
-                    $includeWeekends,
+                    $includeSaturday,
+                    $includeSunday,
                 );
             }
 
@@ -436,7 +449,8 @@ class PlanningActionController extends Controller
                     $staySnapshot['end_time'],
                     count($stayingIds),
                     $stayingIds,
-                    $staySnapshot['include_weekends'],
+                    $staySnapshot['include_saturday'],
+                    $staySnapshot['include_sunday'],
                 );
                 if ($staySnapshot['hours_by_id'] !== []) {
                     $staying->syncPresentCrew($stayingIds, $staySnapshot['hours_by_id']);
@@ -459,7 +473,8 @@ class PlanningActionController extends Controller
             'hours' => ['nullable', 'numeric', 'min:2', 'max:8'],
             'slot' => ['nullable', 'in:morning,afternoon,full'],
             'assignment_id' => ['nullable', 'integer', 'exists:worker_assignments,id'],
-            'include_weekends' => ['sometimes', 'boolean'],
+            'include_saturday' => ['sometimes', 'boolean'],
+            'include_sunday' => ['sometimes', 'boolean'],
         ]);
 
         $item = WorkItem::query()->with(['project', 'workActivity'])->findOrFail($data['work_item_id']);
@@ -479,7 +494,8 @@ class PlanningActionController extends Controller
             $data['start_time'] ?? $times['start_time'],
             $data['end_time'] ?? $times['end_time'],
             isset($data['assignment_id']) ? (int) $data['assignment_id'] : null,
-            $request->boolean('include_weekends'),
+            $request->boolean('include_saturday'),
+            $request->boolean('include_sunday'),
         ));
     }
 
@@ -584,7 +600,8 @@ class PlanningActionController extends Controller
         array $crewIds = [],
         ?string $startTime = null,
         ?string $endTime = null,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): ?JsonResponse {
         if ($confirm) {
             return null;
@@ -601,7 +618,8 @@ class PlanningActionController extends Controller
                 $ids,
                 $startTime,
                 $endTime,
-                $includeWeekends,
+                $includeSaturday,
+                $includeSunday,
             );
             if ($conflict) {
                 return $this->conflictJson($conflict);
@@ -673,7 +691,8 @@ class PlanningActionController extends Controller
         string $endTime,
         int $peopleCount,
         array $crewIds,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): WorkerAssignment {
         $startTime = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $endTime = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
@@ -685,7 +704,8 @@ class PlanningActionController extends Controller
             $end->toDateString(),
             $startTime,
             $endTime,
-            $includeWeekends ? '1' : '0',
+            $includeSaturday ? '1' : '0',
+            $includeSunday ? '1' : '0',
         ]);
 
         return Cache::lock('planning-assignment:'.$fingerprint, 15)->block(10, function () use (
@@ -699,7 +719,8 @@ class PlanningActionController extends Controller
             $endTime,
             $peopleCount,
             $crewIds,
-            $includeWeekends,
+            $includeSaturday,
+            $includeSunday,
         ): WorkerAssignment {
             return DB::transaction(function () use (
                 $workerId,
@@ -712,7 +733,8 @@ class PlanningActionController extends Controller
                 $endTime,
                 $peopleCount,
                 $crewIds,
-                $includeWeekends,
+                $includeSaturday,
+                $includeSunday,
             ): WorkerAssignment {
                 $existing = WorkerAssignment::query()
                     ->where('worker_id', $workerId)
@@ -726,7 +748,8 @@ class PlanningActionController extends Controller
                     ->whereDate('end_date', $end->toDateString())
                     ->where('start_time', $startTime)
                     ->where('end_time', $endTime)
-                    ->where('include_weekends', $includeWeekends)
+                    ->where('include_saturday', $includeSaturday)
+                    ->where('include_sunday', $includeSunday)
                     ->lockForUpdate()
                     ->first();
 
@@ -741,7 +764,7 @@ class PlanningActionController extends Controller
                     'team_id' => $teamId,
                     'people_count' => max(1, $peopleCount),
                 ]);
-                $assignment->applySchedule($start, $end, $startTime, $endTime, $includeWeekends);
+                $assignment->applySchedule($start, $end, $startTime, $endTime, $includeSaturday, $includeSunday);
                 $assignment->save();
                 if ($crewIds !== []) {
                     $assignment->syncPresentCrew($crewIds);
@@ -845,18 +868,23 @@ class PlanningActionController extends Controller
             $endTime,
             $assignment->people_count ?: 1,
             $crewIds,
-            $assignment->includesWeekends(),
+            $assignment->includesSaturday(),
+            $assignment->includesSunday(),
         );
     }
 
-    private function emptyWorkdaysResponse(Carbon $start, Carbon $end, bool $includeWeekends): ?JsonResponse
-    {
-        if (PlanningHours::workdayCount($start, $end, $includeWeekends) > 0) {
+    private function emptyWorkdaysResponse(
+        Carbon $start,
+        Carbon $end,
+        bool $includeSaturday,
+        bool $includeSunday,
+    ): ?JsonResponse {
+        if (PlanningHours::workdayCount($start, $end, $includeSaturday, $includeSunday) > 0) {
             return null;
         }
 
         return response()->json([
-            'message' => 'Deze periode heeft geen werkdagen. Vink zaterdag en zondag aan of kies andere datums.',
+            'message' => 'Deze periode heeft geen werkdagen. Vink zaterdag of zondag aan of kies andere datums.',
         ], 422);
     }
 }

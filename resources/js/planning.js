@@ -35,7 +35,8 @@ if (board) {
     const slotWrap = document.getElementById('plan-slot-wrap');
     const slotList = document.getElementById('plan-slot-list');
     const hoursSummary = document.getElementById('plan-hours-summary');
-    const includeWeekendsInput = document.getElementById('plan-include-weekends');
+    const includeSaturdayInput = document.getElementById('plan-include-saturday');
+    const includeSundayInput = document.getElementById('plan-include-sunday');
     const hoursHint = document.getElementById('plan-hours-hint');
     const projectInput = document.getElementById('plan-project-id');
     const titleEl = document.getElementById('plan-dialog-title');
@@ -228,7 +229,8 @@ if (board) {
             end_time: times.end,
             hours: String(times.hours),
             slot: times.hours >= WORKDAY_HOURS ? 'full' : selectedSlot(),
-            include_weekends: includeWeekends() ? '1' : '0',
+            include_saturday: includeSaturday() ? '1' : '0',
+            include_sunday: includeSunday() ? '1' : '0',
         });
         if (form.dataset.assignmentId) {
             params.set('assignment_id', form.dataset.assignmentId);
@@ -332,20 +334,27 @@ if (board) {
         return hours;
     }
 
-    function includeWeekends() {
-        return Boolean(includeWeekendsInput?.checked);
+    function includeSaturday() {
+        return Boolean(includeSaturdayInput?.checked);
     }
 
-    function setIncludeWeekends(value) {
-        if (includeWeekendsInput) {
-            includeWeekendsInput.checked = Boolean(value);
+    function includeSunday() {
+        return Boolean(includeSundayInput?.checked);
+    }
+
+    function setWeekendDays(saturday, sunday) {
+        if (includeSaturdayInput) {
+            includeSaturdayInput.checked = Boolean(saturday);
+        }
+        if (includeSundayInput) {
+            includeSundayInput.checked = Boolean(sunday);
         }
     }
 
     function syncHoursSummary() {
         const times = selectedTimes();
         if (hoursSummary) {
-            const days = workdayCount(startInput.value, endInput.value, includeWeekends());
+            const days = workdayCount(startInput.value, endInput.value, includeSaturday(), includeSunday());
             if (days > 1) {
                 hoursSummary.textContent = `${times.start}–${times.end} · ${hoursLabel(times.hours)} × ${days} dagen · ${hoursLabel(times.hours * days)}`;
             } else {
@@ -471,7 +480,7 @@ if (board) {
         });
         startInput.value = date;
         endInput.value = date;
-        setIncludeWeekends(false);
+        setWeekendDays(false, false);
         menInput.value = '1';
         menInput.readOnly = false;
         crewBox.classList.add('hidden');
@@ -506,7 +515,7 @@ if (board) {
         fillWorkItems(bar.dataset.projectId, bar.dataset.workItemId);
         startInput.value = bar.dataset.startDate;
         endInput.value = bar.dataset.endDate;
-        setIncludeWeekends(bar.dataset.includeWeekends === '1');
+        setWeekendDays(bar.dataset.includeSaturday === '1', bar.dataset.includeSunday === '1');
         menInput.value = String(Math.max(1, Number(bar.dataset.peopleCount || 1)));
         const selectedIds = (bar.dataset.crewIds || '')
             .split(',')
@@ -788,7 +797,11 @@ if (board) {
         syncHoursSummary();
         refreshCandidates();
     });
-    includeWeekendsInput?.addEventListener('change', () => {
+    includeSaturdayInput?.addEventListener('change', () => {
+        syncHoursSummary();
+        refreshCandidates();
+    });
+    includeSundayInput?.addEventListener('change', () => {
         syncHoursSummary();
         refreshCandidates();
     });
@@ -832,7 +845,8 @@ if (board) {
             slot: times.hours >= WORKDAY_HOURS ? 'full' : selectedSlot(),
             start_time: times.start,
             end_time: times.end,
-            include_weekends: includeWeekends(),
+            include_saturday: includeSaturday(),
+            include_sunday: includeSunday(),
         };
         if (people.length >= 2) {
             body.crew_member_ids = crewIds;

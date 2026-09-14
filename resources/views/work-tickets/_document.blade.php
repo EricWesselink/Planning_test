@@ -17,12 +17,13 @@
     $total = $total ?? $ticket?->totalAmount();
     $colleagues = $colleagues ?? [];
     $number = $number ?? '';
+    $drawingRender = $drawingRender ?? 'image';
     $pdfDrawingLayers = [];
     if ($isPdf) {
         foreach ($floorLayers as $layer) {
             $layerPage = (int) ($layer['page'] ?? 0);
             $layerImage = $layer['image'] ?? null;
-            if ($layerPage > 0 && filled($layerImage)) {
+            if ($layerPage > 0 && ($drawingRender === 'browser' || filled($layerImage))) {
                 $pdfDrawingLayers[] = $layer;
             }
         }
@@ -247,7 +248,11 @@
             <div class="section-title">Tekening</div>
             <p><strong>{{ $layer['name'] }}</strong></p>
             <div class="map" data-page="{{ (int) ($layer['page'] ?? 0) }}">
-                <img class="map-drawing" src="{{ $layer['image'] }}" alt="">
+                @if (filled($layer['image'] ?? null))
+                    <img class="map-drawing" src="{{ $layer['image'] }}" alt="">
+                @elseif ($drawingIsPdf)
+                    <p class="map-loading">Tekening laden…</p>
+                @endif
                 @foreach ($layer['pins'] ?? [] as $pin)
                     <span class="room-pin" style="left: {{ $pin['x'] * 100 }}%; top: {{ $pin['y'] * 100 }}%;">{{ $pin['label'] }}</span>
                 @endforeach

@@ -62,13 +62,17 @@ class WorkTicketController extends Controller
         ]);
     }
 
-    public function pdf(WorkTicket $workTicket, WorkTicketPdfService $pdfs): Response
+    public function pdf(WorkTicket $workTicket, WorkTicketPdfService $pdfs): Response|View
     {
         $this->loadTicket($workTicket);
         Gate::authorize('view', $workTicket);
 
         $showPrices = Gate::allows('viewPrices', $workTicket);
         $data = $pdfs->build($workTicket, $showPrices);
+        if (($data['drawingRender'] ?? 'image') === 'browser') {
+            return view('work-tickets.print', $data);
+        }
+
         $pdf = Pdf::loadView('work-tickets.pdf', $data)
             ->setPaper('a4', 'portrait')
             ->setOption('defaultFont', 'DejaVu Sans');

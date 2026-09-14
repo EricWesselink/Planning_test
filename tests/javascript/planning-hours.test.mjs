@@ -79,8 +79,11 @@ test('snaps pointer positions to quarter days', () => {
     assert.equal(snapPosition(0.55, 6), 0.5);
 });
 
-test('counts weekdays through a weekend unless weekends are included', () => {
+test('counts weekdays through a weekend unless saturday or sunday is included', () => {
     assert.equal(workdayCount('2026-09-14', '2026-09-25'), 10);
-    assert.equal(workdayCount('2026-09-14', '2026-09-25', true), 12);
+    assert.equal(workdayCount('2026-09-14', '2026-09-25', true, false), 11);
+    assert.equal(workdayCount('2026-09-14', '2026-09-25', false, true), 11);
+    assert.equal(workdayCount('2026-09-14', '2026-09-25', true, true), 12);
     assert.equal(workdayCount('2026-09-19', '2026-09-20'), 0);
+    assert.equal(workdayCount('2026-09-19', '2026-09-20', true, false), 1);
 });

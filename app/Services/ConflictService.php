@@ -61,7 +61,8 @@ class ConflictService
         array $addingCrewMemberIds = [],
         ?string $startTime = null,
         ?string $endTime = null,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): ?array {
         $worker = Worker::query()->findOrFail($workerId);
         $capacity = $worker->peopleCount();
@@ -71,7 +72,7 @@ class ConflictService
         $from = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
 
-        $personConflict = $this->firstPersonConflict($existing, $start, $end, $from, $to, $addingIds, $worker, $includeWeekends);
+        $personConflict = $this->firstPersonConflict($existing, $start, $end, $from, $to, $addingIds, $worker, $includeSaturday, $includeSunday);
         if ($personConflict !== null) {
             return $personConflict;
         }
@@ -80,7 +81,7 @@ class ConflictService
         $day = $start->copy()->startOfDay();
         $last = $end->copy()->startOfDay();
         while ($day->lte($last)) {
-            $window = PlanningHours::intervalOnDate($day, $start, $end, $from, $to, $includeWeekends);
+            $window = PlanningHours::intervalOnDate($day, $start, $end, $from, $to, $includeSaturday, $includeSunday);
             if ($window === null) {
                 $day->addDay();
 
@@ -128,7 +129,8 @@ class ConflictService
         string $endTime,
         array $addingIds,
         Worker $worker,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): ?array {
         if ($addingIds === []) {
             return null;
@@ -137,7 +139,7 @@ class ConflictService
         $day = $start->copy()->startOfDay();
         $last = $end->copy()->startOfDay();
         while ($day->lte($last)) {
-            $addingInterval = PlanningHours::intervalOnDate($day, $start, $end, $startTime, $endTime, $includeWeekends);
+            $addingInterval = PlanningHours::intervalOnDate($day, $start, $end, $startTime, $endTime, $includeSaturday, $includeSunday);
             if ($addingInterval === null) {
                 $day->addDay();
 

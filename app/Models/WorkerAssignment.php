@@ -14,7 +14,8 @@ use Illuminate\Support\Collection;
 
 #[Fillable([
     'worker_id', 'project_id', 'work_item_id', 'team_id',
-    'start_date', 'end_date', 'start_time', 'end_time', 'include_weekends',
+    'start_date', 'end_date', 'start_time', 'end_time',
+    'include_saturday', 'include_sunday',
     'people_count', 'hours_per_day', 'planned_hours', 'notes',
 ])]
 class WorkerAssignment extends Model
@@ -25,7 +26,8 @@ class WorkerAssignment extends Model
         'planned_hours' => 8,
         'start_time' => '08:00:00',
         'end_time' => '16:00:00',
-        'include_weekends' => false,
+        'include_saturday' => false,
+        'include_sunday' => false,
     ];
 
     protected function casts(): array
@@ -36,7 +38,8 @@ class WorkerAssignment extends Model
             'people_count' => 'integer',
             'hours_per_day' => 'decimal:2',
             'planned_hours' => 'decimal:2',
-            'include_weekends' => 'boolean',
+            'include_saturday' => 'boolean',
+            'include_sunday' => 'boolean',
         ];
     }
 
@@ -106,15 +109,20 @@ class WorkerAssignment extends Model
             ->orderBy('crew_members.id');
     }
 
-    public function includesWeekends(): bool
+    public function includesSaturday(): bool
     {
-        return (bool) $this->include_weekends;
+        return (bool) $this->include_saturday;
+    }
+
+    public function includesSunday(): bool
+    {
+        return (bool) $this->include_sunday;
     }
 
     public function coversDate(CarbonInterface $date): bool
     {
         return $date->betweenIncluded($this->start_date, $this->end_date)
-            && PlanningHours::countsOnDate($date, $this->includesWeekends());
+            && PlanningHours::countsOnDate($date, $this->includesSaturday(), $this->includesSunday());
     }
 
     public function startTimeValue(): string
@@ -134,7 +142,8 @@ class WorkerAssignment extends Model
             $this->end_date,
             $this->startTimeValue(),
             $this->endTimeValue(),
-            $this->includesWeekends(),
+            $this->includesSaturday(),
+            $this->includesSunday(),
         );
     }
 
@@ -147,7 +156,8 @@ class WorkerAssignment extends Model
                     $this->end_date,
                     PlanningHours::normalizeTime($member->pivot?->start_time, $this->startTimeValue()),
                     PlanningHours::normalizeTime($member->pivot?->end_time, $this->endTimeValue()),
-                    $this->includesWeekends(),
+                    $this->includesSaturday(),
+                    $this->includesSunday(),
                 );
             });
         }
@@ -166,7 +176,8 @@ class WorkerAssignment extends Model
             $this->end_date,
             $this->startTimeValue(),
             $this->endTimeValue(),
-            $this->includesWeekends(),
+            $this->includesSaturday(),
+            $this->includesSunday(),
         );
     }
 
@@ -188,7 +199,8 @@ class WorkerAssignment extends Model
             $this->end_date,
             $startTime,
             $endTime,
-            $this->includesWeekends(),
+            $this->includesSaturday(),
+            $this->includesSunday(),
         );
     }
 
@@ -200,7 +212,8 @@ class WorkerAssignment extends Model
             $this->end_date,
             $this->startTimeValue(),
             $this->endTimeValue(),
-            $this->includesWeekends(),
+            $this->includesSaturday(),
+            $this->includesSunday(),
         );
     }
 
@@ -216,7 +229,8 @@ class WorkerAssignment extends Model
                 $end,
                 $start->format('H:i:s'),
                 $end->format('H:i:s'),
-                $this->includesWeekends(),
+                $this->includesSaturday(),
+                $this->includesSunday(),
             );
             if ($interval !== null && $window !== null && PlanningHours::intervalsOverlap(
                 $interval[0],
@@ -237,10 +251,14 @@ class WorkerAssignment extends Model
         CarbonInterface $end,
         string $startTime,
         string $endTime,
-        ?bool $includeWeekends = null,
+        ?bool $includeSaturday = null,
+        ?bool $includeSunday = null,
     ): void {
-        if ($includeWeekends !== null) {
-            $this->include_weekends = $includeWeekends;
+        if ($includeSaturday !== null) {
+            $this->include_saturday = $includeSaturday;
+        }
+        if ($includeSunday !== null) {
+            $this->include_sunday = $includeSunday;
         }
 
         $this->start_date = $start->toDateString();
@@ -254,7 +272,8 @@ class WorkerAssignment extends Model
             $end,
             $this->start_time,
             $this->end_time,
-            $this->includesWeekends(),
+            $this->includesSaturday(),
+            $this->includesSunday(),
         );
     }
 

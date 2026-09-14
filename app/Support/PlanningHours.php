@@ -128,21 +128,33 @@ class PlanningHours
         ];
     }
 
-    public static function countsOnDate(CarbonInterface $date, bool $includeWeekends = false): bool
-    {
-        return $includeWeekends || $date->isWeekday();
+    public static function countsOnDate(
+        CarbonInterface $date,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
+    ): bool {
+        if ($date->isSaturday()) {
+            return $includeSaturday;
+        }
+
+        if ($date->isSunday()) {
+            return $includeSunday;
+        }
+
+        return true;
     }
 
     public static function workdayCount(
         CarbonInterface $startDate,
         CarbonInterface $endDate,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): int {
         $count = 0;
         $day = $startDate->copy()->startOfDay();
         $last = $endDate->copy()->startOfDay();
         while ($day->lte($last)) {
-            if (self::countsOnDate($day, $includeWeekends)) {
+            if (self::countsOnDate($day, $includeSaturday, $includeSunday)) {
                 $count++;
             }
             $day->addDay();
@@ -157,9 +169,10 @@ class PlanningHours
         CarbonInterface $endDate,
         string $startTime,
         string $endTime,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): float {
-        $interval = self::intervalOnDate($date, $startDate, $endDate, $startTime, $endTime, $includeWeekends);
+        $interval = self::intervalOnDate($date, $startDate, $endDate, $startTime, $endTime, $includeSaturday, $includeSunday);
 
         return $interval === null
             ? 0.0
@@ -171,13 +184,14 @@ class PlanningHours
         CarbonInterface $endDate,
         string $startTime,
         string $endTime,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): float {
         $total = 0.0;
         $day = $startDate->copy()->startOfDay();
         $last = $endDate->copy()->startOfDay();
         while ($day->lte($last)) {
-            $total += self::hoursOnDate($day, $startDate, $endDate, $startTime, $endTime, $includeWeekends);
+            $total += self::hoursOnDate($day, $startDate, $endDate, $startTime, $endTime, $includeSaturday, $includeSunday);
             $day->addDay();
         }
 
@@ -193,19 +207,22 @@ class PlanningHours
         CarbonInterface $endDate,
         string $startTime,
         string $endTime,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): ?array {
         $day = $date->copy()->startOfDay();
         if ($day->lt($startDate->copy()->startOfDay()) || $day->gt($endDate->copy()->startOfDay())) {
             return null;
         }
 
-        if (! self::countsOnDate($day, $includeWeekends)) {
+        if (! self::countsOnDate($day, $includeSaturday, $includeSunday)) {
             return null;
         }
 
-        $isFirst = ! self::hasCountableDayBetween($startDate->copy()->startOfDay(), $day->copy()->subDay(), $includeWeekends);
-        $isLast = ! self::hasCountableDayBetween($day->copy()->addDay(), $endDate->copy()->startOfDay(), $includeWeekends);
+        $first = self::firstWorkDate($startDate, $endDate, $includeSaturday, $includeSunday);
+        $lastWork = self::lastWorkDate($startDate, $endDate, $includeSaturday, $includeSunday);
+        $isFirst = $first !== null && $day->isSameDay($first);
+        $isLast = $lastWork !== null && $day->isSameDay($lastWork);
         $from = $isFirst ? self::normalizeTime($startTime, self::DAY_START) : self::DAY_START.':00';
         $to = $isLast ? self::normalizeTime($endTime, self::DAY_END) : self::DAY_END.':00';
         $start = Carbon::parse($day->toDateString().' '.$from);
@@ -279,20 +296,39 @@ class PlanningHours
         return rtrim(rtrim(number_format($value, 2, ',', ''), '0'), ',');
     }
 
-    private static function hasCountableDayBetween(
-        CarbonInterface $from,
-        CarbonInterface $to,
-        bool $includeWeekends,
-    ): bool {
-        $day = $from->copy()->startOfDay();
-        $last = $to->copy()->startOfDay();
+    private static function firstWorkDate(
+        CarbonInterface $startDate,
+        CarbonInterface $endDate,
+        bool $includeSaturday,
+        bool $includeSunday,
+    ): ?Carbon {
+        $day = $startDate->copy()->startOfDay();
+        $last = $endDate->copy()->startOfDay();
         while ($day->lte($last)) {
-            if (self::countsOnDate($day, $includeWeekends)) {
-                return true;
+            if (self::countsOnDate($day, $includeSaturday, $includeSunday)) {
+                return $day->copy();
             }
             $day->addDay();
         }
 
-        return false;
+        return null;
+    }
+
+    private static function lastWorkDate(
+        CarbonInterface $startDate,
+        CarbonInterface $endDate,
+        bool $includeSaturday,
+        bool $includeSunday,
+    ): ?Carbon {
+        $day = $endDate->copy()->startOfDay();
+        $first = $startDate->copy()->startOfDay();
+        while ($day->gte($first)) {
+            if (self::countsOnDate($day, $includeSaturday, $includeSunday)) {
+                return $day->copy();
+            }
+            $day->subDay();
+        }
+
+        return null;
     }
 }

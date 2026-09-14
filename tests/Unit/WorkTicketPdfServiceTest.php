@@ -18,6 +18,7 @@ use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use App\Services\WorkTicketPdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class WorkTicketPdfServiceTest extends TestCase
@@ -138,6 +139,7 @@ class WorkTicketPdfServiceTest extends TestCase
         $data = app(WorkTicketPdfService::class)->build($ticket->fresh(), false);
 
         $this->assertTrue($data['drawingIsPdf']);
+        $this->assertSame('browser', $data['drawingRender']);
         $this->assertSame('plattegrond.pdf', $data['drawingName']);
         $this->assertSame(route('projects.documents.show', [$project, $drawing], false), $data['drawingUrl']);
         $this->assertCount(2, $data['floorLayers']);
@@ -186,10 +188,39 @@ class WorkTicketPdfServiceTest extends TestCase
         $data = app(WorkTicketPdfService::class)->build($ticket->fresh(), false);
 
         $this->assertSame('fase-1.pdf', $data['drawingName']);
+        $this->assertSame('browser', $data['drawingRender']);
         $this->assertCount(1, $data['floorLayers']);
         $this->assertSame(1, $data['floorLayers'][0]['page']);
         $this->assertSame('1e verdieping', $data['floorLayers'][0]['name']);
+        $this->assertNull($data['floorLayers'][0]['image']);
         $this->assertSame([], $data['floorLayers'][0]['pins']);
+    }
+
+    public function test_build_embeds_a_stored_drawing_image_as_a_data_uri(): void
+    {
+        $ticket = $this->makeTicket();
+        $project = $ticket->project;
+        $relative = 'projects/'.$project->id.'/plattegrond/plan.png';
+        Storage::disk('local')->put(
+            $relative,
+            (string) file_get_contents(public_path('images/nicon-vloeren.png')),
+        );
+        $drawing = ProjectDocument::query()->create([
+            'project_id' => $project->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => 'plattegrond.png',
+            'file_path' => $relative,
+            'mime_type' => 'image/png',
+            'file_size' => 800,
+            'parse_status' => 'done',
+        ]);
+        $ticket->documents()->attach($drawing->id);
+
+        $data = app(WorkTicketPdfService::class)->build($ticket->fresh(), false);
+
+        $this->assertSame('image', $data['drawingRender']);
+        $this->assertNotEmpty($data['floorLayers']);
+        $this->assertStringStartsWith('data:image/png;base64,', $data['floorLayers'][0]['image']);
     }
 
     private function makeTicket(): WorkTicket

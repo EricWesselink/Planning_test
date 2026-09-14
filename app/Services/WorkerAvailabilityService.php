@@ -38,12 +38,12 @@ class WorkerAvailabilityService
         return null;
     }
 
-    public function awayLabelInRange(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeWeekends = false): ?string
+    public function awayLabelInRange(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeSaturday = false, bool $includeSunday = false): ?string
     {
         $day = $start->copy()->startOfDay();
         $last = $end->copy()->startOfDay();
         while ($day->lte($last)) {
-            if (! PlanningHours::countsOnDate($day, $includeWeekends)) {
+            if (! PlanningHours::countsOnDate($day, $includeSaturday, $includeSunday)) {
                 $day->addDay();
 
                 continue;
@@ -59,9 +59,9 @@ class WorkerAvailabilityService
         return null;
     }
 
-    public function rejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeWeekends = false): ?string
+    public function rejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeSaturday = false, bool $includeSunday = false): ?string
     {
-        $label = $this->awayLabelInRange($worker, $start, $end, $includeWeekends);
+        $label = $this->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday);
         if ($label === null) {
             return null;
         }

@@ -5,7 +5,15 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const drawingUrl = document.body?.dataset.drawingUrl;
 if (drawingUrl) {
-    renderPdfDrawings(drawingUrl).catch(() => {
+    renderPdfDrawings(drawingUrl).then(() => {
+        if (document.body?.dataset.printWhenReady === '1') {
+            if (typeof window.niconPrintTicket === 'function') {
+                window.niconPrintTicket();
+            } else {
+                window.print();
+            }
+        }
+    }).catch(() => {
         document.querySelectorAll('.map-loading').forEach((el) => {
             el.textContent = 'Tekening kon niet worden geladen.';
         });

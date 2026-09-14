@@ -178,12 +178,19 @@ function isoFromDate(date) {
     return `${date.getFullYear()}-${month}-${day}`;
 }
 
-export function isWeekendDate(iso) {
+export function countsOnDate(iso, includeSaturday = false, includeSunday = false) {
     const weekday = dateFromIso(iso).getDay();
-    return weekday === 0 || weekday === 6;
+    if (weekday === 6) {
+        return includeSaturday;
+    }
+    if (weekday === 0) {
+        return includeSunday;
+    }
+
+    return true;
 }
 
-export function workdayCount(startIso, endIso, includeWeekends = false) {
+export function workdayCount(startIso, endIso, includeSaturday = false, includeSunday = false) {
     if (!startIso || !endIso || startIso > endIso) {
         return 0;
     }
@@ -193,7 +200,7 @@ export function workdayCount(startIso, endIso, includeWeekends = false) {
     const last = dateFromIso(endIso);
     while (cursor <= last) {
         const iso = isoFromDate(cursor);
-        if (includeWeekends || !isWeekendDate(iso)) {
+        if (countsOnDate(iso, includeSaturday, includeSunday)) {
             count += 1;
         }
         cursor.setDate(cursor.getDate() + 1);

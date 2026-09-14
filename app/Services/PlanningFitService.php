@@ -27,7 +27,8 @@ class PlanningFitService
         ?string $startTime,
         ?string $endTime,
         ?int $ignoreAssignmentId = null,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): array {
         $item->loadMissing(['workActivity', 'project']);
         $specialty = $item->requiredSpecialty();
@@ -54,7 +55,8 @@ class PlanningFitService
                     $from,
                     $to,
                     $skipSkill,
-                    $includeWeekends,
+                    $includeSaturday,
+                    $includeSunday,
                 ))
                 ->values()
                 ->all(),
@@ -143,11 +145,12 @@ class PlanningFitService
         string $from,
         string $to,
         bool $skipSkill,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): array {
         $people = $worker->crewPeople;
         if ($people->count() >= 2) {
-            return $this->presentTeam($worker, $people, $specialty, $assignments, $start, $end, $from, $to, $skipSkill, $includeWeekends);
+            return $this->presentTeam($worker, $people, $specialty, $assignments, $start, $end, $from, $to, $skipSkill, $includeSaturday, $includeSunday);
         }
 
         $member = $people->first();
@@ -156,8 +159,8 @@ class PlanningFitService
         }
         $person = $this->presentPerson(
             $skipSkill || $this->personHasSkill($member, $worker, $specialty),
-            $this->busyInterval($assignments, $worker, $member?->id, $start, $end, $from, $to, $includeWeekends)
-                ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeWeekends),
+            $this->busyInterval($assignments, $worker, $member?->id, $start, $end, $from, $to, $includeSaturday, $includeSunday)
+                ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday),
             $specialty['label'],
         );
 
@@ -190,7 +193,8 @@ class PlanningFitService
         string $from,
         string $to,
         bool $skipSkill,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): array {
         $crew = [];
         $suitable = 0;
@@ -198,8 +202,8 @@ class PlanningFitService
             $member->setRelation('worker', $worker);
             $person = $this->presentPerson(
                 $skipSkill || $this->personHasSkill($member, $worker, $specialty),
-                $this->busyInterval($assignments, $worker, $member->id, $start, $end, $from, $to, $includeWeekends)
-                    ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeWeekends),
+                $this->busyInterval($assignments, $worker, $member->id, $start, $end, $from, $to, $includeSaturday, $includeSunday)
+                    ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday),
                 $specialty['label'],
             );
             $crew[] = array_merge($person, [
@@ -266,11 +270,11 @@ class PlanningFitService
         return $this->workerHasSkill($worker, $specialty);
     }
 
-    public function awayRejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeWeekends = false): ?string
+    public function awayRejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeSaturday = false, bool $includeSunday = false): ?string
     {
         $worker->loadMissing('availabilities');
 
-        return $this->availability->rejection($worker, $start, $end, $includeWeekends);
+        return $this->availability->rejection($worker, $start, $end, $includeSaturday, $includeSunday);
     }
 
     /**
@@ -292,12 +296,13 @@ class PlanningFitService
         CarbonInterface $end,
         string $from,
         string $to,
-        bool $includeWeekends = false,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
     ): ?string {
         $day = $start->copy()->startOfDay();
         $last = $end->copy()->startOfDay();
         while ($day->lte($last)) {
-            $window = PlanningHours::intervalOnDate($day, $start, $end, $from, $to, $includeWeekends);
+            $window = PlanningHours::intervalOnDate($day, $start, $end, $from, $to, $includeSaturday, $includeSunday);
             if ($window === null) {
                 $day->addDay();
 

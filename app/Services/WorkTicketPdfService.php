@@ -48,6 +48,7 @@ class WorkTicketPdfService
      *     drawingIsPdf: bool,
      *     drawingIsImage: bool,
      *     drawingName: ?string,
+     *     drawingRender: string,
      *     floorLayers: list<array{name: string, rooms: string, page: int, image: ?string, pins: list<array{x: float, y: float, label: string}>}>,
      *     colleagues: list<string>,
      *     showPrices: bool
@@ -118,7 +119,8 @@ class WorkTicketPdfService
             'drawingIsPdf' => (bool) $drawing?->isPdf(),
             'drawingIsImage' => (bool) $drawing?->isImage(),
             'drawingName' => $drawing !== null ? (string) $drawing->original_filename : null,
-            'floorLayers' => $this->floorLayers($ticket, $drawing),
+            'floorLayers' => $floorLayers = $this->floorLayers($ticket, $drawing),
+            'drawingRender' => $this->drawingRender($floorLayers, (bool) $drawing?->isPdf()),
             'colleagues' => $this->colleagueNames($ticket),
             'showPrices' => $showPrices && $ticket->kind === WorkTicketKind::Opdrachtbon,
         ];
@@ -359,7 +361,25 @@ class WorkTicketPdfService
             return null;
         }
 
-        return 'file://'.str_replace('\\', '/', $absolute);
+        return $this->embedImage($absolute);
+    }
+
+    /**
+     * @param  list<array{name: string, rooms: string, page: int, image: ?string, pins: list<array{x: float, y: float, label: string}>}>  $floorLayers
+     */
+    private function drawingRender(array $floorLayers, bool $drawingIsPdf): string
+    {
+        if (! $drawingIsPdf) {
+            return 'image';
+        }
+
+        foreach ($floorLayers as $layer) {
+            if ((int) ($layer['page'] ?? 0) > 0 && blank($layer['image'] ?? null)) {
+                return 'browser';
+            }
+        }
+
+        return 'image';
     }
 
     private function layerImage(ProjectDocument $drawing, int $page): ?string
@@ -416,7 +436,21 @@ class WorkTicketPdfService
             return null;
         }
 
-        return 'file://'.str_replace('\\', '/', $file);
+        return $this->embedImage($file);
+    }
+
+    private function embedImage(string $absolute): ?string
+    {
+        if (! is_file($absolute)) {
+            return null;
+        }
+
+        $mime = mime_content_type($absolute) ?: 'image/png';
+        if (! str_starts_with($mime, 'image/')) {
+            return null;
+        }
+
+        return 'data:'.$mime.';base64,'.base64_encode((string) file_get_contents($absolute));
     }
 
     private function pdftoppmBinary(): ?string

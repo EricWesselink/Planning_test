@@ -99,7 +99,7 @@ class WorkerAvailabilityServiceTest extends TestCase
         ]);
         $nick->availabilities()->create([
             'start_date' => '2026-09-19',
-            'end_date' => '2026-09-20',
+            'end_date' => '2026-09-19',
             'kind' => AvailabilityKind::Unavailable,
         ]);
         $nick->load('availabilities');
@@ -115,6 +115,14 @@ class WorkerAvailabilityServiceTest extends TestCase
             $nick,
             Carbon::parse('2026-09-14'),
             Carbon::parse('2026-09-25'),
+            true,
+            false,
+        ));
+        $this->assertNull($service->rejection(
+            $nick,
+            Carbon::parse('2026-09-14'),
+            Carbon::parse('2026-09-25'),
+            false,
             true,
         ));
     }

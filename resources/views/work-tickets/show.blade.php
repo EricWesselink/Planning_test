@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $kindLabel }} {{ $ticket->number }} · {{ $companyName }}</title>
     @include('work-tickets._styles')
+    @include('work-tickets._print')
     @if (($drawingIsPdf ?? false) && filled($drawingUrl ?? null))
         @vite(['resources/js/snag-pdf.js'])
     @endif
@@ -19,7 +20,7 @@
     <p class="toolbar no-print">
         <a href="{{ $backUrl }}">← {{ $backLabel }}</a>
         <a class="primary" href="{{ route('work-tickets.pdf', $ticket) }}">Download PDF</a>
-        <button type="button" onclick="window.print()">Afdrukken</button>
+        <button type="button" onclick="niconPrintTicket()">Afdrukken</button>
     </p>
     @if (session('status'))
         <p class="no-print status">{{ session('status') }}</p>

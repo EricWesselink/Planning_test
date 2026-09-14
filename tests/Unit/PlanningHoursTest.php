@@ -141,46 +141,44 @@ class PlanningHoursTest extends TestCase
         ));
     }
 
-    public function test_checking_weekends_counts_saturday_and_sunday(): void
+    public function test_checking_weekends_counts_saturday_and_sunday_separately(): void
     {
-        $total = PlanningHours::totalHours(
-            Carbon::parse('2026-09-14'),
-            Carbon::parse('2026-09-25'),
-            '08:00:00',
-            '16:00:00',
-            true,
-        );
+        $start = Carbon::parse('2026-09-14');
+        $end = Carbon::parse('2026-09-25');
 
-        $this->assertSame(96.0, $total);
+        $this->assertSame(88.0, PlanningHours::totalHours($start, $end, '08:00:00', '16:00:00', true, false));
         $this->assertSame(8.0, PlanningHours::hoursOnDate(
             Carbon::parse('2026-09-19'),
-            Carbon::parse('2026-09-14'),
-            Carbon::parse('2026-09-25'),
+            $start,
+            $end,
             '08:00:00',
             '16:00:00',
             true,
+            false,
         ));
-        $this->assertSame(12, PlanningHours::workdayCount(
-            Carbon::parse('2026-09-14'),
-            Carbon::parse('2026-09-25'),
+        $this->assertSame(0.0, PlanningHours::hoursOnDate(
+            Carbon::parse('2026-09-20'),
+            $start,
+            $end,
+            '08:00:00',
+            '16:00:00',
             true,
+            false,
         ));
+        $this->assertSame(88.0, PlanningHours::totalHours($start, $end, '08:00:00', '16:00:00', false, true));
+        $this->assertSame(96.0, PlanningHours::totalHours($start, $end, '08:00:00', '16:00:00', true, true));
+        $this->assertSame(11, PlanningHours::workdayCount($start, $end, true, false));
+        $this->assertSame(12, PlanningHours::workdayCount($start, $end, true, true));
     }
 
     public function test_partial_hours_apply_to_the_last_weekday_when_the_range_ends_on_sunday(): void
     {
-        $this->assertSame(4.0, PlanningHours::hoursOnDate(
-            Carbon::parse('2026-09-18'),
-            Carbon::parse('2026-09-14'),
-            Carbon::parse('2026-09-20'),
-            '08:00:00',
-            '12:00:00',
-        ));
-        $this->assertSame(32.0, PlanningHours::totalHours(
-            Carbon::parse('2026-09-14'),
-            Carbon::parse('2026-09-20'),
-            '08:00:00',
-            '12:00:00',
-        ));
+        $start = Carbon::parse('2026-09-14');
+        $end = Carbon::parse('2026-09-20');
+
+        $this->assertSame(8.0, PlanningHours::hoursOnDate($start->copy(), $start, $end, '08:00:00', '12:00:00'));
+        $this->assertSame(4.0, PlanningHours::hoursOnDate(Carbon::parse('2026-09-18'), $start, $end, '08:00:00', '12:00:00'));
+        $this->assertSame(0.0, PlanningHours::hoursOnDate(Carbon::parse('2026-09-19'), $start, $end, '08:00:00', '12:00:00'));
+        $this->assertSame(36.0, PlanningHours::totalHours($start, $end, '08:00:00', '12:00:00'));
     }
 }
