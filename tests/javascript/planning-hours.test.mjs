@@ -14,6 +14,7 @@ import {
     snapPosition,
     timeFromFraction,
     timesFromHours,
+    workdayCount,
 } from '../../resources/js/planning-hours.js';
 
 test('shifts a two-hour bar within the day by a quarter day', () => {
@@ -76,4 +77,10 @@ test('snaps pointer positions to quarter days', () => {
     assert.equal(snapPosition(0.12, 6), 0);
     assert.equal(snapPosition(0.3, 6), 0.25);
     assert.equal(snapPosition(0.55, 6), 0.5);
+});
+
+test('counts weekdays through a weekend unless weekends are included', () => {
+    assert.equal(workdayCount('2026-09-14', '2026-09-25'), 10);
+    assert.equal(workdayCount('2026-09-14', '2026-09-25', true), 12);
+    assert.equal(workdayCount('2026-09-19', '2026-09-20'), 0);
 });

@@ -397,7 +397,96 @@ class PlanningHoursAssignmentTest extends TestCase
             ->assertSee('08:00–16:00', false)
             ->assertSee('data-planned-hours="8"', false)
             ->assertSee('data-start-offset="0"', false)
-            ->assertSee('data-end-offset="1"', false);
+            ->assertSee('data-end-offset="1"', false)
+            ->assertSee('Ook zaterdag en zondag', false);
+    }
+
+    public function test_a_range_through_the_weekend_skips_saturday_and_sunday_by_default(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $linoleum] = $this->makeProject();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $linoleum->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-25',
+                'people_count' => 1,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment = WorkerAssignment::query()->where('worker_id', $worker->id)->first();
+        $this->assertNotNull($assignment);
+        $this->assertFalse($assignment->includesWeekends());
+        $this->assertSame(80.0, $assignment->plannedHoursValue());
+        $this->assertSame(0.0, $assignment->hoursOnDate(Carbon::parse('2026-09-19')));
+        $this->assertFalse($assignment->coversDate(Carbon::parse('2026-09-20')));
+        $this->assertTrue($assignment->coversDate(Carbon::parse('2026-09-21')));
+        $this->assertDatabaseHas('worker_assignments', [
+            'worker_id' => $worker->id,
+            'include_weekends' => 0,
+            'planned_hours' => 80,
+        ]);
+    }
+
+    public function test_checking_weekends_plans_saturday_and_sunday(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $linoleum] = $this->makeProject();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $linoleum->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-25',
+                'people_count' => 1,
+                'hours' => 8,
+                'include_weekends' => true,
+            ])
+            ->assertOk();
+
+        $assignment = WorkerAssignment::query()->where('worker_id', $worker->id)->first();
+        $this->assertNotNull($assignment);
+        $this->assertTrue($assignment->includesWeekends());
+        $this->assertSame(96.0, $assignment->plannedHoursValue());
+        $this->assertSame(8.0, $assignment->hoursOnDate(Carbon::parse('2026-09-19')));
+        $this->assertTrue($assignment->coversDate(Carbon::parse('2026-09-20')));
+        $this->assertDatabaseHas('worker_assignments', [
+            'worker_id' => $worker->id,
+            'include_weekends' => 1,
+            'planned_hours' => 96,
+        ]);
+    }
+
+    public function test_rejects_a_weekend_only_range_unless_weekends_are_checked(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $linoleum] = $this->makeProject();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $linoleum->id,
+                'start_date' => '2026-09-19',
+                'end_date' => '2026-09-20',
+                'people_count' => 1,
+                'hours' => 8,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Deze periode heeft geen werkdagen. Vink zaterdag en zondag aan of kies andere datums.',
+            );
+
+        $this->assertDatabaseMissing('worker_assignments', [
+            'worker_id' => $worker->id,
+        ]);
     }
 
     public function test_half_day_bar_uses_half_of_the_day_cell(): void

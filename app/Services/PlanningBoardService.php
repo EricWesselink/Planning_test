@@ -807,6 +807,7 @@ class PlanningBoardService
             'end_date' => $assignment->end_date->toDateString(),
             'start_time' => PlanningHours::formatTime($assignment->startTimeValue()),
             'end_time' => PlanningHours::formatTime($assignment->endTimeValue()),
+            'include_weekends' => $assignment->includesWeekends(),
             'hours_per_day' => (float) $assignment->hours_per_day,
             'planned_hours' => $assignment->plannedHoursValue(),
             'color' => $assignment->worker?->planColor() ?? Format::planColor((int) $assignment->worker_id),

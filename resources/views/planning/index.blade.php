@@ -515,6 +515,10 @@
                     <input type="date" name="end_date" id="plan-end" required class="w-full border border-nicon-line px-2 py-1.5">
                 </div>
             </div>
+            <label class="flex items-center gap-2 pt-0.5 text-sm">
+                <input type="checkbox" name="include_weekends" id="plan-include-weekends" value="1">
+                Ook zaterdag en zondag
+            </label>
             <div class="flex flex-wrap gap-2 pt-1">
                 <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">Opslaan</button>
                 <button type="button" id="plan-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>

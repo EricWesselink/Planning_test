@@ -12,6 +12,7 @@
      data-end-date="{{ $personBar['end_date'] }}"
      data-start-time="{{ $personBar['start_time'] ?? '08:00' }}"
      data-end-time="{{ $personBar['end_time'] ?? '16:00' }}"
+     data-include-weekends="{{ ! empty($personBar['include_weekends']) ? '1' : '0' }}"
      data-people-count="{{ $personBar['people_count'] }}"
      data-planned-hours="{{ $personBar['planned_hours'] ?? 8 }}"
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"

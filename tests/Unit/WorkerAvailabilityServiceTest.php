@@ -89,4 +89,33 @@ class WorkerAvailabilityServiceTest extends TestCase
             Carbon::parse('2026-09-07'),
         ));
     }
+
+    public function test_weekend_unavailability_does_not_block_a_weekday_span(): void
+    {
+        $nick = Worker::query()->create([
+            'name' => 'Nick Seine',
+            'employment_type' => 'zzp',
+            'active' => true,
+        ]);
+        $nick->availabilities()->create([
+            'start_date' => '2026-09-19',
+            'end_date' => '2026-09-20',
+            'kind' => AvailabilityKind::Unavailable,
+        ]);
+        $nick->load('availabilities');
+
+        $service = app(WorkerAvailabilityService::class);
+
+        $this->assertNull($service->rejection(
+            $nick,
+            Carbon::parse('2026-09-14'),
+            Carbon::parse('2026-09-25'),
+        ));
+        $this->assertSame('Nick Seine is niet beschikbaar.', $service->rejection(
+            $nick,
+            Carbon::parse('2026-09-14'),
+            Carbon::parse('2026-09-25'),
+            true,
+        ));
+    }
 }

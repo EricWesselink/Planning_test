@@ -167,3 +167,38 @@ export function barStyle(start, span, startOffset, endOffset, dayCount) {
         width: `calc(${width} * 100% / ${dayCount} - 2px)`,
     };
 }
+
+function dateFromIso(iso) {
+    return new Date(`${iso}T12:00:00`);
+}
+
+function isoFromDate(date) {
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export function isWeekendDate(iso) {
+    const weekday = dateFromIso(iso).getDay();
+    return weekday === 0 || weekday === 6;
+}
+
+export function workdayCount(startIso, endIso, includeWeekends = false) {
+    if (!startIso || !endIso || startIso > endIso) {
+        return 0;
+    }
+
+    let count = 0;
+    const cursor = dateFromIso(startIso);
+    const last = dateFromIso(endIso);
+    while (cursor <= last) {
+        const iso = isoFromDate(cursor);
+        if (includeWeekends || !isWeekendDate(iso)) {
+            count += 1;
+        }
+        cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return count;
+}
+

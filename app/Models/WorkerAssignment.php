@@ -14,7 +14,7 @@ use Illuminate\Support\Collection;
 
 #[Fillable([
     'worker_id', 'project_id', 'work_item_id', 'team_id',
-    'start_date', 'end_date', 'start_time', 'end_time',
+    'start_date', 'end_date', 'start_time', 'end_time', 'include_weekends',
     'people_count', 'hours_per_day', 'planned_hours', 'notes',
 ])]
 class WorkerAssignment extends Model
@@ -25,6 +25,7 @@ class WorkerAssignment extends Model
         'planned_hours' => 8,
         'start_time' => '08:00:00',
         'end_time' => '16:00:00',
+        'include_weekends' => false,
     ];
 
     protected function casts(): array
@@ -35,6 +36,7 @@ class WorkerAssignment extends Model
             'people_count' => 'integer',
             'hours_per_day' => 'decimal:2',
             'planned_hours' => 'decimal:2',
+            'include_weekends' => 'boolean',
         ];
     }
 
@@ -104,9 +106,15 @@ class WorkerAssignment extends Model
             ->orderBy('crew_members.id');
     }
 
+    public function includesWeekends(): bool
+    {
+        return (bool) $this->include_weekends;
+    }
+
     public function coversDate(CarbonInterface $date): bool
     {
-        return $date->betweenIncluded($this->start_date, $this->end_date);
+        return $date->betweenIncluded($this->start_date, $this->end_date)
+            && PlanningHours::countsOnDate($date, $this->includesWeekends());
     }
 
     public function startTimeValue(): string
@@ -126,6 +134,7 @@ class WorkerAssignment extends Model
             $this->end_date,
             $this->startTimeValue(),
             $this->endTimeValue(),
+            $this->includesWeekends(),
         );
     }
 
@@ -138,6 +147,7 @@ class WorkerAssignment extends Model
                     $this->end_date,
                     PlanningHours::normalizeTime($member->pivot?->start_time, $this->startTimeValue()),
                     PlanningHours::normalizeTime($member->pivot?->end_time, $this->endTimeValue()),
+                    $this->includesWeekends(),
                 );
             });
         }
@@ -156,6 +166,7 @@ class WorkerAssignment extends Model
             $this->end_date,
             $this->startTimeValue(),
             $this->endTimeValue(),
+            $this->includesWeekends(),
         );
     }
 
@@ -177,6 +188,7 @@ class WorkerAssignment extends Model
             $this->end_date,
             $startTime,
             $endTime,
+            $this->includesWeekends(),
         );
     }
 
@@ -188,6 +200,7 @@ class WorkerAssignment extends Model
             $this->end_date,
             $this->startTimeValue(),
             $this->endTimeValue(),
+            $this->includesWeekends(),
         );
     }
 
@@ -203,6 +216,7 @@ class WorkerAssignment extends Model
                 $end,
                 $start->format('H:i:s'),
                 $end->format('H:i:s'),
+                $this->includesWeekends(),
             );
             if ($interval !== null && $window !== null && PlanningHours::intervalsOverlap(
                 $interval[0],
@@ -218,8 +232,17 @@ class WorkerAssignment extends Model
         return false;
     }
 
-    public function applySchedule(CarbonInterface $start, CarbonInterface $end, string $startTime, string $endTime): void
-    {
+    public function applySchedule(
+        CarbonInterface $start,
+        CarbonInterface $end,
+        string $startTime,
+        string $endTime,
+        ?bool $includeWeekends = null,
+    ): void {
+        if ($includeWeekends !== null) {
+            $this->include_weekends = $includeWeekends;
+        }
+
         $this->start_date = $start->toDateString();
         $this->end_date = $end->toDateString();
         $this->start_time = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
@@ -231,6 +254,7 @@ class WorkerAssignment extends Model
             $end,
             $this->start_time,
             $this->end_time,
+            $this->includesWeekends(),
         );
     }
 

@@ -11,6 +11,7 @@ import {
     snapPosition,
     timeFromFraction,
     timesFromHours,
+    workdayCount,
 } from './planning-hours';
 import { bindLaborFold } from './planning-labor-fold';
 
@@ -34,6 +35,7 @@ if (board) {
     const slotWrap = document.getElementById('plan-slot-wrap');
     const slotList = document.getElementById('plan-slot-list');
     const hoursSummary = document.getElementById('plan-hours-summary');
+    const includeWeekendsInput = document.getElementById('plan-include-weekends');
     const hoursHint = document.getElementById('plan-hours-hint');
     const projectInput = document.getElementById('plan-project-id');
     const titleEl = document.getElementById('plan-dialog-title');
@@ -226,6 +228,7 @@ if (board) {
             end_time: times.end,
             hours: String(times.hours),
             slot: times.hours >= WORKDAY_HOURS ? 'full' : selectedSlot(),
+            include_weekends: includeWeekends() ? '1' : '0',
         });
         if (form.dataset.assignmentId) {
             params.set('assignment_id', form.dataset.assignmentId);
@@ -329,10 +332,25 @@ if (board) {
         return hours;
     }
 
+    function includeWeekends() {
+        return Boolean(includeWeekendsInput?.checked);
+    }
+
+    function setIncludeWeekends(value) {
+        if (includeWeekendsInput) {
+            includeWeekendsInput.checked = Boolean(value);
+        }
+    }
+
     function syncHoursSummary() {
         const times = selectedTimes();
         if (hoursSummary) {
-            hoursSummary.textContent = `${times.start}–${times.end} · ${hoursLabel(times.hours)}`;
+            const days = workdayCount(startInput.value, endInput.value, includeWeekends());
+            if (days > 1) {
+                hoursSummary.textContent = `${times.start}–${times.end} · ${hoursLabel(times.hours)} × ${days} dagen · ${hoursLabel(times.hours * days)}`;
+            } else {
+                hoursSummary.textContent = `${times.start}–${times.end} · ${hoursLabel(times.hours)}`;
+            }
         }
         if (slotWrap) {
             slotWrap.classList.toggle('hidden', selectedHours() >= WORKDAY_HOURS);
@@ -453,6 +471,7 @@ if (board) {
         });
         startInput.value = date;
         endInput.value = date;
+        setIncludeWeekends(false);
         menInput.value = '1';
         menInput.readOnly = false;
         crewBox.classList.add('hidden');
@@ -487,6 +506,7 @@ if (board) {
         fillWorkItems(bar.dataset.projectId, bar.dataset.workItemId);
         startInput.value = bar.dataset.startDate;
         endInput.value = bar.dataset.endDate;
+        setIncludeWeekends(bar.dataset.includeWeekends === '1');
         menInput.value = String(Math.max(1, Number(bar.dataset.peopleCount || 1)));
         const selectedIds = (bar.dataset.crewIds || '')
             .split(',')
@@ -760,8 +780,18 @@ if (board) {
         syncProjectFromWork();
         refreshCandidates();
     });
-    startInput.addEventListener('change', refreshCandidates);
-    endInput.addEventListener('change', refreshCandidates);
+    startInput.addEventListener('change', () => {
+        syncHoursSummary();
+        refreshCandidates();
+    });
+    endInput.addEventListener('change', () => {
+        syncHoursSummary();
+        refreshCandidates();
+    });
+    includeWeekendsInput?.addEventListener('change', () => {
+        syncHoursSummary();
+        refreshCandidates();
+    });
     hoursSelect?.addEventListener('change', () => {
         const hours = selectedHours();
         const currentStart = selectedSlotInput()?.dataset.start || '08:00';
@@ -802,6 +832,7 @@ if (board) {
             slot: times.hours >= WORKDAY_HOURS ? 'full' : selectedSlot(),
             start_time: times.start,
             end_time: times.end,
+            include_weekends: includeWeekends(),
         };
         if (people.length >= 2) {
             body.crew_member_ids = crewIds;

@@ -6,6 +6,7 @@ use App\Enums\AvailabilityKind;
 use App\Enums\EmploymentType;
 use App\Models\Worker;
 use App\Models\WorkerAvailability;
+use App\Support\PlanningHours;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
@@ -37,11 +38,17 @@ class WorkerAvailabilityService
         return null;
     }
 
-    public function awayLabelInRange(Worker $worker, CarbonInterface $start, CarbonInterface $end): ?string
+    public function awayLabelInRange(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeWeekends = false): ?string
     {
         $day = $start->copy()->startOfDay();
         $last = $end->copy()->startOfDay();
         while ($day->lte($last)) {
+            if (! PlanningHours::countsOnDate($day, $includeWeekends)) {
+                $day->addDay();
+
+                continue;
+            }
+
             $label = $this->awayLabelOn($worker, $day);
             if ($label !== null) {
                 return $label;
@@ -52,9 +59,9 @@ class WorkerAvailabilityService
         return null;
     }
 
-    public function rejection(Worker $worker, CarbonInterface $start, CarbonInterface $end): ?string
+    public function rejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeWeekends = false): ?string
     {
-        $label = $this->awayLabelInRange($worker, $start, $end);
+        $label = $this->awayLabelInRange($worker, $start, $end, $includeWeekends);
         if ($label === null) {
             return null;
         }

@@ -27,6 +27,7 @@ class PlanningFitService
         ?string $startTime,
         ?string $endTime,
         ?int $ignoreAssignmentId = null,
+        bool $includeWeekends = false,
     ): array {
         $item->loadMissing(['workActivity', 'project']);
         $specialty = $item->requiredSpecialty();
@@ -53,6 +54,7 @@ class PlanningFitService
                     $from,
                     $to,
                     $skipSkill,
+                    $includeWeekends,
                 ))
                 ->values()
                 ->all(),
@@ -141,10 +143,11 @@ class PlanningFitService
         string $from,
         string $to,
         bool $skipSkill,
+        bool $includeWeekends = false,
     ): array {
         $people = $worker->crewPeople;
         if ($people->count() >= 2) {
-            return $this->presentTeam($worker, $people, $specialty, $assignments, $start, $end, $from, $to, $skipSkill);
+            return $this->presentTeam($worker, $people, $specialty, $assignments, $start, $end, $from, $to, $skipSkill, $includeWeekends);
         }
 
         $member = $people->first();
@@ -153,8 +156,8 @@ class PlanningFitService
         }
         $person = $this->presentPerson(
             $skipSkill || $this->personHasSkill($member, $worker, $specialty),
-            $this->busyInterval($assignments, $worker, $member?->id, $start, $end, $from, $to)
-                ?? $this->availability->awayLabelInRange($worker, $start, $end),
+            $this->busyInterval($assignments, $worker, $member?->id, $start, $end, $from, $to, $includeWeekends)
+                ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeWeekends),
             $specialty['label'],
         );
 
@@ -187,6 +190,7 @@ class PlanningFitService
         string $from,
         string $to,
         bool $skipSkill,
+        bool $includeWeekends = false,
     ): array {
         $crew = [];
         $suitable = 0;
@@ -194,8 +198,8 @@ class PlanningFitService
             $member->setRelation('worker', $worker);
             $person = $this->presentPerson(
                 $skipSkill || $this->personHasSkill($member, $worker, $specialty),
-                $this->busyInterval($assignments, $worker, $member->id, $start, $end, $from, $to)
-                    ?? $this->availability->awayLabelInRange($worker, $start, $end),
+                $this->busyInterval($assignments, $worker, $member->id, $start, $end, $from, $to, $includeWeekends)
+                    ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeWeekends),
                 $specialty['label'],
             );
             $crew[] = array_merge($person, [
@@ -262,11 +266,11 @@ class PlanningFitService
         return $this->workerHasSkill($worker, $specialty);
     }
 
-    public function awayRejection(Worker $worker, CarbonInterface $start, CarbonInterface $end): ?string
+    public function awayRejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeWeekends = false): ?string
     {
         $worker->loadMissing('availabilities');
 
-        return $this->availability->rejection($worker, $start, $end);
+        return $this->availability->rejection($worker, $start, $end, $includeWeekends);
     }
 
     /**
@@ -288,11 +292,12 @@ class PlanningFitService
         CarbonInterface $end,
         string $from,
         string $to,
+        bool $includeWeekends = false,
     ): ?string {
         $day = $start->copy()->startOfDay();
         $last = $end->copy()->startOfDay();
         while ($day->lte($last)) {
-            $window = PlanningHours::intervalOnDate($day, $start, $end, $from, $to);
+            $window = PlanningHours::intervalOnDate($day, $start, $end, $from, $to, $includeWeekends);
             if ($window === null) {
                 $day->addDay();
 
