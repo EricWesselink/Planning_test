@@ -20,6 +20,8 @@ import {
     groupRoomsByFloor,
     isEntireFloorPick,
     ticketStorePayload,
+    ticketRoomsToPick,
+    workKeysOnRooms,
 } from '../../resources/js/drawing-work-selection.js';
 
 const filters = [
@@ -538,4 +540,21 @@ test('groups picked rooms by floor and posts selections without extra selectors'
     assert.equal(payload.selections[1].entire, 0);
     assert.deepEqual(payload.selections[1].work_keys, ['vloer|3']);
     assert.equal(payload.notes, 'let op naden');
+});
+
+test('hele werk for a bon picks matching rooms on every floor', () => {
+    const picked = ticketRoomsToPick(rooms, { keys: ['vloer|1'] });
+
+    assert.deepEqual(picked.map((room) => room.id).sort((left, right) => left - right), [1, 3, 5]);
+    assert.ok(picked.some((room) => room.floor === 'begane grond'));
+    assert.ok(picked.some((room) => room.floor === '1e verdieping'));
+});
+
+test('hele werk without a material filter takes every work key on the picked rooms', () => {
+    const picked = ticketRoomsToPick(rooms, {});
+    const keys = workKeysOnRooms(picked);
+
+    assert.ok(picked.length >= 4);
+    assert.ok(keys.includes('ondergrond'));
+    assert.ok(keys.includes('vloer|1'));
 });

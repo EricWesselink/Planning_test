@@ -53,6 +53,8 @@ import {
     shortWorkLabel,
     ticketStorePayload,
     workFilterSummaryLabel,
+    workKeysOnRooms,
+    ticketRoomsToPick,
 } from './drawing-work-selection';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -460,7 +462,7 @@ function boot() {
             if (!areaMatchesWork(area)) {
                 return false;
             }
-            if (!hasWorkFilter()) {
+            if (ticketMode || !hasWorkFilter()) {
                 return true;
             }
 
@@ -469,6 +471,10 @@ function boot() {
     }
 
     function floorAreas() {
+        if (ticketMode) {
+            return areas;
+        }
+
         return areas.filter((area) => areaOnSelectedFloor(area));
     }
 
@@ -478,7 +484,7 @@ function boot() {
             const area = areaById(Number(row.dataset.areaId));
             const toneOk = tone === 'all' || row.dataset.tone === tone;
             const workOk = areaMatchesWork(area, row);
-            const floorOk = !hasWorkFilter() || areaOnSelectedFloor(area, row);
+            const floorOk = ticketMode || !hasWorkFilter() || areaOnSelectedFloor(area, row);
             row.style.display = toneOk && workOk && floorOk ? '' : 'none';
         });
         prunePickedToFilter();
@@ -495,11 +501,11 @@ function boot() {
             head.style.display = any ? '' : 'none';
         });
         document.querySelectorAll('.floor-pick').forEach((button) => {
-            button.classList.toggle('hidden', hasWorkFilter());
+            button.classList.toggle('hidden', hasWorkFilter() && !ticketMode);
         });
         const pickAll = document.getElementById('pick-all-rooms');
         if (pickAll) {
-            pickAll.textContent = hasWorkFilter() ? 'Alles aanvinken' : 'Hele werk';
+            pickAll.textContent = hasWorkFilter() && !ticketMode ? 'Alles aanvinken' : 'Hele werk';
         }
         document.querySelector('.board-left')?.classList.toggle('is-work-filter', hasWorkFilter());
         if (pickWorkRoomsBtn) {
@@ -1336,7 +1342,7 @@ function boot() {
         const targetId = selectedId;
         const selected = areaById(targetId);
         const jump = selected ? storedJumpTarget(selected) : null;
-        if (jump) {
+        if (jump && !ticketMode) {
             page = Number(jump.page) || page;
             pageSelect.value = String(page);
             await renderPdfPage();
@@ -1350,7 +1356,9 @@ function boot() {
             }
         } else {
             renderMarkers();
-            if (selected && selectedId === targetId && !snagMode && !moveMode && !linkModeAreaId) {
+            if (ticketMode) {
+                setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Wissel van pagina voor een andere verdiepingstekening.');
+            } else if (selected && selectedId === targetId && !snagMode && !moveMode && !linkModeAreaId) {
                 showUnlinkedHint(selected);
             } else if (!snagMode && !moveMode && !linkModeAreaId) {
                 setHint(linkReportHint(payload));
@@ -1946,7 +1954,9 @@ function boot() {
         if (!canPickRooms()) {
             return;
         }
-        const ids = visibleRoomIds(floor);
+        const ids = ticketMode
+            ? ticketRoomsToPick(areas, { keys: workFilterKeys, floor }).map((area) => Number(area.id))
+            : visibleRoomIds(floor);
         if (ids.length === 0) {
             return;
         }
@@ -3274,6 +3284,14 @@ function boot() {
             return;
         }
         event.preventDefault();
+        if (ticketMode && canPickRooms()) {
+            togglePickedRoom(row.dataset.areaId);
+            const area = areaById(Number(row.dataset.areaId));
+            if (area) {
+                jumpToStoredRoom(area);
+            }
+            return;
+        }
         if (hasWorkFilter() && canPickRooms()) {
             togglePickedRoom(row.dataset.areaId);
             return;
@@ -4657,7 +4675,7 @@ function boot() {
             return;
         }
         if (ticketChunks.length === 0) {
-            list.innerHTML = '<p class="ticket-empty">Kies verdieping, materialen en ruimtes. Daarna Selectie toevoegen.</p>';
+            list.innerHTML = '<p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen.</p>';
         } else {
             list.innerHTML = ticketChunks.map((chunk, index) => {
                 const lines = (chunk.lines || [])
@@ -4692,23 +4710,24 @@ function boot() {
 
     function addTicketSelection() {
         ticketError('');
-        if (!hasWorkFilter()) {
-            ticketError('Kies eerst een of meer materialen.');
-            setHint('Kies materialen bovenaan, daarna ruimtes op de tekening.');
-            return;
-        }
         const rooms = pickedList().map((id) => areaById(id)).filter(Boolean);
         if (rooms.length === 0) {
-            ticketError('Selecteer ruimtes op de tekening, of kies Deze verdieping.');
-            setHint('Tik ruimtes aan op de tekening, of kies Deze verdieping.');
+            ticketError('Selecteer ruimtes, kies Deze verdieping, of klik Hele werk.');
+            setHint('Klik Hele werk voor alle verdiepingen, of tik ruimtes aan op de tekening.');
+            return;
+        }
+        const keys = hasWorkFilter() ? workFilterKeys : workKeysOnRooms(rooms);
+        if (keys.length === 0) {
+            ticketError('Kies eerst een of meer materialen.');
+            setHint('Kies materialen bovenaan, of klik Hele werk om alle werkzaamheden mee te nemen.');
             return;
         }
         groupRoomsByFloor(rooms).forEach((floorRooms, floorId) => {
-            const entire = isEntireFloorPick(areas, floorRooms, floorId, workFilterKeys);
+            const entire = isEntireFloorPick(areas, floorRooms, floorId, keys);
             ticketChunks.push(buildTicketChunk({
                 floor: floorRooms[0]?.floor || selectedFloorName(),
                 floorId,
-                keys: workFilterKeys,
+                keys,
                 rooms: floorRooms,
                 entire,
                 filters: data.work_filters || [],
@@ -4815,9 +4834,8 @@ function boot() {
             removeTicketChunk(Number(button.dataset.ticketRemove));
         });
         renderTicketPanel();
-        setRoomMeasureMode(true);
         document.querySelector('.board-right')?.classList.add('is-open');
-        setHint('Kies materialen, tik ruimtes aan op de tekening en voeg de selectie toe aan de bon.');
+        setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Wissel van pagina voor een andere verdiepingstekening.');
     }
 
     setTool('hand');
@@ -4828,7 +4846,7 @@ function boot() {
     }
     applyTransform();
     setHint(ticketMode
-        ? 'Kies materialen, tik ruimtes aan op de tekening en voeg de selectie toe aan de bon.'
+        ? 'Kies materialen of klik Hele werk. Daarna Selectie toevoegen.'
         : 'Tik op + Opleverpunt, zet het op de tekening, foto, tekst, versturen.');
     bindTaskCards();
     bindTicketPanel();
@@ -4836,6 +4854,11 @@ function boot() {
     loadDrawing().catch(() => {
         setHint('Tekening kon niet worden geladen.');
     }).finally(() => {
+        if (ticketMode) {
+            setRoomMeasureMode(true);
+            setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Wissel van pagina voor een andere verdiepingstekening.');
+            return;
+        }
         if (selectedId) {
             selectArea(selectedId, { keepPage: true });
         }

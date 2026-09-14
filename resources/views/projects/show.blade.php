@@ -429,7 +429,7 @@
                         </div>
                     @endif
                     <div id="ticket-chunks" class="ticket-chunks">
-                        <p class="ticket-empty">Kies verdieping, materialen en ruimtes. Daarna Selectie toevoegen.</p>
+                        <p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen.</p>
                     </div>
                     <div id="ticket-preview-body" class="ticket-preview hidden" hidden></div>
                     <label class="ticket-notes-label" for="ticket-notes">Opmerking toevoegen</label>

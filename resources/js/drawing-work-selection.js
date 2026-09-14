@@ -629,3 +629,33 @@ export function ticketStorePayload(chunks, extras = {}) {
         ...extras,
     };
 }
+
+export function workKeysOnRooms(rooms) {
+    const keys = [];
+    const seen = new Set();
+    (rooms || []).forEach((room) => {
+        (room.works || []).forEach((work) => {
+            const key = String(work?.key || '');
+            if (key === '' || seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            keys.push(key);
+        });
+    });
+
+    return keys;
+}
+
+export function ticketRoomsToPick(areas, { keys = [], floor = null } = {}) {
+    return (areas || []).filter((area) => {
+        if (floor != null && floor !== '' && (area.floor || '') !== floor) {
+            return false;
+        }
+        if (keys.length && !areaMatchesWorkKeys(area, keys)) {
+            return false;
+        }
+
+        return Number(area?.id) > 0;
+    });
+}

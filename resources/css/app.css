@@ -1523,14 +1523,13 @@ button.plan-labor-toggle:hover {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem 0.75rem;
-    width: 100%;
+    flex: 1 1 auto;
     font-size: 12px;
     color: var(--color-nicon-muted);
 }
 
-.ticket-mode-bar strong {
-    color: var(--color-nicon-ink);
-    font-weight: 650;
+.project-board.is-ticket-mode #draw-page {
+    min-width: 14rem;
 }
 
 .ticket-panel {

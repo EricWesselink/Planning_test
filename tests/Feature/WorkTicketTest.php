@@ -69,6 +69,8 @@ class WorkTicketTest extends TestCase
             ->assertSee('1.63')
             ->assertSee('PVC')
             ->assertSee('Deze verdieping')
+            ->assertSee('Hele werk')
+            ->assertSee('Hele werk voor alle verdiepingen')
             ->assertDontSee('Werkzaamheden bijwerken')
             ->assertDontSee('id="complete-form"', false);
     }
