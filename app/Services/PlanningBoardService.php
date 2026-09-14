@@ -889,7 +889,7 @@ class PlanningBoardService
             return null;
         }
 
-        return $start->format('d-m-Y');
+        return $start->format('d-m-Y').' · week '.(int) $start->isoWeek();
     }
 
     /**
