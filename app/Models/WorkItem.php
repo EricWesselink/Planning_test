@@ -171,7 +171,9 @@ class WorkItem extends Model
             return true;
         }
 
-        return $this->project?->isSmallWork() ?? false;
+        $this->loadMissing('project');
+
+        return (bool) ($this->project?->isSmallWork() || $this->project?->isWinkel());
     }
 
     public function project(): BelongsTo

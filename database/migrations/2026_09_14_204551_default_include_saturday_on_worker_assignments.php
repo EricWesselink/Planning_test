@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\PlanningHours;
+use Carbon\Carbon;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +15,19 @@ return new class extends Migration
             $table->boolean('include_saturday')->default(true)->change();
         });
 
-        DB::table('worker_assignments')->update(['include_saturday' => true]);
+        foreach (DB::table('worker_assignments')->orderBy('id')->get() as $row) {
+            DB::table('worker_assignments')->where('id', $row->id)->update([
+                'include_saturday' => true,
+                'planned_hours' => PlanningHours::totalHours(
+                    Carbon::parse($row->start_date),
+                    Carbon::parse($row->end_date),
+                    (string) $row->start_time,
+                    (string) $row->end_time,
+                    true,
+                    (bool) $row->include_sunday,
+                ),
+            ]);
+        }
     }
 
     public function down(): void

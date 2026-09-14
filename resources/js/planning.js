@@ -480,7 +480,7 @@ if (board) {
         });
         startInput.value = date;
         endInput.value = date;
-        setWeekendDays(false, false);
+        setWeekendDays(true, false);
         menInput.value = '1';
         menInput.readOnly = false;
         crewBox.classList.add('hidden');
@@ -693,6 +693,8 @@ if (board) {
             end_date: endDate,
             start_time: startTime,
             end_time: endTime,
+            include_saturday: current.bar.dataset.includeSaturday === '1',
+            include_sunday: current.bar.dataset.includeSunday === '1',
         });
         if (ok) {
             window.location.reload();

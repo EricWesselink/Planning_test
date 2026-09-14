@@ -35,12 +35,7 @@ class PlanningFitService
         $skipSkill = $item->skipsSkillMatch();
         $from = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
-        $workers = Worker::query()
-            ->where('active', true)
-            ->with(['crewPeople', 'availabilities'])
-            ->orderBy('name')
-            ->orderBy('id')
-            ->get();
+        $workers = $this->activeWorkers();
         $assignments = $this->assignmentsFor($workers, $start, $end, $ignoreAssignmentId);
 
         return [
@@ -61,6 +56,81 @@ class PlanningFitService
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * @return list<array{id: int, name: string, selectable: bool, status: string, status_label: string}>
+     */
+    public function shopCandidates(
+        ?CarbonInterface $start = null,
+        ?CarbonInterface $end = null,
+        ?int $ignoreProjectId = null,
+    ): array {
+        $workers = $this->activeWorkers();
+        $specialty = ['key' => 'winkel', 'label' => 'Winkelwerk'];
+
+        if ($start === null || $end === null) {
+            return $workers
+                ->map(fn (Worker $worker): array => [
+                    'id' => (int) $worker->id,
+                    'name' => $worker->planName(),
+                    'selectable' => true,
+                    'status' => 'available',
+                    'status_label' => '',
+                ])
+                ->values()
+                ->all();
+        }
+
+        $from = PlanningHours::DAY_START.':00';
+        $to = PlanningHours::DAY_END.':00';
+        $assignments = $this->assignmentsFor($workers, $start, $end, null, $ignoreProjectId);
+
+        return $workers
+            ->map(fn (Worker $worker): array => $this->presentWorker(
+                $worker,
+                $specialty,
+                $assignments->get($worker->id, collect()),
+                $start,
+                $end,
+                $from,
+                $to,
+                true,
+            ))
+            ->map(fn (array $row): array => [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['name'],
+                'selectable' => (bool) $row['selectable'],
+                'status' => (string) $row['status'],
+                'status_label' => (string) $row['status_label'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    public function shopRejection(
+        Worker $worker,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        ?int $ignoreProjectId = null,
+    ): ?string {
+        $row = collect($this->shopCandidates($start, $end, $ignoreProjectId))
+            ->firstWhere('id', (int) $worker->id);
+
+        if ($row === null) {
+            return 'Deze vakman is niet beschikbaar.';
+        }
+
+        if ($row['selectable']) {
+            return null;
+        }
+
+        $label = trim($row['status_label']);
+        if ($label !== '') {
+            return $worker->planName().' is niet vrij ('.$label.').';
+        }
+
+        return $worker->planName().' is in deze periode niet vrij.';
     }
 
     /**
@@ -109,11 +179,29 @@ class PlanningFitService
      * @param  Collection<int, Worker>  $workers
      * @return Collection<int, Collection<int, WorkerAssignment>>
      */
+    /**
+     * @return Collection<int, Worker>
+     */
+    private function activeWorkers(): Collection
+    {
+        return Worker::query()
+            ->where('active', true)
+            ->with(['crewPeople', 'availabilities'])
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * @param  Collection<int, Worker>  $workers
+     * @return Collection<int, Collection<int, WorkerAssignment>>
+     */
     private function assignmentsFor(
         Collection $workers,
         CarbonInterface $start,
         CarbonInterface $end,
         ?int $ignoreAssignmentId,
+        ?int $ignoreProjectId = null,
     ): Collection {
         if ($workers->isEmpty()) {
             return collect();
@@ -123,6 +211,7 @@ class PlanningFitService
             ->with('crewMembers')
             ->whereIn('worker_id', $workers->modelKeys())
             ->when($ignoreAssignmentId, fn ($query) => $query->where('id', '!=', $ignoreAssignmentId))
+            ->when($ignoreProjectId, fn ($query) => $query->where('project_id', '!=', $ignoreProjectId))
             ->whereDate('start_date', '<=', $end)
             ->whereDate('end_date', '>=', $start)
             ->orderBy('start_time')

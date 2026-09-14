@@ -11,16 +11,24 @@ use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\User;
 use App\Models\WorkActivity;
+use App\Models\Worker;
+use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
+use App\Support\PlanningHours;
+use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ShopWorkService
 {
     public const ATTACHMENT_TYPE = 'bijlage';
 
-    public function __construct(private ProjectIntakeService $intake) {}
+    public function __construct(
+        private ProjectIntakeService $intake,
+        private PlanningFitService $fit,
+    ) {}
 
     /**
      * @param  array{
@@ -136,6 +144,77 @@ class ShopWorkService
 
             return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents']) ?? $project;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function assignPreferredWorker(Project $project, ?int $workerId): void
+    {
+        $project->loadMissing(['workItems', 'assignments']);
+        $start = $project->planned_start_date;
+        $end = $project->planned_end_date;
+        $item = $project->workItems
+            ->sortBy([
+                ['sort_order', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->first();
+
+        if ($workerId === null || ! $item instanceof WorkItem || $start === null || $end === null) {
+            return;
+        }
+
+        $worker = Worker::query()->findOrFail($workerId);
+        $message = $this->fit->shopRejection($worker, $start, $end, (int) $project->id);
+        if ($message !== null) {
+            throw ValidationException::withMessages([
+                'worker_id' => $message,
+            ]);
+        }
+
+        $assignments = $project->assignments;
+        $workerIds = $assignments
+            ->pluck('worker_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($workerIds->count() > 1) {
+            throw ValidationException::withMessages([
+                'worker_id' => 'Er staan al meerdere vakmannen op dit werk. Wijzig dat in de planning.',
+            ]);
+        }
+
+        if ($assignments->isEmpty()) {
+            $assignment = new WorkerAssignment([
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $item->id,
+                'people_count' => 1,
+            ]);
+            $assignment->applySchedule($start, $end, PlanningHours::DAY_START, PlanningHours::DAY_END);
+            $assignment->save();
+
+            return;
+        }
+
+        foreach ($assignments as $assignment) {
+            $assignment->worker_id = $worker->id;
+            $assignment->work_item_id = $assignment->work_item_id ?: $item->id;
+            $assignment->applySchedule($start, $end, PlanningHours::DAY_START, PlanningHours::DAY_END);
+            $assignment->save();
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function preferredWorkerId(array $data): ?int
+    {
+        $workerId = (int) ($data['worker_id'] ?? 0);
+
+        return $workerId > 0 ? $workerId : null;
     }
 
     /**

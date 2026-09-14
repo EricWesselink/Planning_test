@@ -517,7 +517,7 @@
             </div>
             <div class="flex flex-wrap gap-x-4 gap-y-1 pt-0.5 text-sm">
                 <label class="flex items-center gap-2">
-                    <input type="checkbox" name="include_saturday" id="plan-include-saturday" value="1">
+                    <input type="checkbox" name="include_saturday" id="plan-include-saturday" value="1" checked>
                     Zaterdag
                 </label>
                 <label class="flex items-center gap-2">

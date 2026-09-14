@@ -159,8 +159,7 @@ class PlanningActionController extends Controller
 
         $start = Carbon::parse($data['start_date']);
         $end = Carbon::parse($data['end_date']);
-        $includeSaturday = $request->boolean('include_saturday');
-        $includeSunday = $request->boolean('include_sunday');
+        [$includeSaturday, $includeSunday] = $this->weekendInclusion($request);
         $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
         if ($emptyRange) {
             return $emptyRange;
@@ -268,12 +267,7 @@ class PlanningActionController extends Controller
 
         $start = Carbon::parse($data['start_date']);
         $end = Carbon::parse($data['end_date']);
-        $includeSaturday = $request->exists('include_saturday')
-            ? $request->boolean('include_saturday')
-            : $assignment->includesSaturday();
-        $includeSunday = $request->exists('include_sunday')
-            ? $request->boolean('include_sunday')
-            : $assignment->includesSunday();
+        [$includeSaturday, $includeSunday] = $this->weekendInclusion($request, $assignment);
         $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
         if ($emptyRange) {
             return $emptyRange;
@@ -494,8 +488,7 @@ class PlanningActionController extends Controller
             $data['start_time'] ?? $times['start_time'],
             $data['end_time'] ?? $times['end_time'],
             isset($data['assignment_id']) ? (int) $data['assignment_id'] : null,
-            $request->boolean('include_saturday'),
-            $request->boolean('include_sunday'),
+            ...$this->weekendInclusion($request),
         ));
     }
 
@@ -691,7 +684,7 @@ class PlanningActionController extends Controller
         string $endTime,
         int $peopleCount,
         array $crewIds,
-        bool $includeSaturday = false,
+        bool $includeSaturday = true,
         bool $includeSunday = false,
     ): WorkerAssignment {
         $startTime = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
@@ -871,6 +864,21 @@ class PlanningActionController extends Controller
             $assignment->includesSaturday(),
             $assignment->includesSunday(),
         );
+    }
+
+    /**
+     * @return array{0: bool, 1: bool}
+     */
+    private function weekendInclusion(Request $request, ?WorkerAssignment $assignment = null): array
+    {
+        $includeSaturday = $request->exists('include_saturday')
+            ? $request->boolean('include_saturday')
+            : ($assignment?->includesSaturday() ?? true);
+        $includeSunday = $request->exists('include_sunday')
+            ? $request->boolean('include_sunday')
+            : ($assignment?->includesSunday() ?? false);
+
+        return [$includeSaturday, $includeSunday];
     }
 
     private function emptyWorkdaysResponse(

@@ -399,10 +399,11 @@ class PlanningHoursAssignmentTest extends TestCase
             ->assertSee('data-start-offset="0"', false)
             ->assertSee('data-end-offset="1"', false)
             ->assertSee('Zaterdag', false)
-            ->assertSee('Zondag', false);
+            ->assertSee('Zondag', false)
+            ->assertSee('id="plan-include-saturday" value="1" checked', false);
     }
 
-    public function test_a_range_through_the_weekend_skips_saturday_and_sunday_by_default(): void
+    public function test_a_range_through_the_weekend_includes_saturday_and_skips_sunday_by_default(): void
     {
         $user = User::factory()->create();
         [$worker, $project, $linoleum] = $this->makeProject();
@@ -421,16 +422,46 @@ class PlanningHoursAssignmentTest extends TestCase
 
         $assignment = WorkerAssignment::query()->where('worker_id', $worker->id)->first();
         $this->assertNotNull($assignment);
-        $this->assertFalse($assignment->includesSaturday());
+        $this->assertTrue($assignment->includesSaturday());
         $this->assertFalse($assignment->includesSunday());
-        $this->assertSame(80.0, $assignment->plannedHoursValue());
-        $this->assertSame(0.0, $assignment->hoursOnDate(Carbon::parse('2026-09-19')));
+        $this->assertSame(88.0, $assignment->plannedHoursValue());
+        $this->assertSame(8.0, $assignment->hoursOnDate(Carbon::parse('2026-09-19')));
         $this->assertFalse($assignment->coversDate(Carbon::parse('2026-09-20')));
         $this->assertTrue($assignment->coversDate(Carbon::parse('2026-09-21')));
         $this->assertDatabaseHas('worker_assignments', [
             'worker_id' => $worker->id,
-            'include_saturday' => 0,
+            'include_saturday' => 1,
             'include_sunday' => 0,
+            'planned_hours' => 88,
+        ]);
+    }
+
+    public function test_unchecking_saturday_skips_saturday_hours(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $linoleum] = $this->makeProject();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $linoleum->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-25',
+                'people_count' => 1,
+                'hours' => 8,
+                'include_saturday' => false,
+            ])
+            ->assertOk();
+
+        $assignment = WorkerAssignment::query()->where('worker_id', $worker->id)->first();
+        $this->assertNotNull($assignment);
+        $this->assertFalse($assignment->includesSaturday());
+        $this->assertSame(80.0, $assignment->plannedHoursValue());
+        $this->assertSame(0.0, $assignment->hoursOnDate(Carbon::parse('2026-09-19')));
+        $this->assertDatabaseHas('worker_assignments', [
+            'worker_id' => $worker->id,
+            'include_saturday' => 0,
             'planned_hours' => 80,
         ]);
     }
@@ -482,6 +513,7 @@ class PlanningHoursAssignmentTest extends TestCase
                 'end_date' => '2026-09-25',
                 'people_count' => 1,
                 'hours' => 8,
+                'include_saturday' => false,
                 'include_sunday' => true,
             ])
             ->assertOk();
@@ -549,6 +581,8 @@ class PlanningHoursAssignmentTest extends TestCase
                 'end_date' => '2026-09-20',
                 'people_count' => 1,
                 'hours' => 8,
+                'include_saturday' => false,
+                'include_sunday' => false,
             ])
             ->assertUnprocessable()
             ->assertJsonPath(
