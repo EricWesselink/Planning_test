@@ -58,6 +58,21 @@ class Project extends Model
         $query->whereNotNull('archived_at');
     }
 
+    public function scopeMatchingSearch(Builder $query, string $term): void
+    {
+        $term = trim($term);
+        if ($term === '') {
+            return;
+        }
+
+        $like = '%'.addcslashes($term, '%_\\').'%';
+        $query->where(function (Builder $inner) use ($like): void {
+            $inner->where('project_number', 'like', $like)
+                ->orWhere('name', 'like', $like)
+                ->orWhere('notes', 'like', $like);
+        });
+    }
+
     public function isArchived(): bool
     {
         return $this->archived_at !== null;

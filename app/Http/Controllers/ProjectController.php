@@ -28,16 +28,22 @@ class ProjectController extends Controller
 {
     public function index(Request $request): View
     {
+        $search = mb_substr(trim($request->string('q')->toString()), 0, 80);
+
         $projects = Project::query()
             ->accessibleBy($request->user())
             ->active()
+            ->matchingSearch($search)
             ->with(['customer', 'workActivities.category', 'workItems.progressEntries', 'assignments.worker', 'assignments.crewMembers'])
             ->orderByRaw('planned_start_date is null')
             ->orderBy('planned_start_date')
             ->orderBy('id')
             ->get();
 
-        return view('projects.index', compact('projects'));
+        return view('projects.index', [
+            'projects' => $projects,
+            'search' => $search,
+        ]);
     }
 
     public function archived(Request $request): View

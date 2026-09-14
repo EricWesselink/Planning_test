@@ -8,7 +8,22 @@
             <h1 class="text-2xl font-semibold">Projecten</h1>
             <p class="text-sm text-nicon-muted">Actieve werken. Afgeronde of testdata zet je in het archief.</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            <form method="GET" action="{{ route('projects.index') }}" class="flex min-w-[16rem] flex-1 items-center gap-2 sm:max-w-md">
+                <label class="sr-only" for="project-search">Zoek op projectnummer of werk</label>
+                <input
+                    id="project-search"
+                    type="search"
+                    name="q"
+                    value="{{ $search }}"
+                    placeholder="Zoek op projectnr. of werk"
+                    class="min-w-0 flex-1 border border-nicon-line bg-white px-3 py-2 text-sm"
+                >
+                <button type="submit" class="border border-nicon-line bg-white px-4 py-2 text-sm">Zoeken</button>
+                @if ($search !== '')
+                    <a href="{{ route('projects.index') }}" class="whitespace-nowrap text-sm text-nicon-muted">Wis</a>
+                @endif
+            </form>
             @unless (auth()->user()?->isVakman())
                 <a href="{{ route('projects.archived') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm">Archief</a>
             @endunless
@@ -202,7 +217,13 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9" class="px-3 py-6 text-sm text-nicon-muted">Geen actieve projecten.</td>
+                    <td colspan="9" class="px-3 py-6 text-sm text-nicon-muted">
+                        @if ($search !== '')
+                            Geen projecten voor “{{ $search }}”.
+                        @else
+                            Geen actieve projecten.
+                        @endif
+                    </td>
                 </tr>
             @endforelse
             </tbody>
