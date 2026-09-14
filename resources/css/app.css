@@ -252,13 +252,13 @@ body {
 
 @media (min-width: 900px) {
     .planning-filters {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(7, minmax(0, 1fr));
     }
 }
 
 @media (min-width: 1280px) {
     .planning-filters {
-        grid-template-columns: minmax(8.5rem, 0.9fr) minmax(11rem, 1.3fr) minmax(8rem, 0.95fr) minmax(7rem, 0.85fr) minmax(9rem, 1fr) minmax(4.5rem, 0.55fr);
+        grid-template-columns: minmax(8.5rem, 0.9fr) minmax(11rem, 1.3fr) minmax(8rem, 0.95fr) minmax(7rem, 0.85fr) minmax(8.5rem, 0.95fr) minmax(9.75rem, 1.15fr) minmax(4.5rem, 0.55fr);
     }
 }
 
@@ -267,11 +267,18 @@ body {
     width: 100%;
 }
 
-.planning-filter--reset {
+.planning-filter--reset,
+.planning-filter--staffed {
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
+}
+
+.planning-filter--staffed.is-active {
+    background: var(--color-nicon-ink);
+    border-color: var(--color-nicon-ink);
+    color: white;
 }
 
 .planning-warnings {

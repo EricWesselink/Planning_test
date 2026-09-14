@@ -34,14 +34,14 @@ class PlanningBoardService
         if ($weekNr !== null && $weekNr >= 1 && $weekNr <= 53) {
             $isoYear = ($year !== null && $year >= 2000 && $year <= 2100)
                 ? $year
-                : ($week ? Carbon::parse($week)->isoWeekYear : 2026);
+                : ($week ? Carbon::parse($week)->isoWeekYear : now()->isoWeekYear);
             $maxWeek = (int) Carbon::now()->setISODate($isoYear, 1)->isoWeeksInYear();
             $weekNr = min($weekNr, max(1, $maxWeek));
 
             return Carbon::now()->setISODate($isoYear, $weekNr, Carbon::MONDAY)->startOfDay();
         }
 
-        $date = $week ? Carbon::parse($week) : Carbon::parse('2026-09-07');
+        $date = $week ? Carbon::parse($week) : now();
 
         return $date->startOfWeek(Carbon::MONDAY)->startOfDay();
     }
@@ -105,7 +105,7 @@ class PlanningBoardService
             ->when($request->filled('project_id'), fn ($q) => $q->where('id', $request->integer('project_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
-            ->when($staffingFilter === 'planned', fn ($q) => $q->whereHas('assignments'));
+            ->when($staffingFilter === 'planned', fn ($q) => $this->constrainAssignedInWindow($q, $windowStart, $windowEnd));
 
         $projects = $projectQuery
             ->orderBy('planned_start_date')
@@ -387,7 +387,7 @@ class PlanningBoardService
             'dayCount' => $days->count(),
             'dayMin' => $weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56)),
             'rows' => $rows,
-            'projects' => $this->filterProjects($request, $kindFilter, $staffingFilter, $scheduledWorkerId),
+            'projects' => $this->filterProjects($request, $kindFilter, $staffingFilter, $scheduledWorkerId, $windowStart, $windowEnd),
             'warnings' => array_values($warnings),
             'period' => $printPeriod,
             'periodFallback' => $request->input('period') === 'work' && $printPeriod !== 'work',
@@ -544,6 +544,8 @@ class PlanningBoardService
         ProjectKind|string|null $kindFilter,
         ?string $staffingFilter,
         ?int $scheduledWorkerId,
+        Carbon $windowStart,
+        Carbon $windowEnd,
     ): Collection {
         return Project::query()
             ->accessibleBy($request->user())
@@ -551,9 +553,18 @@ class PlanningBoardService
             ->with('workItems')
             ->when($kindFilter !== null, fn (Builder $query) => $this->constrainKind($query, $kindFilter))
             ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn (Builder $query) => $query->whereDoesntHave('assignments'))
-            ->when($staffingFilter === 'planned', fn (Builder $query) => $query->whereHas('assignments'))
+            ->when($staffingFilter === 'planned', fn (Builder $query) => $this->constrainAssignedInWindow($query, $windowStart, $windowEnd))
             ->orderBy('project_number')
             ->get();
+    }
+
+    private function constrainAssignedInWindow(Builder $query, Carbon $windowStart, Carbon $windowEnd): Builder
+    {
+        return $query->whereHas('assignments', function (Builder $assignments) use ($windowStart, $windowEnd): void {
+            $assignments
+                ->where('end_date', '>=', $windowStart->toDateString())
+                ->where('start_date', '<=', $windowEnd->toDateString());
+        });
     }
 
     private function staffingFilter(Request $request): ?string

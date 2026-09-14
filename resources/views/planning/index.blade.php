@@ -131,6 +131,23 @@
                         <option value="open" @selected(($filters['staffing'] ?? '') === 'open')>Nog niet ingepland</option>
                         <option value="planned" @selected(($filters['staffing'] ?? '') === 'planned')>Ingepland</option>
                     </select>
+                    @php
+                        $weekStaffedQuery = [
+                            'week' => $weekStart->toDateString(),
+                            'weeks' => $weeks,
+                            'staffing' => 'planned',
+                        ];
+                        $weekStaffedActive = ($filters['staffing'] ?? '') === 'planned'
+                            && empty($filters['worker_id'])
+                            && empty($filters['project_id'])
+                            && empty($filters['status'])
+                            && empty($filters['kind']);
+                    @endphp
+                    <a
+                        href="{{ route('planning', $weekStaffedQuery) }}"
+                        class="planning-filter planning-filter--staffed{{ $weekStaffedActive ? ' is-active' : '' }}"
+                        title="Alle werken waarop deze week een vakman staat"
+                    >Deze week met vakman</a>
                 @endif
                 <a href="{{ route('planning', ['week' => $weekStart->toDateString(), 'weeks' => $weeks]) }}" class="planning-filter planning-filter--reset">Reset</a>
             </form>

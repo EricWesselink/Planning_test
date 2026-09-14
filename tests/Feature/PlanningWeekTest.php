@@ -119,6 +119,21 @@ class PlanningWeekTest extends TestCase
         );
     }
 
+    public function test_planning_without_week_opens_the_current_iso_week(): void
+    {
+        $this->travelTo('2026-09-16 10:00:00');
+
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('value="2026-09-14"', $html);
+        $this->assertStringContainsString('Week 38', $html);
+    }
+
     public function test_planning_page_shows_week_numbers_and_week_search(): void
     {
         $user = User::factory()->create();

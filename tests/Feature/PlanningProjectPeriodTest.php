@@ -183,6 +183,109 @@ class PlanningProjectPeriodTest extends TestCase
             ->assertDontSee('plan-missing-craftsman', false);
     }
 
+    public function test_staffing_planned_only_shows_works_with_a_craftsman_in_the_visible_week(): void
+    {
+        $user = User::factory()->create();
+        $thisWeek = $this->makePeriodProject('250200017', 'TWC deze week Utrecht');
+        $otherWeek = $this->makePeriodProject('250200018', 'TWC andere week Utrecht');
+        $worker = Worker::query()->create([
+            'name' => 'Kees',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $thisWeek->id,
+            'work_item_id' => $thisWeek->workItems->first()->id,
+            'start_date' => '2026-09-15',
+            'end_date' => '2026-09-15',
+            'hours_per_day' => 8,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $otherWeek->id,
+            'work_item_id' => $otherWeek->workItems->first()->id,
+            'start_date' => '2026-09-22',
+            'end_date' => '2026-09-22',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', [
+                'week_nr' => 38,
+                'year' => 2026,
+                'staffing' => 'planned',
+            ]))
+            ->assertOk()
+            ->assertSee('TWC deze week Utrecht')
+            ->assertDontSee('TWC andere week Utrecht');
+    }
+
+    public function test_week_staffed_button_shows_every_work_with_a_craftsman_this_week(): void
+    {
+        $user = User::factory()->create();
+        $nickWork = $this->makePeriodProject('250200019', 'Griftland college');
+        $peterWork = $this->makePeriodProject('250200020', 'Laakse Tuinen');
+        $openWork = $this->makePeriodProject('250200021', 'Open werk Utrecht');
+        $nick = Worker::query()->create([
+            'name' => 'Het Vloerenhuis',
+            'employment_type' => 'zzp',
+            'active' => true,
+        ]);
+        $peter = Worker::query()->create([
+            'name' => 'Peter',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $nick->id,
+            'project_id' => $nickWork->id,
+            'work_item_id' => $nickWork->workItems->first()->id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-16',
+            'hours_per_day' => 8,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $peter->id,
+            'project_id' => $peterWork->id,
+            'work_item_id' => $peterWork->workItems->first()->id,
+            'start_date' => '2026-09-17',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', [
+                'week_nr' => 38,
+                'year' => 2026,
+                'worker_id' => $nick->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Deze week met vakman')
+            ->assertSee(route('planning', [
+                'week' => '2026-09-14',
+                'weeks' => 1,
+                'staffing' => 'planned',
+            ]))
+            ->assertSee('data-worker-id="'.$nick->id.'"', false)
+            ->assertDontSee('data-worker-id="'.$peter->id.'"', false);
+
+        $this->actingAs($user)
+            ->get(route('planning', [
+                'week' => '2026-09-14',
+                'weeks' => 1,
+                'staffing' => 'planned',
+            ]))
+            ->assertOk()
+            ->assertSee('Deze week met vakman')
+            ->assertSee('planning-filter--staffed is-active', false)
+            ->assertSee('Griftland college')
+            ->assertSee('Laakse Tuinen')
+            ->assertSee('data-worker-id="'.$nick->id.'"', false)
+            ->assertSee('data-worker-id="'.$peter->id.'"', false)
+            ->assertDontSee('Open werk Utrecht');
+    }
+
     public function test_scheduling_a_craftsman_removes_the_warning_and_keeps_start_and_klaar_markers(): void
     {
         $user = User::factory()->create();
