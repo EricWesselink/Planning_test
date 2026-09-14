@@ -126,21 +126,30 @@ class VoucherController extends Controller
     {
         $voucher->load(['worker', 'project.customer', 'lines.area', 'parent']);
         Gate::authorize('view', $voucher);
+        $viewer = $request->user();
+        $viewer?->loadMissing('worker');
+        $showPrices = ! ($viewer?->isVakman() && ! ($viewer->worker?->employment_type?->isExternal() ?? false));
 
         return view('vouchers.show', [
             'voucher' => $voucher,
-            'canEdit' => $request->user()?->can('update', $voucher) ?? false,
-            'canSend' => $request->user()?->can('send', $voucher) ?? false,
-            'canDelete' => $request->user()?->can('delete', $voucher) ?? false,
+            'showPrices' => $showPrices,
+            'isVakman' => $viewer?->isVakman() ?? false,
+            'canEdit' => $viewer?->can('update', $voucher) ?? false,
+            'canSend' => $viewer?->can('send', $voucher) ?? false,
+            'canDelete' => $viewer?->can('delete', $voucher) ?? false,
         ]);
     }
 
-    public function pdf(Voucher $voucher, VoucherPdfService $pdfs): Response
+    public function pdf(Request $request, Voucher $voucher, VoucherPdfService $pdfs): Response
     {
         $voucher->load(['worker', 'project.customer', 'lines.area', 'parent']);
         Gate::authorize('view', $voucher);
+        $viewer = $request->user();
+        $viewer?->loadMissing('worker');
+        $showPrices = ! ($viewer?->isVakman() && ! ($viewer->worker?->employment_type?->isExternal() ?? false));
 
         $data = $pdfs->build($voucher);
+        $data['showPrices'] = $showPrices;
         $pdf = Pdf::loadView('vouchers.pdf', $data)
             ->setPaper('a4', 'portrait')
             ->setOption('defaultFont', 'DejaVu Sans');

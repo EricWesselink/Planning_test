@@ -194,6 +194,7 @@
         <p class="parent">Bij opdrachtbon {{ $voucher->parent->number }}</p>
     @endif
 
+    @php $showPrices = $showPrices ?? true; @endphp
     @foreach ($groups as $group)
         @php
             $groupPeriod = \App\Support\VoucherActivityGroups::periodLabel($group);
@@ -208,8 +209,10 @@
                         @endif
                     </td>
                     <td class="num">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
-                    <td class="num">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
-                    <td class="num">{{ \App\Support\Format::money($group['amount']) }}</td>
+                    @if ($showPrices)
+                        <td class="num">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
+                        <td class="num">{{ \App\Support\Format::money($group['amount']) }}</td>
+                    @endif
                 </tr>
             </table>
             @if ($group['has_rooms'])
@@ -233,12 +236,14 @@
         </div>
     @endforeach
 
-    <table class="total">
-        <tr>
-            <td>{{ $voucher->type === \App\Enums\VoucherType::Opdracht ? 'Totaal opdracht' : 'Totaal te factureren' }}</td>
-            <td class="num">{{ \App\Support\Format::money($total) }}</td>
-        </tr>
-    </table>
+    @if ($showPrices)
+        <table class="total">
+            <tr>
+                <td>{{ $voucher->type === \App\Enums\VoucherType::Opdracht ? 'Totaal opdracht' : 'Totaal te factureren' }}</td>
+                <td class="num">{{ \App\Support\Format::money($total) }}</td>
+            </tr>
+        </table>
+    @endif
 
     @if ($voucher->notes)
         <div class="notes">

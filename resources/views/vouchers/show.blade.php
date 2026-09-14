@@ -41,7 +41,11 @@
 </head>
 <body>
     <p class="no-print">
-        <a href="{{ route('production.index', array_filter(['worker_id' => $voucher->worker_id, 'project_id' => $voucher->project_id])) }}">Terug naar productie</a>
+        @if ($isVakman ?? false)
+            <a href="{{ route('vakman.planning') }}">Terug naar mijn planning</a>
+        @else
+            <a href="{{ route('production.index', array_filter(['worker_id' => $voucher->worker_id, 'project_id' => $voucher->project_id])) }}">Terug naar productie</a>
+        @endif
         <a href="{{ route('vouchers.pdf', $voucher) }}" style="margin-left:12px;background:#e4572e;color:#fff;padding:8px 14px;text-decoration:none;">Download PDF</a>
         <button onclick="window.print()" style="margin-left:12px">Afdrukken</button>
         @if ($canEdit ?? false)
@@ -111,13 +115,16 @@
         </div>
     </div>
 
+    @php $showPrices = $showPrices ?? true; @endphp
     <table>
         <thead>
             <tr>
                 <th>Omschrijving</th>
                 <th class="num">Hoeveelheid</th>
-                <th class="num">Prijs</th>
-                <th class="num">Bedrag</th>
+                @if ($showPrices)
+                    <th class="num">Prijs</th>
+                    <th class="num">Bedrag</th>
+                @endif
             </tr>
         </thead>
         <tbody>
@@ -133,8 +140,10 @@
                         @endif
                     </td>
                     <td class="num">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
-                    <td class="num">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
-                    <td class="num">{{ \App\Support\Format::money($group['amount']) }}</td>
+                    @if ($showPrices)
+                        <td class="num">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
+                        <td class="num">{{ \App\Support\Format::money($group['amount']) }}</td>
+                    @endif
                 </tr>
                 @if ($group['has_rooms'])
                     @foreach ($group['entries'] as $entry)
@@ -149,15 +158,19 @@
                                 @endif
                             </td>
                             <td class="num">{{ \App\Support\VoucherActivityGroups::roomQuantityLabel($group, $entry) }}</td>
-                            <td class="num"></td>
-                            <td class="num"></td>
+                            @if ($showPrices)
+                                <td class="num"></td>
+                                <td class="num"></td>
+                            @endif
                         </tr>
                     @endforeach
                 @endif
             @endforeach
             <tr class="total">
-                <td colspan="3">{{ $voucher->type === \App\Enums\VoucherType::Opdracht ? 'Totaal' : 'Totaal te factureren' }}</td>
-                <td class="num">{{ \App\Support\Format::money($voucher->total_amount) }}</td>
+                @if ($showPrices)
+                    <td colspan="3">{{ $voucher->type === \App\Enums\VoucherType::Opdracht ? 'Totaal' : 'Totaal te factureren' }}</td>
+                    <td class="num">{{ \App\Support\Format::money($voucher->total_amount) }}</td>
+                @endif
             </tr>
         </tbody>
     </table>

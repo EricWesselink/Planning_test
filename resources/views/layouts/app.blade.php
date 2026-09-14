@@ -29,7 +29,7 @@
                         ]
                         : [
                             ['href' => route('dashboard'), 'label' => 'Dashboard', 'active' => request()->routeIs('dashboard')],
-                            ['href' => route('planning'), 'label' => 'Planning', 'active' => request()->routeIs('planning')],
+                            ['href' => route('planning'), 'label' => 'Planning', 'active' => request()->routeIs('planning') || (request()->routeIs('work-tickets.*') && ! $user?->isVakman())],
                             ['href' => route('production.index'), 'label' => 'Productie', 'active' => request()->routeIs('production.*')],
                             ['href' => route('projects.index'), 'label' => 'Projecten', 'active' => request()->routeIs('projects.*') && ! request()->routeIs('projects.archived')],
                         ];
