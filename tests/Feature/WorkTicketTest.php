@@ -52,6 +52,19 @@ class WorkTicketTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_planning_page_exposes_the_opdrachtbon_link_for_a_zzp_assignment(): void
+    {
+        $user = User::factory()->create();
+        $this->seedJob(zzp: true);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-14']))
+            ->assertOk()
+            ->assertSee('id="plan-ticket-link"', false)
+            ->assertSee('data-ticket-url="'.url('/planning/assignments').'"', false)
+            ->assertSee('data-ticket-label="Opdrachtbon maken"', false);
+    }
+
     public function test_planner_opens_drawing_board_in_ticket_mode_from_a_planned_assignment(): void
     {
         $user = User::factory()->create();

@@ -1470,7 +1470,9 @@ function boot() {
             pageCount = loaded.numPages;
             updatePageOptions();
             await renderPdfPage();
-            extractAndDetect();
+            if (!ticketMode) {
+                extractAndDetect();
+            }
             return;
         }
         if (drawing.image) {

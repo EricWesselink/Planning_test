@@ -840,20 +840,14 @@ if (board) {
         }
     });
 
-    ticketLink?.addEventListener('click', async (event) => {
-        const assignmentId = form.dataset.assignmentId;
-        const href = ticketLink.getAttribute('href');
-        if (!assignmentId || !href || href === '#') {
+    ticketLink?.addEventListener('click', (event) => {
+        const hrefAttr = ticketLink.getAttribute('href');
+        if (!form.dataset.assignmentId || !hrefAttr || hrefAttr === '#') {
+            event.preventDefault();
             return;
         }
         event.preventDefault();
-        const body = assignmentBody();
-        if (!body) {
-            return;
-        }
-        if (await save(assignmentUrl(assignmentId), 'PATCH', body)) {
-            window.location.assign(href);
-        }
+        window.location.assign(ticketLink.href);
     });
 
     document.getElementById('plan-cancel').addEventListener('click', () => dialog.close());
