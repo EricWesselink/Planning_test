@@ -52,6 +52,41 @@ class ProjectPlanningWeeksTest extends TestCase
         $this->assertNull($project->fresh()->planned_start_date);
     }
 
+    public function test_project_list_shows_the_earliest_start_date_first(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject([
+            'project_number' => '11P100003',
+            'name' => 'Laatste start',
+            'planned_start_date' => '2026-10-05',
+        ]);
+        $this->makeProject([
+            'project_number' => '11P080001',
+            'name' => 'Eerste start',
+            'planned_start_date' => '2026-08-07',
+        ]);
+        $this->makeProject([
+            'project_number' => '11P090002',
+            'name' => 'Tweede start',
+            'planned_start_date' => '2026-09-28',
+        ]);
+        $this->makeProject([
+            'project_number' => '11P000000',
+            'name' => 'Nog geen start',
+            'planned_start_date' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertOk()
+            ->assertSeeInOrder([
+                '11P080001',
+                '11P090002',
+                '11P100003',
+                '11P000000',
+            ]);
+    }
+
     public function test_project_list_shows_start_and_klaar_fields(): void
     {
         $user = User::factory()->create();

@@ -32,7 +32,9 @@ class ProjectController extends Controller
             ->accessibleBy($request->user())
             ->active()
             ->with(['customer', 'workActivities.category', 'workItems.progressEntries', 'assignments.worker', 'assignments.crewMembers'])
-            ->orderByDesc('planned_start_date')
+            ->orderByRaw('planned_start_date is null')
+            ->orderBy('planned_start_date')
+            ->orderBy('id')
             ->get();
 
         return view('projects.index', compact('projects'));
