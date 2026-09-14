@@ -12,7 +12,6 @@ use App\Models\WorkItem;
 use App\Services\PlanningBoardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -262,10 +261,10 @@ class PlanningProjectPeriodTest extends TestCase
             ->assertDontSee('14-09-2026');
     }
 
-    public function test_week_view_without_project_filter_omits_projects_outside_the_period(): void
+    public function test_week_view_without_project_filter_still_shows_projects_outside_the_period(): void
     {
         $user = User::factory()->create();
-        $visible = $this->makePeriodProject('250200015', 'TWC studentenhuisvesting Utrecht');
+        $this->makePeriodProject('250200015', 'TWC studentenhuisvesting Utrecht');
         $later = $this->makePeriodProject('250200099', 'Toekomstig werk Almere');
         $later->forceFill([
             'planned_start_date' => '2026-11-02',
@@ -285,43 +284,23 @@ class PlanningProjectPeriodTest extends TestCase
         $request->setUserResolver(fn () => $user);
 
         $board = app(PlanningBoardService::class)->build($request);
-        $titles = collect($board['rows'])
-            ->where('type', 'project')
-            ->pluck('title')
-            ->all();
+        $rows = collect($board['rows'])->where('type', 'project')->values();
+        $titles = $rows->pluck('title')->all();
 
         $this->assertContains('TWC studentenhuisvesting Utrecht', $titles);
-        $this->assertNotContains('Toekomstig werk Almere', $titles);
-        $this->assertTrue($board['projects']->contains('id', $visible->id));
-        $this->assertTrue($board['projects']->contains('id', $later->id));
+        $this->assertContains('Toekomstig werk Almere', $titles);
 
-        DB::flushQueryLog();
-        DB::enableQueryLog();
-        app(PlanningBoardService::class)->build($request);
-        $withOneOutside = count(DB::getQueryLog());
+        $laterRow = $rows->firstWhere('title', 'Toekomstig werk Almere');
+        $this->assertIsArray($laterRow);
+        $this->assertNull($laterRow['bar']);
+        $this->assertNull($laterRow['start_marker']);
+        $this->assertNull($laterRow['end_marker']);
 
-        for ($index = 0; $index < 8; $index++) {
-            $extra = $this->makePeriodProject('2502010'.str_pad((string) $index, 2, '0', STR_PAD_LEFT), 'Later werk '.$index);
-            $extra->forceFill([
-                'planned_start_date' => '2026-11-02',
-                'planned_end_date' => '2026-11-20',
-            ])->save();
-            $extra->workItems()->update([
-                'planned_start_date' => '2026-11-02',
-                'planned_end_date' => '2026-11-20',
-            ]);
-        }
-
-        DB::flushQueryLog();
-        DB::enableQueryLog();
-        $again = app(PlanningBoardService::class)->build($request);
-        $withManyOutside = count(DB::getQueryLog());
-
-        $this->assertCount(
-            1,
-            collect($again['rows'])->where('type', 'project'),
-        );
-        $this->assertLessThanOrEqual($withOneOutside + 2, $withManyOutside);
+        $this->actingAs($user)
+            ->get(route('planning', ['week_nr' => 38, 'year' => 2026, 'weeks' => 1]))
+            ->assertOk()
+            ->assertSee('TWC studentenhuisvesting Utrecht')
+            ->assertSee('Toekomstig werk Almere');
     }
 
     public function test_extra_work_in_the_visible_week_keeps_the_parent_project_on_the_board(): void

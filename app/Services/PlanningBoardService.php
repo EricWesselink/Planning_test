@@ -106,7 +106,6 @@ class PlanningBoardService
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
             ->when($staffingFilter === 'planned', fn ($q) => $q->whereHas('assignments'));
-        $this->constrainToVisiblePeriod($projectQuery, $windowStart, $windowEnd, $request);
 
         $projects = $projectQuery
             ->orderBy('planned_start_date')
@@ -533,52 +532,6 @@ class PlanningBoardService
                     ->orWhereHas('workItems', fn (Builder $items) => $items->where('is_extra_work', true));
             });
         }
-    }
-
-    /**
-     * Keep the board to the visible week/period without dropping undated work
-     * that can still be planned, or extra/klein/service rows that overlap.
-     */
-    private function constrainToVisiblePeriod(Builder $query, CarbonInterface $from, CarbonInterface $to, Request $request): void
-    {
-        if ($request->filled('project_id')) {
-            return;
-        }
-
-        $fromDate = $from->toDateString();
-        $toDate = $to->toDateString();
-
-        $query->where(function (Builder $visible) use ($fromDate, $toDate): void {
-            $visible
-                ->where(function (Builder $undated): void {
-                    $undated->whereNull('planned_start_date')->whereNull('planned_end_date');
-                })
-                ->orWhere(function (Builder $projectDates) use ($fromDate, $toDate): void {
-                    $projectDates
-                        ->where(function (Builder $start) use ($toDate): void {
-                            $start->whereNull('planned_start_date')
-                                ->orWhere('planned_start_date', '<=', $toDate);
-                        })
-                        ->where(function (Builder $end) use ($fromDate): void {
-                            $end->whereNull('planned_end_date')
-                                ->orWhere('planned_end_date', '>=', $fromDate);
-                        });
-                })
-                ->orWhereHas('workItems', function (Builder $items) use ($fromDate, $toDate): void {
-                    $items
-                        ->whereNotNull('planned_start_date')
-                        ->where('planned_start_date', '<=', $toDate)
-                        ->where(function (Builder $end) use ($fromDate): void {
-                            $end->whereNull('planned_end_date')
-                                ->orWhere('planned_end_date', '>=', $fromDate);
-                        });
-                })
-                ->orWhereHas('assignments', function (Builder $assignments) use ($fromDate, $toDate): void {
-                    $assignments
-                        ->where('start_date', '<=', $toDate)
-                        ->where('end_date', '>=', $fromDate);
-                });
-        });
     }
 
     /**
