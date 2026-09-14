@@ -86,12 +86,15 @@ class WorkerPdfImportController extends Controller
                 $peopleCount = max(1, (int) ($team['people_count'] ?? count($members) ?: 1));
                 $type = EmploymentType::tryFrom((string) ($team['employment_type'] ?? '')) ?? EmploymentType::Eigen;
 
+                $members = Worker::normalizeCrewMembers($members, $peopleCount);
+
                 Worker::query()->create([
                     'name' => $name,
                     'employment_type' => $type,
                     'people_count' => $peopleCount,
                     'crew_names' => Worker::joinedCrewNames($members),
-                    'crew_members' => Worker::normalizeCrewMembers($members, $peopleCount),
+                    'crew_members' => $members,
+                    'phone' => Worker::firstCrewPhone($members),
                     'specialty' => FlooringSpecialty::storedLabels($team['specialties'] ?? []),
                     'active' => true,
                 ]);

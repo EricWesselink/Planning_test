@@ -5,13 +5,14 @@ namespace App\Http\Controllers;
 use App\Enums\ProjectStatus;
 use App\Models\Project;
 use App\Models\WorkerAssignment;
+use App\Services\DashboardOverviewService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request, DashboardOverviewService $overview): View
     {
         $today = Carbon::parse('2026-09-10');
         $user = $request->user();
@@ -51,7 +52,7 @@ class DashboardController extends Controller
         $upcoming = Project::query()
             ->accessibleBy($user)
             ->active()
-            ->with(['assignments', 'workOrders.worker', 'workActivities.category', 'customer'])
+            ->with(['assignments', 'workOrders.worker', 'workItems', 'workActivities.category', 'customer'])
             ->whereIn('status', [ProjectStatus::Gepland, ProjectStatus::NietGestart])
             ->orderBy('planned_start_date')
             ->get();
@@ -61,6 +62,7 @@ class DashboardController extends Controller
             'todayBlocks' => $todayBlocks,
             'running' => $running,
             'upcoming' => $upcoming,
+            'overview' => $overview->summarize($today, $todayBlocks, $running, $upcoming),
         ]);
     }
 }

@@ -155,6 +155,8 @@ TXT),
             ->assertSee('value="Nick"', false)
             ->assertSee('value="Mahmoud"', false)
             ->assertSee('value="Mohammed"', false)
+            ->assertSee('value="06 11111111"', false)
+            ->assertSee('value="0612222222"', false)
             ->assertSee('Team 2')
             ->assertSee('Peter, Alexandr, Jose')
             ->assertSee('Alle 5 teams toevoegen')
@@ -182,6 +184,9 @@ TXT),
         $this->assertNotNull($team1);
         $this->assertSame(3, $team1->people_count);
         $this->assertSame('Nick, Mahmoud, Mohammed', $team1->crew_names);
+        $this->assertSame('06 11111111', $team1->phone);
+        $this->assertSame('06 11111111', $team1->crewMembers()[0]['phone']);
+        $this->assertSame('0612222222', $team1->crewMembers()[1]['phone']);
 
         $team3 = Worker::query()->where('name', 'Team 3')->first();
         $this->assertNotNull($team3);
@@ -200,9 +205,9 @@ TXT),
     private function rosterText(): string
     {
         return <<<'TXT'
-Team Voornaam Medewerker Rol
-Team 1 Nick N.D.N. Seine Voorman
-Mahmoud M. Khairallah Sulaiman
+Team Voornaam Medewerker Rol Telefoon
+Team 1 Nick N.D.N. Seine Voorman 06 11111111
+Mahmoud M. Khairallah Sulaiman 0612222222
 Mohammed M. Albadan
 Team 2 Peter P. Korteschiel Voorman
 Alexandr A. Korchahin

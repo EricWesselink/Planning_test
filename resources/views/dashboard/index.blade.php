@@ -15,7 +15,23 @@
         </div>
     </div>
 
-    <div class="mt-8 grid gap-6 lg:grid-cols-3">
+    <section class="mt-6 border border-nicon-line bg-white px-4 py-3">
+        <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Werkoverzicht</div>
+        <div class="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+            <strong>{{ $overview['work_count'] === 1 ? '1 werk' : $overview['work_count'].' werken' }}</strong>
+            <span class="text-nicon-muted" aria-hidden="true">|</span>
+            <strong>Egaliseren {{ \App\Support\Format::qty(round($overview['egaliseren_m2'])) }} m²</strong>
+            <span class="text-nicon-muted" aria-hidden="true">|</span>
+            <strong>Materiaal leggen {{ \App\Support\Format::qty(round($overview['laying_m2'])) }} m²</strong>
+            <span class="text-nicon-muted" aria-hidden="true">|</span>
+            <strong>Deze week {{ \App\Support\Format::qty(round($overview['planned_week_m2'])) }} m² gepland</strong>
+        </div>
+        <p class="mt-1 text-[11px] text-nicon-muted">
+            Nog niet bemand: {{ $overview['unmanned_count'] }} · Lopend: {{ $overview['running_count'] }} · Vandaag: {{ $overview['today_count'] }}
+        </p>
+    </section>
+
+    <div class="mt-4 grid gap-6 lg:grid-cols-3">
         <section class="border border-nicon-line bg-white">
             <h2 class="bg-nicon-ink px-4 py-3 text-white font-semibold">Vandaag</h2>
             <div class="divide-y">

@@ -34,6 +34,7 @@ TXT);
         $this->assertSame('Kees, Piet, Jan', $team['crew_names']);
         $this->assertSame('wespro@example.nl', $team['email']);
         $this->assertSame('06 12345678', $team['phone']);
+        $this->assertSame('06 12345678', $team['crew_members'][0]['phone']);
         $this->assertSame('Wespro Vloeren', $team['company']);
         $this->assertSame('Kerkstraat 2', $team['address']);
         $this->assertSame('8011 AA', $team['postal_code']);
@@ -94,9 +95,9 @@ TXT);
     public function test_reads_nicon_team_roster_table(): void
     {
         $parsed = $this->parser()->parseText(<<<'TXT'
-Team Voornaam Medewerker Rol
-Team 1 Nick N.D.N. Seine Voorman
-Mahmoud M. Khairallah Sulaiman
+Team Voornaam Medewerker Rol Telefoon
+Team 1 Nick N.D.N. Seine Voorman 06 11111111
+Mahmoud M. Khairallah Sulaiman 0612222222
 Mohammed M. Albadan
 Team 2 Peter P. Korteschiel Voorman
 Alexandr A. Korchahin
@@ -113,13 +114,30 @@ TXT);
         $this->assertSame(3, $parsed['team']['people_count']);
         $this->assertSame('Nick, Mahmoud, Mohammed', $parsed['team']['crew_names']);
         $this->assertSame(['Nick', 'Mahmoud', 'Mohammed'], array_column($parsed['team']['crew_members'], 'name'));
-        $this->assertSame([], $parsed['team']['specialties']);
+        $this->assertSame(['06 11111111', '0612222222', ''], array_column($parsed['team']['crew_members'], 'phone'));
+        $this->assertSame('06 11111111', $parsed['team']['phone']);
 
         $this->assertSame('Team 2', $parsed['teams'][1]['name']);
         $this->assertSame(['Peter', 'Alexandr', 'Jose'], array_column($parsed['teams'][1]['crew_members'], 'name'));
         $this->assertSame(['Arek', 'Sietse', 'Mo'], array_column($parsed['teams'][2]['crew_members'], 'name'));
         $this->assertSame(['Lukasz'], array_column($parsed['teams'][3]['crew_members'], 'name'));
         $this->assertSame(['Lukas'], array_column($parsed['teams'][4]['crew_members'], 'name'));
+    }
+
+    public function test_roster_attaches_06_numbers_on_their_own_line(): void
+    {
+        $parsed = $this->parser()->parseText(<<<'TXT'
+Team Voornaam Medewerker Rol
+Team 1 Nick N.D.N. Seine Voorman
+06 12345678
+Mahmoud M. Khairallah Sulaiman
+0610767167
+TXT);
+
+        $this->assertSame([
+            ['name' => 'Nick', 'phone' => '06 12345678'],
+            ['name' => 'Mahmoud', 'phone' => '0610767167'],
+        ], $parsed['team']['crew_members']);
     }
 
     public function test_roster_header_is_not_a_team(): void

@@ -150,6 +150,10 @@ class TeamPdfParser
         $crewNames = $this->crewNames($text);
         $crewMembers = $this->crewMembersFromNames($crewNames);
         $peopleCount = $this->peopleCount($text, $crewNames);
+        $phone = $this->phone($text);
+        if ($phone !== null && $crewMembers !== [] && $crewMembers[0]['phone'] === '') {
+            $crewMembers[0]['phone'] = $phone;
+        }
 
         return [
             'name' => $name,
@@ -159,7 +163,7 @@ class TeamPdfParser
             'crew_names' => $crewNames,
             'crew_members' => $crewMembers,
             'email' => $this->email($text),
-            'phone' => $this->phone($text),
+            'phone' => $phone,
             'company' => $this->labeled($text, ['bedrijf', 'bedrijfsnaam', 'zzp-bedrijf']),
             'address' => $this->labeled($text, ['adres', 'straat']),
             'postal_code' => $this->postalCode($text),
@@ -326,21 +330,8 @@ class TeamPdfParser
     private function phone(string $text): ?string
     {
         $labeled = $this->labeled($text, ['telefoon', 'tel', 'gsm', 'mobiel', 'telefoonnummer']);
-        $candidate = $labeled ?? '';
-        if ($candidate === '') {
-            return null;
-        }
 
-        if (preg_match('/(?:\+31|0)\s*6[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}/', $candidate, $match) === 1) {
-            return $this->limit(preg_replace('/\s+/', ' ', trim($match[0])) ?? trim($match[0]), 64);
-        }
-
-        $digits = preg_replace('/\D+/', '', $candidate) ?? '';
-        if (strlen($digits) >= 10 && strlen($digits) <= 13) {
-            return $this->limit(trim($candidate), 64);
-        }
-
-        return null;
+        return $this->extractMobile($labeled ?? '');
     }
 
     private function postalCode(string $text): ?string
@@ -386,6 +377,10 @@ class TeamPdfParser
         }
 
         if (preg_match('/^\d{1,2}\s*personen\b/iu', $line) === 1) {
+            return true;
+        }
+
+        if ($this->extractMobile($line) !== null && $this->splitMobile($line)['line'] === '') {
             return true;
         }
 
@@ -479,9 +474,9 @@ class TeamPdfParser
                 return;
             }
 
-            $names = $this->memberNamesFromRosterLines($currentLines);
-            if ($names !== []) {
-                $teams[] = $this->teamFromMembers($currentName, $names);
+            $members = $this->memberRecordsFromRosterLines($currentLines);
+            if ($members !== []) {
+                $teams[] = $this->teamFromMembers($currentName, $members);
             }
 
             $currentName = null;
@@ -530,12 +525,18 @@ class TeamPdfParser
 
         return str_contains($flat, 'voornaam')
             && str_contains($flat, 'medewerker')
-            && (str_contains($flat, 'team') || str_contains($flat, 'rol'));
+            && (
+                str_contains($flat, 'team')
+                || str_contains($flat, 'rol')
+                || str_contains($flat, 'telefoon')
+                || str_contains($flat, 'gsm')
+            );
     }
 
     private function normalizeRoster(string $text): string
     {
         $text = preg_replace('/\s+(?=(?:team|ploeg)\s+\d+\b)/iu', "\n", $text) ?? $text;
+        $text = preg_replace('/\s+(?=(?:\+31|0)\s*6)/', "\n", $text) ?? $text;
         $text = preg_replace(
             '/\b((?:vakman|voorman)(?:\s*\/\s*(?:vakman|voorman))?)\s+(?=\p{L})/iu',
             "$1\n",
@@ -547,19 +548,32 @@ class TeamPdfParser
 
     /**
      * @param  list<string>  $lines
-     * @return list<string>
+     * @return list<array{name: string, phone: string}>
      */
-    private function memberNamesFromRosterLines(array $lines): array
+    private function memberRecordsFromRosterLines(array $lines): array
     {
-        $names = [];
+        $members = [];
         $pendingVoornaam = null;
+        $pendingPhone = null;
 
-        foreach ($lines as $line) {
-            $line = $this->stripRole($line);
-            if ($line === '' || $this->isRosterHeader($line) || $this->isRoleToken($line)) {
+        foreach ($lines as $raw) {
+            $split = $this->splitMobile($raw);
+            $line = $this->stripRole($split['line']);
+            $phone = $split['phone'];
+
+            if ($line === '') {
+                if ($phone !== null) {
+                    $this->assignPendingPhone($members, $pendingVoornaam, $pendingPhone, $phone);
+                }
+
+                continue;
+            }
+
+            if ($this->isRosterHeader($line) || $this->isRoleToken($line)) {
                 if ($pendingVoornaam !== null) {
-                    $names[] = $pendingVoornaam;
+                    $members[] = $this->memberRecord($pendingVoornaam, $pendingPhone ?? $phone);
                     $pendingVoornaam = null;
+                    $pendingPhone = null;
                 }
 
                 continue;
@@ -567,36 +581,99 @@ class TeamPdfParser
 
             if (preg_match('/^(\p{L}[\p{L}\'\-]*)\s+(.+)$/u', $line, $match) === 1 && $this->looksLikeOfficialName($match[2])) {
                 if ($pendingVoornaam !== null) {
-                    $names[] = $pendingVoornaam;
+                    $members[] = $this->memberRecord($pendingVoornaam, $pendingPhone);
                 }
-                $names[] = $this->displayName($match[1], $match[2]);
+                $members[] = $this->memberRecord($this->displayName($match[1], $match[2]), $phone);
                 $pendingVoornaam = null;
+                $pendingPhone = null;
 
                 continue;
             }
 
             if ($this->looksLikeOfficialName($line)) {
                 $official = $this->isPlaceholderName($line) ? null : $line;
-                $names[] = $this->displayName($pendingVoornaam, $official);
+                $members[] = $this->memberRecord($this->displayName($pendingVoornaam, $official), $phone ?? $pendingPhone);
                 $pendingVoornaam = null;
+                $pendingPhone = null;
 
                 continue;
             }
 
             if ($pendingVoornaam !== null) {
-                $names[] = $pendingVoornaam;
+                $members[] = $this->memberRecord($pendingVoornaam, $pendingPhone);
             }
             $pendingVoornaam = $line;
+            $pendingPhone = $phone;
         }
 
         if ($pendingVoornaam !== null) {
-            $names[] = $pendingVoornaam;
+            $members[] = $this->memberRecord($pendingVoornaam, $pendingPhone);
         }
 
         return array_values(array_filter(
-            $names,
-            fn (string $name): bool => $name !== '',
+            $members,
+            fn (array $member): bool => $member['name'] !== '',
         ));
+    }
+
+    /**
+     * @param  list<array{name: string, phone: string}>  $members
+     */
+    private function assignPendingPhone(array &$members, ?string &$pendingVoornaam, ?string &$pendingPhone, string $phone): void
+    {
+        if ($members !== []) {
+            $last = count($members) - 1;
+            if ($members[$last]['phone'] === '') {
+                $members[$last]['phone'] = $phone;
+            }
+
+            return;
+        }
+
+        if ($pendingVoornaam !== null && $pendingPhone === null) {
+            $pendingPhone = $phone;
+        }
+    }
+
+    /**
+     * @return array{name: string, phone: string}
+     */
+    private function memberRecord(?string $name, ?string $phone): array
+    {
+        return [
+            'name' => trim((string) $name),
+            'phone' => trim((string) $phone),
+        ];
+    }
+
+    /**
+     * @return array{line: string, phone: ?string}
+     */
+    private function splitMobile(string $line): array
+    {
+        $phone = $this->extractMobile($line);
+        if ($phone === null) {
+            return ['line' => trim($line), 'phone' => null];
+        }
+
+        $without = trim((string) preg_replace($this->mobilePattern(), ' ', $line));
+        $without = trim((string) preg_replace('/\s+/', ' ', $without));
+
+        return ['line' => $without, 'phone' => $phone];
+    }
+
+    private function extractMobile(string $text): ?string
+    {
+        if (preg_match($this->mobilePattern(), $text, $match) !== 1) {
+            return null;
+        }
+
+        return $this->limit(preg_replace('/\s+/', ' ', trim($match[0])) ?? trim($match[0]), 64);
+    }
+
+    private function mobilePattern(): string
+    {
+        return '/(?:\+31|0)\s*6(?:[\s\-]?\d){8}/';
     }
 
     private function stripRole(string $line): string
@@ -644,7 +721,7 @@ class TeamPdfParser
     }
 
     /**
-     * @param  list<string>  $names
+     * @param  list<array{name: string, phone: string}>  $members
      * @return array{
      *     name: string,
      *     employment_type: string,
@@ -661,13 +738,19 @@ class TeamPdfParser
      *     contact_name: ?string
      * }
      */
-    private function teamFromMembers(string $name, array $names): array
+    private function teamFromMembers(string $name, array $members): array
     {
-        $crewNames = $names === [] ? null : $this->limit(implode(', ', $names), 255);
-        $members = [];
-        foreach ($names as $memberName) {
-            $members[] = ['name' => $memberName, 'phone' => ''];
+        $names = [];
+        $firstPhone = null;
+        foreach ($members as $member) {
+            if ($member['name'] !== '') {
+                $names[] = $member['name'];
+            }
+            if ($firstPhone === null && $member['phone'] !== '') {
+                $firstPhone = $member['phone'];
+            }
         }
+        $crewNames = $names === [] ? null : $this->limit(implode(', ', $names), 255);
 
         return [
             'name' => $this->limit($name, 255),
@@ -677,7 +760,7 @@ class TeamPdfParser
             'crew_names' => $crewNames,
             'crew_members' => $members,
             'email' => null,
-            'phone' => null,
+            'phone' => $firstPhone,
             'company' => null,
             'address' => null,
             'postal_code' => null,
@@ -697,7 +780,15 @@ class TeamPdfParser
 
         $members = [];
         foreach ($this->splitList($crewNames) as $name) {
-            $members[] = ['name' => $name, 'phone' => ''];
+            $split = $this->splitMobile($name);
+            if ($split['line'] === '') {
+                continue;
+            }
+
+            $members[] = [
+                'name' => $split['line'],
+                'phone' => $split['phone'] ?? '',
+            ];
         }
 
         return $members;
