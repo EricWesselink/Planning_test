@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\WorkTicketKind;
 use App\Support\PlanningHours;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -391,6 +392,30 @@ class WorkerAssignment extends Model
     public function hoursLabel(): string
     {
         return PlanningHours::hoursLabel($this->plannedHoursValue());
+    }
+
+    public function planningTicketLabel(): ?string
+    {
+        $this->loadMissing('workTickets');
+        if ($this->workTickets->isEmpty()) {
+            return null;
+        }
+
+        return $this->workTickets
+            ->map(fn (WorkTicket $ticket): string => $ticket->kind->label().' '.$ticket->number)
+            ->implode(', ');
+    }
+
+    public function planningTicketMark(): ?string
+    {
+        $this->loadMissing('workTickets');
+        $ticket = $this->workTickets->first();
+
+        return match ($ticket?->kind) {
+            WorkTicketKind::Opdrachtbon => 'OB',
+            WorkTicketKind::Werkbon => 'WB',
+            default => null,
+        };
     }
 
     public function planningLabel(): string

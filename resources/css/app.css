@@ -1236,6 +1236,24 @@ button.plan-labor-toggle:hover {
     z-index: 2;
 }
 
+.bar-ticket {
+    flex: 0 0 auto;
+    align-self: center;
+    margin-left: 3px;
+    padding: 0 4px;
+    height: 14px;
+    line-height: 14px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--color-nicon-ink);
+    border-radius: 2px;
+    pointer-events: none;
+    position: relative;
+    z-index: 2;
+}
+
 .bar-handle {
     width: 8px;
     flex-shrink: 0;
@@ -1642,6 +1660,19 @@ button.plan-labor-toggle:hover {
 
 .ticket-billing-label {
     font-weight: 650;
+}
+
+.ticket-extra {
+    margin-top: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 12px;
+}
+
+.ticket-extra-hint {
+    color: var(--color-nicon-muted);
+    font-size: 11px;
 }
 
 .ticket-actions {

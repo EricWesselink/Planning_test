@@ -1,4 +1,4 @@
-<div class="person-bar {{ $personBar['double'] ? 'double' : '' }}{{ ! empty($personBar['has_budget_overrun']) ? ' person-bar--over' : '' }}"
+<div class="person-bar {{ $personBar['double'] ? 'double' : '' }}{{ ! empty($personBar['has_budget_overrun']) ? ' person-bar--over' : '' }}{{ ! empty($personBar['ticket_mark']) ? ' person-bar--ticket' : '' }}"
      data-shift-type="assignment"
      data-shift-id="{{ $personBar['assignment_id'] }}"
      data-worker-id="{{ $personBar['worker_id'] }}"
@@ -19,6 +19,8 @@
      data-planned-hours="{{ $personBar['planned_hours'] ?? 8 }}"
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"
      data-ticket-label="{{ $personBar['ticket_label'] ?? 'Werkbon maken' }}"
+     data-ticket-existing="{{ $personBar['ticket'] ?? '' }}"
+     data-ticket-show-url="{{ $personBar['ticket_url'] ?? '' }}"
      title="{{ $personBar['title'] }}"
      style="background: {{ $personBar['color'] }}; top: {{ ($personBarOffset ?? 4) + ($index * 24) }}px; width: calc(({{ $personBar['bar']['span'] }} - {{ $personBar['bar']['start_offset'] ?? 0 }} - (1 - {{ $personBar['bar']['end_offset'] ?? 1 }})) * 100% / {{ $dayCount }} - 2px); left: calc(({{ $personBar['bar']['start'] }} + {{ $personBar['bar']['start_offset'] ?? 0 }}) * 100% / {{ $dayCount }} + 1px);">
     @if (! empty($personBar['has_budget_overrun']))
@@ -26,6 +28,9 @@
     @endif
     @if ($personBar['show_start_handle'] ?? true)
         <span class="bar-handle bar-handle-start" data-edge="start"></span>
+    @endif
+    @if (! empty($personBar['ticket_mark']))
+        <span class="bar-ticket">{{ $personBar['ticket_mark'] }}</span>
     @endif
     <span class="bar-label">{{ $personBar['label'] }}</span>
     @if ($personBar['show_end_handle'] ?? true)

@@ -619,15 +619,33 @@ export function buildTicketChunk({
 }
 
 export function ticketStorePayload(chunks, extras = {}) {
-    return {
-        selections: (chunks || []).map((chunk) => ({
-            floor_id: chunk.floor_id,
-            entire: chunk.entire ? 1 : 0,
-            area_ids: [...(chunk.area_ids || [])],
-            work_keys: [...(chunk.work_keys || [])],
-        })),
-        ...extras,
-    };
+    const extraIds = (extras.extra_work_item_ids || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+    const selections = (chunks || []).map((chunk) => ({
+        floor_id: chunk.floor_id,
+        entire: chunk.entire ? 1 : 0,
+        area_ids: [...(chunk.area_ids || [])],
+        work_keys: [...(chunk.work_keys || [])],
+    }));
+    const payload = { ...extras };
+    delete payload.extra_work_item_ids;
+    delete payload.general_work;
+    if (selections.length) {
+        payload.selections = selections;
+    }
+    if (extraIds.length) {
+        payload.extra_work_item_ids = extraIds;
+    }
+    if (extras.general_work) {
+        payload.general_work = 1;
+    }
+
+    return payload;
+}
+
+export function ticketHasGeneralWork({ extraIds = [], general = false } = {}) {
+    return extraIds.length > 0 || Boolean(general);
 }
 
 export function workKeysOnRooms(rooms) {

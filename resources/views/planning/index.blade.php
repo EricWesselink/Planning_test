@@ -532,7 +532,8 @@
                 <button type="button" id="plan-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>
                 <button type="button" id="plan-delete" class="text-nicon-danger px-4 py-1.5 hidden">Verwijderen</button>
             </div>
-            <p id="plan-ticket-wrap" class="hidden pt-1">
+            <p id="plan-ticket-wrap" class="hidden space-y-1 pt-1">
+                <a id="plan-ticket-existing" href="#" class="hidden text-sm text-nicon-orange hover:underline"></a>
                 <a id="plan-ticket-link" href="#" class="text-sm text-nicon-orange hover:underline">Werkbon maken</a>
             </p>
         </form>

@@ -429,9 +429,24 @@
                         </div>
                     @endif
                     <div id="ticket-chunks" class="ticket-chunks">
-                        <p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen.</p>
+                        <p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>
                     </div>
                     <div id="ticket-preview-body" class="ticket-preview hidden" hidden></div>
+                    <div class="ticket-extra">
+                        <div class="ticket-billing-label">Algemeen werk</div>
+                        @forelse ($ticketMode['extra_works'] ?? [] as $extraWork)
+                            <label>
+                                <input type="checkbox" data-ticket-extra value="{{ $extraWork['id'] }}">
+                                {{ $extraWork['name'] }} · {{ $extraWork['qty_label'] }}
+                            </label>
+                        @empty
+                            <label>
+                                <input type="checkbox" id="ticket-general-work" value="1">
+                                Algemeen werk zonder ruimtes (nacalculatie)
+                            </label>
+                        @endforelse
+                        <p class="ticket-extra-hint">Zonder ruimtes te selecteren. Omschrijf het werk in de opmerking.</p>
+                    </div>
                     <label class="ticket-notes-label" for="ticket-notes">Opmerking toevoegen</label>
                     <textarea id="ticket-notes" class="ticket-notes" rows="2" maxlength="2000" placeholder="Opmerking toevoegen">{{ old('notes') }}</textarea>
                     @if ($ticketMode['is_external'])

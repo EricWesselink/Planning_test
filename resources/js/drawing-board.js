@@ -52,6 +52,7 @@ import {
     activeWorkBarLabel,
     shortWorkLabel,
     ticketStorePayload,
+    ticketHasGeneralWork,
     workFilterSummaryLabel,
     workKeysOnRooms,
     ticketRoomsToPick,
@@ -4680,7 +4681,7 @@ function boot() {
             return;
         }
         if (ticketChunks.length === 0) {
-            list.innerHTML = '<p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen.</p>';
+            list.innerHTML = '<p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>';
         } else {
             list.innerHTML = ticketChunks.map((chunk, index) => {
                 const lines = (chunk.lines || [])
@@ -4713,12 +4714,25 @@ function boot() {
         }).join('<hr class="ticket-preview-split">');
     }
 
+    function ticketGeneralWorkState() {
+        const extraIds = [...document.querySelectorAll('[data-ticket-extra]:checked')]
+            .map((input) => Number(input.value))
+            .filter((id) => Number.isFinite(id) && id > 0);
+        const general = Boolean(document.getElementById('ticket-general-work')?.checked);
+
+        return { extraIds, general };
+    }
+
     function addTicketSelection() {
         ticketError('');
         const rooms = pickedList().map((id) => areaById(id)).filter(Boolean);
         if (rooms.length === 0) {
-            ticketError('Selecteer ruimtes, kies Deze verdieping, of klik Hele werk.');
-            setHint('Klik Hele werk voor alle verdiepingen, of tik ruimtes aan op de tekening.');
+            if (ticketHasGeneralWork(ticketGeneralWorkState())) {
+                setHint('Algemeen werk is aangevinkt. Sla de bon op, of selecteer ruimtes voor Meetstaat-werk.');
+                return;
+            }
+            ticketError('Selecteer ruimtes, kies Deze verdieping, klik Hele werk, of vink algemeen werk aan.');
+            setHint('Vink algemeen werk aan, klik Hele werk, of tik ruimtes aan op de tekening.');
             return;
         }
         const keys = hasWorkFilter() ? workFilterKeys : workKeysOnRooms(rooms);
@@ -4772,19 +4786,22 @@ function boot() {
             return;
         }
         ticketError('');
-        if (ticketChunks.length === 0) {
-            ticketError('Voeg eerst een selectie toe.');
+        const general = ticketGeneralWorkState();
+        if (ticketChunks.length === 0 && !ticketHasGeneralWork(general)) {
+            ticketError('Voeg eerst een selectie toe, of vink algemeen werk aan.');
             return;
         }
         const payload = ticketStorePayload(ticketChunks, {
             notes: document.getElementById('ticket-notes')?.value || '',
             document_ids: ticketMode.document_id ? [ticketMode.document_id] : [],
+            extra_work_item_ids: general.extraIds,
+            general_work: general.general,
         });
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = ticketMode.store_url;
         appendTicketField(form, '_token', csrf);
-        payload.selections.forEach((selection, index) => {
+        (payload.selections || []).forEach((selection, index) => {
             appendTicketField(form, `selections[${index}][floor_id]`, selection.floor_id);
             appendTicketField(form, `selections[${index}][entire]`, selection.entire);
             selection.area_ids.forEach((id) => {
@@ -4794,6 +4811,12 @@ function boot() {
                 appendTicketField(form, `selections[${index}][work_keys][]`, key);
             });
         });
+        (payload.extra_work_item_ids || []).forEach((id) => {
+            appendTicketField(form, 'extra_work_item_ids[]', id);
+        });
+        if (payload.general_work) {
+            appendTicketField(form, 'general_work', '1');
+        }
         if (payload.notes) {
             appendTicketField(form, 'notes', payload.notes);
         }
@@ -4840,7 +4863,7 @@ function boot() {
         });
         renderTicketPanel();
         document.querySelector('.board-right')?.classList.add('is-open');
-        setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Wissel van pagina voor een andere verdiepingstekening.');
+        setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Algemeen werk kun je rechts aanvinken.');
     }
 
     setTool('hand');
@@ -4859,7 +4882,7 @@ function boot() {
     }).finally(() => {
         if (ticketMode) {
             setRoomMeasureMode(true);
-            setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Wissel van pagina voor een andere verdiepingstekening.');
+            setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Algemeen werk kun je rechts aanvinken.');
             return;
         }
         if (selectedId) {

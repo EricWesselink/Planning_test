@@ -119,7 +119,7 @@ class PlanningBoardService
             ->values();
 
         $assignments = WorkerAssignment::query()
-            ->with(['worker', 'workItem', 'workItems', 'team', 'crewMembers'])
+            ->with(['worker', 'workItem', 'workItems', 'team', 'crewMembers', 'workTickets'])
             ->whereHas('project', function ($q) use ($request, $kindFilter): void {
                 $q->active()->accessibleBy($request->user());
                 $this->constrainKind($q, $kindFilter);
@@ -789,6 +789,8 @@ class PlanningBoardService
     private function personBar(WorkerAssignment $assignment, array $bar, array $doubleBooked, Collection $days, string $workName, string $projectName = ''): array
     {
         $label = $assignment->planningLabel();
+        $ticketLabel = $assignment->planningTicketLabel();
+        $ticket = $assignment->workTickets->first();
         $double = $days->contains(
             fn ($day) => isset($doubleBooked[$assignment->worker_id][$day->toDateString()])
         );
@@ -807,7 +809,12 @@ class PlanningBoardService
             'people_count' => $assignment->peopleCount(),
             'crew_ids' => $crewIds,
             'label' => $label,
-            'title' => $assignment->detailTitle($workName, $projectName),
+            'title' => filled($ticketLabel)
+                ? $assignment->detailTitle($workName, $projectName).' · '.$ticketLabel
+                : $assignment->detailTitle($workName, $projectName),
+            'ticket' => $ticketLabel,
+            'ticket_mark' => $assignment->planningTicketMark(),
+            'ticket_url' => $ticket === null ? null : route('work-tickets.show', $ticket),
             'start_date' => $assignment->start_date->toDateString(),
             'end_date' => $assignment->end_date->toDateString(),
             'start_time' => PlanningHours::formatTime($assignment->startTimeValue()),

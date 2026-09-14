@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectKind;
+use App\Enums\SmallWorkType;
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
@@ -62,7 +63,60 @@ class WorkTicketTest extends TestCase
             ->assertOk()
             ->assertSee('id="plan-ticket-link"', false)
             ->assertSee('data-ticket-url="'.url('/planning/assignments').'"', false)
-            ->assertSee('data-ticket-label="Opdrachtbon maken"', false);
+            ->assertSee('data-ticket-label="Opdrachtbon maken"', false)
+            ->assertDontSee('person-bar--ticket', false)
+            ->assertDontSee('class="bar-ticket"', false);
+    }
+
+    public function test_planning_bar_shows_an_opdrachtbon_mark_when_the_assignment_has_one(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $ticket = WorkTicket::query()->create([
+            'number' => 'OB-2026-0001',
+            'kind' => WorkTicketKind::Opdrachtbon,
+            'worker_assignment_id' => $seed['assignment']->id,
+            'project_id' => $seed['project']->id,
+            'worker_id' => $seed['worker']->id,
+            'created_by' => $user->id,
+            'billing_method' => WorkTicketBilling::Hourly,
+            'hourly_rate' => 50,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-14']))
+            ->assertOk()
+            ->assertSee('person-bar--ticket', false)
+            ->assertSee('class="bar-ticket"', false)
+            ->assertSee('>OB</span>', false)
+            ->assertSee('Opdrachtbon OB-2026-0001')
+            ->assertSee('data-ticket-existing="Opdrachtbon OB-2026-0001"', false)
+            ->assertSee('data-ticket-show-url="'.route('work-tickets.show', $ticket).'"', false);
+    }
+
+    public function test_planning_bar_shows_a_werkbon_mark_when_the_assignment_has_one(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+        WorkTicket::query()->create([
+            'number' => 'WB-2026-0001',
+            'kind' => WorkTicketKind::Werkbon,
+            'worker_assignment_id' => $seed['assignment']->id,
+            'project_id' => $seed['project']->id,
+            'worker_id' => $seed['worker']->id,
+            'created_by' => $user->id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-14']))
+            ->assertOk()
+            ->assertSee('person-bar--ticket', false)
+            ->assertSee('>WB</span>', false)
+            ->assertSee('Werkbon WB-2026-0001');
     }
 
     public function test_planner_opens_drawing_board_in_ticket_mode_from_a_planned_assignment(): void
@@ -95,6 +149,8 @@ class WorkTicketTest extends TestCase
             ->assertSee('Deze verdieping')
             ->assertSee('Hele werk')
             ->assertSee('Hele werk voor alle verdiepingen')
+            ->assertSee('Algemeen werk')
+            ->assertSee('Algemeen werk zonder ruimtes (nacalculatie)')
             ->assertDontSee('Werkzaamheden bijwerken')
             ->assertDontSee('id="complete-form"', false);
     }
@@ -528,6 +584,135 @@ class WorkTicketTest extends TestCase
         $this->assertSame(0, WorkTicket::query()->count());
     }
 
+    public function test_drawing_board_lists_extra_work_as_general_ticket_options(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+        $this->extraWorkItem($seed['project']);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Algemeen werk')
+            ->assertSee('vloer herstel')
+            ->assertSee('4u · nacalculatie')
+            ->assertSee('Zonder ruimtes te selecteren')
+            ->assertDontSee('Algemeen werk zonder ruimtes (nacalculatie)');
+    }
+
+    public function test_opdrachtbon_saves_extra_work_without_rooms(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $extra = $this->extraWorkItem($seed['project']);
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'extra_work_item_ids' => [$extra->id],
+                'notes' => 'Vloeren aanhelen waar het nodig is',
+                'billing_method' => 'hourly',
+                'hourly_rate' => '42.50',
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(WorkTicketKind::Opdrachtbon, $ticket->kind);
+        $this->assertSame(WorkTicketBilling::Hourly, $ticket->billing_method);
+        $this->assertSame(42.5, (float) $ticket->hourly_rate);
+        $this->assertSame('Vloeren aanhelen waar het nodig is', $ticket->notes);
+        $this->assertSame(0, $ticket->areas()->count());
+        $this->assertSame(1, $ticket->lines()->count());
+        $line = $ticket->lines->first();
+        $this->assertSame((int) $extra->id, (int) $line->work_item_id);
+        $this->assertSame(4.0, (float) $line->quantity);
+        $this->assertSame(WorkUnit::Hours, $line->unit);
+        $this->assertNull($line->unit_price);
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('vloer herstel')
+            ->assertSee('4,00 uren')
+            ->assertSee('Vloeren aanhelen waar het nodig is');
+    }
+
+    public function test_opdrachtbon_combines_extra_work_with_a_room_selection(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $extra = $this->extraWorkItem($seed['project']);
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'floors' => [
+                    $seed['floor']->id => [
+                        'included' => '1',
+                        'scope' => 'rooms',
+                        'area_ids' => [$seed['areas'][0]->id],
+                    ],
+                ],
+                'work_item_ids' => [$seed['pvc']->id],
+                'extra_work_item_ids' => [$extra->id],
+                'billing_method' => 'hourly',
+                'hourly_rate' => '42.50',
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertSame(1, $ticket->areas()->count());
+        $this->assertTrue($ticket->areas()->whereKey($seed['areas'][0]->id)->exists());
+        $this->assertSame(2, $ticket->lines()->count());
+        $this->assertSame(28.0, (float) $ticket->lines->firstWhere('work_item_id', $seed['pvc']->id)->quantity);
+        $this->assertSame(WorkUnit::SquareMeter, $ticket->lines->firstWhere('work_item_id', $seed['pvc']->id)->unit);
+        $this->assertSame(4.0, (float) $ticket->lines->firstWhere('work_item_id', $extra->id)->quantity);
+        $this->assertSame(WorkUnit::Hours, $ticket->lines->firstWhere('work_item_id', $extra->id)->unit);
+    }
+
+    public function test_general_work_flag_saves_an_hourly_line_without_rooms(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'general_work' => '1',
+                'notes' => 'herstel op nacalculatie',
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(0, $ticket->areas()->count());
+        $this->assertSame(1, $ticket->lines()->count());
+        $line = $ticket->lines->first();
+        $this->assertSame((int) $seed['pvc']->id, (int) $line->work_item_id);
+        $this->assertSame(40.0, (float) $line->quantity);
+        $this->assertSame(WorkUnit::Hours, $line->unit);
+        $this->assertSame('herstel op nacalculatie', $ticket->notes);
+    }
+
+    public function test_store_rejects_a_ticket_without_rooms_or_general_work(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+
+        $this->actingAs($user)
+            ->from(route('work-tickets.create', $seed['assignment']))
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'notes' => 'alleen een opmerking',
+            ])
+            ->assertRedirect(route('work-tickets.create', $seed['assignment']))
+            ->assertSessionHasErrors([
+                'selections' => 'Voeg minstens één selectie toe, of vink algemeen werk aan.',
+            ]);
+
+        $this->assertSame(0, WorkTicket::query()->count());
+    }
+
     public function test_eigen_vakman_opens_werkbon_without_prices(): void
     {
         $this->travelTo('2026-09-15 08:00:00');
@@ -781,6 +966,21 @@ class WorkTicketTest extends TestCase
             ->assertSee('1e verdieping')
             ->assertSee('data-drawing-url="'.route('projects.documents.show', [$seed['project'], $seed['drawing']], false).'"', false)
             ->assertSee('snag-pdf');
+    }
+
+    private function extraWorkItem(Project $project, string $name = 'vloer herstel', float $hours = 4): WorkItem
+    {
+        return WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => $name,
+            'unit' => WorkUnit::Hours,
+            'ordered_quantity' => $hours,
+            'begrote_uren' => $hours,
+            'status' => 'gepland',
+            'sort_order' => 20,
+            'is_extra_work' => true,
+            'small_work_type' => SmallWorkType::Extra,
+        ]);
     }
 
     /**

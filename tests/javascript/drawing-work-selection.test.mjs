@@ -20,6 +20,7 @@ import {
     groupRoomsByFloor,
     isEntireFloorPick,
     ticketStorePayload,
+    ticketHasGeneralWork,
     ticketRoomsToPick,
     workKeysOnRooms,
 } from '../../resources/js/drawing-work-selection.js';
@@ -540,6 +541,30 @@ test('groups picked rooms by floor and posts selections without extra selectors'
     assert.equal(payload.selections[1].entire, 0);
     assert.deepEqual(payload.selections[1].work_keys, ['vloer|3']);
     assert.equal(payload.notes, 'let op naden');
+});
+
+test('posts extra work without room selections', () => {
+    const payload = ticketStorePayload([], {
+        extra_work_item_ids: ['12', 0, '9'],
+        notes: 'vloer herstel',
+        document_ids: [4],
+    });
+
+    assert.equal('selections' in payload, false);
+    assert.deepEqual(payload.extra_work_item_ids, [12, 9]);
+    assert.equal(payload.notes, 'vloer herstel');
+    assert.deepEqual(payload.document_ids, [4]);
+});
+
+test('posts general work without extra item ids', () => {
+    const payload = ticketStorePayload([], { general_work: true, notes: 'nacalculatie' });
+
+    assert.equal(payload.general_work, 1);
+    assert.equal('extra_work_item_ids' in payload, false);
+    assert.equal('selections' in payload, false);
+    assert.equal(ticketHasGeneralWork({ extraIds: [12] }), true);
+    assert.equal(ticketHasGeneralWork({ general: true }), true);
+    assert.equal(ticketHasGeneralWork({ extraIds: [], general: false }), false);
 });
 
 test('hele werk for a bon picks matching rooms on every floor', () => {

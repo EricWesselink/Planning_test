@@ -17,6 +17,7 @@ use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use App\Services\Meetstaat\FloorLabel;
 use App\Support\Format;
+use App\Support\PlanningHours;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -108,6 +109,7 @@ class WorkTicketService
             'hourly_rate' => $draft['hourlyRate'],
             'document_id' => $project->plattegrond()?->id,
             'work_items' => $draft['workItems'],
+            'extra_works' => $this->extraWorkOptions($project),
             'existing' => $draft['existing']
                 ->map(fn (WorkTicket $ticket): array => [
                     'id' => (int) $ticket->id,
@@ -143,7 +145,7 @@ class WorkTicketService
             ]);
         }
 
-        $selection = $this->resolveSelection($project, $input);
+        $selection = $this->resolveSelection($project, $input, $assignment);
         $kind = WorkTicketKind::forWorker($worker);
         $billing = $kind === WorkTicketKind::Opdrachtbon
             ? WorkTicketBilling::from((string) $input['billing_method'])
@@ -160,7 +162,9 @@ class WorkTicketService
         );
         if ($lines === []) {
             throw ValidationException::withMessages([
-                $this->hasSelections($input) ? 'selections' : 'work_item_ids' => 'Geen Meetstaat-hoeveelheid voor de geselecteerde ruimtes en werkzaamheden.',
+                $this->hasGeneralWork($input) ? 'extra_work_item_ids' : ($this->hasSelections($input) ? 'selections' : 'work_item_ids') => $this->hasGeneralWork($input)
+                    ? 'Vink algemeen werk aan of kies ruimtes en werkzaamheden.'
+                    : 'Geen Meetstaat-hoeveelheid voor de geselecteerde ruimtes en werkzaamheden.',
             ]);
         }
 
@@ -309,15 +313,42 @@ class WorkTicketService
      *     totals: array<int, array{name: string, quantity: float, unit: WorkUnit}>|null
      * }
      */
-    public function resolveSelection(Project $project, array $input): array
+    public function resolveSelection(Project $project, array $input, ?WorkerAssignment $assignment = null): array
     {
         $project->loadMissing(['floors.areas.tasks.workItem', 'areas.tasks.workItem', 'workItems', 'documents']);
+        $extraIds = $this->extraWorkItemIds($project, $input, $assignment);
 
         if ($this->hasSelections($input)) {
-            return $this->resolveSelections($project, $input);
+            return $this->mergeExtraWork($project, $this->resolveSelections($project, $input), $extraIds, $assignment);
         }
 
         $floorsInput = is_array($input['floors'] ?? null) ? $input['floors'] : [];
+        $hasFloorChoice = false;
+        foreach ($floorsInput as $payload) {
+            if (is_array($payload) && ! empty($payload['included'])) {
+                $hasFloorChoice = true;
+                break;
+            }
+        }
+
+        if (! $hasFloorChoice) {
+            if ($extraIds === []) {
+                throw ValidationException::withMessages([
+                    'extra_work_item_ids' => 'Kies ruimtes, of vink algemeen werk aan.',
+                ]);
+            }
+
+            return [
+                'floors' => [],
+                'area_ids' => [],
+                'work_item_ids' => $extraIds,
+                'document_ids' => $this->idsInProject(
+                    is_array($input['document_ids'] ?? null) ? $input['document_ids'] : [],
+                    $project->documents->pluck('id')->all(),
+                ),
+                'totals' => $this->extraWorkTotals($project, $extraIds, $assignment),
+            ];
+        }
         $selectedFloors = [];
         $areaIds = [];
 
@@ -373,13 +404,13 @@ class WorkTicketService
             $project->documents->pluck('id')->all(),
         );
 
-        return [
+        return $this->mergeExtraWork($project, [
             'floors' => $selectedFloors,
             'area_ids' => $areaIds,
             'work_item_ids' => $workItemIds,
             'document_ids' => $documentIds,
             'totals' => null,
-        ];
+        ], $extraIds, $assignment);
     }
 
     /**
@@ -388,6 +419,141 @@ class WorkTicketService
     private function hasSelections(array $input): bool
     {
         return is_array($input['selections'] ?? null) && $input['selections'] !== [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    private function hasGeneralWork(array $input): bool
+    {
+        return $this->extraWorkItemIdsFromInput($input) !== []
+            || filter_var($input['general_work'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return list<int>
+     */
+    private function extraWorkItemIdsFromInput(array $input): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(
+                static fn (mixed $id): int => (int) $id,
+                is_array($input['extra_work_item_ids'] ?? null) ? $input['extra_work_item_ids'] : [],
+            ),
+            static fn (int $id): bool => $id > 0,
+        )));
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return list<int>
+     */
+    private function extraWorkItemIds(Project $project, array $input, ?WorkerAssignment $assignment): array
+    {
+        $extraIds = $project->workItems
+            ->filter(fn (WorkItem $item): bool => $item->isExtraWork())
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $ids = $this->idsInProject($this->extraWorkItemIdsFromInput($input), $extraIds);
+        $generalId = (int) ($assignment?->work_item_id ?? 0);
+        if (filter_var($input['general_work'] ?? false, FILTER_VALIDATE_BOOLEAN) && $generalId > 0) {
+            $ids[] = $generalId;
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * @param  array{
+     *     floors: array<int, bool>,
+     *     area_ids: list<int>,
+     *     work_item_ids: list<int>,
+     *     document_ids: list<int>,
+     *     totals: array<int, array{name: string, quantity: float, unit: WorkUnit}>|null
+     * }  $resolved
+     * @param  list<int>  $extraIds
+     * @return array{
+     *     floors: array<int, bool>,
+     *     area_ids: list<int>,
+     *     work_item_ids: list<int>,
+     *     document_ids: list<int>,
+     *     totals: array<int, array{name: string, quantity: float, unit: WorkUnit}>|null
+     * }
+     */
+    private function mergeExtraWork(Project $project, array $resolved, array $extraIds, ?WorkerAssignment $assignment): array
+    {
+        if ($extraIds === []) {
+            return $resolved;
+        }
+
+        $resolved['work_item_ids'] = array_values(array_unique(array_merge($resolved['work_item_ids'], $extraIds)));
+        $base = $resolved['totals'];
+        if ($base === null && $resolved['area_ids'] !== []) {
+            $base = $this->totalsFor($project, $resolved['area_ids'], $resolved['work_item_ids']);
+        }
+
+        $resolved['totals'] = ($base ?? []) + $this->extraWorkTotals($project, $extraIds, $assignment);
+
+        return $resolved;
+    }
+
+    /**
+     * @param  list<int>  $itemIds
+     * @return array<int, array{name: string, quantity: float, unit: WorkUnit}>
+     */
+    private function extraWorkTotals(Project $project, array $itemIds, ?WorkerAssignment $assignment): array
+    {
+        $totals = [];
+        $fallbackHours = max(1.0, $assignment?->plannedHoursValue() ?? 1.0);
+
+        foreach ($itemIds as $itemId) {
+            $item = $project->workItems->firstWhere('id', $itemId);
+            if ($item === null) {
+                continue;
+            }
+
+            $totals[$itemId] = $this->extraWorkTotal($item, $fallbackHours);
+        }
+
+        return $totals;
+    }
+
+    /**
+     * @return array{name: string, quantity: float, unit: WorkUnit}
+     */
+    private function extraWorkTotal(WorkItem $item, float $fallbackHours): array
+    {
+        $hours = $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren;
+
+        return [
+            'name' => $item->name,
+            'quantity' => $hours > 0.0001 ? $hours : $fallbackHours,
+            'unit' => WorkUnit::Hours,
+        ];
+    }
+
+    /**
+     * @return list<array{id: int, name: string, qty_label: string}>
+     */
+    private function extraWorkOptions(Project $project): array
+    {
+        return $project->workItems
+            ->filter(fn (WorkItem $item): bool => $item->isExtraWork())
+            ->sortBy('sort_order')
+            ->map(function (WorkItem $item): array {
+                $total = $this->extraWorkTotal($item, 1.0);
+
+                return [
+                    'id' => (int) $item->id,
+                    'name' => $item->name,
+                    'qty_label' => PlanningHours::hoursLabel($total['quantity']).' · nacalculatie',
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     /**

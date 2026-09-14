@@ -44,6 +44,7 @@ if (board) {
     const deleteBtn = document.getElementById('plan-delete');
     const ticketWrap = document.getElementById('plan-ticket-wrap');
     const ticketLink = document.getElementById('plan-ticket-link');
+    const ticketExisting = document.getElementById('plan-ticket-existing');
     const workItems = JSON.parse(board.dataset.workItems || '{}');
     const crews = JSON.parse(board.dataset.crews || '{}');
     const candidatesUrl = board.dataset.candidatesUrl || '';
@@ -525,6 +526,11 @@ if (board) {
         if (ticketLink) {
             ticketLink.removeAttribute('href');
         }
+        if (ticketExisting) {
+            ticketExisting.classList.add('hidden');
+            ticketExisting.removeAttribute('href');
+            ticketExisting.textContent = '';
+        }
         if (crewHeading) {
             crewHeading.textContent = 'Wie gaat er naartoe';
         }
@@ -559,6 +565,19 @@ if (board) {
             ticketLink.href = `${base}/${bar.dataset.shiftId}/werkbonnen/nieuw`;
             ticketLink.textContent = bar.dataset.ticketLabel || 'Werkbon maken';
             ticketWrap.classList.remove('hidden');
+        }
+        if (ticketExisting) {
+            const existingLabel = bar.dataset.ticketExisting || '';
+            const existingUrl = bar.dataset.ticketShowUrl || '';
+            if (existingLabel && existingUrl) {
+                ticketExisting.textContent = existingLabel;
+                ticketExisting.href = existingUrl;
+                ticketExisting.classList.remove('hidden');
+            } else {
+                ticketExisting.classList.add('hidden');
+                ticketExisting.removeAttribute('href');
+                ticketExisting.textContent = '';
+            }
         }
         if (crewHeading) {
             crewHeading.textContent = 'Wie gaat mee naar het gekozen werk';
@@ -989,6 +1008,15 @@ if (board) {
         }
         event.preventDefault();
         window.location.assign(ticketLink.href);
+    });
+    ticketExisting?.addEventListener('click', (event) => {
+        const hrefAttr = ticketExisting.getAttribute('href');
+        if (!hrefAttr || hrefAttr === '#') {
+            event.preventDefault();
+            return;
+        }
+        event.preventDefault();
+        window.location.assign(ticketExisting.href);
     });
 
     document.getElementById('plan-cancel').addEventListener('click', () => dialog.close());
