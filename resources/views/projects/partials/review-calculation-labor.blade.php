@@ -26,6 +26,8 @@
         </p>
         @if ($openLabor === 0)
             <p class="text-sm text-nicon-ok">Arbeidsregels, producten en hoeveelheden zijn automatisch gekoppeld uit Excel, meetstaat en materialenstaat.</p>
+        @else
+            <p class="text-sm text-nicon-warn">Ongekoppelde Excel-arbeidsregels zijn waarschuwingen en blokkeren importeren niet.</p>
         @endif
         <div class="overflow-x-auto">
             <table class="w-full text-sm">

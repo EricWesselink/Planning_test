@@ -200,7 +200,7 @@ TXT),
         );
     }
 
-    public function test_uncertain_labor_rows_block_import_until_the_user_selects_a_work_type(): void
+    public function test_uncertain_labor_rows_do_not_block_import(): void
     {
         $user = User::factory()->create();
         $token = $this->previewToken($user, $this->unmatchableCalculationFile());
@@ -213,10 +213,10 @@ TXT),
                 'project_name' => 'Eric Wesselink',
                 'project_number' => '260200092',
             ])
-            ->assertRedirect(route('projects.review', $token))
-            ->assertSessionHasErrors('calculation_labor');
+            ->assertRedirect();
 
-        $this->assertSame(0, Project::query()->count());
+        $project = Project::query()->where('project_number', '260200092')->first();
+        $this->assertNotNull($project);
     }
 
     public function test_vakman_does_not_see_calculation_rates_on_the_board_or_excel_download(): void

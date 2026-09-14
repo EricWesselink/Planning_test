@@ -91,6 +91,16 @@
             Import geblokkeerd — bronconflict
         @endif
     </h1>
+    @if (session('status'))
+        <p class="mt-3 border border-nicon-line bg-white px-4 py-2 text-sm">{{ session('status') }}</p>
+    @endif
+    @if ($errors->any())
+        <ul class="mt-3 list-disc border border-nicon-warn bg-amber-50 px-4 py-2 pl-8 text-sm text-nicon-warn">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    @endif
     <p class="text-sm text-nicon-muted">
         {{ $filename }}
         · {{ $areas->count() }} ruimtes
@@ -102,7 +112,7 @@
         @endif
     </p>
 
-    <form method="POST" action="{{ route('projects.import', $token) }}" enctype="multipart/form-data" class="mt-4 space-y-4" data-review-form id="review-import-form" @if ($closureReady) data-import-ready="1" @endif>
+    <form method="POST" action="{{ route('projects.import', $token) }}" enctype="multipart/form-data" class="mt-4 space-y-4" data-review-form id="review-import-form" novalidate @if ($closureReady) data-import-ready="1" @endif>
         @csrf
 
         <div id="importcontrole" class="border {{ $closureReady ? ($withWarnings ? 'border-amber-400 bg-amber-50' : 'border-green-600 bg-green-50') : 'border-amber-400 bg-amber-50' }} px-4 py-3">
@@ -151,6 +161,8 @@
                 </div>
                 <button
                     type="submit"
+                    form="review-import-form"
+                    data-import-submit
                     class="px-5 py-3 font-medium {{ $closureReady ? 'bg-nicon-orange text-white' : 'bg-nicon-sand text-nicon-muted border border-nicon-line' }}"
                     @disabled(! $closureReady)
                 >
@@ -931,15 +943,27 @@
                 button.closest('[data-area-row]')?.remove();
             });
 
-            // READY_AUTOMATIC: stuur geen area-velden mee (max_input_vars kapt anders TASK_SOURCE af).
+            // READY_*: stuur geen area-velden mee (max_input_vars kapt anders TASK_SOURCE af).
             const reviewForm = document.querySelector('[data-review-form]');
+            const importSubmit = reviewForm?.querySelector('[data-import-submit]');
+            importSubmit?.addEventListener('click', () => {
+                console.info('import.submit: klik ontvangen');
+            });
             reviewForm?.addEventListener('submit', () => {
-                if (reviewForm.getAttribute('data-import-ready') !== '1') {
-                    return;
+                console.info('import.submit: form submit gestart', reviewForm.getAttribute('action'));
+                try {
+                    if (reviewForm.getAttribute('data-import-ready') === '1') {
+                        reviewForm.querySelectorAll('[name^="areas["]').forEach((input) => {
+                            input.disabled = true;
+                        });
+                    }
+                } catch (error) {
+                    console.error('import.submit: area-velden uitschakelen mislukt', error);
                 }
-                reviewForm.querySelectorAll('[name^="areas["]').forEach((input) => {
-                    input.disabled = true;
-                });
+                if (importSubmit) {
+                    importSubmit.disabled = true;
+                    importSubmit.textContent = 'Bezig met importeren…';
+                }
             });
         })();
     </script>

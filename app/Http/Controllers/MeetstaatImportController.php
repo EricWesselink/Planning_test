@@ -113,6 +113,7 @@ class MeetstaatImportController extends Controller
     public function import(Request $request, string $token, ProjectIntakeService $intake, RoomImportAssembler $assembler, CalculationImportService $calculationImport): RedirectResponse
     {
         Gate::authorize('create', Project::class);
+        logger()->info('import.submit: route bereikt', ['token' => $token]);
         $payload = Cache::get('meetstaat.'.$token);
         abort_unless($payload, 404);
 
@@ -209,16 +210,10 @@ class MeetstaatImportController extends Controller
 
         $closure = is_array($preview['import_closure'] ?? null) ? $preview['import_closure'] : [];
         if ($calculationImport->hasOpenMatches($preview)) {
-            $payload['preview'] = $preview;
-            Cache::put('meetstaat.'.$token, $payload, now()->addHour());
-
-            return redirect()
-                ->route('projects.review', $token)
-                ->withInput()
-                ->with('status', 'Koppel alleen de arbeidsregels die het systeem niet betrouwbaar kon bepalen')
-                ->withErrors([
-                    'calculation_labor' => 'Er staan nog arbeidsregels die niet betrouwbaar gekoppeld kunnen worden. Controleer alleen die regels.',
-                ]);
+            logger()->info('import.submit: excel-arbeidsregels ongeblokkeerd als waarschuwing', [
+                'token' => $token,
+                'open_matches' => (int) ($preview['calculation']['open_matches'] ?? 0),
+            ]);
         }
 
         if (! ($closure['ready'] ?? false)) {
@@ -243,21 +238,45 @@ class MeetstaatImportController extends Controller
         $plattegrondName = $drawing['original'] ?? $payload['plattegrond_original'] ?? null;
         $meetstaatPath = $this->absoluteStoredPath($payload['file'] ?? null);
 
-        $project = $intake->importPreview(
-            $preview,
-            $request->user(),
-            $meetstaatPath,
-            $payload['original'] ?? null,
-            $data['exclude_works'] ?? [],
-            $plattegrondPath,
-            $plattegrondName,
-            $this->extrasForImport($payload['extra'] ?? []),
-        );
+        logger()->info('import.submit: importservice gestart', ['token' => $token]);
+
+        try {
+            $project = $intake->importPreview(
+                $preview,
+                $request->user(),
+                $meetstaatPath,
+                $payload['original'] ?? null,
+                $data['exclude_works'] ?? [],
+                $plattegrondPath,
+                $plattegrondName,
+                $this->extrasForImport($payload['extra'] ?? []),
+            );
+        } catch (\Throwable $e) {
+            report($e);
+            logger()->error('import.submit: foutmelding', [
+                'token' => $token,
+                'message' => $e->getMessage(),
+            ]);
+
+            return redirect()
+                ->route('projects.review', $token)
+                ->withInput()
+                ->with('status', 'Importeren mislukt')
+                ->withErrors([
+                    'import' => 'Importeren mislukt: '.$e->getMessage(),
+                ]);
+        }
 
         Cache::forget('meetstaat.'.$token);
 
         $rooms = count($preview['areas'] ?? []);
         $works = count($preview['works'] ?? []);
+        logger()->info('import.submit: import succesvol', [
+            'token' => $token,
+            'project_id' => $project->id,
+            'rooms' => $rooms,
+            'works' => $works,
+        ]);
 
         return redirect()
             ->route('projects.show', $project)

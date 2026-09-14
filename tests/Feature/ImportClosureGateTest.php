@@ -104,6 +104,13 @@ class ImportClosureGateTest extends TestCase
         $payload['preview']['areas'][0]['confidence'] = 'controleren';
         $payload['preview']['areas'][0]['needs_review'] = true;
         $payload['preview']['areas'][0]['review_reason_label'] = 'Handmatig open gezet voor gate-test';
+        $payload['preview']['import_report']['task_meters'] = 1.0;
+        $payload['preview']['import_report']['meetstaat_task_meters'] = 100.0;
+        $payload['preview']['import_report']['task_meters_expected'] = 100.0;
+        $payload['preview']['expected_task_totals'] = [
+            'known' => true,
+            'project_total' => 100.0,
+        ];
         $payload['preview'] = (new ImportClosureEvaluator)->attach($payload['preview']);
         $this->assertFalse($payload['preview']['import_closure']['ready'] ?? true);
         Cache::put('meetstaat.'.$token, $payload, now()->addHour());
@@ -145,6 +152,34 @@ class ImportClosureGateTest extends TestCase
         $project = Project::query()->where('project_number', '260299002')->first();
         $this->assertNotNull($project);
         $this->assertSame(1, $project->areas()->count());
+    }
+
+    public function test_ready_review_form_posts_to_import_route_with_submit_button(): void
+    {
+        $user = User::factory()->create();
+        $preview = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [
+                $this->simplePdf(
+                    'Meetstaat.pdf',
+                    "Meetstaat\nBouwlaag: begane grond\nMarmoleum Real, 3120 rosato, Linoleum\n0.07 groepsruimte 50,97 m²\n"
+                ),
+            ],
+            'types' => ['meetstaat'],
+        ]);
+        $token = basename(parse_url($preview->headers->get('Location'), PHP_URL_PATH));
+        $this->makeCachedPreviewReady($token);
+
+        $this->actingAs($user)
+            ->get(route('projects.review', $token))
+            ->assertOk()
+            ->assertSee('id="review-import-form"', false)
+            ->assertSee('action="'.route('projects.import', $token).'"', false)
+            ->assertSee('method="POST"', false)
+            ->assertSee('novalidate', false)
+            ->assertSee('type="submit"', false)
+            ->assertSee('form="review-import-form"', false)
+            ->assertSee('data-import-ready="1"', false)
+            ->assertSee('Project definitief importeren');
     }
 
     private function makeCachedPreviewReady(string $token): void
