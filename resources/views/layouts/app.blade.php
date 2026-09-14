@@ -25,6 +25,7 @@
                     $links = $user?->isVakman()
                         ? [
                             ['href' => route('vakman.planning'), 'label' => 'Mijn planning', 'active' => request()->routeIs('vakman.planning')],
+                            ['href' => route('vakman.password.edit'), 'label' => 'Wachtwoord wijzigen', 'active' => request()->routeIs('vakman.password.*')],
                         ]
                         : [
                             ['href' => route('dashboard'), 'label' => 'Dashboard', 'active' => request()->routeIs('dashboard')],
@@ -72,5 +73,6 @@
         </main>
     </div>
 </div>
+@stack('detached-forms')
 </body>
 </html>

@@ -20,7 +20,12 @@
                 </div>
                 <div>
                     <label class="text-xs uppercase tracking-wide text-nicon-muted">Telefoon</label>
-                    <input type="tel" name="crew_members[{{ $index }}][phone]" value="{{ $member['phone'] }}" data-crew-phone class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="06 12345678" autocomplete="tel">
+                    <div class="mt-1 flex flex-wrap items-start gap-2">
+                        <input type="tel" name="crew_members[{{ $index }}][phone]" value="{{ $member['phone'] }}" data-crew-phone class="min-w-40 flex-1 border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="06 12345678" autocomplete="tel">
+                        @can('update', $worker)
+                            <x-vakman-login-invite :worker="$worker" :member-id="$member['id'] ?? null" :phone="$member['phone']" />
+                        @endcan
+                    </div>
                 </div>
             </div>
         @endforeach
@@ -34,7 +39,10 @@
             </div>
             <div>
                 <label class="text-xs uppercase tracking-wide text-nicon-muted">Telefoon</label>
-                <input type="tel" name="crew_members[__INDEX__][phone]" value="" data-crew-phone class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="06 12345678" autocomplete="tel">
+                <div class="mt-1 flex flex-wrap items-start gap-2">
+                    <input type="tel" name="crew_members[__INDEX__][phone]" value="" data-crew-phone class="min-w-40 flex-1 border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="06 12345678" autocomplete="tel">
+                    <button type="button" disabled class="border border-nicon-line bg-nicon-paper px-3 py-2 text-xs text-nicon-muted" title="Sla eerst de gegevens op">Inlogbericht maken</button>
+                </div>
             </div>
         </div>
     </template>
@@ -87,6 +95,24 @@
                         }
                         if (idInput) {
                             idInput.value = existing[index]?.id ?? '';
+                        }
+                        const inviteButton = row.querySelector('button');
+                        const savedId = existing[index]?.id ?? '';
+                        const savedPhone = existing[index]?.phone ?? '';
+                        if (inviteButton && savedId) {
+                            const digits = savedPhone.replace(/\D/g, '');
+                            if (digits.length >= 8) {
+                                inviteButton.disabled = false;
+                                inviteButton.type = 'submit';
+                                inviteButton.setAttribute('form', 'vakman-login-invite-' + savedId);
+                                inviteButton.className = 'border border-nicon-ink bg-nicon-ink px-3 py-2 text-xs font-medium text-white hover:bg-nicon-ink/90';
+                                inviteButton.removeAttribute('title');
+                            } else {
+                                const hint = document.createElement('p');
+                                hint.className = 'mt-1 text-[11px] text-nicon-muted';
+                                hint.textContent = 'Geen telefoonnummer ingevuld';
+                                inviteButton.insertAdjacentElement('afterend', hint);
+                            }
                         }
                         rows.append(row);
                     }

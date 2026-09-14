@@ -6,7 +6,7 @@ use App\Enums\UserRole;
 use App\Models\CrewMember;
 use App\Models\User;
 use App\Models\Worker;
-use App\Support\DutchMobileNumber;
+use App\Support\PhoneNumber;
 use Illuminate\Support\Str;
 
 class VakmanUserResolver
@@ -48,7 +48,7 @@ class VakmanUserResolver
 
     private function findByMobile(string $input): ?User
     {
-        $key = DutchMobileNumber::normalize($input);
+        $key = PhoneNumber::loginKey($input);
         if ($key === null) {
             return null;
         }
@@ -61,7 +61,7 @@ class VakmanUserResolver
             ->get();
 
         foreach ($crewMembers as $member) {
-            if (DutchMobileNumber::normalize($member->phone) !== $key) {
+            if (PhoneNumber::loginKey($member->phone) !== $key) {
                 continue;
             }
 
@@ -83,7 +83,7 @@ class VakmanUserResolver
             ->get();
 
         foreach ($workers as $worker) {
-            if (DutchMobileNumber::normalize($worker->phone) !== $key) {
+            if (PhoneNumber::loginKey($worker->phone) !== $key) {
                 continue;
             }
 

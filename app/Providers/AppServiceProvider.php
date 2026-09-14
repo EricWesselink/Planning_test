@@ -56,6 +56,14 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(6)->by(($request->user()?->id ?: $request->ip()).'|'.$request->ip());
         });
 
+        RateLimiter::for('vakman-login-invite', function (Request $request) {
+            return Limit::perMinute(10)->by(($request->user()?->id ?: $request->ip()).'|'.$request->ip());
+        });
+
+        RateLimiter::for('vakman-password', function (Request $request) {
+            return Limit::perMinute(10)->by(($request->user()?->id ?: $request->ip()).'|'.$request->ip());
+        });
+
         Gate::define('manage-planning', fn (User $user) => $user->canManagePlanning());
         Gate::define('manage-catalog', fn (User $user) => $user->canManageCatalog());
         Gate::define('enter-progress', function (User $user) {

@@ -104,6 +104,34 @@ class VakmanLoginTest extends TestCase
         $this->assertAuthenticatedAs($kees);
     }
 
+    public function test_vakman_logs_in_with_a_foreign_mobile_number(): void
+    {
+        $worker = Worker::query()->create([
+            'name' => 'Team Arek',
+            'employment_type' => 'eigen',
+            'active' => true,
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => '0048-690668857'],
+            ],
+        ]);
+        $arekMember = $worker->crewPeople()->first();
+        $this->assertNotNull($arekMember);
+        $user = User::factory()->vakman($worker->id)->create([
+            'name' => 'Arek',
+            'crew_member_id' => $arekMember->id,
+        ]);
+
+        $this->from(route('vakman.login'))
+            ->post(route('vakman.login.store'), [
+                'login' => '+48 690 668 857',
+                'password' => 'password',
+            ])
+            ->assertRedirect(route('vakman.planning'));
+
+        $this->assertAuthenticatedAs($user);
+    }
+
     public function test_wrong_password_stays_on_the_vakman_login(): void
     {
         $this->makeVakmanUser(['email' => 'nick@niconvloeren.nl']);

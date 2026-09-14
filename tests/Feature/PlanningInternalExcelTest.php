@@ -105,7 +105,16 @@ class PlanningInternalExcelTest extends TestCase
         $this->assertSame('Amersfoort', $sheet->getCell('D'.$projectRow)->getValue());
         $this->assertSame(3835, (int) $sheet->getCell('F'.$projectRow)->getValue());
         $this->assertSame('', (string) $sheet->getCell($monday.$projectRow)->getValue());
-        $this->assertSame(['Laakse Tuinen Amersfoort'], $this->projectNames($sheet));
+        $this->assertSame(['Laakse Tuinen Amersfoort', 'School Zwolle'], $this->projectNames($sheet));
+
+        $openRow = $this->projectRow($sheet, 'School Zwolle');
+        $this->assertSame('Schoolbestuur', $sheet->getCell('B'.$openRow)->getValue());
+        $this->assertSame('Zwolle', $sheet->getCell('D'.$openRow)->getValue());
+        $this->assertSame('Linoleum', $sheet->getCell('E'.$openRow)->getValue());
+        $this->assertSame(200, (int) $sheet->getCell('F'.$openRow)->getValue());
+        $this->assertSame('', (string) $sheet->getCell('G'.$openRow)->getValue());
+        $this->assertSame(0, $this->hoursAt($sheet, 'School Zwolle', 'Totaal werk', 37, 0));
+        $this->assertHoursFormula($sheet, $this->totalHoursCell($sheet, 'School Zwolle', 'Totaal werk'), 0);
 
         $this->assertSame(8, $this->hoursAt($sheet, 'Laakse Tuinen Amersfoort', 'Albert', 37, 0));
         $this->assertSame(4, $this->hoursAt($sheet, 'Laakse Tuinen Amersfoort', 'Albert', 37, 1));
@@ -524,7 +533,8 @@ class PlanningInternalExcelTest extends TestCase
         $this->assertSame(53, (int) $sheet->getCell($this->dayColumn(53, 0).'1')->getValue());
         $this->assertSame(8, $this->hoursAt($sheet, 'Laakse Tuinen', 'Albert', 1, 4));
         $this->assertSame(4, $this->hoursAt($sheet, 'Laakse Tuinen', 'Albert', 53, 0));
-        $this->assertSame(['Laakse Tuinen'], $this->projectNames($sheet));
+        $this->assertSame(['Laakse Tuinen', 'School Zwolle'], $this->projectNames($sheet));
+        $this->assertSame(0, $this->hoursAt($sheet, 'School Zwolle', 'Totaal werk', 1, 0));
     }
 
     public function test_moved_assignment_changes_the_next_export(): void
@@ -552,6 +562,35 @@ class PlanningInternalExcelTest extends TestCase
         );
         $this->assertNull($this->hoursAt($after, 'Laakse Tuinen', 'Albert', 37, 0));
         $this->assertSame(8, $this->hoursAt($after, 'Laakse Tuinen', 'Albert', 37, 1));
+    }
+
+    public function test_export_includes_a_work_without_vakmen_or_werkzaamheden(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'Gemeente Kampen']);
+        Project::query()->create([
+            'project_number' => '260200093',
+            'customer_id' => $customer->id,
+            'name' => 'Kindcentrum IJssel',
+            'city' => 'Kampen',
+            'status' => 'gepland',
+            'planned_start_date' => '2026-10-05',
+            'planned_end_date' => '2026-10-16',
+        ]);
+
+        $sheet = $this->sheetFrom(
+            $this->actingAs($user)->get(route('planning.excel', ['year' => 2026]))
+        );
+
+        $row = $this->projectRow($sheet, 'Kindcentrum IJssel');
+        $this->assertSame(['Kindcentrum IJssel'], $this->projectNames($sheet));
+        $this->assertSame('Gemeente Kampen', $sheet->getCell('B'.$row)->getValue());
+        $this->assertSame('Kampen', $sheet->getCell('D'.$row)->getValue());
+        $this->assertSame('', (string) $sheet->getCell('E'.$row)->getValue());
+        $this->assertSame('', (string) $sheet->getCell('F'.$row)->getValue());
+        $this->assertSame('', (string) $sheet->getCell('G'.$row)->getValue());
+        $this->assertSame('—', $sheet->getCell('H'.$this->rowInProject($sheet, 'Kindcentrum IJssel', 'Totaal werk'))->getValue());
+        $this->assertHoursFormula($sheet, $this->totalHoursCell($sheet, 'Kindcentrum IJssel', 'Totaal werk'), 0);
     }
 
     public function test_limited_access_user_does_not_see_another_project(): void

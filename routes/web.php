@@ -4,6 +4,7 @@ use App\Http\Controllers\AreaTaskController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\SetupController;
 use App\Http\Controllers\Auth\VakmanLoginController;
+use App\Http\Controllers\Auth\VakmanPasswordController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DrawingController;
 use App\Http\Controllers\MeetstaatImportController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\WorkActivityCategoryController;
 use App\Http\Controllers\WorkActivityController;
 use App\Http\Controllers\WorkerAvailabilityController;
 use App\Http\Controllers\WorkerController;
+use App\Http\Controllers\WorkerLoginInviteController;
 use App\Http\Controllers\WorkerPdfImportController;
 use App\Http\Controllers\WorkerRateController;
 use App\Http\Middleware\EnsureProjectAccess;
@@ -65,6 +67,8 @@ Route::middleware('throttle:public-snag-write')->group(function () {
 
 Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/mijn-planning', VakmanPlanningController::class)->name('vakman.planning');
+    Route::get('/vakman/wachtwoord', [VakmanPasswordController::class, 'edit'])->name('vakman.password.edit');
+    Route::patch('/vakman/wachtwoord', [VakmanPasswordController::class, 'update'])->middleware('throttle:vakman-password')->name('vakman.password.update');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/planning', [PlanningController::class, 'index'])->name('planning');
     Route::get('/planning/candidates', [PlanningActionController::class, 'candidates'])->name('planning.candidates');
@@ -166,6 +170,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/vakmensen/vakkennis', [WorkerController::class, 'storeSpecialty'])->name('workers.specialties.store');
     Route::get('/vakmensen/{worker}', [WorkerController::class, 'show'])->name('workers.show');
     Route::post('/vakmensen/{worker}/inlog', [WorkerController::class, 'storeLogin'])->name('workers.login.store');
+    Route::post('/vakmensen/{worker}/leden/{crewMember}/inlogbericht', [WorkerLoginInviteController::class, 'store'])->middleware('throttle:vakman-login-invite')->name('workers.login-invite.store');
+    Route::post('/vakmensen/{worker}/leden/{crewMember}/inlogbericht/wachtwoord', [WorkerLoginInviteController::class, 'resetPassword'])->middleware('throttle:vakman-login-invite')->name('workers.login-invite.reset');
     Route::patch('/vakmensen/{worker}/actief', [WorkerController::class, 'updateActive'])->name('workers.active.update');
     Route::delete('/vakmensen/{worker}', [WorkerController::class, 'destroy'])->name('workers.destroy');
     Route::patch('/vakmensen/{worker}', [WorkerController::class, 'update'])->name('workers.update');

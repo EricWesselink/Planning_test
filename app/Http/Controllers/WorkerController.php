@@ -89,7 +89,7 @@ class WorkerController extends Controller
         Gate::authorize('view', $worker);
         $worker->load([
             'assignments.project',
-            'crewPeople',
+            'crewPeople.user',
             'availabilities',
             'users',
             'workOrders.project',

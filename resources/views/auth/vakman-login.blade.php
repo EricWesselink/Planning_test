@@ -11,7 +11,7 @@
     <div class="w-full max-w-md bg-white text-nicon-ink p-8">
         <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
         <h1 class="mt-2 text-2xl font-semibold">Mijn planning</h1>
-        <p class="mt-2 text-sm text-nicon-muted">Log in met je 06-nummer of e-mailadres om je eigen planning te zien.</p>
+        <p class="mt-2 text-sm text-nicon-muted">Log in met je 06-nummer of e-mailadres om je eigen planning te zien. Na het inloggen kun je zelf je wachtwoord wijzigen.</p>
         <form method="POST" action="{{ route('vakman.login.store') }}" class="mt-6 space-y-4">
             @csrf
             <div>

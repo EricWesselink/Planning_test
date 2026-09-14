@@ -85,7 +85,7 @@ class InternalPlanningExcelService
         $weeks = $this->yearWeeks($year);
         $assignments = $this->assignments($request, $weeks);
         $progress = $this->progress($request, $weeks);
-        $rows = $this->sheetRows($assignments, $progress, $weeks);
+        $rows = $this->sheetRows($this->projects($request), $assignments, $progress, $weeks);
 
         return ['Nicon-planning-'.$year.'.xlsx', $this->workbook($year, $weeks, $rows)];
     }
@@ -130,6 +130,19 @@ class InternalPlanningExcelService
         $week53 = Carbon::now()->setISODate($year, 53, Carbon::MONDAY);
 
         return (int) $week53->isoWeekYear() === $year ? 53 : 52;
+    }
+
+    /**
+     * @return Collection<int, Project>
+     */
+    private function projects(Request $request): Collection
+    {
+        return Project::query()
+            ->with(['customer', 'workItems', 'workActivities.category'])
+            ->active()
+            ->accessibleBy($request->user())
+            ->orderBy('id')
+            ->get();
     }
 
     /**
@@ -202,14 +215,19 @@ class InternalPlanningExcelService
     }
 
     /**
+     * @param  Collection<int, Project>  $allProjects
      * @param  Collection<int, WorkerAssignment>  $assignments
      * @param  Collection<int, WorkProgressEntry>  $progress
      * @param  list<array{number: int, year: int, days: list<Carbon>}>  $weeks
      * @return list<array<string, mixed>>
      */
-    private function sheetRows(Collection $assignments, Collection $progress, array $weeks): array
+    private function sheetRows(Collection $allProjects, Collection $assignments, Collection $progress, array $weeks): array
     {
         $projects = [];
+
+        foreach ($allProjects as $project) {
+            $this->ensureProject($projects, $project);
+        }
 
         foreach ($assignments as $assignment) {
             $project = $assignment->project;
@@ -393,9 +411,6 @@ class InternalPlanningExcelService
                 if ($projects[$projectId]['teams'][$teamKey]['people'] === []) {
                     unset($projects[$projectId]['teams'][$teamKey]);
                 }
-            }
-            if ($projects[$projectId]['teams'] === []) {
-                unset($projects[$projectId]);
             }
         }
     }
