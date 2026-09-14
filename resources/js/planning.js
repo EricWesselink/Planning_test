@@ -38,6 +38,8 @@ if (board) {
     const projectInput = document.getElementById('plan-project-id');
     const titleEl = document.getElementById('plan-dialog-title');
     const deleteBtn = document.getElementById('plan-delete');
+    const ticketWrap = document.getElementById('plan-ticket-wrap');
+    const ticketLink = document.getElementById('plan-ticket-link');
     const workItems = JSON.parse(board.dataset.workItems || '{}');
     const crews = JSON.parse(board.dataset.crews || '{}');
     const candidatesUrl = board.dataset.candidatesUrl || '';
@@ -434,6 +436,10 @@ if (board) {
         form.dataset.assignmentId = '';
         titleEl.textContent = 'Iemand inplannen';
         deleteBtn.classList.add('hidden');
+        ticketWrap?.classList.add('hidden');
+        if (ticketLink) {
+            ticketLink.removeAttribute('href');
+        }
         if (crewHeading) {
             crewHeading.textContent = 'Wie gaat er naartoe';
         }
@@ -462,6 +468,12 @@ if (board) {
         form.dataset.assignmentId = bar.dataset.shiftId;
         titleEl.textContent = 'Inzet aanpassen';
         deleteBtn.classList.remove('hidden');
+        if (ticketLink && ticketWrap) {
+            const base = board.dataset.ticketUrl || board.dataset.assignmentUrl;
+            ticketLink.href = `${base}/${bar.dataset.shiftId}/werkbonnen/nieuw`;
+            ticketLink.textContent = bar.dataset.ticketLabel || 'Werkbon maken';
+            ticketWrap.classList.remove('hidden');
+        }
         if (crewHeading) {
             crewHeading.textContent = 'Wie gaat mee naar het gekozen werk';
         }

@@ -6,6 +6,7 @@ use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
 use App\Enums\SmallWorkType;
 use App\Enums\WorkPhase;
+use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
 use App\Models\Project;
 use App\Models\WorkerAssignment;
@@ -809,6 +810,9 @@ class PlanningBoardService
             'hours_per_day' => (float) $assignment->hours_per_day,
             'planned_hours' => $assignment->plannedHoursValue(),
             'color' => $assignment->worker?->planColor() ?? Format::planColor((int) $assignment->worker_id),
+            'ticket_label' => $assignment->worker
+                ? WorkTicketKind::forWorker($assignment->worker)->label().' maken'
+                : 'Werkbon maken',
             'bar' => $bar,
             'double' => $double,
         ];

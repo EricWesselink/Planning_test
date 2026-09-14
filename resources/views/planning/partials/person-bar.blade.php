@@ -15,6 +15,7 @@
      data-people-count="{{ $personBar['people_count'] }}"
      data-planned-hours="{{ $personBar['planned_hours'] ?? 8 }}"
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"
+     data-ticket-label="{{ $personBar['ticket_label'] ?? 'Werkbon maken' }}"
      title="{{ $personBar['title'] }}"
      style="background: {{ $personBar['color'] }}; top: {{ ($personBarOffset ?? 4) + ($index * 24) }}px; width: calc(({{ $personBar['bar']['span'] }} - {{ $personBar['bar']['start_offset'] ?? 0 }} - (1 - {{ $personBar['bar']['end_offset'] ?? 1 }})) * 100% / {{ $dayCount }} - 2px); left: calc(({{ $personBar['bar']['start'] }} + {{ $personBar['bar']['start_offset'] ?? 0 }}) * 100% / {{ $dayCount }} + 1px);">
     @if (! empty($personBar['has_budget_overrun']))
