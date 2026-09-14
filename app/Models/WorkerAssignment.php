@@ -26,7 +26,7 @@ class WorkerAssignment extends Model
         'planned_hours' => 8,
         'start_time' => '08:00:00',
         'end_time' => '16:00:00',
-        'include_saturday' => false,
+        'include_saturday' => true,
         'include_sunday' => false,
     ];
 
