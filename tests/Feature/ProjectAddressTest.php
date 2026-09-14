@@ -60,6 +60,67 @@ class ProjectAddressTest extends TestCase
             ->assertSee('Project bewerken');
     }
 
+    public function test_project_list_shows_editable_work_address_fields(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject();
+        $project->update([
+            'address' => 'Schoolstraat 1',
+            'postal_code' => '3811 AA',
+            'city' => 'Amersfoort',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertOk()
+            ->assertSee('Werkadres')
+            ->assertSee('name="address"', false)
+            ->assertSee('name="postal_code"', false)
+            ->assertSee('name="city"', false)
+            ->assertSee('value="Schoolstraat 1"', false)
+            ->assertSee('value="3811 AA"', false)
+            ->assertSee('value="Amersfoort"', false)
+            ->assertDontSee('>Straat</label>', false);
+    }
+
+    public function test_project_list_saves_a_work_address(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject();
+
+        $this->actingAs($user)
+            ->from(route('projects.index'))
+            ->patch(route('projects.update', $project), [
+                'planning_project_id' => $project->id,
+                'address' => 'Schoolstraat 1',
+                'postal_code' => '3811 AA',
+                'city' => 'Amersfoort',
+            ])
+            ->assertRedirect(route('projects.index'));
+
+        $project->refresh();
+        $this->assertSame('Schoolstraat 1', $project->address);
+        $this->assertSame('3811 AA', $project->postal_code);
+        $this->assertSame('Amersfoort', $project->city);
+    }
+
+    public function test_uitvoerder_cannot_edit_the_work_address_on_the_project_list(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+        $project = $this->makeProject();
+        $project->update([
+            'address' => 'Schoolstraat 1',
+            'city' => 'Amersfoort',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertOk()
+            ->assertSee('Schoolstraat 1, Amersfoort')
+            ->assertDontSee('name="address"', false)
+            ->assertDontSee('>Opslaan<', false);
+    }
+
     public function test_rejects_a_postal_code_longer_than_16_characters(): void
     {
         $user = User::factory()->create();

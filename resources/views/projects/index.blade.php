@@ -35,7 +35,7 @@
                 <tr>
                     <th class="px-2 py-1.5">Projectnr.</th>
                     <th class="px-2 py-1.5">Werk</th>
-                    <th class="px-2 py-1.5">Plaats</th>
+                    <th class="px-2 py-1.5">Werkadres</th>
                     <th class="px-2 py-1.5">Start werk</th>
                     <th class="px-2 py-1.5">Klaar werk</th>
                     <th class="px-2 py-1.5">Status</th>
@@ -85,7 +85,46 @@
                             <div>{{ $project->displayTitle() }}</div>
                         @endif
                     </td>
-                    <td class="px-2 py-1.5">{{ $project->city }}</td>
+                    <td class="px-2 py-1.5">
+                        @can('update', $project)
+                            <div class="flex min-w-[12rem] flex-col gap-1">
+                                <input
+                                    id="index-{{ $project->id }}-address"
+                                    form="{{ $formId }}"
+                                    name="address"
+                                    value="{{ $editing ? old('address', $project->address) : $project->address }}"
+                                    aria-label="Straat"
+                                    title="Straat"
+                                    placeholder="Straat 12"
+                                    class="border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
+                                >
+                                <div class="flex gap-1">
+                                    <input
+                                        id="index-{{ $project->id }}-postal"
+                                        form="{{ $formId }}"
+                                        name="postal_code"
+                                        value="{{ $editing ? old('postal_code', $project->postal_code) : $project->postal_code }}"
+                                        aria-label="Postcode"
+                                        title="Postcode"
+                                        placeholder="1234 AB"
+                                        class="w-[6.5rem] shrink-0 border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
+                                    >
+                                    <input
+                                        id="index-{{ $project->id }}-city"
+                                        form="{{ $formId }}"
+                                        name="city"
+                                        value="{{ $editing ? old('city', $project->city) : $project->city }}"
+                                        aria-label="Plaats"
+                                        title="Plaats"
+                                        placeholder="Plaats"
+                                        class="min-w-0 flex-1 border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
+                                    >
+                                </div>
+                            </div>
+                        @else
+                            {{ $project->nawLine() ?? '—' }}
+                        @endcan
+                    </td>
                     <td class="px-2 py-1.5">
                         @can('update', $project)
                             @include('projects.partials.planning-weeks', [

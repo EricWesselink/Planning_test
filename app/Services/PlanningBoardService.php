@@ -306,6 +306,7 @@ class PlanningBoardService
                     'kind' => $project->kind?->value,
                     'badge' => $project->isWinkel() ? (string) config('company.shop_name') : null,
                     'compact' => false,
+                    'sort_bucket' => $this->sortBucket($project->planned_start_date, $project->planned_end_date, $days),
                     'sort_date' => $project->planned_start_date?->toDateString() ?? '',
                     'number' => $project->project_number,
                     'work_code' => $project->isWinkel() ? null : $project->workCode(),
@@ -606,7 +607,12 @@ class PlanningBoardService
     private function sortRowsByDate(array $rows): array
     {
         usort($rows, function (array $left, array $right): int {
-            $date = strcmp((string) ($left['sort_date'] ?? ''), (string) ($right['sort_date'] ?? ''));
+            $bucket = ((int) ($left['sort_bucket'] ?? 3)) <=> ((int) ($right['sort_bucket'] ?? 3));
+            if ($bucket !== 0) {
+                return $bucket;
+            }
+
+            $date = strcmp($this->sortDateKey($left), $this->sortDateKey($right));
             if ($date !== 0) {
                 return $date;
             }
@@ -620,6 +626,42 @@ class PlanningBoardService
         });
 
         return $rows;
+    }
+
+    /**
+     * 0 = loopt of start in beeld, 1 = start later, 2 = al klaar, 3 = geen datum.
+     *
+     * @param  Collection<int, Carbon>  $days
+     */
+    private function sortBucket(?CarbonInterface $start, ?CarbonInterface $end, Collection $days): int
+    {
+        $from = $days->first()?->copy()->startOfDay();
+        $to = $days->last()?->copy()->startOfDay();
+        if ($start === null || $from === null || $to === null) {
+            return 3;
+        }
+
+        $startDay = $start->copy()->startOfDay();
+        if ($startDay->gt($to)) {
+            return 1;
+        }
+
+        $endDay = $end?->copy()->startOfDay();
+        if ($endDay !== null && $endDay->lt($from)) {
+            return 2;
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function sortDateKey(array $row): string
+    {
+        $date = (string) ($row['sort_date'] ?? '');
+
+        return $date === '' ? '9999-12-31' : $date;
     }
 
     private function optionalInt(mixed $value): ?int
@@ -1152,6 +1194,7 @@ class PlanningBoardService
             'kind' => $kind,
             'badge' => $badge,
             'compact' => true,
+            'sort_bucket' => $this->sortBucket($start, $end, $days),
             'sort_date' => $sortDate,
             'number' => $project->project_number,
             'work_code' => null,

@@ -312,6 +312,56 @@ class PlanningProjectPeriodTest extends TestCase
             ->assertSee('▶ Start 02-11-2026 · week 45', false);
     }
 
+    public function test_running_work_appears_above_later_starts_and_finished_work(): void
+    {
+        $user = User::factory()->create();
+        $later = $this->makePeriodProject('250200099', 'Later start Almere');
+        $later->forceFill([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ])->save();
+        $later->workItems()->update([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ]);
+        $finished = $this->makePeriodProject('250200001', 'Klaar in augustus');
+        $finished->forceFill([
+            'planned_start_date' => '2026-08-03',
+            'planned_end_date' => '2026-08-08',
+        ])->save();
+        $finished->workItems()->update([
+            'planned_start_date' => '2026-08-03',
+            'planned_end_date' => '2026-08-08',
+        ]);
+        $this->makePeriodProject('250200015', 'TWC studentenhuisvesting Utrecht');
+
+        $this->actingAs($user);
+        $request = Request::create('/planning', 'GET', [
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+        ]);
+        $request->setUserResolver(fn () => $user);
+
+        $board = app(PlanningBoardService::class)->build($request);
+        $titles = collect($board['rows'])->where('type', 'project')->pluck('title')->all();
+
+        $this->assertSame([
+            'TWC studentenhuisvesting Utrecht',
+            'Later start Almere',
+            'Klaar in augustus',
+        ], $titles);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week_nr' => 38, 'year' => 2026, 'weeks' => 1]))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'TWC studentenhuisvesting Utrecht',
+                'Later start Almere',
+                'Klaar in augustus',
+            ]);
+    }
+
     public function test_extra_work_in_the_visible_week_keeps_the_parent_project_on_the_board(): void
     {
         $user = User::factory()->create();
