@@ -109,6 +109,23 @@ class WorkTicketController extends Controller
                 : 'Bestede uren zijn opgeslagen.');
     }
 
+    public function destroy(WorkTicket $workTicket): RedirectResponse
+    {
+        $this->loadTicket($workTicket);
+        Gate::authorize('delete', $workTicket);
+
+        $label = $workTicket->kind->label().' '.$workTicket->number;
+        $query = array_filter([
+            'worker_id' => $workTicket->worker_id,
+            'project_id' => $workTicket->project_id,
+        ]);
+        $workTicket->delete();
+
+        return redirect()
+            ->route('production.index', $query)
+            ->with('status', $label.' is verwijderd.');
+    }
+
     private function loadTicket(WorkTicket $ticket): void
     {
         $ticket->load([

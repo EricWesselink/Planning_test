@@ -114,28 +114,59 @@
                     </div>
                 </div>
 
-                @if (($projectGroup['tickets'] ?? []) !== [])
-                    <ul class="border-t border-nicon-line bg-white px-3 py-2 text-sm">
-                        @foreach ($projectGroup['tickets'] as $ticket)
-                            <li class="flex flex-wrap items-center justify-between gap-2 py-1">
-                                <div>
+                @php
+                    $ticketRows = $projectGroup['tickets'] ?? [];
+                    $collapseRooms = ($projectGroup['rooms_from_ticket'] ?? false) && $ticketRows !== [];
+                @endphp
+
+                @if ($ticketRows !== [])
+                    @foreach ($ticketRows as $ticket)
+                        <div class="flex items-start justify-between gap-3 border-t border-nicon-line bg-white px-3 py-1.5 text-sm">
+                            @if ($collapseRooms && $loop->first)
+                                <details class="min-w-0 flex-1">
+                                    <summary class="cursor-pointer truncate">
+                                        <span class="font-medium">{{ $ticket['kind_label'] }} {{ $ticket['number'] }}</span>
+                                        @if (($ticket['summary'] ?? '') !== '')
+                                            <span class="text-nicon-muted">· {{ $ticket['summary'] }}</span>
+                                        @endif
+                                        <span class="text-nicon-muted">· {{ $ticket['period'] }}</span>
+                                        @if ($ticket['hours_submitted'])
+                                            <span class="text-nicon-orange-dark">· {{ \App\Support\Format::hours($ticket['hours']) }}</span>
+                                        @endif
+                                    </summary>
+                                    @include('production._rooms', [
+                                        'projectGroup' => $projectGroup,
+                                        'project' => $project,
+                                        'canApproveProgress' => $canApproveProgress,
+                                    ])
+                                </details>
+                            @else
+                                <div class="min-w-0 truncate">
                                     <a class="font-medium text-nicon-orange-dark" href="{{ $ticket['url'] }}">{{ $ticket['kind_label'] }} {{ $ticket['number'] }}</a>
+                                    @if (($ticket['summary'] ?? '') !== '')
+                                        <span class="text-nicon-muted">· {{ $ticket['summary'] }}</span>
+                                    @endif
                                     <span class="text-nicon-muted">· {{ $ticket['period'] }}</span>
                                     @if ($ticket['hours_submitted'])
-                                        <span class="ml-1 border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">Uren teruggestuurd · {{ \App\Support\Format::hours($ticket['hours']) }}</span>
-                                    @else
-                                        <span class="text-nicon-muted">· uren nog niet ingevuld</span>
+                                        <span class="text-nicon-orange-dark">· {{ \App\Support\Format::hours($ticket['hours']) }}</span>
                                     @endif
                                 </div>
-                                <div class="flex shrink-0 items-center gap-1.5 text-xs no-print">
-                                    <a class="border border-nicon-line bg-white px-2 py-0.5" href="{{ $ticket['url'] }}">Open bon</a>
-                                    @if ($canCreateVouchers && $ticket['hours_submitted'])
-                                        <a class="bg-nicon-orange px-2 py-0.5 text-white" href="{{ route('vouchers.create', $ticket['voucher_query'] + ['type' => $sheet ? 'facturatie' : 'opdracht']) }}">Bon maken</a>
-                                    @endif
-                                </div>
-                            </li>
-                        @endforeach
-                    </ul>
+                            @endif
+                            <div class="flex shrink-0 items-center gap-1.5 text-xs no-print">
+                                <a class="border border-nicon-line bg-white px-2 py-0.5" href="{{ $ticket['url'] }}">Open</a>
+                                @if ($canCreateVouchers && $ticket['hours_submitted'])
+                                    <a class="bg-nicon-orange px-2 py-0.5 text-white" href="{{ route('vouchers.create', $ticket['voucher_query'] + ['type' => $sheet ? 'facturatie' : 'opdracht']) }}">Bon maken</a>
+                                @endif
+                                @if ($canCreateVouchers)
+                                    <form method="POST" action="{{ $ticket['destroy_url'] }}" onsubmit="return confirm({{ json_encode($ticket['kind_label'].' '.$ticket['number'].' wordt verwijderd.') }})">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="border border-nicon-line bg-white px-2 py-0.5 text-nicon-danger">Verwijderen</button>
+                                    </form>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
                 @endif
 
                 @if ($sheet)
@@ -146,77 +177,12 @@
                         'canCreateVouchers' => $canCreateVouchers,
                         'canApproveProgress' => $canApproveProgress,
                     ])
-                @else
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="text-left text-nicon-muted">
-                                <tr>
-                                    <th class="px-3 py-1 font-medium">Ruimte</th>
-                                    <th class="px-3 py-1 font-medium">m² ruimte</th>
-                                    <th class="px-3 py-1 font-medium">Materialen</th>
-                                    <th class="px-3 py-1 font-medium">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($projectGroup['rooms'] as $room)
-                                    <tr class="border-t border-nicon-line align-top">
-                                        <td class="px-3 py-1 font-medium">{{ $room['label'] }}</td>
-                                        <td class="whitespace-nowrap px-3 py-1">
-                                            @if ($room['area_m2'] > 0)
-                                                {{ \App\Support\Format::qty($room['area_m2'], 2) }} m²
-                                            @else
-                                                —
-                                            @endif
-                                        </td>
-                                        <td class="px-3 py-1">
-                                            <ul class="flex flex-col gap-0.5">
-                                                @foreach ($room['materials'] as $material)
-                                                    <li class="flex items-center gap-2">
-                                                        <span class="inline-block size-2.5 shrink-0 rounded-full border border-nicon-line" style="background: {{ $material['display_color'] ?? \App\Support\MaterialColor::resolve(null, $material['label'] ?? null) }}"></span>
-                                                        <span>
-                                                            {{ $material['label'] }}
-                                                            <span class="text-nicon-muted">
-                                                                {{ \App\Support\Format::qty($material['quantity'], 2) }}
-                                                                {{ $material['unit']?->label() }}
-                                                            </span>
-                                                        </span>
-                                                    </li>
-                                                @endforeach
-                                            </ul>
-                                        </td>
-                                        <td class="px-3 py-1">
-                                            <ul class="flex flex-col gap-0.5">
-                                                @foreach ($room['materials'] as $material)
-                                                    <li class="flex flex-wrap items-center gap-2">
-                                                        @if ($material['provisional'] ?? false)
-                                                            <span class="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">Klaar gemeld · wacht op akkoord</span>
-                                                        @elseif ($material['approved'] ?? false)
-                                                            <span class="border border-nicon-line bg-nicon-sand px-1.5 py-0.5 text-[11px] text-nicon-ok">Akkoord</span>
-                                                        @elseif ($material['status_label'] ?? null)
-                                                            <span class="text-nicon-muted">{{ $material['status_label'] }}</span>
-                                                        @else
-                                                            <span class="text-nicon-muted">Geregistreerd</span>
-                                                        @endif
-                                                        @if ($material['klaar_on'] ?? null)
-                                                            <span class="text-[11px] text-nicon-muted">{{ $material['klaar_on'] }}</span>
-                                                        @endif
-                                                        @if ($canApproveProgress && ($material['provisional'] ?? false) && ($material['task_id'] ?? null))
-                                                            <form method="POST" action="{{ route('production.approve') }}" class="no-print">
-                                                                @csrf
-                                                                <input type="hidden" name="project_id" value="{{ $project->id }}">
-                                                                <input type="hidden" name="task_ids[]" value="{{ $material['task_id'] }}">
-                                                                <button class="text-xs text-nicon-orange-dark underline-offset-2 hover:underline">Akkoord</button>
-                                                            </form>
-                                                        @endif
-                                                    </li>
-                                                @endforeach
-                                            </ul>
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
+                @elseif (! $collapseRooms)
+                    @include('production._rooms', [
+                        'projectGroup' => $projectGroup,
+                        'project' => $project,
+                        'canApproveProgress' => $canApproveProgress,
+                    ])
                 @endif
             </div>
         @endforeach

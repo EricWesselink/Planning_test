@@ -256,10 +256,10 @@ class ProductionOverviewTest extends TestCase
             ->assertOk()
             ->assertSee('OB-2026-0001')
             ->assertSee('Gezondheidscentrum Laren')
-            ->assertSee('Open bon')
-            ->assertSee('uren nog niet ingevuld')
-            ->assertSee('0.07 groepsruimte')
-            ->assertSee('Op opdrachtbon');
+            ->assertSee('PVC')
+            ->assertSee('1 ruimte')
+            ->assertSee('Open')
+            ->assertSee('Verwijderen');
     }
 
     private function assignWorker(Worker $worker, Project $project): void

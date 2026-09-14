@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkProgressEntry;
 use App\Models\WorkTicket;
+use App\Support\Format;
 use App\Support\MaterialColor;
 use Illuminate\Support\Collection;
 
@@ -134,6 +135,7 @@ class ProductionOverviewService
                 ->sum(fn (array $room) => collect($room['materials'])->where('provisional', true)->count()),
             'hours_pending' => 0,
             'tickets' => [],
+            'rooms_from_ticket' => false,
         ];
     }
 
@@ -243,6 +245,7 @@ class ProductionOverviewService
                     'provisional_count' => 0,
                     'hours_pending' => 0,
                     'tickets' => [],
+                    'rooms_from_ticket' => false,
                 ];
             }
 
@@ -250,6 +253,7 @@ class ProductionOverviewService
             if (collect($projectGroup['rooms'])->isEmpty()) {
                 $rooms = $this->roomsFromTicket($ticket);
                 $projectGroup['rooms'] = $rooms;
+                $projectGroup['rooms_from_ticket'] = true;
                 $projectGroup['room_count'] = $rooms->count();
                 $projectGroup['total_m2'] = (float) $ticket->lines
                     ->filter(fn ($line): bool => $line->unit === WorkUnit::SquareMeter)
@@ -365,19 +369,43 @@ class ProductionOverviewService
      *     period: string,
      *     hours: ?float,
      *     hours_submitted: bool,
+     *     summary: string,
+     *     destroy_url: string,
      *     voucher_query: array{worker_id: int, project_id: int, from: string, to: string}
      * }
      */
     private function ticketSummary(WorkTicket $ticket): array
     {
+        $names = $ticket->lines
+            ->map(fn ($line): string => trim((string) ($line->workItem?->cardLabel() ?? $line->workItem?->name ?? '')))
+            ->filter()
+            ->unique()
+            ->values();
+        $works = $names->take(2)->implode(', ');
+        if ($names->count() > 2) {
+            $works .= ' e.a.';
+        }
+
+        $roomCount = $ticket->areas->count();
+        $squareMeters = (float) $ticket->lines
+            ->filter(fn ($line): bool => $line->unit === WorkUnit::SquareMeter)
+            ->sum('quantity');
+        $bits = array_values(array_filter([
+            $works !== '' ? $works : null,
+            $roomCount > 0 ? $roomCount.' '.($roomCount === 1 ? 'ruimte' : 'ruimtes') : null,
+            $squareMeters > 0.0001 ? Format::qty($squareMeters, 2).' m²' : null,
+        ]));
+
         return [
             'id' => (int) $ticket->id,
             'number' => $ticket->number,
             'kind_label' => $ticket->kind->label(),
             'url' => route('work-tickets.show', $ticket),
+            'destroy_url' => route('work-tickets.destroy', $ticket),
             'period' => $ticket->dateRangeLabel(),
             'hours' => $ticket->worked_hours !== null ? (float) $ticket->worked_hours : null,
             'hours_submitted' => $ticket->worked_hours !== null,
+            'summary' => implode(' · ', $bits),
             'voucher_query' => [
                 'worker_id' => (int) $ticket->worker_id,
                 'project_id' => (int) $ticket->project_id,

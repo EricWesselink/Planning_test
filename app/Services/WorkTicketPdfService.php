@@ -13,6 +13,11 @@ use Illuminate\Support\Facades\Storage;
 class WorkTicketPdfService
 {
     /**
+     * @var array<string, ?string>
+     */
+    private array $layerImages = [];
+
+    /**
      * @return array{
      *     ticket: WorkTicket,
      *     filename: string,
@@ -43,7 +48,7 @@ class WorkTicketPdfService
      *     drawingIsPdf: bool,
      *     drawingIsImage: bool,
      *     drawingName: ?string,
-     *     floorLayers: list<array{name: string, rooms: string, page: int, pins: list<array{x: float, y: float, label: string}>}>,
+     *     floorLayers: list<array{name: string, rooms: string, page: int, image: ?string, pins: list<array{x: float, y: float, label: string}>}>,
      *     colleagues: list<string>,
      *     showPrices: bool
      * }
@@ -179,7 +184,7 @@ class WorkTicketPdfService
     }
 
     /**
-     * @return list<array{name: string, rooms: string, page: int, pins: list<array{x: float, y: float, label: string}>}>
+     * @return list<array{name: string, rooms: string, page: int, image: ?string, pins: list<array{x: float, y: float, label: string}>}>
      */
     private function floorLayers(WorkTicket $ticket, ?ProjectDocument $drawing): array
     {
@@ -223,6 +228,7 @@ class WorkTicketPdfService
                 'name' => $name !== '' ? $name : 'Plattegrond',
                 'rooms' => $ticket->roomsLabel(),
                 'page' => 1,
+                'image' => $this->layerImage($drawing, 1),
                 'pins' => [],
             ]];
         }
@@ -230,11 +236,12 @@ class WorkTicketPdfService
         ksort($grouped);
 
         return collect($grouped)
-            ->map(function (array $group, int $page): array {
+            ->map(function (array $group, int $page) use ($drawing): array {
                 return [
                     'name' => implode(', ', array_keys($group['floors'])),
                     'rooms' => implode(', ', array_values(array_unique($group['rooms']))),
                     'page' => $page,
+                    'image' => $this->layerImage($drawing, $page),
                     'pins' => $group['pins'],
                 ];
             })
@@ -353,5 +360,103 @@ class WorkTicketPdfService
         }
 
         return 'file://'.str_replace('\\', '/', $absolute);
+    }
+
+    private function layerImage(ProjectDocument $drawing, int $page): ?string
+    {
+        $key = $drawing->id.'-'.$page;
+        if (array_key_exists($key, $this->layerImages)) {
+            return $this->layerImages[$key];
+        }
+
+        $stored = $this->storedImagePath($drawing);
+        if ($stored !== null) {
+            return $this->layerImages[$key] = $stored;
+        }
+
+        if (! $drawing->isPdf() || $drawing->file_path === '') {
+            return $this->layerImages[$key] = null;
+        }
+
+        $absolute = Storage::disk('local')->path($drawing->file_path);
+
+        return $this->layerImages[$key] = $this->rasterizePdfPage($absolute, $page);
+    }
+
+    private function rasterizePdfPage(string $pdfPath, int $page): ?string
+    {
+        $binary = $this->pdftoppmBinary();
+        if ($binary === null || $page < 1 || ! is_file($pdfPath)) {
+            return null;
+        }
+
+        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-ticket-draw-'.bin2hex(random_bytes(6));
+        if (! mkdir($dir) && ! is_dir($dir)) {
+            return null;
+        }
+
+        $prefix = $dir.DIRECTORY_SEPARATOR.'page';
+        $command = escapeshellarg($binary)
+            .' -png -r 120 -f '.$page.' -l '.$page.' '
+            .escapeshellarg($pdfPath).' '
+            .escapeshellarg($prefix);
+        if (PHP_OS_FAMILY === 'Windows') {
+            $command .= ' 2>NUL';
+        } else {
+            $command .= ' 2>/dev/null';
+        }
+        exec($command, $_, $code);
+        if ($code !== 0) {
+            return null;
+        }
+
+        $files = glob($prefix.'-*.png') ?: [];
+        $file = $files[0] ?? null;
+        if ($file === null || ! is_file($file)) {
+            return null;
+        }
+
+        return 'file://'.str_replace('\\', '/', $file);
+    }
+
+    private function pdftoppmBinary(): ?string
+    {
+        static $binary = false;
+        if ($binary !== false) {
+            return $binary;
+        }
+
+        $fromPath = $this->whichBinary('pdftoppm');
+        if ($fromPath !== null) {
+            return $binary = $fromPath;
+        }
+
+        $wingetRoot = getenv('LOCALAPPDATA');
+        if (is_string($wingetRoot) && $wingetRoot !== '') {
+            $matches = glob($wingetRoot.'\\Microsoft\\WinGet\\Packages\\*Poppler*\\poppler-*\\Library\\bin\\pdftoppm.exe') ?: [];
+            rsort($matches);
+            foreach ($matches as $match) {
+                if (is_file($match)) {
+                    return $binary = $match;
+                }
+            }
+        }
+
+        return $binary = null;
+    }
+
+    private function whichBinary(string $name): ?string
+    {
+        $output = PHP_OS_FAMILY === 'Windows'
+            ? trim((string) shell_exec('where '.escapeshellarg($name).' 2>NUL'))
+            : trim((string) shell_exec('command -v '.escapeshellarg($name).' 2>/dev/null'));
+        if ($output === '') {
+            return null;
+        }
+
+        $first = explode("\n", str_replace("\r", '', $output))[0] ?? '';
+        $first = trim($first);
+
+        return $first !== '' && is_file($first) ? $first : null;
     }
 }

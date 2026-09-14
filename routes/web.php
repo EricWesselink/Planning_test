@@ -89,6 +89,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/werkbonnen/{workTicket}', [WorkTicketController::class, 'show'])->name('work-tickets.show');
     Route::get('/werkbonnen/{workTicket}/pdf', [WorkTicketController::class, 'pdf'])->name('work-tickets.pdf');
     Route::patch('/werkbonnen/{workTicket}/uren', [WorkTicketController::class, 'updateHours'])->name('work-tickets.hours.update');
+    Route::delete('/werkbonnen/{workTicket}', [WorkTicketController::class, 'destroy'])->name('work-tickets.destroy');
     Route::get('/productie', [ProductionController::class, 'index'])->name('production.index');
     Route::post('/productie/akkoord', [ProductionController::class, 'approve'])->name('production.approve');
     Route::get('/productie/bonnen/nieuw', [VoucherController::class, 'create'])->name('vouchers.create');

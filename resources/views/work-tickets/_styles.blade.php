@@ -10,6 +10,12 @@
         background: #fff;
     }
     .ticket-page { max-width: 210mm; margin: 0 auto; }
+    .drawing-page {
+        max-width: 210mm;
+        margin: 0 auto;
+        page-break-before: always;
+        break-before: page;
+    }
     table { width: 100%; border-collapse: collapse; }
     td, th { vertical-align: top; }
     a { color: #163a5f; }
@@ -124,7 +130,18 @@
         max-height: 170mm;
         border: 0.4pt solid #d5dde5;
     }
-    .drawing-name { font-size: 8pt; color: #5b6570; margin-top: 4px; }
+    .drawing-page .map {
+        min-height: 0;
+        margin: 8px 0;
+    }
+    .drawing-page .map-drawing,
+    .drawing-page img {
+        display: block;
+        max-width: 100%;
+        max-height: 230mm;
+        height: auto;
+        border: 0.4pt solid #d5dde5;
+    }
     .foot {
         margin-top: 22px;
         padding-top: 8px;
@@ -165,6 +182,6 @@
         .no-print { display: none !important; }
         body { margin: 0; background: #fff; }
         a { text-decoration: none; color: inherit; }
-        .map, .room-pin { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+        .map, .room-pin, .drawing-page { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     }
 </style>
