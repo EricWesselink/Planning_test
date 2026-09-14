@@ -13,19 +13,25 @@
 <div class="nicon-shell">
     <header class="nicon-topbar bg-nicon-ink text-white">
         <div class="flex items-center gap-4 px-4 py-3">
+            @php
+                $user = auth()->user();
+            @endphp
             <div class="shrink-0">
                 <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
-                <div class="text-lg font-semibold leading-tight">Planning</div>
+                <div class="text-lg font-semibold leading-tight">{{ $user?->isVakman() ? 'Mijn planning' : 'Planning' }}</div>
             </div>
             <nav class="flex min-w-0 grow items-center gap-1 overflow-x-auto text-sm">
                 @php
-                    $user = auth()->user();
-                    $links = [
-                        ['href' => route('dashboard'), 'label' => 'Dashboard', 'active' => request()->routeIs('dashboard')],
-                        ['href' => route('planning'), 'label' => 'Planning', 'active' => request()->routeIs('planning')],
-                        ['href' => route('production.index'), 'label' => 'Productie', 'active' => request()->routeIs('production.*')],
-                        ['href' => route('projects.index'), 'label' => 'Projecten', 'active' => request()->routeIs('projects.*') && ! request()->routeIs('projects.archived')],
-                    ];
+                    $links = $user?->isVakman()
+                        ? [
+                            ['href' => route('vakman.planning'), 'label' => 'Mijn planning', 'active' => request()->routeIs('vakman.planning')],
+                        ]
+                        : [
+                            ['href' => route('dashboard'), 'label' => 'Dashboard', 'active' => request()->routeIs('dashboard')],
+                            ['href' => route('planning'), 'label' => 'Planning', 'active' => request()->routeIs('planning')],
+                            ['href' => route('production.index'), 'label' => 'Productie', 'active' => request()->routeIs('production.*')],
+                            ['href' => route('projects.index'), 'label' => 'Projecten', 'active' => request()->routeIs('projects.*') && ! request()->routeIs('projects.archived')],
+                        ];
                     if (! $user?->isVakman()) {
                         $links[] = ['href' => route('projects.archived'), 'label' => 'Archief', 'active' => request()->routeIs('projects.archived')];
                         $links[] = ['href' => route('workers.index'), 'label' => 'Vakmensen / ZZP', 'active' => request()->routeIs('workers.*')];

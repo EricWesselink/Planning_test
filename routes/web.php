@@ -3,6 +3,7 @@
 use App\Http\Controllers\AreaTaskController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\SetupController;
+use App\Http\Controllers\Auth\VakmanLoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DrawingController;
 use App\Http\Controllers\MeetstaatImportController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\SmallWorkController;
 use App\Http\Controllers\SnagController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VakmanPlanningController;
 use App\Http\Controllers\VoucherController;
 use App\Http\Controllers\WorkActivityCategoryController;
 use App\Http\Controllers\WorkActivityController;
@@ -30,13 +32,19 @@ use App\Http\Middleware\EnsureProjectAccess;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return auth()->check()
-        ? redirect()->route('dashboard')
-        : redirect()->route('login');
+    if (! auth()->check()) {
+        return redirect()->route('login');
+    }
+
+    return auth()->user()?->isVakman()
+        ? redirect()->route('vakman.planning')
+        : redirect()->route('dashboard');
 });
 
 Route::get('/login', [LoginController::class, 'create'])->name('login')->middleware('guest');
 Route::post('/login', [LoginController::class, 'store'])->middleware(['guest', 'throttle:login']);
+Route::get('/vakman/login', [VakmanLoginController::class, 'create'])->name('vakman.login')->middleware('guest');
+Route::post('/vakman/login', [VakmanLoginController::class, 'store'])->name('vakman.login.store')->middleware(['guest', 'throttle:vakman-login']);
 Route::post('/logout', [LoginController::class, 'destroy'])->name('logout')->middleware('auth');
 
 Route::middleware(['first-run', 'guest'])->group(function () {
@@ -56,6 +64,7 @@ Route::middleware('throttle:public-snag-write')->group(function () {
 });
 
 Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
+    Route::get('/mijn-planning', VakmanPlanningController::class)->name('vakman.planning');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/planning', [PlanningController::class, 'index'])->name('planning');
     Route::get('/planning/candidates', [PlanningActionController::class, 'candidates'])->name('planning.candidates');

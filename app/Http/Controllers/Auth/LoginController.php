@@ -45,15 +45,21 @@ class LoginController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard'));
+        $home = $user->isVakman()
+            ? route('vakman.planning')
+            : route('dashboard');
+
+        return redirect()->intended($home);
     }
 
     public function destroy(Request $request): RedirectResponse
     {
+        $loginRoute = $request->user()?->isVakman() ? 'vakman.login' : 'login';
+
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('login');
+        return redirect()->route($loginRoute);
     }
 }

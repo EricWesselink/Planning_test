@@ -19,6 +19,9 @@ class EnsureUserIsActive
             return $next($request);
         }
 
+        $loginRoute = $user->isVakman() ? 'vakman.login' : 'login';
+        $errorField = $user->isVakman() ? 'login' : 'email';
+
         Auth::logout();
 
         if ($request->hasSession()) {
@@ -31,9 +34,9 @@ class EnsureUserIsActive
         }
 
         return redirect()
-            ->route('login')
+            ->route($loginRoute)
             ->withErrors([
-                'email' => 'Dit account is niet actief.',
+                $errorField => 'Dit account is niet actief.',
             ]);
     }
 }

@@ -15,7 +15,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->redirectGuestsTo(fn () => route('login'));
+        $middleware->redirectGuestsTo(function (Request $request) {
+            $name = $request->route()?->getName();
+            if (is_string($name) && str_starts_with($name, 'vakman.')) {
+                return route('vakman.login');
+            }
+
+            return route('login');
+        });
+        $middleware->redirectUsersTo(function () {
+            return auth()->user()?->isVakman()
+                ? route('vakman.planning')
+                : route('dashboard');
+        });
         $middleware->web(append: [
             EnsureUserIsActive::class,
         ]);

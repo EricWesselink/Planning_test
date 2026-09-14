@@ -22,7 +22,7 @@ class WorkerPlanningInviteMailTest extends TestCase
         $mail->assertSeeInHtml('Vakkennis: PVC');
         $mail->assertSeeInHtml('wespro@niconvloeren.nl');
         $mail->assertSeeInHtml('tijdelijk1');
-        $mail->assertSeeInHtml(route('login'));
+        $mail->assertSeeInHtml(route('vakman.login'));
         $mail->assertSeeInText('Tijdelijk wachtwoord: tijdelijk1');
         $mail->assertSeeInText('Log in om je planning te zien.');
     }
@@ -56,6 +56,6 @@ class WorkerPlanningInviteMailTest extends TestCase
             'email' => 'wespro@niconvloeren.nl',
         ]);
 
-        return new WorkerPlanningInviteMail($worker, $account, route('login'), 'tijdelijk1');
+        return new WorkerPlanningInviteMail($worker, $account, route('vakman.login'), 'tijdelijk1');
     }
 }

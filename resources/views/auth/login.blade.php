@@ -35,6 +35,9 @@
             @enderror
             <button class="w-full bg-nicon-orange text-white py-2.5 font-medium hover:bg-nicon-orange-dark">Inloggen</button>
         </form>
+        <p class="mt-6 text-sm text-nicon-muted">
+            <a href="{{ route('vakman.login') }}" class="hover:text-nicon-ink">Vakman? Log in met 06-nummer of e-mailadres.</a>
+        </p>
     </div>
     <script>
         window.addEventListener('pageshow', (event) => {

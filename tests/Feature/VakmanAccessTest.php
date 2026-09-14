@@ -108,10 +108,11 @@ class VakmanAccessTest extends TestCase
         $user = User::factory()->vakman($nick->id)->create();
 
         $this->actingAs($user)
-            ->get(route('dashboard'))
+            ->get(route('vakman.planning'))
             ->assertOk()
-            ->assertSee('href="'.url('/planning').'"', false)
-            ->assertSee('href="'.url('/projecten').'"', false)
+            ->assertSee('href="'.route('vakman.planning').'"', false)
+            ->assertDontSee('href="'.url('/planning').'"', false)
+            ->assertDontSee('href="'.url('/projecten').'"', false)
             ->assertDontSee('href="'.url('/vakmensen').'"', false)
             ->assertDontSee('href="'.url('/gebruikers').'"', false)
             ->assertDontSee('href="'.url('/projecten/archief').'"', false)

@@ -497,7 +497,7 @@ class WorkerController extends Controller
         Mail::to($account->email)->send(new WorkerPlanningInviteMail(
             $worker,
             $account,
-            route('login'),
+            route('vakman.login'),
             $request->string('password')->toString(),
         ));
     }
