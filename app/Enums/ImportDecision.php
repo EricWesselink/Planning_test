@@ -4,25 +4,36 @@ namespace App\Enums;
 
 /**
  * Centrale importeindbeslissing.
- * READY_AUTOMATIC en READY_WITH_WARNINGS mogen beide definitief importeren.
+ * READY en READY_WITH_WARNINGS mogen beide definitief importeren.
+ * Alleen TECHNICAL_ERROR blokkeert.
  */
 enum ImportDecision: string
 {
-    case ReadyAutomatic = 'READY_AUTOMATIC';
+    case Ready = 'READY';
     case ReadyWithWarnings = 'READY_WITH_WARNINGS';
-    case BlockedConflict = 'BLOCKED_CONFLICT';
+    case TechnicalError = 'TECHNICAL_ERROR';
 
     public function label(): string
     {
         return match ($this) {
-            self::ReadyAutomatic => 'Automatisch gereed',
+            self::Ready => 'Gereed',
             self::ReadyWithWarnings => 'Importeren toegestaan met waarschuwingen',
-            self::BlockedConflict => 'Geblokkeerd door bronconflict',
+            self::TechnicalError => 'Geblokkeerd door technische fout',
         };
     }
 
     public function allowsImport(): bool
     {
-        return $this === self::ReadyAutomatic || $this === self::ReadyWithWarnings;
+        return $this === self::Ready || $this === self::ReadyWithWarnings;
+    }
+
+    public static function parse(?string $value): ?self
+    {
+        return match ($value) {
+            'READY', 'READY_AUTOMATIC' => self::Ready,
+            'READY_WITH_WARNINGS' => self::ReadyWithWarnings,
+            'TECHNICAL_ERROR', 'BLOCKED_CONFLICT' => self::TechnicalError,
+            default => self::tryFrom((string) $value),
+        };
     }
 }

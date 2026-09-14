@@ -177,9 +177,9 @@ class RoomImportAssembler
             $preview['import_report']['quality_label'] = ($preview['import_closure']['decision'] ?? '') === ImportDecision::ReadyWithWarnings->value
                 ? 'Importeren toegestaan met waarschuwingen'
                 : 'Import gereed';
-        } elseif (($preview['import_closure']['open_points'] ?? 0) > 0) {
+        } elseif (($preview['import_closure']['decision'] ?? '') === ImportDecision::TechnicalError->value) {
             $preview['import_report']['incomplete_recognition'] = true;
-            $preview['import_report']['quality_label'] = 'Onvolledige herkenning – controleren';
+            $preview['import_report']['quality_label'] = 'Technische fout – importeren geblokkeerd';
         }
 
         return $preview;

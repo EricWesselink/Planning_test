@@ -177,10 +177,10 @@ class MeetstaatImportController extends Controller
         $preview = $calculationImport->applyReview($preview, $data['calculation_labor'] ?? []);
 
         $cachedReady = (bool) ($payload['preview']['import_closure']['ready'] ?? false)
-            || ImportDecision::tryFrom((string) ($payload['preview']['import_closure']['decision'] ?? ''))?->allowsImport() === true;
+            || ImportDecision::parse((string) ($payload['preview']['import_closure']['decision'] ?? ''))?->allowsImport() === true;
 
         if ($cachedReady) {
-            // READY_AUTOMATIC: behoud geassembleerde preview. Geen form-areas (max_input_vars kapt
+            // READY / READY_WITH_WARNINGS: behoud geassembleerde preview. Geen form-areas (max_input_vars kapt
             // grote projecten af en mag TASK_SOURCE-taken nooit wissen).
             if (! empty($data['exclude_works'])) {
                 $preview = $assembler->applyReview(
@@ -222,14 +222,13 @@ class MeetstaatImportController extends Controller
                 $payload['preview'] = $preview;
                 Cache::put('meetstaat.'.$token, $payload, now()->addHour());
             }
-            $open = (int) ($closure['open_points'] ?? 0);
 
             return redirect()
                 ->route('projects.review', $token)
                 ->withInput()
-                ->with('status', $closure['button_label'] ?? ('Nog '.$open.' punten controleren'))
+                ->with('status', $closure['button_label'] ?? 'Importeren geblokkeerd')
                 ->withErrors([
-                    'import_closure' => 'Project mag pas definitief geïmporteerd worden wanneer alle harde controles groen zijn en een eventueel totaalverschil volledig als bronafronding is verklaard.',
+                    'import_closure' => 'Importeren is geblokkeerd door een technische fout. Inhoudelijke waarschuwingen blokkeren het opslaan niet.',
                 ]);
         }
 

@@ -23,11 +23,11 @@ class FloorImportDecisionRegressionTest extends TestCase
     public static function projectCases(): array
     {
         $cases = [
-            ['name' => 'Laakse', 'expected_decision' => 'READY_AUTOMATIC', 'max_task_loss' => 0.05, 'expected_task' => 3440.46],
-            ['name' => 'Rova', 'expected_decision' => 'READY_AUTOMATIC', 'max_task_loss' => 0.05],
-            ['name' => 'Griftland', 'expected_decision' => 'READY_AUTOMATIC', 'max_task_loss' => 0.05],
-            ['name' => 'IKC Sluisbuurt', 'expected_decision' => 'READY_AUTOMATIC', 'max_task_loss' => 0.05, 'expected_task' => 2529.54],
-            ['name' => 'Gezondheidscentrum Laren', 'expected_decision' => 'READY_AUTOMATIC', 'max_task_loss' => 0.05, 'expected_task' => 807.65],
+            ['name' => 'Laakse', 'expected_decision' => 'READY', 'max_task_loss' => 0.05, 'expected_task' => 3440.46],
+            ['name' => 'Rova', 'expected_decision' => 'READY', 'max_task_loss' => 0.05],
+            ['name' => 'Griftland', 'expected_decision' => 'READY_WITH_WARNINGS', 'max_task_loss' => 0.05],
+            ['name' => 'IKC Sluisbuurt', 'expected_decision' => 'READY', 'max_task_loss' => 0.05, 'expected_task' => 2529.54],
+            ['name' => 'Gezondheidscentrum Laren', 'expected_decision' => 'READY', 'max_task_loss' => 0.05, 'expected_task' => 807.65],
         ];
 
         $out = [];

@@ -121,7 +121,7 @@ TXT);
         $this->assertEqualsWithDelta(153.21, (float) $ege['calculated_total'], 0.01);
         $this->assertNotSame('controleren', $ege['status']);
 
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
     }
 
     public function test_meetstaat_and_drawing_legend_consensus_keeps_material_list_factor_two_informative(): void
@@ -257,7 +257,7 @@ TXT);
             ->sum(fn (array $task) => (float) ($task['quantity'] ?? 0));
         $this->assertEqualsWithDelta(88.79, $tasks7133290, 0.01);
 
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertSame(0, collect($preview['material_check'])->where('status', 'controleren')->count());
     }
 

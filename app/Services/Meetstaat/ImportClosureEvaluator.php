@@ -8,7 +8,8 @@ use App\Support\Format;
 /**
  * Harde eindcontrole vóór definitief importeren.
  * Geen project-/bestandsnaam-regels: alleen preview-inhoud.
- * Centrale beslissing: READY_AUTOMATIC, READY_WITH_WARNINGS of BLOCKED_CONFLICT.
+ * Centrale beslissing: READY, READY_WITH_WARNINGS of TECHNICAL_ERROR.
+ * Inhoudelijke bronverschillen zijn waarschuwingen; alleen technische fouten blokkeren.
  */
 class ImportClosureEvaluator
 {
@@ -277,6 +278,7 @@ class ImportClosureEvaluator
                 suggested: 'Behoud alle strong TASK_SOURCE-regels; fysieke tekeningmatch mag taken nooit wissen',
                 anchor: '#importcontrole',
                 category: 'task_source',
+                severity: 'technical',
             );
         }
 
@@ -422,6 +424,8 @@ class ImportClosureEvaluator
             }
         }
 
+        $this->appendCalculationWarnings($preview, $issues);
+
         $sourceRulesOk = $uncertain === [] && $duplicates === [];
         $projectHeaderOk = $headerMismatches === [];
         $roomsOk = $openRooms === [] && $areas !== [];
@@ -450,32 +454,49 @@ class ImportClosureEvaluator
 
         $warningIssues = array_values(array_filter(
             $issues,
-            fn (array $issue): bool => ($issue['severity'] ?? 'hard') === 'warning'
+            fn (array $issue): bool => ($issue['severity'] ?? 'warning') === 'warning'
         ));
-        $hardIssues = array_values(array_filter(
+        $technicalIssues = array_values(array_filter(
             $issues,
-            fn (array $issue): bool => ($issue['severity'] ?? 'hard') !== 'warning'
+            fn (array $issue): bool => ($issue['severity'] ?? '') === 'technical'
         ));
-        $openPoints = count($hardIssues);
-        $warningCount = count($warningIssues);
-        $differenceAcceptable = $difference === null
-            ? ! $this->expectsMaterials($sources)
-            : (
-                abs((float) $difference) <= self::TOLERANCE
-                || $this->sourceRoundingProvesDifference($preview, (float) $difference, $materials, $areas)
+
+        $hasWorks = array_values(array_filter(
+            $preview['works'] ?? [],
+            fn ($work): bool => is_array($work)
+        )) !== [];
+        if (filled($preview['technical_error'] ?? null)) {
+            $technicalIssues[] = $this->issue(
+                found: (string) $preview['technical_error'],
+                expected: 'verwerkbare bronbestanden',
+                source: 'technische fout',
+                problem: (string) $preview['technical_error'],
+                suggested: 'Upload de bestanden opnieuw of kies een leesbaar bestand',
+                anchor: '#importcontrole',
+                category: 'technical',
+                severity: 'technical',
             );
+            $issues[] = $technicalIssues[array_key_last($technicalIssues)];
+        }
+        if ((bool) ($sources['meetstaat'] ?? false) && $areas === [] && ! $hasWorks && $technicalIssues === []) {
+            $technicalIssues[] = $this->issue(
+                found: 'geen ruimtes of taken',
+                expected: 'verwerkte Meetstaat',
+                source: 'Meetstaat',
+                problem: 'Meetstaat leverde geen verwerkbare ruimtes of taken op',
+                suggested: 'Controleer of het bestand leesbaar is en opnieuw uploaden',
+                anchor: '#importcontrole',
+                category: 'technical',
+                severity: 'technical',
+            );
+            $issues[] = $technicalIssues[array_key_last($technicalIssues)];
+        }
+
+        $openPoints = count($technicalIssues);
+        $warningCount = count($warningIssues);
         $meetstaatClosed = $taskSourceOk
-            && $quantitiesOk
-            && $differenceAcceptable
-            && $areas !== [];
-        $hardOk = $meetstaatClosed
-            && $projectHeaderOk
-            && $sourceRulesOk
-            && $tasksOk
-            && $materialsOk
-            && $floorMismatches === []
-            && $hardIssues === [];
-        $ready = $hardOk;
+            && ($areas !== [] || $hasWorks);
+        $ready = $technicalIssues === [];
 
         $roomTotal = max(count($areas), 1);
         $percentages = [
@@ -502,11 +523,11 @@ class ImportClosureEvaluator
             && abs((float) $difference) > self::TOLERANCE
             && $this->sourceRoundingProvesDifference($preview, (float) $difference, $materials, $areas);
 
-        $decision = ImportDecision::BlockedConflict;
+        $decision = ImportDecision::TechnicalError;
         if ($ready) {
             $decision = $warningCount > 0
                 ? ImportDecision::ReadyWithWarnings
-                : ImportDecision::ReadyAutomatic;
+                : ImportDecision::Ready;
         }
 
         $differenceLabel = null;
@@ -521,12 +542,12 @@ class ImportClosureEvaluator
             }
         }
 
-        $buttonLabel = 'Nog '.$openPoints.' '.($openPoints === 1 ? 'punt' : 'punten').' controleren';
-        if ($decision === ImportDecision::ReadyAutomatic) {
-            $buttonLabel = 'Project definitief importeren';
-        } elseif ($decision === ImportDecision::ReadyWithWarnings) {
-            $buttonLabel = 'Importeren toegestaan';
+        $buttonLabel = 'Project definitief importeren';
+        if ($decision === ImportDecision::TechnicalError) {
+            $buttonLabel = 'Importeren geblokkeerd';
         }
+
+        $warningSummary = $this->warningSummary($warningIssues);
 
         return [
             'ready' => $ready,
@@ -537,10 +558,11 @@ class ImportClosureEvaluator
             'hard_conflict_count' => $openPoints,
             'meetstaat_closed' => $meetstaatClosed,
             'summary' => $meetstaatClosed
-                ? ($warningCount > 0
-                    ? 'Meetstaat sluitend — '.$warningCount.' tekeningswaarschuwingen'
-                    : 'Meetstaat sluitend')
-                : null,
+                ? 'Meetstaat sluitend'
+                : ($decision === ImportDecision::TechnicalError
+                    ? 'Technische fout — bestanden niet verwerkbaar'
+                    : null),
+            'warning_summary' => $warningSummary,
             'percentages' => $percentages,
             'checks' => $checks,
             'issues' => $issues,
@@ -729,6 +751,93 @@ class ImportClosureEvaluator
     }
 
     /**
+     * @param  array<string, mixed>  $preview
+     * @param  list<array<string, mixed>>  $issues
+     */
+    private function appendCalculationWarnings(array $preview, array &$issues): void
+    {
+        $labor = array_values(array_filter(
+            $preview['calculation']['labor'] ?? [],
+            fn ($row): bool => is_array($row)
+        ));
+        foreach ($labor as $line) {
+            $status = (string) ($line['status'] ?? '');
+            $workName = trim((string) ($line['work_name'] ?? ''));
+            if ($status !== 'review' && $workName !== '') {
+                continue;
+            }
+            $issues[] = $this->issue(
+                found: (string) ($line['description'] ?? $line['production_description'] ?? 'Excel-regel'),
+                expected: 'gekoppelde werksoort',
+                source: 'Excel-calculatie',
+                problem: 'Excel-arbeidsregel niet gekoppeld',
+                suggested: 'Koppel de regel of laat de waarschuwing staan; Meetstaat blijft leidend',
+                anchor: '#begrote-arbeidsuren',
+                category: 'calculation',
+            );
+        }
+
+        $products = array_values(array_filter(
+            $preview['calculation']['products'] ?? [],
+            fn ($row): bool => is_array($row)
+        ));
+        foreach ($products as $product) {
+            if (empty($product['quantities_differ'])) {
+                continue;
+            }
+            $issues[] = $this->issue(
+                found: (string) ($product['excel_quantity'] ?? $product['quantity'] ?? '—'),
+                expected: (string) ($product['meetstaat_quantity'] ?? 'Meetstaat-hoeveelheid'),
+                source: 'Excel-calculatie',
+                problem: 'Excel-hoeveelheid wijkt af van de Meetstaat: '.((string) ($product['name'] ?? $product['label'] ?? '')),
+                suggested: 'Meetstaat blijft leidend; Excel overschrijft netto m²/m¹ niet',
+                anchor: '#begrote-arbeidsuren',
+                category: 'calculation',
+            );
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $warningIssues
+     */
+    private function warningSummary(array $warningIssues): ?string
+    {
+        $count = count($warningIssues);
+        if ($count === 0) {
+            return null;
+        }
+
+        $groups = [];
+        foreach ($warningIssues as $issue) {
+            $category = (string) ($issue['category'] ?? '');
+            $group = match (true) {
+                in_array($category, ['materials', 'quantities', 'legend'], true) => 'materiaalwaarschuwingen',
+                $category === 'drawing' => 'tekeningwaarschuwingen',
+                in_array($category, ['calculation', 'source_rules'], true) => 'Excel-waarschuwingen',
+                $category === 'floors' => 'bouwlaagwaarschuwingen',
+                $category === 'rooms' => 'ruimtewaarschuwingen',
+                default => 'waarschuwingen',
+            };
+            $groups[$group] = ($groups[$group] ?? 0) + 1;
+        }
+
+        if (count($groups) === 1) {
+            $label = (string) array_key_first($groups);
+            $groupCount = $groups[$label];
+            if ($label === 'waarschuwingen') {
+                return $groupCount.' '.($groupCount === 1 ? 'waarschuwing' : 'waarschuwingen');
+            }
+            if ($groupCount === 1) {
+                $label = str_replace('waarschuwingen', 'waarschuwing', $label);
+            }
+
+            return $groupCount.' '.$label;
+        }
+
+        return $count.' '.($count === 1 ? 'waarschuwing' : 'waarschuwingen');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function issue(
@@ -739,7 +848,7 @@ class ImportClosureEvaluator
         string $suggested,
         string $anchor,
         string $category,
-        string $severity = 'hard',
+        string $severity = 'warning',
     ): array {
         return [
             'found' => $found,

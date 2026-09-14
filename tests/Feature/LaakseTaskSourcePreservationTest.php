@@ -45,7 +45,7 @@ class LaakseTaskSourcePreservationTest extends TestCase
         );
         $this->assertEqualsWithDelta(3440.46, (float) $preview['import_report']['task_meters'], 0.01);
         $this->assertEqualsWithDelta(0.0, (float) ($preview['import_report']['task_source_meters_lost'] ?? 99), 0.01);
-        $this->assertSame(ImportDecision::ReadyAutomatic->value, $preview['import_closure']['decision']);
+        $this->assertSame(ImportDecision::Ready->value, $preview['import_closure']['decision']);
         $this->assertCount(5, $preview['floors']);
 
         $parsedByFloor = $assembler->flooringTaskMetersByFloor($parsedAreas);
@@ -78,7 +78,7 @@ class LaakseTaskSourcePreservationTest extends TestCase
             (new FloorPlanParser($extractor))->parseFile($drawingPath, 'tekening.pdf'),
         );
         $this->assertTrue($preview['import_closure']['ready']);
-        $this->assertSame(ImportDecision::ReadyAutomatic->value, $preview['import_closure']['decision']);
+        $this->assertSame(ImportDecision::Ready->value, $preview['import_closure']['decision']);
 
         $token = 'task-source-preserve-token';
         Cache::put('meetstaat.'.$token, [
@@ -206,7 +206,7 @@ class LaakseTaskSourcePreservationTest extends TestCase
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
         $this->assertFalse($closure['ready']);
-        $this->assertSame(ImportDecision::BlockedConflict->value, $closure['decision']);
+        $this->assertSame(ImportDecision::TechnicalError->value, $closure['decision']);
         $this->assertTrue(collect($closure['checks'])->contains(
             fn (array $check) => ($check['key'] ?? '') === 'task_source' && ($check['ok'] ?? true) === false
         ));

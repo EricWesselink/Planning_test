@@ -66,7 +66,7 @@ class LarenAutoImportReadyTest extends TestCase
         $this->assertSame(0, (int) $report['controleren']);
         $this->assertSame(0, (int) $closure['open_points']);
         $this->assertTrue($closure['ready']);
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertSame('Project definitief importeren', $closure['button_label']);
     }
 }

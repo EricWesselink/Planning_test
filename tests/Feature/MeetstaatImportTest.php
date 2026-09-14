@@ -129,7 +129,8 @@ TXT),
             ->assertSee('value="2026-09-07"', false)
             ->assertSee('Mogelijk bestand van ander project')
             ->assertSee('999999999')
-            ->assertSee('data-review-fold="projectgegevens" open data-review-open="1"', false)
+            ->assertSee('data-review-fold="projectgegevens"', false)
+            ->assertDontSee('data-review-fold="projectgegevens" open data-review-open="1"', false)
             ->assertDontSee('data-review-fold="herkenning-debug" open data-review-open="1"', false)
             ->assertDontSee('value="999999999"', false)
             ->assertDontSee('value="Andere klant"', false);
@@ -551,7 +552,7 @@ TXT),
             ->assertSee('Herkenning (debug)')
             ->assertSee('data-review-fold="herkenning-debug"', false)
             ->assertDontSee('data-review-fold="herkenning-debug" open data-review-open="1"', false)
-            ->assertSee('data-review-fold="ruimtes" open data-review-open="1"', false)
+            ->assertDontSee('data-review-fold="ruimtes" open data-review-open="1"', false)
             ->assertSee('Bouwlaag')
             ->assertSee('Gekozen naam')
             ->assertSee('Kamercontour-id')
@@ -742,7 +743,7 @@ TXT),
         $payload = Cache::get('meetstaat.'.$token);
         $this->assertNotNull($payload);
         $payload['preview']['import_closure']['ready'] = false;
-        $payload['preview']['import_closure']['decision'] = ImportDecision::BlockedConflict->value;
+        $payload['preview']['import_closure']['decision'] = ImportDecision::TechnicalError->value;
         Cache::put('meetstaat.'.$token, $payload, now()->addHour());
     }
 

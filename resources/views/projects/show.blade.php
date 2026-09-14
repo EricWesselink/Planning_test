@@ -46,6 +46,16 @@
                 @if (session('status'))
                     <p class="mt-1 text-xs text-nicon-ok">{{ session('status') }}</p>
                 @endif
+                @if (! empty($project->import_warnings))
+                    <details class="mt-2 max-w-xl text-xs">
+                        <summary class="cursor-pointer text-nicon-warn">{{ count($project->import_warnings) }} importwaarschuwingen (Meetstaat blijft leidend)</summary>
+                        <ul class="mt-1 list-disc pl-5 text-nicon-muted">
+                            @foreach ($project->import_warnings as $warning)
+                                <li>{{ $warning['problem'] ?? $warning['found'] ?? '' }}</li>
+                            @endforeach
+                        </ul>
+                    </details>
+                @endif
                 @foreach ((array) session('warnings', []) as $warning)
                     <p class="mt-0.5 text-xs text-nicon-danger">{{ $warning }}</p>
                 @endforeach

@@ -72,7 +72,7 @@ class SharedRoomNumberDecisionTest extends TestCase
             $this->assertFalse((bool) ($area['needs_review'] ?? false));
         }
 
-        $this->assertSame('READY_AUTOMATIC', $preview['import_closure']['decision']);
+        $this->assertSame('READY', $preview['import_closure']['decision']);
         $this->assertSame(0, (int) $preview['import_closure']['open_points']);
         $this->assertSame(0, (int) $preview['import_report']['controleren']);
     }
@@ -157,6 +157,6 @@ class SharedRoomNumberDecisionTest extends TestCase
             }
         }
 
-        $this->assertSame('READY_AUTOMATIC', $preview['import_closure']['decision']);
+        $this->assertSame('READY', $preview['import_closure']['decision']);
     }
 }

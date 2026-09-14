@@ -83,12 +83,12 @@
 
     <a href="{{ route('projects.create') }}" class="text-sm text-nicon-muted">← Andere PDF kiezen</a>
     <h1 class="mt-2 text-2xl font-semibold">
-        @if ($closureReady && $withWarnings)
-            Meetstaat sluitend — import toegestaan
-        @elseif ($closureReady)
-            Importcontrole (audit)
+        @if (! $closureReady)
+            Import geblokkeerd — technische fout
+        @elseif ($withWarnings)
+            Meetstaat sluitend
         @else
-            Import geblokkeerd — bronconflict
+            Importcontrole
         @endif
     </h1>
     @if (session('status'))
@@ -115,25 +115,21 @@
     <form method="POST" action="{{ route('projects.import', $token) }}" enctype="multipart/form-data" class="mt-4 space-y-4" data-review-form id="review-import-form" novalidate @if ($closureReady) data-import-ready="1" @endif>
         @csrf
 
-        <div id="importcontrole" class="border {{ $closureReady ? ($withWarnings ? 'border-amber-400 bg-amber-50' : 'border-green-600 bg-green-50') : 'border-amber-400 bg-amber-50' }} px-4 py-3">
+        <div id="importcontrole" class="border {{ $closureReady ? ($withWarnings ? 'border-amber-400 bg-amber-50' : 'border-green-600 bg-green-50') : 'border-nicon-danger bg-red-50' }} px-4 py-3">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 class="text-sm font-semibold tracking-wide">IMPORTCONTROLE</h2>
-                <span class="text-sm font-medium {{ $closureReady && ! $withWarnings ? 'text-green-800' : 'text-nicon-warn' }}">
-                    {{ $closure['button_label'] ?? 'Nog controleren' }}
-                </span>
+                @if (! $closureReady)
+                    <span class="text-sm font-medium text-nicon-danger">{{ $closure['button_label'] ?? 'Importeren geblokkeerd' }}</span>
+                @endif
             </div>
-            @if ($closureReady && ($closure['summary'] ?? null))
-                <p class="mt-2 text-sm font-medium">{{ $closure['summary'] }}</p>
-                <p class="text-sm">Importeren toegestaan</p>
+            @if ($closureReady)
+                <p class="mt-2 text-sm font-medium">{{ $closure['summary'] ?? 'Meetstaat sluitend' }}</p>
+                @if ($withWarnings && ($closure['warning_summary'] ?? null))
+                    <p class="text-sm text-nicon-warn">{{ $closure['warning_summary'] }}</p>
+                @endif
+            @elseif (($closure['summary'] ?? null))
+                <p class="mt-2 text-sm font-medium text-nicon-danger">{{ $closure['summary'] }}</p>
             @endif
-            <div class="mt-2 grid gap-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                <div>Ruimtes: {{ $closurePerc['rooms'] ?? 0 }}%</div>
-                <div>Hoeveelheden: {{ $closurePerc['quantities'] ?? 0 }}%</div>
-                <div>Materialen: {{ $closurePerc['materials'] ?? 0 }}%</div>
-                <div>Bouwlagen: {{ $closurePerc['floors'] ?? 0 }}%</div>
-                <div>Taakregels: {{ $closurePerc['tasks'] ?? 0 }}%</div>
-                <div>Tekeningkoppelingen: {{ $closurePerc['drawing'] ?? 0 }}%</div>
-            </div>
             <div class="mt-3 flex flex-wrap items-end justify-between gap-4 text-sm">
                 <div>
                     <div>
@@ -146,97 +142,103 @@
                         @endif
                     </div>
                     <div><span class="font-medium">Totaal verwerkt:</span> {{ \App\Support\Format::qty($closureTotals['processed'] ?? 0, 2) }} m²</div>
-                    <div><span class="font-medium">Verschil:</span>
-                        @if (($closureTotals['difference_label'] ?? null) !== null)
-                            {{ $closureTotals['difference_label'] }}
-                        @elseif (($closureTotals['difference'] ?? null) !== null)
-                            {{ ((($closureTotals['difference'] ?? 0) > 0) ? '+' : '') . \App\Support\Format::qty($closureTotals['difference'], 2) }} m²
-                            @if (!empty($closureTotals['rounding_explained']))
-                                — verklaarde bronafronding ✓
-                            @endif
-                        @else
-                            —
-                        @endif
-                    </div>
                 </div>
-                <button
-                    type="submit"
-                    form="review-import-form"
-                    data-import-submit
-                    class="px-5 py-3 font-medium {{ $closureReady ? 'bg-nicon-orange text-white' : 'bg-nicon-sand text-nicon-muted border border-nicon-line' }}"
-                    @disabled(! $closureReady)
-                >
-                    {{ $closureReady ? ($withWarnings ? 'Importeren toegestaan' : 'Project definitief importeren') : ($closure['button_label'] ?? 'Nog controleren') }}
-                </button>
+                <div class="flex flex-wrap gap-2">
+                    @if ($warningCount > 0)
+                        <button
+                            type="button"
+                            data-open-warnings
+                            class="border border-nicon-line bg-white px-5 py-3 font-medium"
+                        >
+                            Waarschuwingen bekijken
+                        </button>
+                    @endif
+                    <button
+                        type="submit"
+                        form="review-import-form"
+                        data-import-submit
+                        data-warning-count="{{ $warningCount }}"
+                        class="px-5 py-3 font-medium {{ $closureReady ? 'bg-nicon-orange text-white' : 'bg-nicon-sand text-nicon-muted border border-nicon-line' }}"
+                        @disabled(! $closureReady)
+                    >
+                        Project definitief importeren
+                    </button>
+                </div>
             </div>
-            @if (! $closureReady && ! empty($closureChecks))
-                <ul class="mt-3 space-y-0.5 text-xs">
-                    @foreach ($closureChecks as $check)
-                        @if (! empty($check['ok']))
+            @if ($warningCount > 0)
+                <details id="import-warnings" class="mt-3">
+                    <summary class="sr-only">Waarschuwingen</summary>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs border border-nicon-line bg-white">
+                            <thead class="bg-nicon-sand text-left">
+                                <tr>
+                                    <th class="px-2 py-1">Gevonden</th>
+                                    <th class="px-2 py-1">Verwacht</th>
+                                    <th class="px-2 py-1">Bron</th>
+                                    <th class="px-2 py-1">Probleem</th>
+                                    <th class="px-2 py-1">Voorgestelde match</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach ($closureIssues as $issue)
+                                @if (($issue['severity'] ?? 'warning') === 'technical')
+                                    @continue
+                                @endif
+                                <tr class="border-t border-nicon-line">
+                                    <td class="px-2 py-1">
+                                        @if (!empty($issue['anchor']))
+                                            <a href="{{ $issue['anchor'] }}" class="text-nicon-orange underline">{{ $issue['found'] ?? '' }}</a>
+                                        @else
+                                            {{ $issue['found'] ?? '' }}
+                                        @endif
+                                    </td>
+                                    <td class="px-2 py-1">{{ $issue['expected'] ?? '' }}</td>
+                                    <td class="px-2 py-1">{{ $issue['source'] ?? '' }}</td>
+                                    <td class="px-2 py-1">{{ $issue['problem'] ?? '' }}</td>
+                                    <td class="px-2 py-1">{{ $issue['suggested_match'] ?? '' }}</td>
+                                </tr>
+                            @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            @endif
+            @if (! $closureReady && ! empty($closureIssues))
+                <ul class="mt-3 space-y-0.5 text-sm text-nicon-danger">
+                    @foreach ($closureIssues as $issue)
+                        @if (($issue['severity'] ?? '') !== 'technical')
                             @continue
                         @endif
-                        <li class="text-nicon-warn">
-                            ✗
-                            {{ $check['label'] ?? '' }}
-                            @if (($check['open'] ?? 0) > 0)
-                                ({{ $check['open'] }})
-                            @endif
-                        </li>
+                        <li>{{ $issue['problem'] ?? '' }}</li>
                     @endforeach
                 </ul>
             @endif
-            @if ((! $closureReady || $withWarnings) && ! empty($closureIssues))
-                @if ($withWarnings)
-                    <p class="mt-3 text-xs font-medium">Tekeningswaarschuwingen (blokkeren importeren niet)</p>
-                @endif
-                <div class="mt-3 overflow-x-auto">
-                    <table class="w-full text-xs border border-nicon-line bg-white">
-                        <thead class="bg-nicon-sand text-left">
-                            <tr>
-                                <th class="px-2 py-1">Gevonden</th>
-                                <th class="px-2 py-1">Verwacht</th>
-                                <th class="px-2 py-1">Bron</th>
-                                <th class="px-2 py-1">Probleem</th>
-                                <th class="px-2 py-1">Voorgestelde match</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        @foreach ($closureIssues as $issue)
-                            <tr class="border-t border-nicon-line">
-                                <td class="px-2 py-1">
-                                    @if (!empty($issue['anchor']))
-                                        <a href="{{ $issue['anchor'] }}" class="text-nicon-orange underline">{{ $issue['found'] ?? '' }}</a>
-                                    @else
-                                        {{ $issue['found'] ?? '' }}
-                                    @endif
-                                </td>
-                                <td class="px-2 py-1">{{ $issue['expected'] ?? '' }}</td>
-                                <td class="px-2 py-1">{{ $issue['source'] ?? '' }}</td>
-                                <td class="px-2 py-1">{{ $issue['problem'] ?? '' }}</td>
-                                <td class="px-2 py-1">{{ $issue['suggested_match'] ?? '' }}</td>
-                            </tr>
-                        @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
             <p class="mt-2 text-xs text-nicon-muted">
-                @if ($closureReady && $withWarnings)
-                    Meetstaat is leidend en sluitend. Tekeningswaarschuwingen mogen definitief opslaan niet blokkeren.
-                @elseif ($closureReady)
-                    100% betekent dat iedere m² verklaard is. Details staan ingeklapt; open een onderdeel alleen als je wilt controleren.
+                @if (! $closureReady)
+                    Alleen een technische fout blokkeert definitief importeren. Inhoudelijke bronverschillen zijn waarschuwingen.
+                @elseif ($withWarnings)
+                    Meetstaat is leidend. Waarschuwingen hoef je niet eerst te corrigeren.
                 @else
-                    100% betekent dat iedere m² verklaard is. Totalen worden nooit kunstmatig passend gemaakt.
-                    Definitief opslaan kan alleen wanneer alle harde controles groen zijn en een eventueel totaalverschil volledig als bronafronding is verklaard.
+                    Geen waarschuwingen. Je kunt het project direct importeren.
                 @endif
             </p>
         </div>
 
+        <dialog id="import-confirm-dialog" class="w-[min(32rem,calc(100%-2rem))] border border-nicon-line bg-white p-4 shadow-sm">
+            <p class="text-sm" data-import-confirm-text>
+                Er zijn nog waarschuwingen. De Meetstaat blijft leidend. Wil je het project toch importeren?
+            </p>
+            <div class="mt-4 flex justify-end gap-2">
+                <button type="button" data-import-cancel class="border border-nicon-line bg-white px-4 py-2 text-sm">Annuleren</button>
+                <button type="button" data-import-confirm class="bg-nicon-orange px-4 py-2 text-sm font-medium text-white">Toch importeren</button>
+            </div>
+        </dialog>
+
         <p class="text-sm text-nicon-muted">
             @if ($closureReady)
-                Dit scherm is een audit van de automatische broncontrole; er is geen handmatige bevestiging per ruimte nodig.
+                Inhoudelijke waarschuwingen blokkeren importeren niet. Alleen een technische fout stopt het opslaan.
             @else
-                Alleen echte bronconflicten blokkeren het importeren — open onderdelen tonen wat gecontroleerd moet worden.
+                De bestanden konden technisch niet verwerkt worden. Corrigeer de upload of kies een ander bestand.
             @endif
         </p>
 
@@ -262,7 +264,7 @@
                             </li>
                         @endforeach
                     </ul>
-                    <p class="mt-1 text-xs">Gezamenlijke import blijft geblokkeerd totdat de bestanden bij elkaar passen of je het afwijkende bestand weglaat.</p>
+                    <p class="mt-1 text-xs">Dit is een waarschuwing. Je kunt het project importeren; de Meetstaat blijft leidend.</p>
                 </div>
             @endif
             <div class="grid gap-3 sm:grid-cols-2">
@@ -586,7 +588,7 @@
                     </div>
                 @elseif (($report['quality_label'] ?? '') === 'Import gereed')
                     <div class="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                        <div class="font-semibold">Import gereed · {{ $closure['decision'] ?? 'READY_AUTOMATIC' }}</div>
+                        <div class="font-semibold">Import gereed · {{ $closure['decision'] ?? 'READY' }}</div>
                         <div class="mt-1">
                             Taak-m² {{ \App\Support\Format::qty($report['task_meters'] ?? 0, 2) }}
                             @if (($report['task_meters_expected'] ?? null) !== null)
@@ -946,10 +948,30 @@
             // READY_*: stuur geen area-velden mee (max_input_vars kapt anders TASK_SOURCE af).
             const reviewForm = document.querySelector('[data-review-form]');
             const importSubmit = reviewForm?.querySelector('[data-import-submit]');
+            const warningsPanel = document.querySelector('#import-warnings');
+            const confirmDialog = document.querySelector('#import-confirm-dialog');
+            const confirmText = confirmDialog?.querySelector('[data-import-confirm-text]');
+            let importConfirmed = false;
+            document.querySelector('[data-open-warnings]')?.addEventListener('click', () => {
+                if (! warningsPanel) return;
+                warningsPanel.open = true;
+                warningsPanel.scrollIntoView({ block: 'nearest' });
+            });
             importSubmit?.addEventListener('click', () => {
                 console.info('import.submit: klik ontvangen');
             });
-            reviewForm?.addEventListener('submit', () => {
+            reviewForm?.addEventListener('submit', (event) => {
+                const warningCount = Number(importSubmit?.getAttribute('data-warning-count') || '0');
+                if (warningCount > 0 && ! importConfirmed) {
+                    event.preventDefault();
+                    if (confirmText) {
+                        confirmText.textContent = warningCount === 1
+                            ? 'Er is nog 1 waarschuwing. De Meetstaat blijft leidend. Wil je het project toch importeren?'
+                            : `Er zijn nog ${warningCount} waarschuwingen. De Meetstaat blijft leidend. Wil je het project toch importeren?`;
+                    }
+                    confirmDialog?.showModal();
+                    return;
+                }
                 console.info('import.submit: form submit gestart', reviewForm.getAttribute('action'));
                 try {
                     if (reviewForm.getAttribute('data-import-ready') === '1') {
@@ -964,6 +986,14 @@
                     importSubmit.disabled = true;
                     importSubmit.textContent = 'Bezig met importeren…';
                 }
+            });
+            confirmDialog?.querySelector('[data-import-cancel]')?.addEventListener('click', () => {
+                confirmDialog.close();
+            });
+            confirmDialog?.querySelector('[data-import-confirm]')?.addEventListener('click', () => {
+                importConfirmed = true;
+                confirmDialog.close();
+                reviewForm?.requestSubmit(importSubmit);
             });
         })();
     </script>

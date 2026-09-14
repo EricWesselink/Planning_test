@@ -157,7 +157,7 @@ TXT);
         $this->assertGreaterThanOrEqual(1, $names->filter(fn ($name) => str_contains((string) $name, '43.20.03a') && str_contains((string) $name, '(sp)'))->count());
         $this->assertGreaterThanOrEqual(1, $names->filter(fn ($name) => str_contains((string) $name, '43.20.03a') && str_contains((string) $name, '(hp)'))->count());
         $this->assertTrue((bool) $closure['ready']);
-        $this->assertContains($closure['decision'], ['READY_AUTOMATIC', 'READY_WITH_WARNINGS']);
+        $this->assertContains($closure['decision'], ['READY', 'READY_WITH_WARNINGS']);
         $this->assertSame(0, (int) $closure['hard_conflict_count']);
         $this->assertEqualsWithDelta(12562.28, (float) ($closure['totals']['expected'] ?? 0), 0.01);
         $this->assertEqualsWithDelta(12562.28, (float) ($closure['totals']['processed'] ?? 0), 0.01);

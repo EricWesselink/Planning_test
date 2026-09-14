@@ -1451,7 +1451,7 @@ class RoomImportAssemblerTest extends TestCase
                 ->sum(fn (array $task) => (float) ($task['quantity'] ?? 0));
         });
         $this->assertEqualsWithDelta(120.39, $corkQty, 0.001);
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertSame(0, (int) $closure['open_points']);
     }
 
@@ -1624,7 +1624,7 @@ class RoomImportAssemblerTest extends TestCase
         $this->assertTrue($controleren->isEmpty(), 'Open Controleren: '.$controleren->map(
             fn (array $area) => ($area['room_number'] ?? '').' '.($area['room_name'] ?? '')
         )->implode(', '));
-        $this->assertSame('READY_AUTOMATIC', $preview['import_closure']['decision']);
+        $this->assertSame('READY', $preview['import_closure']['decision']);
         $this->assertEqualsWithDelta(165.68, (float) $preview['import_report']['task_meters'], 0.01);
         $this->assertEqualsWithDelta(0.0, (float) ($preview['import_report']['task_source_meters_lost'] ?? 99), 0.005);
     }
@@ -1929,7 +1929,8 @@ TXT);
                 && $row['other'] === '999999999'
                 && $row['message'] === 'Mogelijk bestand van ander project'
         ));
-        $this->assertFalse($preview['import_closure']['ready']);
+        $this->assertTrue($preview['import_closure']['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $preview['import_closure']['decision']);
     }
 
     public function test_matching_materialenstaat_and_meetstaat_headers_do_not_block(): void

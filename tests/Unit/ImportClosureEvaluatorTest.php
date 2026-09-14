@@ -16,7 +16,7 @@ class ImportClosureEvaluatorTest extends TestCase
         $this->assertTrue($closure['ready']);
         $this->assertSame(0, $closure['open_points']);
         $this->assertSame(0.0, $closure['totals']['difference']);
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertSame('Project definitief importeren', $closure['button_label']);
         $this->assertSame(100, $closure['percentages']['rooms']);
         $this->assertSame(100, $closure['percentages']['quantities']);
@@ -35,7 +35,7 @@ class ImportClosureEvaluatorTest extends TestCase
         $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
         $this->assertSame(0, $closure['open_points']);
         $this->assertGreaterThan(0, $closure['warning_count']);
-        $this->assertSame('Importeren toegestaan', $closure['button_label']);
+        $this->assertSame('Project definitief importeren', $closure['button_label']);
         $this->assertTrue(collect($closure['issues'])->contains(
             fn (array $issue) => (str_contains((string) $issue['problem'], 'Gemengde vloerbedekking')
                 || str_contains((string) $issue['problem'], 'Controleren'))
@@ -65,8 +65,9 @@ class ImportClosureEvaluatorTest extends TestCase
         $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
         $this->assertSame(0, $closure['hard_conflict_count']);
         $this->assertGreaterThan(0, $closure['warning_count']);
-        $this->assertSame('Importeren toegestaan', $closure['button_label']);
-        $this->assertStringContainsString('tekeningswaarschuwingen', (string) $closure['summary']);
+        $this->assertSame('Project definitief importeren', $closure['button_label']);
+        $this->assertSame('Meetstaat sluitend', $closure['summary']);
+        $this->assertSame('1 bouwlaagwaarschuwing', $closure['warning_summary']);
     }
 
     public function test_legend_mismatch_is_a_warning_when_meetstaat_is_closed(): void
@@ -93,7 +94,7 @@ class ImportClosureEvaluatorTest extends TestCase
         ));
     }
 
-    public function test_quantity_mismatch_blocks_even_without_controleren_rooms(): void
+    public function test_quantity_mismatch_is_a_warning_and_does_not_block_import(): void
     {
         $preview = $this->closedPreview();
         $preview['import_report']['task_meters'] = 90.0;
@@ -104,10 +105,12 @@ class ImportClosureEvaluatorTest extends TestCase
 
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
-        $this->assertFalse($closure['ready']);
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
         $this->assertNotSame(0.0, $closure['totals']['difference']);
-        $this->assertTrue(collect($closure['checks'])->contains(
-            fn (array $check) => $check['key'] === 'project_total' && $check['ok'] === false
+        $this->assertTrue(collect($closure['issues'])->contains(
+            fn (array $issue) => ($issue['category'] ?? '') === 'quantities'
+                && ($issue['severity'] ?? '') === 'warning'
         ));
     }
 
@@ -161,13 +164,13 @@ class ImportClosureEvaluatorTest extends TestCase
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
         $this->assertTrue($closure['ready']);
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertEqualsWithDelta(0.02, (float) $closure['totals']['difference'], 0.001);
         $this->assertTrue((bool) ($closure['totals']['rounding_explained'] ?? false));
         $this->assertSame('+0,02 m² — verklaarde bronafronding ✓', $closure['totals']['difference_label']);
     }
 
-    public function test_unexplained_small_difference_still_blocks(): void
+    public function test_unexplained_small_difference_is_a_warning(): void
     {
         $preview = $this->closedPreview();
         $preview['import_report']['task_meters'] = 50.99;
@@ -181,8 +184,8 @@ class ImportClosureEvaluatorTest extends TestCase
 
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
-        $this->assertFalse($closure['ready']);
-        $this->assertSame('BLOCKED_CONFLICT', $closure['decision']);
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
         $this->assertFalse((bool) ($closure['totals']['rounding_explained'] ?? true));
         $this->assertSame('+0,02 m² — onverklaard verschil', $closure['totals']['difference_label']);
     }
@@ -201,8 +204,8 @@ class ImportClosureEvaluatorTest extends TestCase
 
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
-        $this->assertFalse($closure['ready']);
-        $this->assertSame('BLOCKED_CONFLICT', $closure['decision']);
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
         $this->assertFalse((bool) ($closure['totals']['rounding_explained'] ?? true));
         $this->assertSame('-0,03 m² — onverklaard verschil', $closure['totals']['difference_label']);
     }
@@ -228,7 +231,7 @@ class ImportClosureEvaluatorTest extends TestCase
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
         $this->assertTrue($closure['ready']);
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertEqualsWithDelta(-0.03, (float) $closure['totals']['difference'], 0.001);
         $this->assertTrue((bool) ($closure['totals']['rounding_explained'] ?? false));
         $this->assertSame('-0,03 m² — verklaarde bronafronding ✓', $closure['totals']['difference_label']);
@@ -264,13 +267,13 @@ class ImportClosureEvaluatorTest extends TestCase
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
         $this->assertTrue($closure['ready']);
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertTrue(collect($closure['checks'])->contains(
             fn (array $check) => $check['key'] === 'legend_totals' && $check['ok'] === true
         ));
     }
 
-    public function test_project_header_mismatch_blocks_joint_import(): void
+    public function test_project_header_mismatch_is_a_warning(): void
     {
         $preview = $this->closedPreview();
         $preview['sources']['materialenstaat'] = true;
@@ -285,14 +288,114 @@ class ImportClosureEvaluatorTest extends TestCase
 
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
-        $this->assertFalse($closure['ready']);
-        $this->assertSame('BLOCKED_CONFLICT', $closure['decision']);
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
         $this->assertTrue(collect($closure['issues'])->contains(
             fn (array $issue) => str_contains((string) $issue['problem'], 'Mogelijk bestand van ander project')
         ));
         $this->assertTrue(collect($closure['checks'])->contains(
             fn (array $check) => $check['key'] === 'project_header' && $check['ok'] === false
         ));
+    }
+
+    public function test_three_material_list_warnings_allow_import(): void
+    {
+        $preview = $this->closedPreview();
+        $preview['import_report']['materials'] = [
+            [
+                'material' => 'Materiaal A',
+                'found_task_meters' => 10.0,
+                'expected_task_meters' => 20.0,
+                'difference' => -10.0,
+                'status' => 'controleren',
+            ],
+            [
+                'material' => 'Materiaal B',
+                'found_task_meters' => 5.0,
+                'expected_task_meters' => 15.0,
+                'difference' => -10.0,
+                'status' => 'controleren',
+            ],
+            [
+                'material' => 'Materiaal C',
+                'found_task_meters' => 0.0,
+                'expected_task_meters' => 8.0,
+                'difference' => -8.0,
+                'status' => 'controleren',
+            ],
+        ];
+
+        $closure = (new ImportClosureEvaluator)->evaluate($preview);
+
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
+        $this->assertSame('Project definitief importeren', $closure['button_label']);
+        $this->assertSame('3 materiaalwaarschuwingen', $closure['warning_summary']);
+    }
+
+    public function test_two_hundred_drawing_warnings_allow_import(): void
+    {
+        $preview = $this->closedPreview();
+        $preview['sources']['plattegrond'] = true;
+        for ($i = 0; $i < 200; $i++) {
+            $preview['areas'][] = [
+                'floor' => 'begane grond',
+                'room_number' => sprintf('D.%03d', $i),
+                'room_name' => 'tekeningruimte '.$i,
+                'square_meters' => 1.0,
+                'tasks' => [],
+                'source' => 'onbekend',
+                'source_label' => 'Plattegrond',
+                'confidence' => 'hoog',
+                'needs_review' => false,
+            ];
+        }
+
+        $closure = (new ImportClosureEvaluator)->evaluate($preview);
+
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
+        $this->assertGreaterThanOrEqual(200, (int) $closure['warning_count']);
+        $this->assertSame('Project definitief importeren', $closure['button_label']);
+    }
+
+    public function test_unmatched_excel_labor_is_a_warning(): void
+    {
+        $preview = $this->closedPreview();
+        $preview['calculation'] = [
+            'open_matches' => 2,
+            'labor' => [
+                [
+                    'description' => 'Egaliseren',
+                    'work_name' => null,
+                    'status' => 'review',
+                ],
+                [
+                    'description' => 'Plinten',
+                    'work_name' => '',
+                    'status' => 'review',
+                ],
+            ],
+        ];
+
+        $closure = (new ImportClosureEvaluator)->evaluate($preview);
+
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
+        $this->assertSame(2, (int) $closure['warning_count']);
+        $this->assertSame('2 Excel-waarschuwingen', $closure['warning_summary']);
+    }
+
+    public function test_technical_error_blocks_import(): void
+    {
+        $preview = $this->closedPreview();
+        $preview['technical_error'] = 'PDF is onleesbaar';
+
+        $closure = (new ImportClosureEvaluator)->evaluate($preview);
+
+        $this->assertFalse($closure['ready']);
+        $this->assertSame('TECHNICAL_ERROR', $closure['decision']);
+        $this->assertSame('Importeren geblokkeerd', $closure['button_label']);
     }
 
     /**

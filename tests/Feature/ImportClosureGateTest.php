@@ -30,8 +30,7 @@ class ImportClosureGateTest extends TestCase
             ->assertSee('IMPORTCONTROLE')
             ->assertSee('Totaal verwacht')
             ->assertSee('Totaal verwerkt')
-            ->assertSee('Verschil')
-            ->assertSee('Hoeveelheden:')
+            ->assertSee('Project definitief importeren')
             ->assertSee('Projectgegevens')
             ->assertSee('Bronbestanden')
             ->assertSee('Ruimtes');
@@ -66,7 +65,7 @@ class ImportClosureGateTest extends TestCase
             ->assertDontSee('data-review-fold="herkenning-debug" open data-review-open="1"', false);
     }
 
-    public function test_review_opens_rooms_fold_when_a_room_needs_control(): void
+    public function test_review_keeps_rooms_fold_collapsed_when_a_room_is_a_warning(): void
     {
         $user = User::factory()->create();
         $preview = $this->actingAs($user)->post(route('projects.preview'), [
@@ -80,18 +79,20 @@ class ImportClosureGateTest extends TestCase
         $payload['preview']['areas'][0]['needs_review'] = true;
         $payload['preview']['areas'][0]['review_reason_label'] = 'Handmatig open gezet voor fold-test';
         $payload['preview'] = (new ImportClosureEvaluator)->attach($payload['preview']);
-        $this->assertFalse($payload['preview']['import_closure']['ready'] ?? true);
+        $this->assertTrue($payload['preview']['import_closure']['ready'] ?? false);
         Cache::put('meetstaat.'.$token, $payload, now()->addHour());
 
         $this->actingAs($user)
             ->get(route('projects.review', $token))
             ->assertOk()
-            ->assertSee('data-review-fold="ruimtes" open data-review-open="1"', false)
-            ->assertDontSee('data-review-fold="herkenning-debug" open data-review-open="1"', false)
-            ->assertDontSee('data-review-fold="projectgegevens" open data-review-open="1"', false);
+            ->assertSee('Meetstaat sluitend')
+            ->assertSee('Project definitief importeren')
+            ->assertSee('Waarschuwingen bekijken')
+            ->assertDontSee('data-review-fold="ruimtes" open data-review-open="1"', false)
+            ->assertDontSee('data-review-fold="herkenning-debug" open data-review-open="1"', false);
     }
 
-    public function test_incomplete_import_is_blocked_until_closure_is_ready(): void
+    public function test_content_warnings_do_not_block_definitive_import(): void
     {
         $user = User::factory()->create();
         $preview = $this->actingAs($user)->post(route('projects.preview'), [
@@ -103,14 +104,40 @@ class ImportClosureGateTest extends TestCase
         $this->assertNotNull($payload);
         $payload['preview']['areas'][0]['confidence'] = 'controleren';
         $payload['preview']['areas'][0]['needs_review'] = true;
-        $payload['preview']['areas'][0]['review_reason_label'] = 'Handmatig open gezet voor gate-test';
-        $payload['preview']['import_report']['task_meters'] = 1.0;
-        $payload['preview']['import_report']['meetstaat_task_meters'] = 100.0;
-        $payload['preview']['import_report']['task_meters_expected'] = 100.0;
-        $payload['preview']['expected_task_totals'] = [
-            'known' => true,
-            'project_total' => 100.0,
-        ];
+        $payload['preview']['import_report']['materials'] = [[
+            'material' => 'Materiaal A',
+            'found_task_meters' => 1.0,
+            'expected_task_meters' => 100.0,
+            'difference' => -99.0,
+            'status' => 'controleren',
+        ]];
+        $payload['preview'] = (new ImportClosureEvaluator)->attach($payload['preview']);
+        $this->assertTrue($payload['preview']['import_closure']['ready'] ?? false);
+        $this->assertSame('READY_WITH_WARNINGS', $payload['preview']['import_closure']['decision']);
+        Cache::put('meetstaat.'.$token, $payload, now()->addHour());
+
+        $this->actingAs($user)->post(route('projects.import', $token), [
+            'customer_name' => 'Nicon vloeren',
+            'project_name' => 'Met waarschuwingen',
+            'project_number' => '260299011',
+        ])->assertRedirect();
+
+        $project = Project::query()->where('project_number', '260299011')->first();
+        $this->assertNotNull($project);
+        $this->assertNotEmpty($project->import_warnings);
+    }
+
+    public function test_technical_error_blocks_definitive_import(): void
+    {
+        $user = User::factory()->create();
+        $preview = $this->actingAs($user)->post(route('projects.preview'), [
+            'meetstaat' => $this->meetstaatFile(),
+        ]);
+        $token = basename(parse_url($preview->headers->get('Location'), PHP_URL_PATH));
+
+        $payload = Cache::get('meetstaat.'.$token);
+        $this->assertNotNull($payload);
+        $payload['preview']['technical_error'] = 'PDF is onleesbaar';
         $payload['preview'] = (new ImportClosureEvaluator)->attach($payload['preview']);
         $this->assertFalse($payload['preview']['import_closure']['ready'] ?? true);
         Cache::put('meetstaat.'.$token, $payload, now()->addHour());
@@ -119,8 +146,8 @@ class ImportClosureGateTest extends TestCase
             ->from(route('projects.review', $token))
             ->post(route('projects.import', $token), [
                 'customer_name' => 'Nicon vloeren',
-                'project_name' => 'Nog niet klaar',
-                'project_number' => '260299001',
+                'project_name' => 'Technische fout',
+                'project_number' => '260299012',
             ])
             ->assertRedirect(route('projects.review', $token))
             ->assertSessionHasErrors('import_closure');

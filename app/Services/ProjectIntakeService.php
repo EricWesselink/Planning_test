@@ -619,6 +619,7 @@ class ProjectIntakeService
                 'notes' => filled($header['reference'] ?? null)
                     ? 'Referentie: '.$header['reference']
                     : (filled($header['project_name'] ?? null) ? 'Referentie: '.$header['project_name'] : null),
+                'import_warnings' => $this->unresolvedImportWarnings($preview),
             ]);
 
             $excluded = array_map(fn ($name) => mb_strtolower($name), $excludedWorks);
@@ -981,6 +982,26 @@ class ProjectIntakeService
 
             return $sameFloor && ($number !== '' ? $sameNumber : $sameName);
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $preview
+     * @return list<array<string, mixed>>|null
+     */
+    private function unresolvedImportWarnings(array $preview): ?array
+    {
+        $issues = array_values(array_filter(
+            $preview['import_closure']['issues'] ?? [],
+            function ($issue): bool {
+                if (! is_array($issue)) {
+                    return false;
+                }
+
+                return ($issue['severity'] ?? 'warning') === 'warning';
+            }
+        ));
+
+        return $issues === [] ? null : $issues;
     }
 
     private function mimeFromPath(string $path): string

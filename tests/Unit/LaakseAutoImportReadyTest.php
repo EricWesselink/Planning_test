@@ -37,7 +37,7 @@ class LaakseAutoImportReadyTest extends TestCase
         $this->assertEqualsWithDelta(3440.44, (float) $report['task_meters_expected'], 0.01);
         $this->assertEqualsWithDelta(0.02, (float) $report['task_meters_difference'], 0.01);
         $this->assertTrue($closure['ready'], 'Import moet automatisch gereed zijn voor definitieve opslag.');
-        $this->assertSame('READY_AUTOMATIC', $closure['decision']);
+        $this->assertSame('READY', $closure['decision']);
         $this->assertSame(0, (int) $closure['open_points']);
         $this->assertTrue((bool) ($closure['totals']['rounding_explained'] ?? false));
         $this->assertSame('+0,02 m² — verklaarde bronafronding ✓', $closure['totals']['difference_label']);
