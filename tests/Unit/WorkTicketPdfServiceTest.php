@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\ProjectKind;
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
@@ -38,6 +39,20 @@ class WorkTicketPdfServiceTest extends TestCase
         $this->assertFalse($data['showPrices']);
         $this->assertSame('Het Vloerenhuis', $data['recipient']);
         $this->assertSame('Gezondheidscentrum Laren', $data['projectTitle']);
+        $this->assertSame('Nicon Vloeren', $data['companyName']);
+        $this->assertStringContainsString('nicon-vloeren.png', $data['logoUrl']);
+    }
+
+    public function test_build_uses_kloppenburg_letterhead_for_winkel_projects(): void
+    {
+        $ticket = $this->makeTicket();
+        $ticket->project->forceFill(['kind' => ProjectKind::Winkel])->save();
+
+        $data = app(WorkTicketPdfService::class)->build($ticket->fresh(['project', 'worker', 'lines.workItem']), true);
+
+        $this->assertSame('Kloppenburg Interieur', $data['companyName']);
+        $this->assertStringContainsString('kloppenburg-interieur.png', $data['logoUrl']);
+        $this->assertTrue($data['showPrices']);
     }
 
     public function test_build_keeps_prices_for_the_zzp_opdrachtbon(): void

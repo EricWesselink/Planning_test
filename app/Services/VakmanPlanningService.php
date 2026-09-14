@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Voucher;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
+use App\Models\WorkTicket;
 use App\Support\Format;
 use App\Support\PlanningHours;
 use Carbon\Carbon;
@@ -135,7 +136,10 @@ class VakmanPlanningService
                 'worker.rates',
                 'workItem.areaTasks.area.floor',
                 'crewMembers',
-                'workTickets',
+                'workTickets.lines.workItem',
+                'workTickets.areas.floor',
+                'workTickets.floors',
+                'workTickets.documents',
             ])
             ->where('worker_id', $workerId)
             ->whereDate('end_date', '>=', $from)
@@ -196,24 +200,25 @@ class VakmanPlanningService
 
         return $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed): array {
             $project = $assignment->project;
+            $tickets = $this->ticketsOnDate($assignment, $date);
             $card = [
                 'assignment' => $assignment,
                 'project' => $project,
                 'project_name' => $project->displayTitle(),
                 'city' => trim((string) $project->city),
                 'time_label' => $this->timeLabel($assignment),
-                'headline' => $this->headlineWork($assignment),
+                'headline' => $this->headlineWork($assignment, $tickets),
                 'colleagues' => $this->colleagueNames($user, $assignment, $others, $date),
                 'url' => route('vakman.planning.day', $date->toDateString()),
-                'tickets' => $assignment->workTickets,
+                'tickets' => $tickets,
             ];
 
             if (! $detailed) {
                 return $card;
             }
 
-            $works = $this->works($assignment);
-            $rooms = $this->rooms($assignment, $works);
+            $works = $this->works($assignment, $tickets);
+            $rooms = $this->rooms($assignment, $works, $tickets);
             $isExternal = $assignment->worker?->employment_type?->isExternal()
                 ?? $user->worker?->employment_type?->isExternal()
                 ?? false;
@@ -226,8 +231,8 @@ class VakmanPlanningService
                 'floors' => $rooms['floors'],
                 'rooms' => $rooms['rooms'],
                 'works' => $works,
-                'notes' => $this->notes($assignment),
-                'drawings' => $this->drawings($project),
+                'notes' => $this->notes($assignment, $tickets),
+                'drawings' => $this->drawings($project, $tickets),
                 'project_url' => route('projects.show', $project),
                 'werkbon_url' => $isExternal ? null : route('vakman.planning.werkbon', $date->toDateString()),
                 'opdrachtbon_url' => $isExternal
@@ -296,8 +301,18 @@ class VakmanPlanningService
             ->all();
     }
 
-    private function headlineWork(WorkerAssignment $assignment): string
+    private function headlineWork(WorkerAssignment $assignment, Collection $tickets): string
     {
+        if ($tickets->isNotEmpty()) {
+            return $tickets
+                ->flatMap(fn (WorkTicket $ticket) => $ticket->lines)
+                ->map(fn ($line): string => $line->workItem?->planningTitle() ?? '')
+                ->filter()
+                ->unique()
+                ->values()
+                ->implode(' & ');
+        }
+
         $item = $this->resolvedWorkItem($assignment);
         if ($item !== null) {
             return $item->planningTitle();
@@ -327,6 +342,7 @@ class VakmanPlanningService
     {
         $worker = $assignment->worker;
         $project = $assignment->project;
+        $tickets = $assignment->relationLoaded('workTickets') ? $assignment->workTickets : collect();
         $opdracht = $worker !== null && $project !== null
             ? Voucher::latestOpdracht((int) $worker->id, (int) $project->id)
             : null;
@@ -352,6 +368,9 @@ class VakmanPlanningService
             if ($order !== null && (float) $order->assigned_quantity > 0.0001) {
                 $quantity = (float) $order->assigned_quantity;
             }
+            if (isset($work['quantity_value'])) {
+                $quantity = (float) $work['quantity_value'];
+            }
 
             $kind = $opdracht?->lines
                 ->first(fn ($line): bool => $item !== null && (int) $line->work_item_id === (int) $item->id)
@@ -373,14 +392,38 @@ class VakmanPlanningService
             $work['amount'] = $amount;
 
             return $work;
-        }, $this->works($assignment));
+        }, $this->works($assignment, $tickets));
     }
 
     /**
-     * @return list<array{title: string, quantity: string, unit: string, unit_enum: WorkUnit, item: ?WorkItem}>
+     * @param  Collection<int, WorkTicket>  $tickets
+     * @return list<array{title: string, quantity: string, unit: string, unit_enum: WorkUnit, item: ?WorkItem, quantity_value: float}>
      */
-    private function works(WorkerAssignment $assignment): array
+    private function works(WorkerAssignment $assignment, Collection $tickets): array
     {
+        if ($tickets->isNotEmpty()) {
+            return $tickets
+                ->flatMap(fn (WorkTicket $ticket) => $ticket->lines)
+                ->groupBy('work_item_id')
+                ->map(function (Collection $lines) {
+                    $first = $lines->first();
+                    $item = $first?->workItem;
+                    $quantity = (float) $lines->sum('quantity');
+                    $unit = $first?->unit ?? $item?->unit ?? WorkUnit::SquareMeter;
+
+                    return [
+                        'title' => $item?->planningTitle() ?? 'Werkzaamheid',
+                        'quantity' => Format::qty($quantity, abs($quantity - round($quantity)) < 0.001 ? 0 : 2),
+                        'quantity_value' => $quantity,
+                        'unit' => $unit->label(),
+                        'unit_enum' => $unit,
+                        'item' => $item,
+                    ];
+                })
+                ->values()
+                ->all();
+        }
+
         $orders = $assignment->project?->workOrders
             ? $assignment->project->workOrders->where('worker_id', $assignment->worker_id)
             : collect();
@@ -395,6 +438,7 @@ class VakmanPlanningService
             return [
                 'title' => $item->planningTitle(),
                 'quantity' => Format::qty($quantity, abs($quantity - round($quantity)) < 0.001 ? 0 : 2),
+                'quantity_value' => $quantity,
                 'unit' => $unit->label(),
                 'unit_enum' => $unit,
                 'item' => $item,
@@ -427,9 +471,7 @@ class VakmanPlanningService
             return $project->workItems->whereIn('id', $orderedIds)->values();
         }
 
-        return $project->workItems
-            ->filter(fn (WorkItem $item): bool => (float) $item->ordered_quantity > 0.0001)
-            ->values();
+        return collect();
     }
 
     private function resolvedWorkItem(WorkerAssignment $assignment): ?WorkItem
@@ -447,19 +489,34 @@ class VakmanPlanningService
     }
 
     /**
+     * @param  Collection<int, WorkTicket>  $tickets
      * @param  list<array{item: ?WorkItem}>  $works
      * @return array{floors: list<string>, rooms: list<string>}
      */
-    private function rooms(WorkerAssignment $assignment, array $works): array
+    private function rooms(WorkerAssignment $assignment, array $works, Collection $tickets): array
     {
-        $items = collect($works)->pluck('item')->filter();
-        if ($items->isEmpty()) {
-            $items = $this->workItems($assignment);
+        if ($tickets->isNotEmpty()) {
+            $floors = $tickets
+                ->map(fn (WorkTicket $ticket): string => $ticket->floorsLabel())
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+            $rooms = $tickets
+                ->map(fn (WorkTicket $ticket): string => $ticket->roomsLabel())
+                ->filter(fn (string $label): bool => $label !== '' && $label !== 'Hele verdieping')
+                ->flatMap(fn (string $label): array => array_map('trim', explode(',', $label)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            return ['floors' => $floors, 'rooms' => $rooms];
         }
 
         $floors = [];
         $rooms = [];
-        foreach ($items as $item) {
+        foreach (collect($works)->pluck('item')->filter() as $item) {
             foreach ($item->areaTasks as $task) {
                 $area = $task->area;
                 if ($area === null) {
@@ -483,9 +540,10 @@ class VakmanPlanningService
     }
 
     /**
+     * @param  Collection<int, WorkTicket>  $tickets
      * @return list<string>
      */
-    private function notes(WorkerAssignment $assignment): array
+    private function notes(WorkerAssignment $assignment, Collection $tickets): array
     {
         $notes = [];
         $own = trim((string) ($assignment->notes ?? ''));
@@ -493,28 +551,45 @@ class VakmanPlanningService
             $notes[] = $own;
         }
 
-        $project = $assignment->project;
-        if ($project === null) {
-            return $notes;
-        }
-
-        $projectNote = trim((string) ($project->getAttributes()['notes'] ?? ''));
-        if ($projectNote !== '') {
-            $notes[] = $projectNote;
+        foreach ($tickets as $ticket) {
+            $text = trim((string) ($ticket->notes ?? ''));
+            if ($text !== '') {
+                $notes[] = $text;
+            }
         }
 
         return array_values(array_unique($notes));
     }
 
     /**
+     * @param  Collection<int, WorkTicket>  $tickets
      * @return list<ProjectDocument>
      */
-    private function drawings(Project $project): array
+    private function drawings(Project $project, Collection $tickets): array
     {
-        return $project->documents
-            ->filter(fn (ProjectDocument $document): bool => in_array($document->document_type, ['plattegrond', 'bijlage'], true))
-            ->values()
-            ->all();
+        if ($tickets->isNotEmpty()) {
+            return $tickets
+                ->flatMap(fn (WorkTicket $ticket) => $ticket->documents)
+                ->unique('id')
+                ->values()
+                ->all();
+        }
+
+        return [];
+    }
+
+    /**
+     * @return Collection<int, WorkTicket>
+     */
+    private function ticketsOnDate(WorkerAssignment $assignment, CarbonInterface $date): Collection
+    {
+        if (! $assignment->relationLoaded('workTickets')) {
+            return collect();
+        }
+
+        return $assignment->workTickets
+            ->filter(fn (WorkTicket $ticket): bool => $date->betweenIncluded($ticket->start_date, $ticket->end_date))
+            ->values();
     }
 
     private function timeLabel(WorkerAssignment $assignment): string

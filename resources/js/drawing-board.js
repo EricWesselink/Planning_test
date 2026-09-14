@@ -36,8 +36,11 @@ import { ocrMissingRooms } from './pdf-ocr';
 import {
     areaMatchesWorkKeys,
     buildOutsourceSelection,
+    buildTicketChunk,
     formatBoardQty,
     groupedWorkFilters,
+    groupRoomsByFloor,
+    isEntireFloorPick,
     measureSelectedWorks,
     measureSelectedRooms,
     roomMeasureChipLabel,
@@ -48,6 +51,7 @@ import {
     activeSelectionFromFilter,
     activeWorkBarLabel,
     shortWorkLabel,
+    ticketStorePayload,
     workFilterSummaryLabel,
 } from './drawing-work-selection';
 
@@ -67,6 +71,11 @@ function boot() {
     const routes = data.routes || {};
     const csrf = data.csrf;
     const drawing = data.drawing;
+    const ticketMode = data.ticketMode || null;
+
+    function canPickRooms() {
+        return Boolean(data.canEnterProgress || ticketMode);
+    }
 
     const stage = document.getElementById('draw-stage');
     const world = document.getElementById('draw-world');
@@ -189,6 +198,7 @@ function boot() {
     let selectedId = Number(root.dataset.selected || areas[0]?.id || 0);
     let pickedIds = new Set(selectedId ? [selectedId] : []);
     let roomMeasureMode = false;
+    let ticketChunks = [];
     let selectToken = 0;
     let pickedToken = 0;
     let savingWork = false;
@@ -526,7 +536,7 @@ function boot() {
     }
 
     function pickWorkGroup() {
-        if (!data.canEnterProgress || !hasWorkFilter() || !groupsEl) {
+        if (ticketMode || !data.canEnterProgress || !hasWorkFilter() || !groupsEl) {
             return;
         }
         groupsEl.querySelectorAll('.work-group').forEach((card) => {
@@ -1871,6 +1881,10 @@ function boot() {
         }
         highlightList();
         renderMarkers();
+        if (ticketMode) {
+            syncRoomMeasureMode();
+            return;
+        }
         if (! (await ensurePickedDetails())) {
             return;
         }
@@ -1889,6 +1903,10 @@ function boot() {
         }
         highlightList();
         renderMarkers();
+        if (ticketMode) {
+            syncRoomMeasureMode();
+            return;
+        }
         if (! (await ensurePickedDetails())) {
             return;
         }
@@ -1925,7 +1943,7 @@ function boot() {
     }
 
     async function pickVisibleRooms(floor = null) {
-        if (!data.canEnterProgress) {
+        if (!canPickRooms()) {
             return;
         }
         const ids = visibleRoomIds(floor);
@@ -1956,6 +1974,14 @@ function boot() {
         }
         highlightList();
         renderMarkers();
+        if (ticketMode) {
+            syncRoomMeasureMode();
+            const scope = floor
+                ? floor
+                : (hasWorkFilter() ? `${workFilterKeys.length} onderdelen` : 'hele werk');
+            setHint(`${ids.length} ruimtes geselecteerd (${scope}). Klik Selectie toevoegen om ze op de bon te zetten.`);
+            return;
+        }
         if (! (await ensurePickedDetails())) {
             return;
         }
@@ -2621,7 +2647,9 @@ function boot() {
         if (roomMeasureMode) {
             setModes({});
             roomMeasureMode = true;
-            setHint('Tik ruimtes aan op de tekening, of sleep om te verschuiven. Daarna kies je werkzaamheden en wie het werk uitvoerde.');
+            setHint(ticketMode
+                ? 'Tik ruimtes aan op de tekening. Daarna Selectie toevoegen.'
+                : 'Tik ruimtes aan op de tekening, of sleep om te verschuiven. Daarna kies je werkzaamheden en wie het werk uitvoerde.');
             closeWorkPanel();
             document.querySelector('.board-right')?.classList.add('is-open');
             document.querySelector('.board-left')?.classList.remove('is-open');
@@ -3212,6 +3240,9 @@ function boot() {
                 return;
             }
             if (roomMeasureMode) {
+                if (ticketMode) {
+                    return;
+                }
                 setRoomMeasureMode(false);
                 return;
             }
@@ -3243,11 +3274,11 @@ function boot() {
             return;
         }
         event.preventDefault();
-        if (hasWorkFilter() && data.canEnterProgress) {
+        if (hasWorkFilter() && canPickRooms()) {
             togglePickedRoom(row.dataset.areaId);
             return;
         }
-        if (event.target.closest('.status-pill') && data.canEnterProgress) {
+        if (event.target.closest('.status-pill') && canPickRooms()) {
             togglePickedRoom(row.dataset.areaId);
             return;
         }
@@ -4610,6 +4641,185 @@ function boot() {
         overlayObserver?.observe(overlayToolbar);
     }
 
+    function ticketError(message) {
+        const el = document.getElementById('ticket-error');
+        if (!el) {
+            return;
+        }
+        el.textContent = message || '';
+        el.hidden = !message;
+        el.classList.toggle('hidden', !message);
+    }
+
+    function renderTicketPanel() {
+        const list = document.getElementById('ticket-chunks');
+        if (!list) {
+            return;
+        }
+        if (ticketChunks.length === 0) {
+            list.innerHTML = '<p class="ticket-empty">Kies verdieping, materialen en ruimtes. Daarna Selectie toevoegen.</p>';
+        } else {
+            list.innerHTML = ticketChunks.map((chunk, index) => {
+                const lines = (chunk.lines || [])
+                    .map((line) => `<div class="ticket-chunk-line">${escapeHtml(line.label)} – ${escapeHtml(line.qty_label)}</div>`)
+                    .join('');
+                const rooms = chunk.entire
+                    ? 'Hele verdieping'
+                    : (chunk.rooms_label ? `Ruimtes: ${chunk.rooms_label}` : 'Ruimtes geselecteerd');
+                return `<article class="ticket-chunk" data-index="${index}"><div class="ticket-chunk-head"><span>${escapeHtml(chunk.floor || 'Verdieping')}</span><button type="button" class="ticket-chunk-remove" data-ticket-remove="${index}" aria-label="Selectie verwijderen">×</button></div>${lines}<div class="ticket-chunk-rooms">${escapeHtml(rooms)}</div></article>`;
+            }).join('');
+        }
+        fillTicketPreview();
+    }
+
+    function fillTicketPreview() {
+        const preview = document.getElementById('ticket-preview-body');
+        if (!preview) {
+            return;
+        }
+        if (ticketChunks.length === 0) {
+            preview.innerHTML = 'Nog geen selectie op de bon.';
+            return;
+        }
+        preview.innerHTML = ticketChunks.map((chunk) => {
+            const lines = (chunk.lines || [])
+                .map((line) => `${escapeHtml(line.label)} – ${escapeHtml(line.qty_label)}`)
+                .join('<br>');
+            const rooms = chunk.entire ? 'Hele verdieping' : `Ruimtes: ${escapeHtml(chunk.rooms_label || '—')}`;
+            return `<div><strong>${escapeHtml(chunk.floor || 'Verdieping')}</strong><br>${lines}<br>${rooms}</div>`;
+        }).join('<hr class="ticket-preview-split">');
+    }
+
+    function addTicketSelection() {
+        ticketError('');
+        if (!hasWorkFilter()) {
+            ticketError('Kies eerst een of meer materialen.');
+            setHint('Kies materialen bovenaan, daarna ruimtes op de tekening.');
+            return;
+        }
+        const rooms = pickedList().map((id) => areaById(id)).filter(Boolean);
+        if (rooms.length === 0) {
+            ticketError('Selecteer ruimtes op de tekening, of kies Deze verdieping.');
+            setHint('Tik ruimtes aan op de tekening, of kies Deze verdieping.');
+            return;
+        }
+        groupRoomsByFloor(rooms).forEach((floorRooms, floorId) => {
+            const entire = isEntireFloorPick(areas, floorRooms, floorId, workFilterKeys);
+            ticketChunks.push(buildTicketChunk({
+                floor: floorRooms[0]?.floor || selectedFloorName(),
+                floorId,
+                keys: workFilterKeys,
+                rooms: floorRooms,
+                entire,
+                filters: data.work_filters || [],
+            }));
+        });
+        pickedIds = new Set();
+        selectedId = 0;
+        root.dataset.selected = '';
+        highlightList();
+        renderMarkers();
+        syncRoomMeasureMode();
+        renderTicketPanel();
+        document.querySelector('.board-right')?.classList.add('is-open');
+        document.querySelector('.board-left')?.classList.remove('is-open');
+        setHint('Selectie toegevoegd. Kies eventueel een andere verdieping of sla de bon op.');
+    }
+
+    function removeTicketChunk(index) {
+        ticketChunks = ticketChunks.filter((_, i) => i !== index);
+        renderTicketPanel();
+    }
+
+    function appendTicketField(form, name, value) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value == null ? '' : String(value);
+        form.appendChild(input);
+    }
+
+    function ticketBillingMethod() {
+        return document.querySelector('input[name="ticket-billing"]:checked')?.value || 'unit';
+    }
+
+    function saveTicket() {
+        if (!ticketMode) {
+            return;
+        }
+        ticketError('');
+        if (ticketChunks.length === 0) {
+            ticketError('Voeg eerst een selectie toe.');
+            return;
+        }
+        const payload = ticketStorePayload(ticketChunks, {
+            notes: document.getElementById('ticket-notes')?.value || '',
+            document_ids: ticketMode.document_id ? [ticketMode.document_id] : [],
+        });
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = ticketMode.store_url;
+        appendTicketField(form, '_token', csrf);
+        payload.selections.forEach((selection, index) => {
+            appendTicketField(form, `selections[${index}][floor_id]`, selection.floor_id);
+            appendTicketField(form, `selections[${index}][entire]`, selection.entire);
+            selection.area_ids.forEach((id) => {
+                appendTicketField(form, `selections[${index}][area_ids][]`, id);
+            });
+            selection.work_keys.forEach((key) => {
+                appendTicketField(form, `selections[${index}][work_keys][]`, key);
+            });
+        });
+        if (payload.notes) {
+            appendTicketField(form, 'notes', payload.notes);
+        }
+        payload.document_ids.forEach((id) => {
+            appendTicketField(form, 'document_ids[]', id);
+        });
+        if (ticketMode.is_external) {
+            const billing = ticketBillingMethod();
+            appendTicketField(form, 'billing_method', billing);
+            if (billing === 'hourly') {
+                appendTicketField(form, 'hourly_rate', document.getElementById('ticket-hourly-rate')?.value || '');
+            }
+            if (billing === 'fixed') {
+                appendTicketField(form, 'fixed_price', document.getElementById('ticket-fixed-price')?.value || '');
+            }
+        }
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    function bindTicketPanel() {
+        if (!ticketMode) {
+            return;
+        }
+        document.getElementById('ticket-add')?.addEventListener('click', addTicketSelection);
+        document.getElementById('ticket-save')?.addEventListener('click', saveTicket);
+        document.getElementById('ticket-preview')?.addEventListener('click', () => {
+            const preview = document.getElementById('ticket-preview-body');
+            if (!preview) {
+                return;
+            }
+            const open = preview.hidden;
+            fillTicketPreview();
+            preview.hidden = !open;
+            preview.classList.toggle('hidden', !open);
+            document.getElementById('ticket-preview')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        document.getElementById('ticket-chunks')?.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-ticket-remove]');
+            if (!button) {
+                return;
+            }
+            removeTicketChunk(Number(button.dataset.ticketRemove));
+        });
+        renderTicketPanel();
+        setRoomMeasureMode(true);
+        document.querySelector('.board-right')?.classList.add('is-open');
+        setHint('Kies materialen, tik ruimtes aan op de tekening en voeg de selectie toe aan de bon.');
+    }
+
     setTool('hand');
     if (layer === 'both') {
         document.querySelectorAll('.layer-btn').forEach((item) => {
@@ -4617,8 +4827,11 @@ function boot() {
         });
     }
     applyTransform();
-    setHint('Tik op + Opleverpunt, zet het op de tekening, foto, tekst, versturen.');
+    setHint(ticketMode
+        ? 'Kies materialen, tik ruimtes aan op de tekening en voeg de selectie toe aan de bon.'
+        : 'Tik op + Opleverpunt, zet het op de tekening, foto, tekst, versturen.');
     bindTaskCards();
+    bindTicketPanel();
     refreshCompleteForm();
     loadDrawing().catch(() => {
         setHint('Tekening kon niet worden geladen.');

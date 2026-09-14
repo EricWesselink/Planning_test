@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Enums\WorkTicketKind;
-use App\Models\WorkTicket;
+use App\Models\ProjectDocument;
 use App\Models\WorkerAssignment;
+use App\Models\WorkTicket;
+use Illuminate\Support\Facades\Storage;
 
 class WorkTicketPdfService
 {
@@ -14,6 +16,7 @@ class WorkTicketPdfService
      *     filename: string,
      *     documentTitle: string,
      *     logo: ?string,
+     *     logoUrl: string,
      *     companyName: string,
      *     companyAddress: string,
      *     companyPostalCode: string,
@@ -21,12 +24,19 @@ class WorkTicketPdfService
      *     companyEmail: string,
      *     companyPhone: string,
      *     recipient: string,
+     *     recipientKind: ?string,
+     *     kindLabel: string,
+     *     issuedOn: string,
      *     projectTitle: string,
+     *     projectNumber: ?string,
+     *     workNumber: string,
      *     address: ?string,
      *     period: string,
      *     floors: string,
      *     rooms: string,
      *     drawings: list<string>,
+     *     drawingItems: list<array{name: string, url: ?string, path: ?string, is_image: bool}>,
+     *     drawingEmbeds: list<array{name: string, path: ?string, is_image: bool}>,
      *     colleagues: list<string>,
      *     showPrices: bool
      * }
@@ -43,28 +53,50 @@ class WorkTicketPdfService
             'assignment.crewMembers',
         ]);
 
+        $project = $ticket->project;
+        $logoRelative = $project?->issuerLogo() ?? (string) config('company.logo');
+        $drawingItems = $ticket->documents
+            ->map(fn (ProjectDocument $document): array => [
+                'name' => (string) $document->original_filename,
+                'url' => $project !== null
+                    ? route('projects.documents.show', [$project, $document])
+                    : null,
+                'path' => $this->storedImagePath($document),
+                'is_image' => $document->isImage(),
+            ])
+            ->values()
+            ->all();
+
         return [
             'ticket' => $ticket,
             'filename' => $this->filename($ticket),
             'documentTitle' => mb_strtoupper($ticket->kind->label()),
-            'logo' => $this->imagePath((string) config('company.logo')),
-            'companyName' => (string) config('company.name'),
+            'kindLabel' => $ticket->kind->label(),
+            'issuedOn' => ($ticket->created_at ?? $ticket->start_date)->format('d-m-Y'),
+            'logo' => $this->publicImagePath($logoRelative),
+            'logoUrl' => asset($logoRelative),
+            'companyName' => $project?->issuerName() ?? (string) config('company.name'),
             'companyAddress' => (string) config('company.address'),
             'companyPostalCode' => (string) config('company.postal_code'),
             'companyCity' => (string) config('company.city'),
             'companyEmail' => (string) config('company.email'),
             'companyPhone' => (string) config('company.phone'),
             'recipient' => $this->recipientName($ticket),
-            'projectTitle' => $ticket->project?->displayTitle() ?? (string) $ticket->project?->name,
-            'address' => $ticket->project?->nawLine(),
+            'recipientKind' => $ticket->worker?->employment_type?->label(),
+            'projectTitle' => $project?->displayTitle() ?? (string) $project?->name,
+            'projectNumber' => $project?->workCode(),
+            'workNumber' => $project?->workNumber() ?? '',
+            'address' => $project?->nawLine(),
             'period' => $ticket->dateRangeLabel(),
             'floors' => $ticket->floorsLabel(),
             'rooms' => $ticket->roomsLabel(),
             'drawings' => $ticket->documents
-                ->map(fn ($document): string => (string) $document->original_filename)
+                ->map(fn (ProjectDocument $document): string => (string) $document->original_filename)
                 ->filter()
                 ->values()
                 ->all(),
+            'drawingItems' => $drawingItems,
+            'drawingEmbeds' => $drawingItems,
             'colleagues' => $this->colleagueNames($ticket),
             'showPrices' => $showPrices && $ticket->kind === WorkTicketKind::Opdrachtbon,
         ];
@@ -150,7 +182,7 @@ class WorkTicketPdfService
         return trim($safe, '-');
     }
 
-    private function imagePath(string $relative): ?string
+    private function publicImagePath(string $relative): ?string
     {
         $relative = trim($relative);
         if ($relative === '') {
@@ -158,6 +190,20 @@ class WorkTicketPdfService
         }
 
         $absolute = public_path($relative);
+        if (! is_file($absolute)) {
+            return null;
+        }
+
+        return 'file://'.str_replace('\\', '/', $absolute);
+    }
+
+    private function storedImagePath(ProjectDocument $document): ?string
+    {
+        if (! $document->isImage() || $document->file_path === '') {
+            return null;
+        }
+
+        $absolute = Storage::disk('local')->path($document->file_path);
         if (! is_file($absolute)) {
             return null;
         }

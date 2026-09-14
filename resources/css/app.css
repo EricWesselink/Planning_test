@@ -1518,6 +1518,176 @@ button.plan-labor-toggle:hover {
     border-left: 1px solid var(--color-nicon-line);
 }
 
+.ticket-mode-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    width: 100%;
+    font-size: 12px;
+    color: var(--color-nicon-muted);
+}
+
+.ticket-mode-bar strong {
+    color: var(--color-nicon-ink);
+    font-weight: 650;
+}
+
+.ticket-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    padding: 0.8rem 0.85rem 0.9rem;
+    font-size: 13px;
+}
+
+.ticket-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    color: var(--color-nicon-orange);
+}
+
+.ticket-title {
+    font-size: 1.05rem;
+    font-weight: 650;
+    line-height: 1.25;
+}
+
+.ticket-sub {
+    margin-top: 0.15rem;
+    color: var(--color-nicon-muted);
+    font-size: 12px;
+}
+
+.ticket-existing {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0.6rem 0 0.4rem;
+    font-size: 12px;
+}
+
+.ticket-existing a {
+    border: 1px solid var(--color-nicon-line);
+    padding: 0.2rem 0.45rem;
+}
+
+.ticket-chunks {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    margin-top: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.ticket-empty {
+    color: var(--color-nicon-muted);
+    font-size: 12px;
+}
+
+.ticket-chunk {
+    border-top: 1px solid var(--color-nicon-line);
+    padding-top: 0.55rem;
+}
+
+.ticket-chunk-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-weight: 650;
+}
+
+.ticket-chunk-remove {
+    border: 0;
+    background: none;
+    color: var(--color-nicon-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.ticket-chunk-line,
+.ticket-chunk-rooms {
+    margin-top: 0.15rem;
+    color: var(--color-nicon-muted);
+    font-size: 12px;
+}
+
+.ticket-notes-label {
+    margin-top: 0.7rem;
+    font-size: 11px;
+    font-weight: 650;
+    color: var(--color-nicon-muted);
+}
+
+.ticket-notes,
+.ticket-rate {
+    width: 100%;
+    margin-top: 0.25rem;
+    border: 1px solid var(--color-nicon-line);
+    padding: 0.4rem 0.5rem;
+    font-size: 13px;
+}
+
+.ticket-billing {
+    margin-top: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 12px;
+}
+
+.ticket-billing-label {
+    font-weight: 650;
+}
+
+.ticket-actions {
+    margin-top: 0.7rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.ticket-btn {
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    padding: 0.45rem 0.6rem;
+    font-size: 13px;
+}
+
+.ticket-btn.is-light {
+    color: var(--color-nicon-muted);
+}
+
+.ticket-btn.is-primary {
+    background: var(--color-nicon-ink);
+    color: white;
+    border-color: var(--color-nicon-ink);
+}
+
+.ticket-errors {
+    margin-top: 0.45rem;
+    color: var(--color-nicon-danger);
+    font-size: 12px;
+}
+
+.ticket-preview {
+    margin-top: 0.55rem;
+    border: 1px solid var(--color-nicon-line);
+    background: var(--color-nicon-sand);
+    padding: 0.55rem 0.6rem;
+    font-size: 12px;
+}
+
+.ticket-preview-split {
+    margin: 0.5rem 0;
+    border-color: var(--color-nicon-line);
+}
+
 .board-mid {
     display: flex;
     flex-direction: column;

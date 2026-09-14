@@ -16,6 +16,10 @@ import {
     activeWorkBarLabel,
     shortWorkLabel,
     workFilterSummaryLabel,
+    buildTicketChunk,
+    groupRoomsByFloor,
+    isEntireFloorPick,
+    ticketStorePayload,
 } from '../../resources/js/drawing-work-selection.js';
 
 const filters = [
@@ -479,4 +483,59 @@ test('changing the top filter replaces which progress rows are checked', () => {
     const active = activeSelectionFromFilter(works, ['vloer|pvc1']);
     assert.equal(active[0].remaining, 53.42);
     assert.equal(activeWorkBarLabel(active), 'IVC Ultimo Chapman Oak, 24245 · 53,42 m²');
+});
+
+test('builds a werkbon chunk from the current floor, materials and rooms', () => {
+    const picked = rooms.filter((room) => ['0.07', '0.09'].includes(room.number));
+    const chunk = buildTicketChunk({
+        floor: 'begane grond',
+        floorId: 1,
+        keys: ['vloer|1', 'vloer|2'],
+        rooms: picked,
+        entire: false,
+        filters,
+    });
+
+    assert.equal(chunk.floor, 'begane grond');
+    assert.equal(chunk.floor_id, 1);
+    assert.equal(chunk.entire, false);
+    assert.deepEqual(chunk.area_ids, [1, 2]);
+    assert.equal(chunk.rooms_label, '0.07, 0.09');
+    assert.equal(chunk.lines.length, 2);
+});
+
+test('marks a chunk as the whole floor when every matching room is picked', () => {
+    const floorRooms = rooms.filter((room) => room.floor_id === 1 && areaMatchesWorkKeys(room, ['ondergrond']));
+    assert.equal(isEntireFloorPick(rooms, floorRooms, 1, ['ondergrond']), true);
+    assert.equal(isEntireFloorPick(rooms, floorRooms.slice(0, 1), 1, ['ondergrond']), false);
+});
+
+test('groups picked rooms by floor and posts selections without extra selectors', () => {
+    const grouped = groupRoomsByFloor([
+        { id: 1, floor_id: 1, number: '0.07' },
+        { id: 3, floor_id: null, number: '1.10' },
+        { id: 2, floor_id: 1, number: '0.09' },
+    ]);
+    assert.equal(grouped.get(1).length, 2);
+    assert.equal(grouped.get(0).length, 1);
+
+    const payload = ticketStorePayload([
+        {
+            floor_id: 1,
+            entire: true,
+            area_ids: [1, 2],
+            work_keys: ['ondergrond'],
+        },
+        {
+            floor_id: 2,
+            entire: false,
+            area_ids: [8],
+            work_keys: ['vloer|3'],
+        },
+    ], { notes: 'let op naden' });
+
+    assert.equal(payload.selections[0].entire, 1);
+    assert.equal(payload.selections[1].entire, 0);
+    assert.deepEqual(payload.selections[1].work_keys, ['vloer|3']);
+    assert.equal(payload.notes, 'let op naden');
 });

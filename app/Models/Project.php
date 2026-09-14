@@ -169,6 +169,20 @@ class Project extends Model
         return $this->kind === ProjectKind::Winkel;
     }
 
+    public function issuerName(): string
+    {
+        return $this->isWinkel()
+            ? (string) config('company.shop_name')
+            : (string) config('company.name');
+    }
+
+    public function issuerLogo(): string
+    {
+        return $this->isWinkel()
+            ? (string) config('company.shop_logo')
+            : (string) config('company.logo');
+    }
+
     public function isSmallWork(): bool
     {
         return $this->kind?->isSmallWork() ?? false;

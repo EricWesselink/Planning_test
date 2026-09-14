@@ -11,9 +11,9 @@ use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
 use App\Models\ProjectFloor;
 use App\Models\User;
-use App\Models\WorkItem;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
+use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use App\Services\Meetstaat\FloorLabel;
 use App\Support\Format;
@@ -47,6 +47,7 @@ class WorkTicketService
     {
         $assignment->loadMissing([
             'worker.rates',
+            'project.customer',
             'project.floors.areas.tasks.workItem',
             'project.areas.tasks.workItem',
             'project.workItems',
@@ -83,11 +84,56 @@ class WorkTicketService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function boardMode(WorkerAssignment $assignment): array
+    {
+        $draft = $this->draft($assignment);
+        $project = $draft['project'];
+        $worker = $draft['worker'];
+        $kind = $draft['kind'];
+
+        return [
+            'kind' => $kind->value,
+            'kind_label' => $kind->label(),
+            'save_label' => $kind->label().' opslaan',
+            'assignment_id' => (int) $assignment->id,
+            'store_url' => route('work-tickets.store', $assignment),
+            'planning_url' => route('planning', ['project_id' => $project->id]),
+            'worker_name' => $worker->planName(),
+            'worker_company' => $worker->company,
+            'project_name' => $project->displayTitle(),
+            'customer_name' => $project->customer?->name,
+            'is_external' => $draft['isExternal'],
+            'hourly_rate' => $draft['hourlyRate'],
+            'document_id' => $project->plattegrond()?->id,
+            'work_items' => $draft['workItems'],
+            'existing' => $draft['existing']
+                ->map(fn (WorkTicket $ticket): array => [
+                    'id' => (int) $ticket->id,
+                    'number' => $ticket->number,
+                    'label' => $ticket->kind->label().' '.$ticket->number,
+                    'url' => route('work-tickets.show', $ticket),
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $input
      */
     public function store(WorkerAssignment $assignment, array $input, User $user): WorkTicket
     {
-        $assignment->loadMissing(['worker.rates', 'project.floors.areas', 'project.workItems', 'project.documents', 'project.workOrders']);
+        $assignment->loadMissing([
+            'worker.rates',
+            'project.floors.areas.tasks.workItem',
+            'project.areas.tasks.workItem',
+            'project.workItems',
+            'project.documents',
+            'project.workOrders',
+            'project.customer',
+        ]);
 
         $project = $assignment->project;
         $worker = $assignment->worker;
@@ -103,10 +149,18 @@ class WorkTicketService
             ? WorkTicketBilling::from((string) $input['billing_method'])
             : null;
 
-        $lines = $this->buildLines($project, $worker, $selection['area_ids'], $selection['work_item_ids'], $billing, $input);
+        $lines = $this->buildLines(
+            $project,
+            $worker,
+            $selection['area_ids'],
+            $selection['work_item_ids'],
+            $billing,
+            $input,
+            $selection['totals'] ?? null,
+        );
         if ($lines === []) {
             throw ValidationException::withMessages([
-                'work_item_ids' => 'Geen Meetstaat-hoeveelheid voor de geselecteerde ruimtes en werkzaamheden.',
+                $this->hasSelections($input) ? 'selections' : 'work_item_ids' => 'Geen Meetstaat-hoeveelheid voor de geselecteerde ruimtes en werkzaamheden.',
             ]);
         }
 
@@ -164,8 +218,9 @@ class WorkTicketService
         array $workItemIds,
         ?WorkTicketBilling $billing,
         array $input = [],
+        ?array $totals = null,
     ): array {
-        $totals = $this->totalsFor($project, $areaIds, $workItemIds);
+        $totals ??= $this->totalsFor($project, $areaIds, $workItemIds);
         $orders = $project->relationLoaded('workOrders') ? $project->workOrders : $project->workOrders()->get();
         $postedPrices = is_array($input['unit_prices'] ?? null) ? $input['unit_prices'] : [];
         $lines = [];
@@ -250,12 +305,17 @@ class WorkTicketService
      *     floors: array<int, bool>,
      *     area_ids: list<int>,
      *     work_item_ids: list<int>,
-     *     document_ids: list<int>
+     *     document_ids: list<int>,
+     *     totals: array<int, array{name: string, quantity: float, unit: WorkUnit}>|null
      * }
      */
     public function resolveSelection(Project $project, array $input): array
     {
-        $project->loadMissing(['floors.areas', 'areas', 'workItems', 'documents']);
+        $project->loadMissing(['floors.areas.tasks.workItem', 'areas.tasks.workItem', 'workItems', 'documents']);
+
+        if ($this->hasSelections($input)) {
+            return $this->resolveSelections($project, $input);
+        }
 
         $floorsInput = is_array($input['floors'] ?? null) ? $input['floors'] : [];
         $selectedFloors = [];
@@ -318,7 +378,161 @@ class WorkTicketService
             'area_ids' => $areaIds,
             'work_item_ids' => $workItemIds,
             'document_ids' => $documentIds,
+            'totals' => null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    private function hasSelections(array $input): bool
+    {
+        return is_array($input['selections'] ?? null) && $input['selections'] !== [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array{
+     *     floors: array<int, bool>,
+     *     area_ids: list<int>,
+     *     work_item_ids: list<int>,
+     *     document_ids: list<int>,
+     *     totals: array<int, array{name: string, quantity: float, unit: WorkUnit}>
+     * }
+     */
+    private function resolveSelections(Project $project, array $input): array
+    {
+        $floors = [];
+        $areaIds = [];
+        $workItemIds = [];
+        $totals = [];
+
+        foreach ($input['selections'] as $chunk) {
+            if (! is_array($chunk)) {
+                continue;
+            }
+
+            $resolved = $this->resolveChunk($project, $chunk);
+            if ($resolved === null) {
+                continue;
+            }
+
+            $chunkTotals = $this->totalsFor($project, $resolved['area_ids'], $resolved['work_item_ids']);
+            foreach ($chunkTotals as $itemId => $row) {
+                if (! isset($totals[$itemId])) {
+                    $totals[$itemId] = $row;
+                } else {
+                    $totals[$itemId]['quantity'] = round($totals[$itemId]['quantity'] + $row['quantity'], 2);
+                }
+            }
+
+            foreach ($resolved['floors'] as $floorId => $entire) {
+                $floors[$floorId] = ($floors[$floorId] ?? true) && $entire;
+            }
+            $areaIds = array_merge($areaIds, $resolved['area_ids']);
+            $workItemIds = array_merge($workItemIds, $resolved['work_item_ids']);
+        }
+
+        $areaIds = array_values(array_unique($areaIds));
+        $workItemIds = array_values(array_unique($workItemIds));
+        if ($areaIds === [] || $workItemIds === []) {
+            throw ValidationException::withMessages([
+                'selections' => 'Kies minstens één verdieping, materiaal en ruimte.',
+            ]);
+        }
+
+        return [
+            'floors' => $floors,
+            'area_ids' => $areaIds,
+            'work_item_ids' => $workItemIds,
+            'document_ids' => $this->idsInProject(
+                is_array($input['document_ids'] ?? null) ? $input['document_ids'] : [],
+                $project->documents->pluck('id')->all(),
+            ),
+            'totals' => $totals,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $chunk
+     * @return array{floors: array<int, bool>, area_ids: list<int>, work_item_ids: list<int>}|null
+     */
+    private function resolveChunk(Project $project, array $chunk): ?array
+    {
+        $floorId = (int) ($chunk['floor_id'] ?? 0);
+        $entire = filter_var($chunk['entire'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $keys = array_values(array_filter(
+            array_map(
+                static fn (mixed $key): string => trim((string) $key),
+                is_array($chunk['work_keys'] ?? null) ? $chunk['work_keys'] : [],
+            ),
+            static fn (string $key): bool => $key !== '',
+        ));
+        if ($keys === []) {
+            return null;
+        }
+
+        if ($floorId === 0) {
+            $pool = $project->areas->whereNull('project_floor_id');
+            $chosen = $this->chosenAreaIds($chunk, $pool, $entire);
+            $floors = [];
+        } else {
+            $floor = $project->floors->firstWhere('id', $floorId);
+            if ($floor === null) {
+                return null;
+            }
+            $chosen = $this->chosenAreaIds($chunk, $floor->areas, $entire);
+            $floors = $chosen === [] ? [] : [$floorId => $entire];
+        }
+
+        if ($chosen === []) {
+            return null;
+        }
+
+        $workItemIds = $this->workItemIdsForKeys($project, $chosen, $keys);
+        if ($workItemIds === []) {
+            return null;
+        }
+
+        return [
+            'floors' => $floors,
+            'area_ids' => $chosen,
+            'work_item_ids' => $workItemIds,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $areaIds
+     * @param  list<string>  $keys
+     * @return list<int>
+     */
+    private function workItemIdsForKeys(Project $project, array $areaIds, array $keys): array
+    {
+        $wanted = array_flip($keys);
+        $ids = [];
+        foreach ($project->areas as $area) {
+            if (! in_array((int) $area->id, $areaIds, true)) {
+                continue;
+            }
+            foreach ($area->tasks as $task) {
+                if (! isset($wanted[$this->taskBoardKey($task)])) {
+                    continue;
+                }
+                $ids[] = (int) $task->work_item_id;
+            }
+        }
+
+        return array_values(array_unique(array_filter($ids)));
+    }
+
+    private function taskBoardKey(AreaTask $task): string
+    {
+        $group = $task->phase()->group();
+        if ($group === 'ondergrond') {
+            return 'ondergrond';
+        }
+
+        return $group.'|'.((int) $task->work_item_id ?: 'task-'.$task->id);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectKind;
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
@@ -40,17 +41,70 @@ class WorkTicketTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_planner_creates_werkbon_with_meetstaat_quantities_and_without_prices(): void
+    public function test_planner_opens_drawing_board_in_ticket_mode_from_a_planned_assignment(): void
     {
         $user = User::factory()->create();
         $seed = $this->seedJob();
 
         $this->actingAs($user)
             ->get(route('work-tickets.create', $seed['assignment']))
+            ->assertRedirect(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]));
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
             ->assertOk()
             ->assertSee('Werkbon maken')
-            ->assertSee('1.63 oefenruimte')
-            ->assertSee('PVC');
+            ->assertSee('Bonselectie')
+            ->assertSee('Materialen kiezen')
+            ->assertSee('Ruimtes selecteren')
+            ->assertSee('Selectie toevoegen')
+            ->assertSee('Bon bekijken')
+            ->assertSee('Werkbon opslaan')
+            ->assertSee('1.63')
+            ->assertSee('PVC')
+            ->assertSee('Deze verdieping')
+            ->assertDontSee('Werkzaamheden bijwerken')
+            ->assertDontSee('id="complete-form"', false);
+    }
+
+    public function test_drawing_board_without_ticket_mode_does_not_show_bonselectie(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $seed['project']))
+            ->assertOk()
+            ->assertSee('Materialen kiezen')
+            ->assertDontSee('Bonselectie')
+            ->assertDontSee('Selectie toevoegen')
+            ->assertDontSee('Werkbon opslaan')
+            ->assertDontSee('Ruimtes selecteren');
+    }
+
+    public function test_uitvoerder_cannot_open_drawing_board_in_ticket_mode(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+        $seed = $this->seedJob();
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
+            ->assertForbidden();
+    }
+
+    public function test_planner_creates_werkbon_with_meetstaat_quantities_and_without_prices(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
 
         $this->actingAs($user)
             ->post(route('work-tickets.store', $seed['assignment']), [
@@ -86,6 +140,9 @@ class WorkTicketTest extends TestCase
             ->get(route('work-tickets.show', $ticket))
             ->assertOk()
             ->assertSee('Werkbon')
+            ->assertSee('WERKBON')
+            ->assertSee('Nicon Vloeren')
+            ->assertSee('images/nicon-vloeren.png', false)
             ->assertSee('Gezondheidscentrum Laren')
             ->assertSee('1.63 oefenruimte')
             ->assertSee('Primen & egaliseren')
@@ -125,6 +182,95 @@ class WorkTicketTest extends TestCase
         $this->assertSame(84.0, (float) $ticket->lines->first()->quantity);
     }
 
+    public function test_store_from_drawing_board_selections_uses_work_keys_and_meetstaat_quantities(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'selections' => [
+                    [
+                        'floor_id' => $seed['floor']->id,
+                        'entire' => '0',
+                        'area_ids' => $seed['areas']->pluck('id')->all(),
+                        'work_keys' => ['vloer|'.$seed['pvc']->id, 'ondergrond'],
+                    ],
+                ],
+                'document_ids' => [$seed['drawing']->id],
+                'notes' => 'van het tekeningenbord',
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(2, $ticket->lines()->count());
+        $this->assertSame(84.0, (float) $ticket->lines->firstWhere('work_item_id', $seed['pvc']->id)->quantity);
+        $this->assertSame(84.0, (float) $ticket->lines->firstWhere('work_item_id', $seed['primer']->id)->quantity);
+        $this->assertNull($ticket->lines->firstWhere('work_item_id', $seed['plinten']->id));
+        $this->assertSame('van het tekeningenbord', $ticket->notes);
+        $this->assertTrue($ticket->documents()->whereKey($seed['drawing']->id)->exists());
+    }
+
+    public function test_selections_on_different_floors_keep_separate_meetstaat_quantities(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+        $floorTwo = ProjectFloor::query()->create([
+            'project_id' => $seed['project']->id,
+            'name' => '2e verdieping',
+            'sort_order' => 2,
+        ]);
+        $areaTwo = ProjectArea::query()->create([
+            'project_id' => $seed['project']->id,
+            'project_floor_id' => $floorTwo->id,
+            'area_number' => '2.01',
+            'name' => 'hal',
+            'square_meters' => 40,
+            'status' => 'niet_gestart',
+            'sort_order' => 1,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $areaTwo->id,
+            'work_item_id' => $seed['primer']->id,
+            'ordered_quantity' => 40,
+            'unit' => WorkUnit::SquareMeter,
+            'status' => 'niet_gestart',
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $areaTwo->id,
+            'work_item_id' => $seed['pvc']->id,
+            'ordered_quantity' => 40,
+            'unit' => WorkUnit::SquareMeter,
+            'status' => 'niet_gestart',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'selections' => [
+                    [
+                        'floor_id' => $seed['floor']->id,
+                        'entire' => '0',
+                        'area_ids' => [$seed['areas'][0]->id],
+                        'work_keys' => ['vloer|'.$seed['pvc']->id],
+                    ],
+                    [
+                        'floor_id' => $floorTwo->id,
+                        'entire' => '1',
+                        'work_keys' => ['ondergrond'],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertSame(28.0, (float) $ticket->lines->firstWhere('work_item_id', $seed['pvc']->id)->quantity);
+        $this->assertSame(40.0, (float) $ticket->lines->firstWhere('work_item_id', $seed['primer']->id)->quantity);
+        $this->assertSame(2, $ticket->areas()->count());
+        $this->assertFalse((bool) $ticket->floors->firstWhere('id', $seed['floor']->id)->pivot->entire_floor);
+        $this->assertTrue((bool) $ticket->floors->firstWhere('id', $floorTwo->id)->pivot->entire_floor);
+    }
+
     public function test_zzp_opdrachtbon_stores_unit_prices_times_selected_quantity(): void
     {
         $user = User::factory()->create();
@@ -160,6 +306,8 @@ class WorkTicketTest extends TestCase
             ->get(route('work-tickets.show', $ticket))
             ->assertOk()
             ->assertSee('Opdrachtbon')
+            ->assertSee('OPDRACHTBON')
+            ->assertSee('Nicon Vloeren')
             ->assertSee('€ 12,50')
             ->assertSee('€ 1.050,00');
     }
@@ -308,6 +456,37 @@ class WorkTicketTest extends TestCase
             ->get(route('work-tickets.pdf', $ticket))
             ->assertOk()
             ->assertSee('%PDF', false);
+    }
+
+    public function test_winkel_ticket_uses_kloppenburg_letterhead(): void
+    {
+        $planner = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $seed['project']->forceFill(['kind' => ProjectKind::Winkel])->save();
+        $this->actingAs($planner)->post(route('work-tickets.store', $seed['assignment']), [
+            'floors' => [
+                $seed['floor']->id => [
+                    'included' => '1',
+                    'scope' => 'entire',
+                ],
+            ],
+            'work_item_ids' => [$seed['pvc']->id],
+            'billing_method' => 'unit',
+            'unit_prices' => [$seed['pvc']->id => '12.50'],
+        ]);
+        $ticket = WorkTicket::query()->first();
+
+        $html = $this->actingAs($planner)
+            ->get(route('work-tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('Kloppenburg Interieur')
+            ->assertSee('OPDRACHTBON')
+            ->assertSee('images/kloppenburg-interieur.png', false)
+            ->assertSee('€ 12,50')
+            ->getContent();
+
+        $this->assertStringNotContainsString('Nicon Vloeren', $html);
+        $this->assertStringNotContainsString('images/nicon-vloeren.png', $html);
     }
 
     /**
@@ -462,6 +641,7 @@ class WorkTicketTest extends TestCase
             'plinten' => $plinten,
             'extra' => $extra,
             'drawing' => $drawing,
+            'project' => $project,
         ];
     }
 }

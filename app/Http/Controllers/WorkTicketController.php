@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
-use App\Models\WorkTicket;
 use App\Models\WorkerAssignment;
+use App\Models\WorkTicket;
 use App\Services\WorkTicketPdfService;
 use App\Services\WorkTicketService;
 use App\Support\Format;
@@ -19,12 +19,15 @@ use Illuminate\View\View;
 
 class WorkTicketController extends Controller
 {
-    public function create(WorkerAssignment $assignment, WorkTicketService $tickets): View
+    public function create(WorkerAssignment $assignment): RedirectResponse
     {
         $assignment->load(['worker', 'project']);
         Gate::authorize('create', [WorkTicket::class, $assignment]);
 
-        return view('work-tickets.create', $tickets->draft($assignment));
+        return redirect()->route('projects.show', [
+            'project' => $assignment->project_id,
+            'bon' => $assignment->id,
+        ]);
     }
 
     public function store(Request $request, WorkerAssignment $assignment, WorkTicketService $tickets): RedirectResponse
@@ -121,12 +124,19 @@ class WorkTicketController extends Controller
             : ['nullable', Rule::enum(WorkTicketBilling::class)];
 
         return [
-            'floors' => ['required', 'array'],
+            'selections' => ['required_without:floors', 'array', 'min:1'],
+            'selections.*.floor_id' => ['nullable', 'integer'],
+            'selections.*.entire' => ['nullable', 'boolean'],
+            'selections.*.area_ids' => ['nullable', 'array'],
+            'selections.*.area_ids.*' => ['integer'],
+            'selections.*.work_keys' => ['required_with:selections', 'array', 'min:1'],
+            'selections.*.work_keys.*' => ['string', 'max:80'],
+            'floors' => ['required_without:selections', 'array'],
             'floors.*.included' => ['nullable'],
             'floors.*.scope' => ['nullable', 'in:entire,rooms'],
             'floors.*.area_ids' => ['nullable', 'array'],
             'floors.*.area_ids.*' => ['integer'],
-            'work_item_ids' => ['required', 'array', 'min:1'],
+            'work_item_ids' => ['required_without:selections', 'array', 'min:1'],
             'work_item_ids.*' => ['integer'],
             'document_ids' => ['nullable', 'array'],
             'document_ids.*' => ['integer'],
@@ -155,6 +165,10 @@ class WorkTicketController extends Controller
     private function storeMessages(): array
     {
         return [
+            'selections.required' => 'Voeg minstens één selectie toe.',
+            'selections.min' => 'Voeg minstens één selectie toe.',
+            'selections.*.work_keys.required' => 'Kies minstens één werkzaamheid.',
+            'selections.*.work_keys.min' => 'Kies minstens één werkzaamheid.',
             'floors.required' => 'Kies minstens één verdieping of ruimte.',
             'work_item_ids.required' => 'Kies minstens één werkzaamheid.',
             'work_item_ids.min' => 'Kies minstens één werkzaamheid.',

@@ -7,12 +7,15 @@ use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\WorkActivityCategory;
 use App\Models\Worker;
+use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkOrder;
+use App\Models\WorkTicket;
 use App\Services\ProjectBoardService;
 use App\Services\ProjectIntakeService;
 use App\Services\ProjectLaborCalculator;
 use App\Services\RoomWorkSetup;
+use App\Services\WorkTicketService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
 use Illuminate\Http\RedirectResponse;
@@ -200,7 +203,7 @@ class ProjectController extends Controller
             ->with('warnings', $result['warnings']);
     }
 
-    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor): View
+    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets): View
     {
         Gate::authorize('view', $project);
 
@@ -284,6 +287,11 @@ class ProjectController extends Controller
             'snagExport' => route('projects.snags.export', $project),
         ];
         $payload['csrf'] = csrf_token();
+        $ticketMode = $this->ticketModePayload($request, $project, $tickets);
+        if ($ticketMode !== null) {
+            $payload['ticketMode'] = $ticketMode;
+            $payload['canPickRooms'] = true;
+        }
         $firstArea = $project->areas->first();
         $firstDetail = $firstArea ? $board->areaDetail($firstArea) : null;
         $openSnagId = $request->integer('snag') ?: null;
@@ -313,6 +321,26 @@ class ProjectController extends Controller
             'openSnagId' => $openSnagId,
             'todayPresence' => $todayPresence,
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function ticketModePayload(Request $request, Project $project, WorkTicketService $tickets): ?array
+    {
+        $assignmentId = $request->integer('bon');
+        if ($assignmentId <= 0) {
+            return null;
+        }
+
+        $assignment = WorkerAssignment::query()
+            ->whereKey($assignmentId)
+            ->where('project_id', $project->id)
+            ->firstOrFail();
+
+        Gate::authorize('create', [WorkTicket::class, $assignment]);
+
+        return $tickets->boardMode($assignment);
     }
 
     public function storeMeetstaat(Request $request, Project $project, ProjectIntakeService $intake): RedirectResponse

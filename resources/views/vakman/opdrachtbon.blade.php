@@ -4,65 +4,54 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Opdrachtbon {{ $job['project_name'] }}</title>
-    <style>
-        body { font-family: sans-serif; color: #1c1917; margin: 24px; }
-        h1 { font-size: 22px; margin: 0; }
-        h2 { font-size: 16px; margin: 0 0 4px; }
-        .muted { color: #78716c; font-size: 12px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 16px; }
-        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e7e0d4; }
-        th { color: #78716c; font-weight: 600; }
-        td.num, th.num { text-align: right; white-space: nowrap; }
-        .total td { font-weight: 700; border-top: 2px solid #1c1917; }
-        .no-print { margin-bottom: 16px; }
-        @media print { .no-print { display: none; } }
-    </style>
+    @include('work-tickets._styles')
 </head>
 <body>
     @php
+        $project = $job['project'];
         $total = collect($works)->sum(fn (array $work): float => (float) ($work['amount'] ?? 0));
+        $hasUnitPrices = collect($works)->contains(fn (array $work): bool => ($work['price_label'] ?? null) !== null);
     @endphp
-    <p class="no-print">
-        <a href="{{ route('vakman.planning.day', $detail['date']->toDateString()) }}">Terug naar de dag</a>
-        <button onclick="window.print()" style="margin-left:12px">Afdrukken</button>
+    <p class="toolbar no-print">
+        <a href="{{ route('vakman.planning.day', $detail['date']->toDateString()) }}">← Terug naar de dag</a>
+        <button type="button" onclick="window.print()">Afdrukken</button>
     </p>
-    <h1>Opdrachtbon</h1>
-    <p class="muted">{{ $worker?->planName() ?? auth()->user()?->name }} · {{ $detail['heading'] }}</p>
-    <h2>{{ $job['project_name'] }}</h2>
-    @if ($job['numbers'] !== '')
-        <p class="muted">{{ $job['numbers'] }}</p>
-    @endif
-    @if ($job['address'])
-        <p>{{ $job['address'] }}</p>
-    @endif
-
-    <table>
-        <thead>
-            <tr>
-                <th>Werkzaamheid</th>
-                <th class="num">Hoeveelheid</th>
-                <th class="num">Prijsafspraak</th>
-                <th class="num">Bedrag</th>
-            </tr>
-        </thead>
-        <tbody>
-            @forelse ($works as $work)
-                <tr>
-                    <td>{{ $work['title'] }}</td>
-                    <td class="num">{{ $work['quantity'] }} {{ $work['unit'] }}</td>
-                    <td class="num">{{ $work['price_label'] ?? '—' }}</td>
-                    <td class="num">{{ $work['amount'] !== null ? \App\Support\Format::money($work['amount']) : '—' }}</td>
-                </tr>
-            @empty
-                <tr>
-                    <td colspan="4">Nog geen opdrachtregels vastgelegd.</td>
-                </tr>
-            @endforelse
-            <tr class="total">
-                <td colspan="3">Totaal</td>
-                <td class="num">{{ \App\Support\Format::money($total) }}</td>
-            </tr>
-        </tbody>
-    </table>
+    @include('work-tickets._document', [
+        'isPdf' => false,
+        'logo' => null,
+        'logoUrl' => asset($project->issuerLogo()),
+        'companyName' => $project->issuerName(),
+        'companyAddress' => config('company.address'),
+        'companyPostalCode' => config('company.postal_code'),
+        'companyCity' => config('company.city'),
+        'companyEmail' => config('company.email'),
+        'companyPhone' => config('company.phone'),
+        'documentTitle' => 'OPDRACHTBON',
+        'kindLabel' => 'Opdrachtbon',
+        'number' => $detail['date']->format('d-m-Y'),
+        'issuedOn' => $detail['date']->format('d-m-Y'),
+        'recipient' => $worker?->company ?: ($worker?->planName() ?? auth()->user()?->name),
+        'recipientKind' => $worker?->employment_type?->label(),
+        'projectTitle' => $job['project_name'],
+        'projectNumber' => $project->workCode(),
+        'workNumber' => $project->workNumber(),
+        'address' => $job['address'],
+        'period' => $job['time_label'].' · '.$detail['heading'],
+        'floors' => implode(', ', $job['floors']),
+        'rooms' => implode(', ', $job['rooms']),
+        'ticket' => null,
+        'rows' => $works,
+        'showPrices' => true,
+        'priceMode' => $hasUnitPrices ? 'unit' : null,
+        'total' => $total,
+        'colleagues' => $job['colleagues'] ?? [],
+        'notesText' => implode("\n", $job['notes'] ?? []),
+        'drawingItems' => collect($job['drawings'] ?? [])->map(fn ($drawing) => [
+            'name' => $drawing->original_filename ?: 'Tekening',
+            'url' => route('projects.documents.show', [$project, $drawing]),
+            'path' => null,
+            'is_image' => $drawing->isImage(),
+        ])->all(),
+    ])
 </body>
 </html>

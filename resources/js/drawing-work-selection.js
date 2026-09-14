@@ -552,3 +552,80 @@ export function buildOutsourceSelection({
         worker_name: workerName,
     };
 }
+
+export function floorIdOf(area) {
+    if (area?.floor_id == null || area.floor_id === '') {
+        return 0;
+    }
+
+    return Number(area.floor_id);
+}
+
+export function groupRoomsByFloor(rooms) {
+    const groups = new Map();
+    rooms.forEach((room) => {
+        const id = floorIdOf(room);
+        if (!groups.has(id)) {
+            groups.set(id, []);
+        }
+        groups.get(id).push(room);
+    });
+
+    return groups;
+}
+
+export function isEntireFloorPick(allAreas, pickedRooms, floorId, keys) {
+    const pool = (allAreas || []).filter((area) => (
+        floorIdOf(area) === Number(floorId)
+        && areaMatchesWorkKeys(area, keys)
+    ));
+    if (pool.length === 0) {
+        return false;
+    }
+    const picked = new Set((pickedRooms || []).map((room) => Number(room.id)));
+
+    return pool.every((area) => picked.has(Number(area.id)));
+}
+
+export function buildTicketChunk({
+    floor = '',
+    floorId = 0,
+    keys = [],
+    rooms = [],
+    entire = false,
+    filters = [],
+} = {}) {
+    const measure = measureSelectedWorks(rooms, keys, filters);
+    const numbers = rooms
+        .map((room) => String(room.number || '').trim())
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right, 'nl', { numeric: true }));
+
+    return {
+        floor_id: Number(floorId) || 0,
+        floor: floor || rooms[0]?.floor || '',
+        entire: Boolean(entire),
+        area_ids: rooms.map((room) => Number(room.id)).filter((id) => Number.isFinite(id) && id > 0),
+        work_keys: [...keys],
+        rooms_label: entire ? 'Hele verdieping' : numbers.join(', '),
+        lines: measure.lines
+            .filter((line) => line.quantity > 0)
+            .map((line) => ({
+                key: line.key,
+                label: shortWorkLabel(line.label) || line.label,
+                qty_label: line.qty_label,
+            })),
+    };
+}
+
+export function ticketStorePayload(chunks, extras = {}) {
+    return {
+        selections: (chunks || []).map((chunk) => ({
+            floor_id: chunk.floor_id,
+            entire: chunk.entire ? 1 : 0,
+            area_ids: [...(chunk.area_ids || [])],
+            work_keys: [...(chunk.work_keys || [])],
+        })),
+        ...extras,
+    };
+}

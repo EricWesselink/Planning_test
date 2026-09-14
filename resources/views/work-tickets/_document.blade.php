@@ -1,0 +1,203 @@
+@php
+    $isPdf = $isPdf ?? false;
+    $logoSrc = $isPdf ? ($logo ?? null) : ($logoUrl ?? $logo ?? null);
+    $kindLabel = $kindLabel ?? '';
+    $issuedOn = $issuedOn ?? '';
+    $notesText = $notesText ?? trim((string) ($ticket?->notes ?? ''));
+    $showPrices = $showPrices ?? false;
+    $billing = $ticket?->billing_method;
+    $showUnitPrices = $showPrices && ($billing === \App\Enums\WorkTicketBilling::Unit || ($priceMode ?? null) === 'unit');
+    $rows = $rows ?? ($ticket?->lines ?? collect());
+    $drawingItems = $drawingItems ?? ($drawingEmbeds ?? []);
+    $total = $total ?? $ticket?->totalAmount();
+    $colleagues = $colleagues ?? [];
+    $number = $number ?? '';
+@endphp
+<div class="ticket-page">
+    <table class="brand">
+        <tr>
+            <td class="logo">
+                @if ($logoSrc)
+                    <img src="{{ $logoSrc }}" alt="{{ $companyName }}">
+                @endif
+            </td>
+            <td>
+                <div class="brand-name">{{ $companyName }}</div>
+                <div class="doc-title">{{ $documentTitle }}</div>
+                <div class="doc-meta">
+                    {{ $kindLabel }} {{ $number }}
+                    @if ($issuedOn !== '')
+                        · {{ $issuedOn }}
+                    @endif
+                </div>
+            </td>
+            <td class="brand-side">
+                <strong>{{ $companyName }}</strong><br>
+                {{ $companyAddress }}<br>
+                {{ $companyPostalCode }} {{ $companyCity }}<br>
+                {{ $companyEmail }} · {{ $companyPhone }}
+            </td>
+        </tr>
+    </table>
+
+    <table class="blocks">
+        <tr>
+            <td>
+                <div class="block-title">Project</div>
+                <p><strong>{{ $projectTitle }}</strong></p>
+                @if ($projectNumber)
+                    <p>Projectnr. {{ $projectNumber }}</p>
+                @endif
+                @if ($workNumber !== '')
+                    <p>Werknummer {{ $workNumber }}</p>
+                @endif
+                @if ($address)
+                    <p>{{ $address }}</p>
+                @endif
+            </td>
+            <td>
+                <div class="block-title">Opdrachtnemer</div>
+                <p><strong>{{ $recipient }}</strong></p>
+                @if ($recipientKind)
+                    <p>{{ $recipientKind }}</p>
+                @endif
+                <div class="block-title" style="margin-top:10px">Planning</div>
+                <p>{{ $period }}</p>
+            </td>
+        </tr>
+    </table>
+
+    <div class="section">
+        <div class="section-title">Werkopdracht</div>
+        @if ($floors !== '')
+            <p><strong>Verdieping:</strong> {{ $floors }}</p>
+        @endif
+        @if ($rooms !== '' && $rooms !== 'Hele verdieping')
+            <p><strong>Ruimtes:</strong> {{ $rooms }}</p>
+        @endif
+
+        <table class="lines">
+            <thead>
+                <tr>
+                    <th>Werkzaamheid</th>
+                    <th class="num">Hoeveelheid</th>
+                    @if ($showUnitPrices)
+                        <th class="num">Prijs</th>
+                        <th class="num">Bedrag</th>
+                    @endif
+                </tr>
+            </thead>
+            <tbody>
+                @forelse ($rows as $row)
+                    @php
+                        $title = is_array($row) ? ($row['title'] ?? 'Werkzaamheid') : ($row->workItem?->name ?? $row->workItem?->planningTitle() ?? 'Werkzaamheid');
+                        $qty = is_array($row) ? ($row['quantity'] ?? '') : \App\Support\Format::qty($row->quantity, 2);
+                        $unit = is_array($row) ? ($row['unit'] ?? '') : ($row->unit?->label() ?? '');
+                        $priceLabel = is_array($row)
+                            ? ($row['price_label'] ?? null)
+                            : ($row->unit_price !== null ? \App\Support\Format::money($row->unit_price).' / '.$unit : null);
+                        $amount = is_array($row) ? ($row['amount'] ?? null) : $row->amount;
+                    @endphp
+                    <tr>
+                        <td>{{ $title }}</td>
+                        <td class="num">{{ $qty }} {{ $unit }}</td>
+                        @if ($showUnitPrices)
+                            <td class="num">{{ $priceLabel ?: '—' }}</td>
+                        <td class="num">{{ $amount !== null ? \App\Support\Format::money($amount) : '—' }}</td>
+                        @endif
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="{{ $showUnitPrices ? 4 : 2 }}">Geen werkzaamheden vastgelegd.</td>
+                    </tr>
+                @endforelse
+                @if ($showUnitPrices)
+                    <tr class="total">
+                        <td colspan="3">Totaal opdrachtbedrag</td>
+                        <td class="num">{{ $total !== null ? \App\Support\Format::money($total) : '—' }}</td>
+                    </tr>
+                @endif
+            </tbody>
+        </table>
+    </div>
+
+    @if ($showPrices && $billing === \App\Enums\WorkTicketBilling::Hourly)
+        <div class="section">
+            <div class="section-title">Prijsafspraak</div>
+            <p>Uurprijs {{ \App\Support\Format::money($ticket->hourly_rate) }} / uur</p>
+            @if ($ticket->worked_hours !== null)
+                <p>{{ \App\Support\Format::hours($ticket->worked_hours) }} × {{ \App\Support\Format::money($ticket->hourly_rate) }} = <strong>{{ \App\Support\Format::money($ticket->totalAmount()) }}</strong></p>
+            @else
+                <p>Uren nog niet geregistreerd.</p>
+            @endif
+        </div>
+    @elseif ($showPrices && $billing === \App\Enums\WorkTicketBilling::Fixed)
+        <div class="section">
+            <div class="section-title">Prijsafspraak</div>
+            <p>Vaste prijs <strong>{{ \App\Support\Format::money($ticket->fixed_price) }}</strong></p>
+        </div>
+    @elseif ($showPrices && ($priceMode ?? null) === 'hourly')
+        <div class="section">
+            <div class="section-title">Prijsafspraak</div>
+            <p>{{ $priceNote ?? 'Uurprijs' }}</p>
+        </div>
+    @elseif ($showPrices && ($priceMode ?? null) === 'fixed')
+        <div class="section">
+            <div class="section-title">Prijsafspraak</div>
+            <p>{{ $priceNote ?? 'Vaste prijs' }}</p>
+        </div>
+    @endif
+
+    @if ($drawingItems !== [])
+        <div class="section drawings">
+            <div class="section-title">Tekeningen</div>
+            @foreach ($drawingItems as $drawing)
+                @php
+                    $name = is_array($drawing) ? ($drawing['name'] ?? 'Tekening') : ($drawing->original_filename ?: 'Tekening');
+                    $url = is_array($drawing) ? ($drawing['url'] ?? null) : null;
+                    $embed = is_array($drawing) ? ($drawing['path'] ?? null) : null;
+                    $isImage = is_array($drawing) ? (bool) ($drawing['is_image'] ?? false) : false;
+                    if (! is_array($drawing) && isset($project)) {
+                        $url = route('projects.documents.show', [$project, $drawing]);
+                        $isImage = $drawing->isImage();
+                    }
+                @endphp
+                <div class="drawing">
+                    @if ($isPdf && $embed)
+                        <img src="{{ $embed }}" alt="{{ $name }}">
+                        <div class="drawing-name">{{ $name }}</div>
+                    @elseif ($isPdf)
+                        <div>{{ $name }}</div>
+                    @else
+                        @if ($url)
+                            <a href="{{ $url }}">
+                                @if ($isImage)
+                                    <img src="{{ $url }}" alt="{{ $name }}">
+                                @endif
+                                <div class="drawing-name">{{ $name }}</div>
+                            </a>
+                        @else
+                            <div>{{ $name }}</div>
+                        @endif
+                    @endif
+                </div>
+            @endforeach
+        </div>
+    @endif
+
+    @if ($notesText !== '')
+        <div class="section">
+            <div class="section-title">Opmerkingen / werkinstructies</div>
+            <div class="notes">{{ $notesText }}</div>
+        </div>
+    @endif
+
+    @if ($colleagues !== [])
+        <div class="section">
+            <div class="section-title">Ook op het werk</div>
+            <p>{{ implode(', ', $colleagues) }}</p>
+        </div>
+    @endif
+
+    <div class="foot">{{ $companyName }} · {{ $kindLabel }} {{ $number }}</div>
+</div>

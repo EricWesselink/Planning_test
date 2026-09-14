@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\WorkOrderType;
+use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
 use App\Models\AreaTask;
 use App\Models\Customer;
@@ -14,6 +15,7 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkOrder;
+use App\Models\WorkTicket;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -37,7 +39,7 @@ class VakmanPlanningTest extends TestCase
             'end_date' => '2026-09-12',
             'hours_per_day' => 8,
         ]);
-        WorkItem::query()->create([
+        $item = WorkItem::query()->create([
             'project_id' => $own->id,
             'name' => 'PVC leggen',
             'unit' => WorkUnit::SquareMeter,
@@ -52,6 +54,10 @@ class VakmanPlanningTest extends TestCase
             'ordered_quantity' => 80,
             'status' => 'gepland',
         ]);
+        WorkerAssignment::query()
+            ->where('worker_id', $nick->id)
+            ->where('project_id', $own->id)
+            ->update(['work_item_id' => $item->id]);
         $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
 
         $html = $this->actingAs($user)
@@ -126,6 +132,10 @@ class VakmanPlanningTest extends TestCase
             'unit' => 'm2',
             'status' => 'niet_gestart',
         ]);
+        WorkerAssignment::query()
+            ->where('worker_id', $nick->id)
+            ->where('project_id', $own->id)
+            ->update(['work_item_id' => $item->id]);
         $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
 
         $this->actingAs($user)
@@ -148,11 +158,81 @@ class VakmanPlanningTest extends TestCase
             ->get(route('vakman.planning.werkbon', '2026-09-10'))
             ->assertOk()
             ->assertSee('Werkbon')
+            ->assertSee('WERKBON')
+            ->assertSee('Nicon Vloeren')
+            ->assertSee('images/nicon-vloeren.png', false)
             ->assertSee('Laakse Tuinen')
             ->assertSee('PVC')
             ->assertDontSee('€')
             ->assertDontSee('87,50')
             ->assertDontSee('Opdrachtbon');
+    }
+
+    public function test_vakman_day_shows_only_work_selected_on_the_ticket(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        [$nick, $own] = $this->seedProjects();
+        $primer = WorkItem::query()->create([
+            'project_id' => $own->id,
+            'name' => 'Primen & egaliseren',
+            'unit' => WorkUnit::SquareMeter,
+            'ordered_quantity' => 702.32,
+            'status' => 'gepland',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $own->id,
+            'name' => 'PVC leggen',
+            'unit' => WorkUnit::SquareMeter,
+            'ordered_quantity' => 120,
+            'status' => 'gepland',
+        ]);
+        $floor = ProjectFloor::query()->create([
+            'project_id' => $own->id,
+            'name' => 'Begane grond',
+            'sort_order' => 1,
+        ]);
+        $area = ProjectArea::query()->create([
+            'project_id' => $own->id,
+            'project_floor_id' => $floor->id,
+            'area_number' => '0.01',
+            'name' => 'Entree',
+            'square_meters' => 24,
+            'status' => 'niet_gestart',
+        ]);
+        $assignment = WorkerAssignment::query()
+            ->where('worker_id', $nick->id)
+            ->where('project_id', $own->id)
+            ->first();
+        $ticket = WorkTicket::query()->create([
+            'number' => 'WB-2026-0001',
+            'kind' => WorkTicketKind::Werkbon,
+            'worker_assignment_id' => $assignment->id,
+            'project_id' => $own->id,
+            'worker_id' => $nick->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'notes' => 'alleen primer vandaag',
+        ]);
+        $ticket->lines()->create([
+            'work_item_id' => $primer->id,
+            'quantity' => 24,
+            'unit' => WorkUnit::SquareMeter,
+        ]);
+        $ticket->floors()->attach($floor->id, ['entire_floor' => false]);
+        $ticket->areas()->attach($area->id);
+        $user = User::factory()->vakman($nick->id)->create();
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning.day', '2026-09-10'))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('24')
+            ->assertSee('Begane grond')
+            ->assertSee('0.01 Entree')
+            ->assertSee('alleen primer vandaag')
+            ->assertSee(route('work-tickets.show', $ticket), false)
+            ->assertDontSee('PVC')
+            ->assertDontSee('702,32');
     }
 
     public function test_zzp_day_shows_opdrachtbon_with_agreed_price_and_hides_werkbon(): void
@@ -201,6 +281,9 @@ class VakmanPlanningTest extends TestCase
             ->get(route('vakman.planning.opdrachtbon', ['date' => '2026-09-10', 'project' => $own]))
             ->assertOk()
             ->assertSee('Opdrachtbon')
+            ->assertSee('OPDRACHTBON')
+            ->assertSee('Nicon Vloeren')
+            ->assertSee('images/nicon-vloeren.png', false)
             ->assertSee('PVC')
             ->assertSee('€ 12,50')
             ->assertSee('120');

@@ -22,9 +22,12 @@
         $canEnterProgress = auth()->user()?->canEnterProgress() ?? false;
         $canApproveProgress = auth()->user()?->canApproveProgress() ?? false;
         $lockedWorkerId = auth()->user()?->scheduledWorkerId();
+        $ticketMode = $board['ticketMode'] ?? null;
+        $canSelectRooms = $canEnterProgress || (bool) $ticketMode;
+        $showProgressTools = $canEnterProgress && ! $ticketMode;
     @endphp
 
-    <div id="project-board" class="project-board" data-selected="{{ $selectedAreaId }}" data-open-snag="{{ $openSnagId ?? '' }}">
+    <div id="project-board" class="project-board{{ $ticketMode ? ' is-ticket-mode' : '' }}" data-selected="{{ $selectedAreaId }}" data-open-snag="{{ $openSnagId ?? '' }}">
         <header class="board-top">
             <div>
                 <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-xs text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
@@ -172,7 +175,7 @@
                         <span id="room-work-qty" class="draw-work-qty" title="Totaal van de aangevinkte onderdelen op deze verdieping"></span>
                         <span id="picked-count" hidden></span>
                     </div>
-                    @if ($canEnterProgress)
+                    @if ($canSelectRooms)
                         <button type="button" id="pick-all-rooms" class="room-pick-btn">Hele werk</button>
                     @endif
                 </div>
@@ -188,7 +191,7 @@
                 @foreach ($floors as $floorName => $floorAreas)
                     <div class="floor-head sticky top-0">
                         <span>{{ $floorName }}</span>
-                        @if ($canEnterProgress)
+                        @if ($canSelectRooms)
                             <button type="button" class="room-pick-btn floor-pick" data-floor="{{ $floorName }}">Deze verdieping</button>
                         @endif
                     </div>
@@ -206,6 +209,13 @@
 
         <section class="board-mid">
             <div class="draw-toolbar">
+                @if ($ticketMode)
+                    <div class="ticket-mode-bar">
+                        <a href="{{ $ticketMode['planning_url'] }}" class="text-nicon-orange-dark">← Planning</a>
+                        <strong>{{ $ticketMode['kind_label'] }} maken</strong>
+                        <span>{{ $ticketMode['worker_name'] }}</span>
+                    </div>
+                @endif
                 <div class="flex items-center gap-1 min-w-0 overflow-visible">
                     <select id="draw-page" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-40">
                         <option value="1">Pagina 1</option>
@@ -239,7 +249,7 @@
                         </div>
                     </div>
                     <span id="draw-work-qty" class="draw-work-qty" aria-live="polite" title="Totaal van de aangevinkte onderdelen op deze verdieping"></span>
-                    @if ($canEnterProgress)
+                    @if ($canSelectRooms)
                         <button type="button" id="pick-work-rooms" class="room-pick-btn hidden">Alle zichtbare</button>
                         <div class="room-measure-group">
                         <button type="button" id="pick-rooms-btn" class="room-measure-btn" aria-pressed="false">Ruimtes selecteren</button>
@@ -248,7 +258,9 @@
                             <span id="room-measure-qty" class="room-measure-qty">0,00 m²</span>
                             <span id="room-measure-active" class="room-measure-active hidden"></span>
                             <button type="button" id="room-measure-view" aria-expanded="false" aria-controls="room-measure-panel">Selectie bekijken</button>
-                            <button type="button" id="room-progress-open">Werkzaamheden bijwerken</button>
+                            @if ($showProgressTools)
+                                <button type="button" id="room-progress-open">Werkzaamheden bijwerken</button>
+                            @endif
                             <button type="button" id="room-measure-clear">Wis selectie</button>
                         </div>
                         </div>
@@ -268,8 +280,8 @@
                 </div>
                 <div class="ml-auto flex items-center gap-2">
                     <button type="button" id="toggle-rooms" class="board-panel-toggle">Ruimtes</button>
-                    <button type="button" id="toggle-tasks" class="board-panel-toggle">Taken</button>
-                    <button type="button" id="draw-snag" class="bg-nicon-ink text-white px-2 py-1 text-xs{{ auth()->user()?->canCreateSnags() ? '' : ' hidden' }}">+ Opleverpunt</button>
+                    <button type="button" id="toggle-tasks" class="board-panel-toggle">{{ $ticketMode ? 'Bon' : 'Taken' }}</button>
+                    <button type="button" id="draw-snag" class="bg-nicon-ink text-white px-2 py-1 text-xs{{ auth()->user()?->canCreateSnags() && ! $ticketMode ? '' : ' hidden' }}">+ Opleverpunt</button>
                 </div>
             </div>
             <div id="draw-stage" class="draw-stage">
@@ -391,15 +403,63 @@
             </div>
         </section>
 
-        <aside class="board-right" id="side-panel">
-            <div id="room-panel" class="{{ $canEnterProgress ? '' : 'is-readonly' }}" data-area-id="{{ $first['id'] ?? '' }}">
+        <aside class="board-right{{ $ticketMode ? ' is-ticket' : '' }}" id="side-panel">
+            @if ($ticketMode)
+                <div id="ticket-panel" class="ticket-panel">
+                    <div class="ticket-panel-head">
+                        <div class="ticket-kicker">Bonselectie</div>
+                        <div class="text-[11px] font-semibold uppercase tracking-wide">{{ $ticketMode['kind_label'] }}</div>
+                        <h2 class="ticket-title">{{ $ticketMode['project_name'] }}</h2>
+                        @if ($ticketMode['worker_company'] || $ticketMode['worker_name'])
+                            <p class="ticket-sub">{{ $ticketMode['worker_company'] ?: $ticketMode['worker_name'] }}</p>
+                        @endif
+                    </div>
+                    @if ($errors->any())
+                        <ul class="ticket-errors">
+                            @foreach ($errors->all() as $error)
+                                <li>{{ $error }}</li>
+                            @endforeach
+                        </ul>
+                    @endif
+                    @if (! empty($ticketMode['existing']))
+                        <div class="ticket-existing">
+                            @foreach ($ticketMode['existing'] as $existing)
+                                <a href="{{ $existing['url'] }}">{{ $existing['label'] }}</a>
+                            @endforeach
+                        </div>
+                    @endif
+                    <div id="ticket-chunks" class="ticket-chunks">
+                        <p class="ticket-empty">Kies verdieping, materialen en ruimtes. Daarna Selectie toevoegen.</p>
+                    </div>
+                    <div id="ticket-preview-body" class="ticket-preview hidden" hidden></div>
+                    <label class="ticket-notes-label" for="ticket-notes">Opmerking toevoegen</label>
+                    <textarea id="ticket-notes" class="ticket-notes" rows="2" maxlength="2000" placeholder="Opmerking toevoegen">{{ old('notes') }}</textarea>
+                    @if ($ticketMode['is_external'])
+                        <div class="ticket-billing">
+                            <div class="ticket-billing-label">Afrekening</div>
+                            <label><input type="radio" name="ticket-billing" value="unit" @checked(old('billing_method', 'unit') === 'unit')> Per m² / m¹</label>
+                            <label><input type="radio" name="ticket-billing" value="hourly" @checked(old('billing_method') === 'hourly')> Uren</label>
+                            <label><input type="radio" name="ticket-billing" value="fixed" @checked(old('billing_method') === 'fixed')> Vaste prijs</label>
+                            <input id="ticket-hourly-rate" class="ticket-rate" inputmode="decimal" placeholder="Uurtarief" value="{{ old('hourly_rate', $ticketMode['hourly_rate'] !== null ? \App\Support\Format::qty($ticketMode['hourly_rate']) : '') }}">
+                            <input id="ticket-fixed-price" class="ticket-rate" inputmode="decimal" placeholder="Vaste prijs" value="{{ old('fixed_price') }}">
+                        </div>
+                    @endif
+                    <p id="ticket-error" class="ticket-errors hidden" hidden></p>
+                    <div class="ticket-actions">
+                        <button type="button" id="ticket-add" class="ticket-btn">Selectie toevoegen</button>
+                        <button type="button" id="ticket-preview" class="ticket-btn is-light">Bon bekijken</button>
+                        <button type="button" id="ticket-save" class="ticket-btn is-primary">{{ $ticketMode['save_label'] }}</button>
+                    </div>
+                </div>
+            @endif
+            <div id="room-panel" class="{{ $canEnterProgress ? '' : 'is-readonly' }}{{ $ticketMode ? ' hidden' : '' }}" data-area-id="{{ $first['id'] ?? '' }}">
             <div class="px-4 pt-4 pb-2">
                 <div class="text-xs text-nicon-muted" id="room-floor">{{ $first['floor'] ?? '' }}</div>
                 <h2 class="text-xl font-semibold" id="room-title">{{ $first['number'] ?? '' }} {{ $first['unique_name'] ?? $first['name'] ?? 'Kies een ruimte' }}</h2>
                 <div class="text-sm text-nicon-muted" id="room-m2">{{ $first['m2_label'] ?? '' }}</div>
                 <div class="mt-3 flex items-center justify-between gap-2">
                     <div class="text-sm" id="room-progress-label">{{ $first ? $first['progress'].' · '.$first['status_label'] : '' }}</div>
-                    @if ($canEnterProgress)
+                    @if ($showProgressTools)
                         <button type="button" id="select-all-tasks" class="text-xs border border-nicon-line bg-white px-2 py-1">Alles aanvinken</button>
                     @endif
                 </div>
@@ -429,7 +489,7 @@
                     </section>
                 @endforeach
             </div>
-            @if ($canEnterProgress)
+            @if ($showProgressTools)
                 <form id="complete-form" class="border-t border-nicon-line px-3 py-2 space-y-1.5 text-sm bg-white">
                     <div class="text-sm font-medium leading-snug" id="complete-task-name">Kies een of meer werkzaamheden</div>
                     @if ($lockedWorkerId)
@@ -450,7 +510,7 @@
                     <button class="w-full bg-nicon-ink text-white py-2" id="complete-submit" disabled>{{ $lockedWorkerId ? 'Klaar melden (voorlopig)' : 'Opslaan en verwerken' }}</button>
                     <button type="button" class="w-full border border-nicon-line py-2 hidden" id="complete-reopen" hidden>Weer openzetten</button>
                 </form>
-            @else
+            @elseif (! $ticketMode)
                 <div class="border-t border-nicon-line p-3 text-sm bg-white">
                     <div class="text-xs font-medium">Voortgang</div>
                     <p class="mt-1 text-[11px] text-nicon-muted">Alleen ter inzage. Wijzigen kan de vakman, uitvoerder, projectleider of beheerder.</p>
@@ -553,7 +613,7 @@
         <div class="room-measure-panel-head">Totalen</div>
         <div id="room-measure-totals" class="room-measure-totals"></div>
     </div>
-    @if ($canEnterProgress)
+    @if ($showProgressTools)
         <div id="room-progress-panel" class="room-progress-panel" hidden>
             <div class="room-progress-head">
                 <div class="room-progress-head-copy">
