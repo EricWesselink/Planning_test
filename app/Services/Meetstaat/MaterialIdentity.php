@@ -179,6 +179,50 @@ class MaterialIdentity
     }
 
     /**
+     * Productcodes buiten de STABU-werkcode, bijv. 5721 of 0508.
+     *
+     * @return list<string>
+     */
+    public function distinctiveProductCodes(string $name): array
+    {
+        return array_values(array_diff($this->productCodes($name), $this->workCodes($name)));
+    }
+
+    /**
+     * Zelfde materiaalvariant, niet alleen dezelfde werkcode.
+     */
+    public function sharesProductVariant(string $left, string $right): bool
+    {
+        $leftCodes = $this->distinctiveProductCodes($left);
+        $rightCodes = $this->distinctiveProductCodes($right);
+        if ($leftCodes !== [] && $rightCodes !== []) {
+            return array_intersect($leftCodes, $rightCodes) !== [];
+        }
+
+        $a = $this->normalizedKey($left);
+        $b = $this->normalizedKey($right);
+        if ($a === '' || $b === '') {
+            return false;
+        }
+        if ($a === $b) {
+            return true;
+        }
+        if (str_contains($a, $b) || str_contains($b, $a)) {
+            $shorterKey = mb_strlen($a) <= mb_strlen($b) ? $a : $b;
+            $longerKey = mb_strlen($a) <= mb_strlen($b) ? $b : $a;
+            $shorterName = mb_strlen($a) <= mb_strlen($b) ? $left : $right;
+            if (mb_strlen($shorterKey) >= 12 && str_starts_with($longerKey, $shorterKey)) {
+                if (count($this->distinctiveTokens($shorterName)) >= 3
+                    || $this->longerAddsNoDistinctiveTokens($left, $right)) {
+                    return true;
+                }
+            }
+        }
+
+        return $this->sharesStrongTokens($left, $right);
+    }
+
+    /**
      * Dezelfde productvariant, ook bij afgekorte of licht vervormde brontekst.
      * Geen gok op alleen een merktoken of een generiek type.
      */
@@ -192,8 +236,15 @@ class MaterialIdentity
         $leftWork = $this->workCodes($left);
         $rightWork = $this->workCodes($right);
         if ($leftWork !== [] && $rightWork !== []) {
-            return array_intersect($leftWork, $rightWork) !== []
-                && $this->sameExecutionVariant($left, $right);
+            if (array_intersect($leftWork, $rightWork) === []) {
+                return false;
+            }
+            if (! $this->sameExecutionVariant($left, $right)) {
+                return false;
+            }
+
+            // Zelfde STABU-code is niet genoeg: Coral Brush en Tarkett iQ delen 43.20.02.
+            return $this->sharesProductVariant($left, $right);
         }
         if ($this->sharesFlooringVariantCode($left, $right)) {
             return true;

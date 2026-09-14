@@ -314,4 +314,55 @@ TXT);
                 && str_contains((string) ($area['tasks'][0]['work_name'] ?? ''), '(hp)')
         ));
     }
+
+    public function test_same_work_code_keeps_following_material_products_as_separate_works(): void
+    {
+        $parsed = (new NiconMeetbonParser)->parse(<<<'TXT'
+Meetstaat
+Opdrachtgever : Nicon vloeren
+Referentie    : 11P251047 Griftland college
+Werknr        : 251000077
+Datum         : 07/09/2026
+
+43.20.02 Coral Brush 5721-hurricane grey,
+Entreemat Banen
+Bouwlaag: begane grond
+0.01 entree 22.30 m² 20.72 m
+Totaal 22.30 m² 20.72 m
+Totaal
+22.30 m² 20.72 m
+
+Tarkett vinyl iQ Natural-black, PVC Banen /
+Vinyl
+Bouwlaag: begane grond
+0.10 toneel 76.18 m² 41.92 m
+Totaal 76.18 m² 41.92 m
+Totaal
+76.18 m² 41.92 m
+
+PU gietvloer , Ral 7039 met vlok, Coating
+Bouwlaag: begane grond
+0.20 sanitair 9.53 m² 12.92 m
+Totaal 9.53 m² 12.92 m
+Totaal
+9.53 m² 12.92 m
+TXT);
+
+        $names = collect($parsed['works'])->pluck('name');
+        $coral = collect($parsed['works'])->first(fn (array $work) => str_contains((string) $work['name'], 'Coral Brush'));
+        $tarkett = collect($parsed['works'])->first(fn (array $work) => str_contains((string) $work['name'], 'Natural-black'));
+        $gietvloer = collect($parsed['works'])->first(fn (array $work) => str_contains((string) $work['name'], 'PU gietvloer'));
+
+        $this->assertCount(3, $parsed['works']);
+        $this->assertNotNull($coral);
+        $this->assertNotNull($tarkett);
+        $this->assertNotNull($gietvloer);
+        $this->assertFalse($names->contains(fn ($name) => str_contains((string) $name, 'Coral Brush') && str_contains((string) $name, 'Tarkett')));
+        $this->assertLessThanOrEqual(255, mb_strlen((string) $coral['name']));
+        $this->assertLessThanOrEqual(255, mb_strlen((string) $tarkett['name']));
+        $this->assertEqualsWithDelta(22.30, (float) $coral['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(76.18, (float) $tarkett['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(9.53, (float) $gietvloer['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(108.01, collect($parsed['works'])->sum(fn (array $work) => (float) $work['declared_total']), 0.01);
+    }
 }

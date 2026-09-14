@@ -39,5 +39,40 @@ class GriftlandAutoImportReadyTest extends TestCase
         $this->assertTrue($closure['ready']);
         $this->assertContains($closure['decision'], ['READY', 'READY_WITH_WARNINGS']);
         $this->assertSame('Project definitief importeren', $closure['button_label']);
+        $this->assertEqualsWithDelta(8456.65, $parsed, 0.005);
+        $this->assertEqualsWithDelta(8456.65, $kept, 0.005);
+
+        $variantLabels = [
+            'Coral Brush',
+            'Natural-black',
+            'PU gietvloer antislip',
+            'vloercoating',
+            'Granit light',
+            'iQ light green',
+            'Natural-light blue',
+            'Dusty Brick',
+            'dusty green',
+            'Natural blue',
+            'directie levering',
+        ];
+        $names = collect($preview['works'])->pluck('name');
+        foreach ($preview['works'] as $work) {
+            $name = (string) ($work['name'] ?? '');
+            $this->assertLessThanOrEqual(255, mb_strlen($name), $name);
+            $this->assertFalse(
+                str_contains($name, 'Coral Brush') && str_contains($name, 'Tarkett'),
+                $name
+            );
+        }
+        foreach ($variantLabels as $label) {
+            $this->assertTrue(
+                $names->contains(fn ($name) => str_contains((string) $name, $label)),
+                $label.' ontbreekt als aparte werkzaamheid.'
+            );
+        }
+        $gietvloer = $names->filter(fn ($name) => str_contains((string) $name, 'PU gietvloer'));
+        $this->assertGreaterThanOrEqual(2, $gietvloer->count());
+        $this->assertTrue($gietvloer->contains(fn ($name) => ! str_contains(mb_strtolower((string) $name), 'antislip')));
+        $this->assertTrue($gietvloer->contains(fn ($name) => str_contains(mb_strtolower((string) $name), 'antislip')));
     }
 }

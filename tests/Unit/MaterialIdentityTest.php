@@ -166,4 +166,20 @@ class MaterialIdentityTest extends TestCase
         $this->assertFalse($identity->sameExecutionVariant($sp05, $ral));
         $this->assertFalse($identity->sharesIdentity($sp05, $ral));
     }
+
+    public function test_same_work_code_does_not_identify_different_material_products(): void
+    {
+        $identity = new MaterialIdentity;
+        $coral = '43.20.02 Coral Brush 5721-hurricane grey, Entreemat Banen';
+        $coralShort = '43.20.02 Coral Brush 5721-hurricane grey, Entreemat';
+        $tarkett = '43.20.02 Tarkett vinyl iQ Natural-black, PVC / Vinyl';
+        $gietvloer = '43.20.02 PU gietvloer, Ral 7039 met vlok, Coating';
+
+        $this->assertTrue($identity->sharesWorkCode($coral, $tarkett));
+        $this->assertTrue($identity->sharesIdentity($coral, $coralShort));
+        $this->assertFalse($identity->sharesIdentity($coral, $tarkett));
+        $this->assertFalse($identity->sharesIdentity($coral, $gietvloer));
+        $this->assertFalse($identity->sharesIdentity($tarkett, $gietvloer));
+        $this->assertFalse($identity->sharesProductVariant($coral, $tarkett));
+    }
 }

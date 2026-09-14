@@ -1722,6 +1722,42 @@ class RoomImportAssemblerTest extends TestCase
         $this->assertCount(2, $preview['areas']);
     }
 
+    public function test_same_work_code_keeps_distinct_material_products_as_separate_works(): void
+    {
+        $coral = '43.20.02 Coral Brush 5721-hurricane grey, Entreemat Banen';
+        $tarkett = 'Tarkett vinyl iQ Natural-black, PVC / Vinyl';
+        $gietvloer = 'PU gietvloer, Ral 7039 met vlok, Coating';
+        $preview = (new RoomImportAssembler)->assemble([
+            'format' => 'nicon_meetbon',
+            'header' => [],
+            'works' => [
+                ['name' => $coral, 'unit' => 'm2', 'declared_total' => 45.64],
+                ['name' => $tarkett, 'unit' => 'm2', 'declared_total' => 76.18],
+                ['name' => $gietvloer, 'unit' => 'm2', 'declared_total' => 9.53],
+            ],
+            'areas' => [
+                $this->taskRoom('begane grond', '0.01', 'entree', $coral, 45.64),
+                $this->taskRoom('begane grond', '0.10', 'toneel', $tarkett, 76.18),
+                $this->taskRoom('begane grond', '0.20', 'sanitair', $gietvloer, 9.53),
+            ],
+            'warnings' => [],
+            'uncertain' => [],
+            'duplicates' => [],
+        ], null);
+
+        $works = collect($preview['works']);
+        $names = $works->pluck('name');
+
+        $this->assertTrue($names->contains($coral));
+        $this->assertTrue($names->contains($tarkett));
+        $this->assertTrue($names->contains($gietvloer));
+        $this->assertFalse($names->contains(fn ($name) => str_contains((string) $name, 'Coral Brush') && str_contains((string) $name, 'Tarkett')));
+        $this->assertEqualsWithDelta(45.64, (float) $works->firstWhere('name', $coral)['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(76.18, (float) $works->firstWhere('name', $tarkett)['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(9.53, (float) $works->firstWhere('name', $gietvloer)['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(131.35, (float) ($preview['expected_task_totals']['project_total'] ?? 0), 0.01);
+    }
+
     public function test_uncoded_legend_names_do_not_create_extra_works_when_coded_meetstaat_exists(): void
     {
         $coded = '43.20.02 Coral Brush 5730-hurricane grey, Entreemat Banen';

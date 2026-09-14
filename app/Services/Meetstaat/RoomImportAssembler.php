@@ -1393,7 +1393,7 @@ class RoomImportAssembler
                 if ($identityKey === null && $this->shouldSkipUncodedLegendWork($works, $name)) {
                     continue;
                 }
-                $identityKey = $identityKey ?? ($this->materialIdentity()->executionKey($name) ?: $name);
+                $identityKey = $identityKey ?? $name;
                 if (! isset($works[$identityKey])) {
                     $works[$identityKey] = [
                         'name' => $name,
@@ -1440,7 +1440,7 @@ class RoomImportAssembler
             if ($identityKey === null && $this->shouldSkipUncodedLegendWork($works, $name)) {
                 continue;
             }
-            $identityKey = $identityKey ?? ($this->materialIdentity()->executionKey($name) ?: $name);
+            $identityKey = $identityKey ?? $name;
             if (! isset($works[$identityKey])) {
                 $works[$identityKey] = [
                     'name' => $name,
@@ -1556,12 +1556,16 @@ class RoomImportAssembler
     /**
      * Tekeninglegenda zonder werkcode mag geen extra werkzaamheid maken
      * wanneer de Meetstaat al gecodeerde werkzaamheden heeft.
+     * Volledige Meetstaat-productregels zonder werkcode blijven gewoon werkzaamheden.
      *
      * @param  array<string, array<string, mixed>>  $works
      */
     private function shouldSkipUncodedLegendWork(array $works, string $name): bool
     {
         if ($this->materialIdentity()->workCodes($name) !== []) {
+            return false;
+        }
+        if ($this->isDeclaredMeetstaatProductName($name)) {
             return false;
         }
         foreach ($works as $work) {
@@ -1572,6 +1576,23 @@ class RoomImportAssembler
         }
 
         return false;
+    }
+
+    /**
+     * Meetstaat-productkop zonder STABU-code, bijv. "Tarkett vinyl iQ Natural-black, PVC / Vinyl".
+     * Korte legendanamen zoals "Coral Brush" vallen hier buiten.
+     */
+    private function isDeclaredMeetstaatProductName(string $name): bool
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return false;
+        }
+        if ($this->materialIdentity()->looksLikeStrongProductHeader($name)) {
+            return true;
+        }
+
+        return str_contains($name, ',') && mb_strlen($name) >= 24;
     }
 
     private function floorLabel(): FloorLabel

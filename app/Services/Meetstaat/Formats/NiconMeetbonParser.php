@@ -282,6 +282,7 @@ class NiconMeetbonParser implements MeetstaatFormatParser
             } elseif ($pending !== ''
                 && $this->leadingWorkCode((string) $works[$index]['name']) !== null
                 && $this->leadingWorkCode($pending) === null
+                && $this->isDescriptionContinuation($pending)
                 && ! str_contains(mb_strtolower((string) $works[$index]['name']), mb_strtolower($pending))) {
                 $works[$index]['name'] = $this->cleanProductName($works[$index]['name'].' '.$pending);
                 $works[$index]['unit'] = $this->unitFromProductName($works[$index]['name']);
@@ -298,17 +299,21 @@ class NiconMeetbonParser implements MeetstaatFormatParser
         if ($currentWorkIndex === null) {
             return true;
         }
+        $currentName = (string) ($works[$currentWorkIndex]['name'] ?? '');
         $pendingCode = $this->leadingWorkCode($pending);
-        $currentCode = $this->leadingWorkCode((string) ($works[$currentWorkIndex]['name'] ?? ''));
+        $currentCode = $this->leadingWorkCode($currentName);
         if ($pendingCode !== null) {
             if ($pendingCode !== $currentCode) {
                 return true;
             }
 
-            return ! $this->materialIdentity()->sameExecutionVariant(
-                (string) ($works[$currentWorkIndex]['name'] ?? ''),
-                $pending
-            );
+            return ! $this->materialIdentity()->sharesIdentity($currentName, $pending);
+        }
+        if ($this->isDescriptionContinuation($pending)) {
+            return false;
+        }
+        if ($this->looksLikeProductName($pending)) {
+            return ! $this->materialIdentity()->sharesIdentity($currentName, $pending);
         }
         if ($currentCode !== null) {
             return false;
