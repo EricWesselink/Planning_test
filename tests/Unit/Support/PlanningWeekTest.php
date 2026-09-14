@@ -154,6 +154,36 @@ class PlanningWeekTest extends TestCase
         $this->assertSame('2026-11-14', $dates['end']);
     }
 
+    public function test_resolve_keeps_the_exact_date_when_week_fields_match_that_date(): void
+    {
+        $dates = PlanningWeek::resolve([
+            'start_year' => 2026,
+            'start_week' => 42,
+            'start_date' => '2026-10-14',
+            'klaar_year' => 2026,
+            'klaar_week' => 45,
+            'klaar_date' => '2026-11-03',
+        ], Carbon::parse('2026-09-28'), Carbon::parse('2026-10-31'));
+
+        $this->assertSame('2026-10-14', $dates['start']);
+        $this->assertSame('2026-11-03', $dates['end']);
+    }
+
+    public function test_from_input_keeps_the_exact_date_when_it_falls_in_the_given_week(): void
+    {
+        $dates = PlanningWeek::fromInput([
+            'start_year' => 2026,
+            'start_week' => 42,
+            'start_date' => '2026-10-14',
+            'klaar_year' => 2026,
+            'klaar_week' => 45,
+            'klaar_date' => '2026-11-03',
+        ]);
+
+        $this->assertSame('2026-10-14', $dates['start']);
+        $this->assertSame('2026-11-03', $dates['end']);
+    }
+
     public function test_rejects_a_klaar_date_before_the_start_date(): void
     {
         $validator = Validator::make([

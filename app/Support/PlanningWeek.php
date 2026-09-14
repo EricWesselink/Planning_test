@@ -89,15 +89,24 @@ class PlanningWeek
         );
 
         return [
-            'start' => self::monday($startYear, $startWeek)?->toDateString()
-                ?? self::optionalDate($data['start_date'] ?? null),
-            'end' => self::saturday($klaarYear, $klaarWeek)?->toDateString()
-                ?? self::optionalDate($data['klaar_date'] ?? null),
+            'start' => self::alignedDate(
+                $startYear,
+                $startWeek,
+                self::optionalDate($data['start_date'] ?? null),
+                endOfWeek: false,
+            ),
+            'end' => self::alignedDate(
+                $klaarYear,
+                $klaarWeek,
+                self::optionalDate($data['klaar_date'] ?? null),
+                endOfWeek: true,
+            ),
         ];
     }
 
     /**
-     * Weekvelden winnen als die zijn gewijzigd; anders de datum; anders de huidige waarde.
+     * Datum en week horen bij elkaar: valt de datum in de opgegeven week, dan blijft die datum.
+     * Anders winnen gewijzigde weekvelden, daarna de datum, daarna de huidige waarde.
      *
      * @param  array<string, mixed>  $data
      * @return array{start: ?string, end: ?string}
@@ -222,6 +231,30 @@ class PlanningWeek
         return [$year ?? (int) now()->isoWeekYear(), $week];
     }
 
+    private static function alignedDate(?int $year, ?int $week, ?string $date, bool $endOfWeek): ?string
+    {
+        $weekDate = $endOfWeek
+            ? self::saturday($year, $week)?->toDateString()
+            : self::monday($year, $week)?->toDateString();
+
+        if (self::dateBelongsToWeek($date, $year, $week)) {
+            return $date;
+        }
+
+        return $weekDate ?? $date;
+    }
+
+    private static function dateBelongsToWeek(?string $date, ?int $year, ?int $week): bool
+    {
+        if ($date === null || $year === null || $week === null) {
+            return false;
+        }
+
+        $parsed = Carbon::parse($date);
+
+        return (int) $parsed->isoWeekYear() === $year && (int) $parsed->isoWeek() === $week;
+    }
+
     private static function resolveSide(
         ?int $year,
         ?int $week,
@@ -238,6 +271,10 @@ class PlanningWeek
             $year !== self::year($current) || $week !== self::number($current)
         );
         $dateChanged = $date !== null && $date !== $currentDate;
+
+        if (self::dateBelongsToWeek($date, $year, $week)) {
+            return $date;
+        }
 
         if ($weekChanged) {
             return $weekDate;

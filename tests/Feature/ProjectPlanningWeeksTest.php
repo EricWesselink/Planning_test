@@ -66,6 +66,8 @@ class ProjectPlanningWeeksTest extends TestCase
             ->assertSee('name="start_week"', false)
             ->assertSee('name="klaar_date"', false)
             ->assertSee('Opslaan')
+            ->assertSee('data-planning-week', false)
+            ->assertSee('data-planning-week-number', false)
             ->assertDontSee('>Datum</label>', false)
             ->assertDontSee('>Weeknummer</label>', false);
     }
@@ -120,6 +122,37 @@ class ProjectPlanningWeeksTest extends TestCase
             'project_id' => $project->id,
         ]));
         $this->assertNotNull($board['rows'][0]['bar']);
+    }
+
+    public function test_project_list_keeps_an_exact_start_date_when_the_week_matches(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject([
+            'planned_start_date' => '2026-09-07',
+            'planned_end_date' => '2026-10-31',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('projects.index'))
+            ->patch(route('projects.update', $project), [
+                'planning_project_id' => $project->id,
+                'start_date' => '2026-10-14',
+                'start_year' => 2026,
+                'start_week' => 42,
+                'klaar_date' => '2026-11-03',
+                'klaar_year' => 2026,
+                'klaar_week' => 45,
+            ])
+            ->assertRedirect(route('projects.index'));
+
+        $project->refresh();
+        $this->assertSame('2026-10-14', $project->planned_start_date?->toDateString());
+        $this->assertSame('2026-11-03', $project->planned_end_date?->toDateString());
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week_nr' => 37, 'year' => 2026, 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('▶ Start 14-10-2026 · week 42', false);
     }
 
     public function test_uitvoerder_cannot_edit_weeks_on_the_project_list(): void

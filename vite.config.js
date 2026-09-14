@@ -10,6 +10,7 @@ export default defineConfig({
                 'resources/js/app.js',
                 'resources/js/drawing-board.js',
                 'resources/js/planning.js',
+                'resources/js/planning-weeks.js',
                 'resources/js/project-upload.js',
                 'resources/js/snag-pdf.js',
             ],
