@@ -186,12 +186,16 @@
                                     : 0;
                             @endphp
                             <article class="planning-available-team" style="--chip-color: {{ $team['color'] }}" title="{{ $team['summary'] }}">
-                                <span class="planning-available-name">{{ $team['label'] }}</span>
-                                <span class="planning-available-ratio"><span class="planning-available-planned">{{ \App\Support\PlanningHours::manDaysLabel($team['planned']) }}</span> / {{ \App\Support\PlanningHours::manDaysLabel($team['available']) }}</span>
-                                <span class="planning-available-free">{{ \App\Support\PlanningHours::manDaysLabel($team['remaining']) }} vrij</span>
-                                <span class="planning-available-bar" aria-hidden="true">
-                                    <span class="planning-available-bar-fill" style="width: {{ round($plannedShare, 2) }}%"></span>
-                                </span>
+                                <div class="planning-available-team-row">
+                                    <span class="planning-available-name">{{ $team['label'] }}</span>
+                                    <span class="planning-available-ratio"><span class="planning-available-planned">{{ \App\Support\PlanningHours::manDaysLabel($team['planned']) }}</span> / {{ \App\Support\PlanningHours::manDaysLabel($team['available']) }}</span>
+                                </div>
+                                <div class="planning-available-team-row">
+                                    <span class="planning-available-bar" aria-hidden="true">
+                                        <span class="planning-available-bar-fill" style="width: {{ round($plannedShare, 2) }}%"></span>
+                                    </span>
+                                    <span class="planning-available-free">{{ \App\Support\PlanningHours::manDaysLabel($team['remaining']) }} vrij</span>
+                                </div>
                             </article>
                         @empty
                             @if (count($teamManDays) === 0)
