@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\EmploymentType;
+use App\Enums\FlooringSpecialty;
 use App\Models\Worker;
 use App\Services\TeamPdfParser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class WorkerPdfImportController extends Controller
@@ -41,14 +44,72 @@ class WorkerPdfImportController extends Controller
             return back()->withErrors(['pdf' => 'In deze PDF staat geen team dat we kunnen uitlezen.']);
         }
 
-        $extra = count($parsed['teams']) > 1
-            ? ' Eerste team van '.count($parsed['teams']).' uit de PDF.'
-            : '';
+        $request->session()->put('worker_pdf.teams', $parsed['teams']);
+
+        $names = trim((string) ($team['crew_names'] ?? ''));
+        $status = 'PDF uitgelezen. Controleer de gegevens en klik op Toevoegen.';
+        if ($names !== '') {
+            $status = 'PDF uitgelezen: '.$team['name'].' · '.$names.'. Controleer en klik op Toevoegen.';
+        }
+        if (count($parsed['teams']) > 1) {
+            $status .= ' Of voeg alle '.count($parsed['teams']).' teams in één keer toe.';
+        }
 
         return redirect()
             ->route('workers.index')
             ->withInput($this->formInput($team))
-            ->with('status', 'PDF uitgelezen. Controleer de gegevens en klik op Toevoegen.'.$extra);
+            ->with('status', $status);
+    }
+
+    public function import(Request $request): RedirectResponse
+    {
+        Gate::authorize('create', Worker::class);
+
+        $teams = $request->session()->get('worker_pdf.teams');
+        if (! is_array($teams) || $teams === []) {
+            return back()->withErrors(['pdf' => 'Geen uitgelezen teams meer. Laad de PDF opnieuw.']);
+        }
+
+        $created = [];
+        DB::transaction(function () use ($teams, &$created): void {
+            foreach ($teams as $team) {
+                if (! is_array($team)) {
+                    continue;
+                }
+
+                $name = trim((string) ($team['name'] ?? ''));
+                if ($name === '' || Worker::query()->where('name', $name)->exists()) {
+                    continue;
+                }
+
+                $members = $this->crewMembers($team);
+                $peopleCount = max(1, (int) ($team['people_count'] ?? count($members) ?: 1));
+                $type = EmploymentType::tryFrom((string) ($team['employment_type'] ?? '')) ?? EmploymentType::Eigen;
+
+                Worker::query()->create([
+                    'name' => $name,
+                    'employment_type' => $type,
+                    'people_count' => $peopleCount,
+                    'crew_names' => Worker::joinedCrewNames($members),
+                    'crew_members' => Worker::normalizeCrewMembers($members, $peopleCount),
+                    'specialty' => FlooringSpecialty::storedLabels($team['specialties'] ?? []),
+                    'active' => true,
+                ]);
+                $created[] = $name;
+            }
+        });
+
+        $request->session()->forget('worker_pdf.teams');
+
+        if ($created === []) {
+            return redirect()
+                ->route('workers.index')
+                ->with('status', 'Deze teams stonden er al in.');
+        }
+
+        return redirect()
+            ->route('workers.index')
+            ->with('status', count($created).' teams toegevoegd: '.implode(', ', $created).'.');
     }
 
     /**
@@ -58,6 +119,7 @@ class WorkerPdfImportController extends Controller
      *     people_count: int,
      *     specialties: list<string>,
      *     crew_names: ?string,
+     *     crew_members?: list<array{name: string, phone?: string}>,
      *     email: ?string,
      *     phone: ?string,
      *     company: ?string,
@@ -83,6 +145,48 @@ class WorkerPdfImportController extends Controller
             }
         }
 
+        $members = $this->crewMembers($team);
+        if ($members !== []) {
+            $input['crew_members'] = $members;
+        }
+
         return $input;
+    }
+
+    /**
+     * @param  array<string, mixed>  $team
+     * @return list<array{name: string, phone: string}>
+     */
+    private function crewMembers(array $team): array
+    {
+        $members = [];
+        foreach ($team['crew_members'] ?? [] as $member) {
+            if (! is_array($member)) {
+                continue;
+            }
+
+            $name = trim((string) ($member['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $members[] = [
+                'name' => $name,
+                'phone' => trim((string) ($member['phone'] ?? '')),
+            ];
+        }
+
+        if ($members !== []) {
+            return $members;
+        }
+
+        foreach (preg_split('/\s*,\s*/', (string) ($team['crew_names'] ?? '')) ?: [] as $name) {
+            $name = trim($name);
+            if ($name !== '') {
+                $members[] = ['name' => $name, 'phone' => ''];
+            }
+        }
+
+        return $members;
     }
 }

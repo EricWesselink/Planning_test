@@ -88,11 +88,13 @@ class TeamPdfParser
     public function parseText(string $text): array
     {
         $text = $this->normalize($text);
-        $teams = [];
-        foreach ($this->sections($text) as $section) {
-            $team = $this->parseSection($section);
-            if ($team !== null) {
-                $teams[] = $team;
+        $teams = $this->parseRoster($text);
+        if ($teams === []) {
+            foreach ($this->sections($text) as $section) {
+                $team = $this->parseSection($section);
+                if ($team !== null) {
+                    $teams[] = $team;
+                }
             }
         }
 
@@ -146,6 +148,7 @@ class TeamPdfParser
         }
 
         $crewNames = $this->crewNames($text);
+        $crewMembers = $this->crewMembersFromNames($crewNames);
         $peopleCount = $this->peopleCount($text, $crewNames);
 
         return [
@@ -154,6 +157,7 @@ class TeamPdfParser
             'people_count' => $peopleCount,
             'specialties' => $this->specialties($text),
             'crew_names' => $crewNames,
+            'crew_members' => $crewMembers,
             'email' => $this->email($text),
             'phone' => $this->phone($text),
             'company' => $this->labeled($text, ['bedrijf', 'bedrijfsnaam', 'zzp-bedrijf']),
@@ -172,9 +176,15 @@ class TeamPdfParser
         }
 
         foreach ($this->lines($text) as $line) {
+            if ($this->isRosterHeader($line)) {
+                continue;
+            }
+            if (preg_match('/^(?:team|ploeg)\s+(\d+)\b/iu', $line, $match) === 1) {
+                return $this->limit('Team '.$match[1], 255);
+            }
             if (preg_match('/^(?:team|ploeg)\s+(.+)$/iu', $line, $match) === 1) {
                 $candidate = trim($line);
-                if ($candidate !== '' && ! $this->isMetaLine($match[1])) {
+                if ($candidate !== '' && ! $this->isMetaLine($match[1]) && ! $this->isRosterHeader($candidate)) {
                     return $this->limit($candidate, 255);
                 }
             }
@@ -362,6 +372,10 @@ class TeamPdfParser
 
     private function isMetaLine(string $line): bool
     {
+        if ($this->isRosterHeader($line)) {
+            return true;
+        }
+
         $flat = mb_strtolower($line);
         if (in_array($flat, ['meetstaat', 'materialenstaat', 'plattegrond', 'calculatie', 'afmetingen', 'teams', 'ploegen'], true)) {
             return true;
@@ -432,6 +446,261 @@ class TeamPdfParser
         $text = preg_replace("/[ \t]+\n/", "\n", $text) ?? $text;
 
         return trim($text);
+    }
+
+    /**
+     * @return list<array{
+     *     name: string,
+     *     employment_type: string,
+     *     people_count: int,
+     *     specialties: list<string>,
+     *     crew_names: ?string,
+     *     crew_members: list<array{name: string, phone: string}>,
+     *     email: ?string,
+     *     phone: ?string,
+     *     company: ?string,
+     *     address: ?string,
+     *     postal_code: ?string,
+     *     city: ?string,
+     *     contact_name: ?string
+     * }>
+     */
+    private function parseRoster(string $text): array
+    {
+        if (! $this->looksLikeRoster($text)) {
+            return [];
+        }
+
+        $teams = [];
+        $currentName = null;
+        $currentLines = [];
+        $flush = function () use (&$teams, &$currentName, &$currentLines): void {
+            if ($currentName === null) {
+                return;
+            }
+
+            $names = $this->memberNamesFromRosterLines($currentLines);
+            if ($names !== []) {
+                $teams[] = $this->teamFromMembers($currentName, $names);
+            }
+
+            $currentName = null;
+            $currentLines = [];
+        };
+
+        foreach ($this->lines($this->normalizeRoster($text)) as $line) {
+            if ($this->isRosterHeader($line)) {
+                continue;
+            }
+
+            if (preg_match('/^(?:team|ploeg)\s+(\d+)\b(.*)$/iu', $line, $match) === 1) {
+                $flush();
+                $currentName = 'Team '.$match[1];
+                $rest = trim($match[2]);
+                if ($rest !== '') {
+                    $currentLines[] = $rest;
+                }
+
+                continue;
+            }
+
+            if ($currentName !== null) {
+                $currentLines[] = $line;
+            }
+        }
+        $flush();
+
+        return $teams;
+    }
+
+    private function looksLikeRoster(string $text): bool
+    {
+        foreach ($this->lines($text) as $line) {
+            if ($this->isRosterHeader($line)) {
+                return true;
+            }
+        }
+
+        return preg_match_all('/^(?:team|ploeg)\s+\d+\b/imu', $text) >= 2;
+    }
+
+    private function isRosterHeader(string $line): bool
+    {
+        $flat = mb_strtolower(preg_replace('/\s+/', ' ', trim($line)) ?? trim($line));
+
+        return str_contains($flat, 'voornaam')
+            && str_contains($flat, 'medewerker')
+            && (str_contains($flat, 'team') || str_contains($flat, 'rol'));
+    }
+
+    private function normalizeRoster(string $text): string
+    {
+        $text = preg_replace('/\s+(?=(?:team|ploeg)\s+\d+\b)/iu', "\n", $text) ?? $text;
+        $text = preg_replace(
+            '/\b((?:vakman|voorman)(?:\s*\/\s*(?:vakman|voorman))?)\s+(?=\p{L})/iu',
+            "$1\n",
+            $text,
+        ) ?? $text;
+
+        return $this->normalize($text);
+    }
+
+    /**
+     * @param  list<string>  $lines
+     * @return list<string>
+     */
+    private function memberNamesFromRosterLines(array $lines): array
+    {
+        $names = [];
+        $pendingVoornaam = null;
+
+        foreach ($lines as $line) {
+            $line = $this->stripRole($line);
+            if ($line === '' || $this->isRosterHeader($line) || $this->isRoleToken($line)) {
+                if ($pendingVoornaam !== null) {
+                    $names[] = $pendingVoornaam;
+                    $pendingVoornaam = null;
+                }
+
+                continue;
+            }
+
+            if (preg_match('/^(\p{L}[\p{L}\'\-]*)\s+(.+)$/u', $line, $match) === 1 && $this->looksLikeOfficialName($match[2])) {
+                if ($pendingVoornaam !== null) {
+                    $names[] = $pendingVoornaam;
+                }
+                $names[] = $this->displayName($match[1], $match[2]);
+                $pendingVoornaam = null;
+
+                continue;
+            }
+
+            if ($this->looksLikeOfficialName($line)) {
+                $official = $this->isPlaceholderName($line) ? null : $line;
+                $names[] = $this->displayName($pendingVoornaam, $official);
+                $pendingVoornaam = null;
+
+                continue;
+            }
+
+            if ($pendingVoornaam !== null) {
+                $names[] = $pendingVoornaam;
+            }
+            $pendingVoornaam = $line;
+        }
+
+        if ($pendingVoornaam !== null) {
+            $names[] = $pendingVoornaam;
+        }
+
+        return array_values(array_filter(
+            $names,
+            fn (string $name): bool => $name !== '',
+        ));
+    }
+
+    private function stripRole(string $line): string
+    {
+        $stripped = preg_replace(
+            '/\s+((?:vakman|voorman)(?:\s*\/\s*(?:vakman|voorman))?)$/iu',
+            '',
+            trim($line),
+        );
+
+        return trim((string) $stripped);
+    }
+
+    private function isRoleToken(string $line): bool
+    {
+        $flat = mb_strtolower(preg_replace('/\s+/', ' ', trim($line)) ?? trim($line));
+
+        return preg_match('/^(vakman|voorman)(?:\s*\/\s*(vakman|voorman))?$/u', $flat) === 1;
+    }
+
+    private function looksLikeOfficialName(string $line): bool
+    {
+        if ($this->isPlaceholderName($line)) {
+            return true;
+        }
+
+        return preg_match('/^[A-Z]\.(?:[A-Z]\.)*/u', $line) === 1
+            || preg_match('/^[\p{L}\-]+,\s*[A-Z]\.?$/u', $line) === 1;
+    }
+
+    private function isPlaceholderName(string $line): bool
+    {
+        return in_array(trim($line), ['??', '?', '-', '…', '...'], true);
+    }
+
+    private function displayName(?string $voornaam, ?string $medewerker): string
+    {
+        $voornaam = trim((string) $voornaam);
+        $medewerker = trim((string) $medewerker);
+        if ($voornaam !== '') {
+            return $voornaam;
+        }
+
+        return $medewerker;
+    }
+
+    /**
+     * @param  list<string>  $names
+     * @return array{
+     *     name: string,
+     *     employment_type: string,
+     *     people_count: int,
+     *     specialties: list<string>,
+     *     crew_names: ?string,
+     *     crew_members: list<array{name: string, phone: string}>,
+     *     email: ?string,
+     *     phone: ?string,
+     *     company: ?string,
+     *     address: ?string,
+     *     postal_code: ?string,
+     *     city: ?string,
+     *     contact_name: ?string
+     * }
+     */
+    private function teamFromMembers(string $name, array $names): array
+    {
+        $crewNames = $names === [] ? null : $this->limit(implode(', ', $names), 255);
+        $members = [];
+        foreach ($names as $memberName) {
+            $members[] = ['name' => $memberName, 'phone' => ''];
+        }
+
+        return [
+            'name' => $this->limit($name, 255),
+            'employment_type' => EmploymentType::Eigen->value,
+            'people_count' => max(1, count($names)),
+            'specialties' => [],
+            'crew_names' => $crewNames,
+            'crew_members' => $members,
+            'email' => null,
+            'phone' => null,
+            'company' => null,
+            'address' => null,
+            'postal_code' => null,
+            'city' => null,
+            'contact_name' => null,
+        ];
+    }
+
+    /**
+     * @return list<array{name: string, phone: string}>
+     */
+    private function crewMembersFromNames(?string $crewNames): array
+    {
+        if ($crewNames === null || $crewNames === '') {
+            return [];
+        }
+
+        $members = [];
+        foreach ($this->splitList($crewNames) as $name) {
+            $members[] = ['name' => $name, 'phone' => ''];
+        }
+
+        return $members;
     }
 
     private function limit(string $value, int $max): string

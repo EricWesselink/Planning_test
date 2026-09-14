@@ -34,6 +34,8 @@ class WorkerPdfImportTest extends TestCase
             ->assertDontSee('PDF met team')
             ->assertDontSee('PDF uitlezen');
 
+        $this->actingAs($user)->post(route('workers.pdf.import'))->assertForbidden();
+
         $this->assertSame(0, Worker::query()->count());
     }
 
@@ -69,7 +71,7 @@ TXT),
 
         $preview
             ->assertRedirect(route('workers.index'))
-            ->assertSessionHas('status', 'PDF uitgelezen. Controleer de gegevens en klik op Toevoegen.');
+            ->assertSessionHas('status', 'PDF uitgelezen: Team Wespro · Kees, Piet, Jan. Controleer en klik op Toevoegen.');
 
         $this->followRedirects($preview)
             ->assertOk()
@@ -79,9 +81,11 @@ TXT),
             ->assertSee('value="pvc"', false)
             ->assertSee('value="vinyl"', false)
             ->assertSee('value="wespro@example.nl"', false)
-            ->assertSee('name="crew_names"', false)
-            ->assertSee('value="Kees, Piet, Jan"', false)
-            ->assertSee('Uit PDF: Kees, Piet, Jan')
+            ->assertSee('Namen van het team')
+            ->assertSee('name="crew_members[0][name]"', false)
+            ->assertSee('value="Kees"', false)
+            ->assertSee('value="Piet"', false)
+            ->assertSee('value="Jan"', false)
             ->assertSee('value="pvc" class="size-4 shrink-0 accent-nicon-ok" checked', false)
             ->assertSee('value="vinyl" class="size-4 shrink-0 accent-nicon-ok" checked', false);
     }
@@ -97,7 +101,11 @@ TXT),
                 'employment_type' => 'zzp',
                 'people_count' => '3',
                 'specialties' => ['pvc', 'vinyl'],
-                'crew_names' => 'Kees, Piet, Jan',
+                'crew_members' => [
+                    ['name' => 'Kees', 'phone' => ''],
+                    ['name' => 'Piet', 'phone' => ''],
+                    ['name' => 'Jan', 'phone' => ''],
+                ],
             ])
             ->assertRedirect(route('workers.index'))
             ->assertSessionHasNoErrors();
@@ -123,6 +131,88 @@ TXT),
             ->assertSessionHasErrors(['pdf' => 'In deze PDF staat geen team dat we kunnen uitlezen.']);
 
         $this->assertSame(0, Worker::query()->count());
+    }
+
+    public function test_roster_pdf_fills_team_names_and_people(): void
+    {
+        $user = User::factory()->create();
+
+        $preview = $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->post(route('workers.pdf.preview'), [
+                'pdf' => $this->pdf($this->rosterText()),
+            ]);
+
+        $preview
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->followRedirects($preview)
+            ->assertOk()
+            ->assertSee('value="Team 1"', false)
+            ->assertSee('value="3"', false)
+            ->assertSee('Namen van het team')
+            ->assertSee('value="Nick"', false)
+            ->assertSee('value="Mahmoud"', false)
+            ->assertSee('value="Mohammed"', false)
+            ->assertSee('Team 2')
+            ->assertSee('Peter, Alexandr, Jose')
+            ->assertSee('Alle 5 teams toevoegen')
+            ->assertDontSee('value="Team Voornaam Medewerker Rol"', false);
+    }
+
+    public function test_roster_pdf_imports_all_teams_with_names(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post(route('workers.pdf.preview'), [
+                'pdf' => $this->pdf($this->rosterText()),
+            ])
+            ->assertRedirect(route('workers.index'));
+
+        $this->actingAs($user)
+            ->post(route('workers.pdf.import'))
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(5, Worker::query()->count());
+
+        $team1 = Worker::query()->where('name', 'Team 1')->first();
+        $this->assertNotNull($team1);
+        $this->assertSame(3, $team1->people_count);
+        $this->assertSame('Nick, Mahmoud, Mohammed', $team1->crew_names);
+
+        $team3 = Worker::query()->where('name', 'Team 3')->first();
+        $this->assertNotNull($team3);
+        $this->assertSame(['Arek', 'Sietse', 'Mo'], array_column($team3->crewMembers(), 'name'));
+
+        $team4 = Worker::query()->where('name', 'Team 4')->first();
+        $this->assertNotNull($team4);
+        $this->assertSame('Lukasz', $team4->crew_names);
+    }
+
+    public function test_guest_is_redirected_from_team_pdf_import(): void
+    {
+        $this->post(route('workers.pdf.import'))->assertRedirect(route('login'));
+    }
+
+    private function rosterText(): string
+    {
+        return <<<'TXT'
+Team Voornaam Medewerker Rol
+Team 1 Nick N.D.N. Seine Voorman
+Mahmoud M. Khairallah Sulaiman
+Mohammed M. Albadan
+Team 2 Peter P. Korteschiel Voorman
+Alexandr A. Korchahin
+Jose J.S.V. da Costa
+Team 3 Arek A.S. Gorzynski Vakman / voorman
+Sietse S.D. van Dijk
+Mo ??
+Team 4 Lukasz Ozimek, L Voorman / vakman
+Team 5 Lukas L. Lindenholz Voorman / vakman
+TXT;
     }
 
     public function test_non_pdf_upload_is_rejected(): void

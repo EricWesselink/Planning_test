@@ -91,6 +91,46 @@ TXT);
         $this->assertSame('Kees, Piet', $parsed['team']['crew_names']);
     }
 
+    public function test_reads_nicon_team_roster_table(): void
+    {
+        $parsed = $this->parser()->parseText(<<<'TXT'
+Team Voornaam Medewerker Rol
+Team 1 Nick N.D.N. Seine Voorman
+Mahmoud M. Khairallah Sulaiman
+Mohammed M. Albadan
+Team 2 Peter P. Korteschiel Voorman
+Alexandr A. Korchahin
+Jose J.S.V. da Costa
+Team 3 Arek A.S. Gorzynski Vakman / voorman
+Sietse S.D. van Dijk
+Mo ??
+Team 4 Lukasz Ozimek, L Voorman / vakman
+Team 5 Lukas L. Lindenholz Voorman / vakman
+TXT);
+
+        $this->assertCount(5, $parsed['teams']);
+        $this->assertSame('Team 1', $parsed['team']['name']);
+        $this->assertSame(3, $parsed['team']['people_count']);
+        $this->assertSame('Nick, Mahmoud, Mohammed', $parsed['team']['crew_names']);
+        $this->assertSame(['Nick', 'Mahmoud', 'Mohammed'], array_column($parsed['team']['crew_members'], 'name'));
+        $this->assertSame([], $parsed['team']['specialties']);
+
+        $this->assertSame('Team 2', $parsed['teams'][1]['name']);
+        $this->assertSame(['Peter', 'Alexandr', 'Jose'], array_column($parsed['teams'][1]['crew_members'], 'name'));
+        $this->assertSame(['Arek', 'Sietse', 'Mo'], array_column($parsed['teams'][2]['crew_members'], 'name'));
+        $this->assertSame(['Lukasz'], array_column($parsed['teams'][3]['crew_members'], 'name'));
+        $this->assertSame(['Lukas'], array_column($parsed['teams'][4]['crew_members'], 'name'));
+    }
+
+    public function test_roster_header_is_not_a_team(): void
+    {
+        $parsed = $this->parser()->parseText("Team Voornaam Medewerker Rol\nTeam 1 Nick N.D.N. Seine Voorman");
+
+        $this->assertCount(1, $parsed['teams']);
+        $this->assertSame('Team 1', $parsed['team']['name']);
+        $this->assertSame(['Nick'], array_column($parsed['team']['crew_members'], 'name'));
+    }
+
     public function test_returns_no_team_when_the_pdf_has_no_name(): void
     {
         $parsed = $this->parser()->parseText("PVC\nLinoleum\n3 personen");

@@ -35,34 +35,56 @@
                     <button class="bg-nicon-ink text-white px-4 py-2 text-sm">PDF uitlezen</button>
                 </div>
             </form>
+            @php
+                $pdfTeams = session('worker_pdf.teams');
+            @endphp
+            @if (is_array($pdfTeams) && count($pdfTeams) > 1)
+                <form method="POST" action="{{ route('workers.pdf.import') }}" class="border-b border-nicon-line p-4">
+                    @csrf
+                    <p class="text-sm">Alle teams uit de PDF:</p>
+                    <ul class="mt-2 grid gap-1 text-sm">
+                        @foreach ($pdfTeams as $pdfTeam)
+                            <li>
+                                <span class="font-medium">{{ $pdfTeam['name'] ?? 'Team' }}</span>
+                                @if (! empty($pdfTeam['crew_names']))
+                                    <span class="text-nicon-muted">· {{ $pdfTeam['crew_names'] }}</span>
+                                @endif
+                            </li>
+                        @endforeach
+                    </ul>
+                    <button class="mt-3 bg-nicon-orange text-white px-4 py-2 text-sm">Alle {{ count($pdfTeams) }} teams toevoegen</button>
+                </form>
+            @endif
             <form method="POST" action="{{ route('workers.store') }}" class="p-4">
                 @csrf
-                @foreach (['crew_names', 'company', 'phone', 'address', 'postal_code', 'city', 'contact_name'] as $extra)
+                @foreach (['company', 'phone', 'address', 'postal_code', 'city', 'contact_name'] as $extra)
                     @if (old($extra))
                         <input type="hidden" name="{{ $extra }}" value="{{ old($extra) }}">
                     @endif
                 @endforeach
-                <div class="flex flex-wrap items-end gap-3">
-                    <div class="min-w-56 flex-1">
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-name">Naam van het team</label>
-                        <input id="worker-name" type="text" name="name" value="{{ old('name') }}" required placeholder="Bijv. Team Wespro" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+                <div data-crew-fields class="space-y-3">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div class="min-w-56 flex-1">
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-name">Naam van het team</label>
+                            <input id="worker-name" type="text" name="name" value="{{ old('name') }}" required placeholder="Bijv. Team Wespro" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-type">Type</label>
+                            <select id="worker-type" name="employment_type" class="mt-1 border border-nicon-line px-3 py-2 bg-white text-sm">
+                                @foreach ([\App\Enums\EmploymentType::Eigen, \App\Enums\EmploymentType::Zzp] as $type)
+                                    <option value="{{ $type->value }}" @selected(old('employment_type', 'eigen') === $type->value)>{{ $type->label() }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="w-28">
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-people">Personen</label>
+                            <input id="worker-people" type="number" name="people_count" value="{{ old('people_count', 1) }}" min="1" max="50" required data-crew-count class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-type">Type</label>
-                        <select id="worker-type" name="employment_type" class="mt-1 border border-nicon-line px-3 py-2 bg-white text-sm">
-                            @foreach ([\App\Enums\EmploymentType::Eigen, \App\Enums\EmploymentType::Zzp] as $type)
-                                <option value="{{ $type->value }}" @selected(old('employment_type', 'eigen') === $type->value)>{{ $type->label() }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="w-28">
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-people">Personen</label>
-                        <input id="worker-people" type="number" name="people_count" value="{{ old('people_count', 1) }}" min="1" max="50" required class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-                    </div>
+                    @if (old('crew_members') || old('crew_names'))
+                        @include('workers._crew-member-rows')
+                    @endif
                 </div>
-                @if (old('crew_names'))
-                    <p class="mt-2 text-xs text-nicon-muted">Uit PDF: {{ old('crew_names') }}</p>
-                @endif
                 <div class="mt-4">
                     @include('workers._specialties', [
                         'inputName' => 'specialties[]',

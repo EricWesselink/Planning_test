@@ -153,6 +153,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/vakmensen/nieuw', [WorkerController::class, 'create'])->name('workers.create');
     Route::post('/vakmensen', [WorkerController::class, 'store'])->name('workers.store');
     Route::post('/vakmensen/pdf', [WorkerPdfImportController::class, 'preview'])->name('workers.pdf.preview');
+    Route::post('/vakmensen/pdf/teams', [WorkerPdfImportController::class, 'import'])->name('workers.pdf.import');
     Route::post('/vakmensen/vakkennis', [WorkerController::class, 'storeSpecialty'])->name('workers.specialties.store');
     Route::get('/vakmensen/{worker}', [WorkerController::class, 'show'])->name('workers.show');
     Route::post('/vakmensen/{worker}/inlog', [WorkerController::class, 'storeLogin'])->name('workers.login.store');
