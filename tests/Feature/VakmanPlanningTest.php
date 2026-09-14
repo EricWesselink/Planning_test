@@ -60,13 +60,16 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Mijn planning')
             ->assertSee('Week')
             ->assertSee('Maand')
-            ->assertSee('Donderdag 10 september')
+            ->assertSee('Do')
+            ->assertSee('10')
             ->assertSee('Laakse Tuinen')
             ->assertSee('Zwolle')
             ->assertSee('08:00 – 16:00')
             ->assertSee('PVC')
             ->assertSee('Kees Jansen')
-            ->assertSee('Bekijk werk')
+            ->assertSee('Vrij')
+            ->assertSee('vakman-week', false)
+            ->assertDontSee('Bekijk werk')
             ->assertDontSee('Kindcentrum Veldhoeve')
             ->assertDontSee('Industrieweg 8')
             ->assertDontSee('Tarkett')
@@ -230,6 +233,8 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Maand')
             ->assertSee('september 2026')
             ->assertSee('Laakse Tuinen')
+            ->assertSee('Wk')
+            ->assertSee('vakman-month', false)
             ->assertSee(route('vakman.planning.day', '2026-09-10'), false);
     }
 
