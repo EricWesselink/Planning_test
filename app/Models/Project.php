@@ -179,6 +179,11 @@ class Project extends Model
         return $this->hasMany(WorkerAssignment::class);
     }
 
+    public function workTickets(): HasMany
+    {
+        return $this->hasMany(WorkTicket::class)->orderByDesc('id');
+    }
+
     /**
      * @return Collection<int, Worker>
      */

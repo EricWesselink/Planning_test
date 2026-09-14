@@ -400,9 +400,9 @@ class WeekplanningPdfService
         $project = $assignment->project;
         $item = $assignment->workItem;
         $title = $project->displayTitle();
-        $city = trim((string) $project->city);
-        if ($city !== '' && Str::contains(mb_strtolower($title), mb_strtolower($city))) {
-            $city = '';
+        $address = $project->nawLine();
+        if ($address !== null && Str::contains(mb_strtolower($title), mb_strtolower($address))) {
+            $address = null;
         }
 
         $activity = $this->activityLine($project, $item, $title);
@@ -412,7 +412,7 @@ class WeekplanningPdfService
 
         return [
             'title' => $title,
-            'city' => $city !== '' ? $city : null,
+            'city' => $address,
             'numbers' => $this->numbersLine($project),
             'activity' => $activity,
             'badge' => $badge,

@@ -23,6 +23,7 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VakmanPlanningController;
 use App\Http\Controllers\VoucherController;
+use App\Http\Controllers\WorkTicketController;
 use App\Http\Controllers\WorkActivityCategoryController;
 use App\Http\Controllers\WorkActivityController;
 use App\Http\Controllers\WorkerAvailabilityController;
@@ -66,7 +67,10 @@ Route::middleware('throttle:public-snag-write')->group(function () {
 });
 
 Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
-    Route::get('/mijn-planning', VakmanPlanningController::class)->name('vakman.planning');
+    Route::get('/mijn-planning', [VakmanPlanningController::class, 'index'])->name('vakman.planning');
+    Route::get('/mijn-planning/dag/{date}', [VakmanPlanningController::class, 'day'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.day');
+    Route::get('/mijn-planning/dag/{date}/werkbon', [VakmanPlanningController::class, 'werkbon'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.werkbon');
+    Route::get('/mijn-planning/dag/{date}/opdrachtbon/{project}', [VakmanPlanningController::class, 'opdrachtbon'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.opdrachtbon');
     Route::get('/vakman/wachtwoord', [VakmanPasswordController::class, 'edit'])->name('vakman.password.edit');
     Route::patch('/vakman/wachtwoord', [VakmanPasswordController::class, 'update'])->middleware('throttle:vakman-password')->name('vakman.password.update');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
@@ -80,6 +84,11 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/planning/assignments', [PlanningActionController::class, 'storeAssignment'])->name('planning.assignments.store');
     Route::patch('/planning/assignments/{assignment}', [PlanningActionController::class, 'updateAssignment'])->name('planning.assignments.update');
     Route::delete('/planning/assignments/{assignment}', [PlanningActionController::class, 'destroyAssignment'])->name('planning.assignments.destroy');
+    Route::get('/planning/assignments/{assignment}/werkbonnen/nieuw', [WorkTicketController::class, 'create'])->name('work-tickets.create');
+    Route::post('/planning/assignments/{assignment}/werkbonnen', [WorkTicketController::class, 'store'])->name('work-tickets.store');
+    Route::get('/werkbonnen/{workTicket}', [WorkTicketController::class, 'show'])->name('work-tickets.show');
+    Route::get('/werkbonnen/{workTicket}/pdf', [WorkTicketController::class, 'pdf'])->name('work-tickets.pdf');
+    Route::patch('/werkbonnen/{workTicket}/uren', [WorkTicketController::class, 'updateHours'])->name('work-tickets.hours.update');
     Route::get('/productie', [ProductionController::class, 'index'])->name('production.index');
     Route::post('/productie/akkoord', [ProductionController::class, 'approve'])->name('production.approve');
     Route::get('/productie/bonnen/nieuw', [VoucherController::class, 'create'])->name('vouchers.create');

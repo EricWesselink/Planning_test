@@ -144,6 +144,36 @@ class PlanningWeekplanningPdfTest extends TestCase
         $this->assertPdfContains($text, 'Gezondheidscentrum Laren');
     }
 
+    public function test_cards_show_the_work_address(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item] = $this->makeProjectWorker('Wepro', 'Gezondheidscentrum Laren', [
+            'address' => 'Nieuweweg 80',
+            'postal_code' => '1251 LD',
+            'city' => 'Laren',
+        ]);
+        $this->assign($worker, $project, $item, '2026-09-08', '2026-09-08', '08:00:00', '16:00:00');
+
+        $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $data = app(WeekplanningPdfService::class)->build($request);
+        $places = collect($data['people'])
+            ->flatMap(fn (array $person): array => collect($person['days'])->flatten(1)->all())
+            ->pluck('city')
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->assertSame(['Nieuweweg 80, 1251 LD Laren'], $places);
+
+        $html = view('planning.weekplanning', $data)->render();
+        $this->assertStringContainsString('Nieuweweg 80, 1251 LD Laren', $html);
+
+        $text = $this->pdfText($this->actingAs($user)->get(route('planning.weekplanning', ['week' => '2026-09-07'])));
+        $this->assertStringContainsString('Nieuweweg 80', $text);
+        $this->assertStringContainsString('1251 LD', $text);
+    }
+
     public function test_cards_show_only_the_11p_number_when_a_work_number_also_exists(): void
     {
         $user = User::factory()->create();
@@ -435,7 +465,10 @@ class PlanningWeekplanningPdfTest extends TestCase
     public function test_escapes_dangerous_project_names_in_the_weekplanning_html(): void
     {
         $user = User::factory()->create();
-        [$worker, $project, $item] = $this->makeProjectWorker('Albert', "<script>alert('xss')</script>");
+        [$worker, $project, $item] = $this->makeProjectWorker('Albert', "<script>alert('xss')</script>", [
+            'address' => "<img src=x onerror=alert('addr')>",
+            'city' => 'Amersfoort',
+        ]);
         $this->assign($worker, $project, $item, '2026-09-07', '2026-09-07', '08:00:00', '16:00:00');
 
         $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
@@ -444,6 +477,8 @@ class PlanningWeekplanningPdfTest extends TestCase
 
         $this->assertStringContainsString('&lt;script&gt;', $html);
         $this->assertStringNotContainsString("<script>alert('xss')</script>", $html);
+        $this->assertStringContainsString('&lt;img src=x onerror=alert', $html);
+        $this->assertStringNotContainsString("<img src=x onerror=alert('addr')>", $html);
     }
 
     private function pdfText($response): string

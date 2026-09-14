@@ -376,6 +376,11 @@ class Worker extends Model
         return $this->hasMany(WorkOrder::class);
     }
 
+    public function workTickets(): HasMany
+    {
+        return $this->hasMany(WorkTicket::class)->orderByDesc('id');
+    }
+
     public function rates(): HasMany
     {
         return $this->hasMany(WorkerRate::class);

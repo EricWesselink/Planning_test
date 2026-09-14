@@ -171,7 +171,7 @@ class WorkerController extends Controller
     {
         Gate::authorize('delete', $worker);
 
-        if ($worker->vouchers()->exists()) {
+        if ($worker->vouchers()->exists() || $worker->workTickets()->exists()) {
             return back()->withErrors([
                 'worker' => $worker->name.' heeft bonnen. Zet het team inactief in plaats van te verwijderen.',
             ]);
