@@ -11,6 +11,7 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Models\WorkTicket;
+use App\Services\PlanningFitService;
 use App\Services\ProjectBoardService;
 use App\Services\ProjectIntakeService;
 use App\Services\ProjectLaborCalculator;
@@ -220,12 +221,19 @@ class ProjectController extends Controller
             ->with('warnings', $result['warnings']);
     }
 
-    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets): View
+    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets, PlanningFitService $fit): View
     {
         Gate::authorize('view', $project);
 
         if ($project->isWinkel()) {
             $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']);
+            $assignedIds = $project->assignments
+                ->pluck('worker_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->filter(fn (int $id): bool => $id > 0)
+                ->unique()
+                ->values();
+            $multipleWorkers = $assignedIds->count() > 1;
 
             return view('projects.winkel', [
                 'project' => $project,
@@ -234,6 +242,13 @@ class ProjectController extends Controller
                     $project->workActivities->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()
                 ),
                 'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
+                'preferredWorkers' => $fit->shopCandidates(
+                    $project->planned_start_date,
+                    $project->planned_end_date,
+                    $project->id,
+                ),
+                'selectedWorkerId' => old('worker_id', $multipleWorkers ? null : $assignedIds->first()),
+                'multiplePreferredWorkers' => $multipleWorkers,
             ]);
         }
 

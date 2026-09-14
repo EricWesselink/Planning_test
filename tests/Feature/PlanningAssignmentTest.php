@@ -39,6 +39,52 @@ class PlanningAssignmentTest extends TestCase
         $this->assertSame('2026-09-09', $assignment->end_date->toDateString());
     }
 
+    public function test_one_assignment_can_cover_several_works_without_doubling_hours(): void
+    {
+        $user = User::factory()->create();
+        [$seed, $linoleum, $coating] = $this->makeAssignmentOnTwoWorkItems();
+        $workerId = (int) $seed->worker_id;
+        $projectId = (int) $seed->project_id;
+        $seed->delete();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $workerId,
+                'project_id' => $projectId,
+                'work_item_id' => $linoleum->id,
+                'work_item_ids' => [$linoleum->id, $coating->id],
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-09',
+                'people_count' => 1,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment = WorkerAssignment::query()->where('worker_id', $workerId)->first();
+        $this->assertNotNull($assignment);
+        $this->assertSame($linoleum->id, $assignment->work_item_id);
+        $this->assertSame(16.0, $assignment->plannedHoursValue());
+        $this->assertTrue($assignment->coversWorkIds([$linoleum->id, $coating->id]));
+        $this->assertDatabaseHas('work_item_worker_assignment', [
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $linoleum->id,
+        ]);
+        $this->assertDatabaseHas('work_item_worker_assignment', [
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $coating->id,
+        ]);
+
+        $labor = app(ProjectLaborCalculator::class)->for($linoleum->project->fresh());
+        $this->assertSame(16.0, $labor['planned_hours']);
+        $this->assertSame(16.0, $labor['items_by_id'][$linoleum->id]['planned_hours']);
+        $this->assertSame(0.0, $labor['items_by_id'][$coating->id]['planned_hours']);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('data-work-item-ids="'.$linoleum->id.','.$coating->id.'"', false);
+    }
+
     public function test_moves_an_assignment_to_a_work_item_on_another_project_keeping_the_same_id(): void
     {
         $user = User::factory()->create();

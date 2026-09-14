@@ -26,7 +26,7 @@ class WorkerAssignment extends Model
         'planned_hours' => 8,
         'start_time' => '08:00:00',
         'end_time' => '16:00:00',
-        'include_saturday' => true,
+        'include_saturday' => false,
         'include_sunday' => false,
     ];
 
@@ -56,6 +56,73 @@ class WorkerAssignment extends Model
     public function workItem(): BelongsTo
     {
         return $this->belongsTo(WorkItem::class);
+    }
+
+    public function workItems(): BelongsToMany
+    {
+        return $this->belongsToMany(WorkItem::class, 'work_item_worker_assignment')
+            ->withTimestamps()
+            ->orderBy('work_items.sort_order')
+            ->orderBy('work_items.id');
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function linkedWorkItemIds(?Collection $workOrders = null): array
+    {
+        $ids = [];
+        if ($this->relationLoaded('workItems')) {
+            $ids = $this->workItems
+                ->map(fn (WorkItem $item): int => (int) $item->id)
+                ->all();
+        } elseif ($this->exists) {
+            $ids = $this->workItems()
+                ->pluck('work_items.id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->all();
+        }
+        $primary = $this->resolvedWorkItemId($workOrders);
+        if ($primary) {
+            array_unshift($ids, $primary);
+        }
+
+        return array_values(array_unique(array_filter(
+            $ids,
+            static fn (int $id): bool => $id > 0,
+        )));
+    }
+
+    /**
+     * @param  list<int>  $ids
+     */
+    public function coversWorkIds(array $ids, ?Collection $workOrders = null): bool
+    {
+        $wanted = array_flip(array_map(static fn (mixed $id): int => (int) $id, $ids));
+        foreach ($this->linkedWorkItemIds($workOrders) as $id) {
+            if (isset($wanted[$id])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<int>  $ids
+     */
+    public function syncLinkedWorkItems(array $ids): void
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn (mixed $id): int => (int) $id, $ids),
+            static fn (int $id): bool => $id > 0,
+        )));
+        if ($this->work_item_id && ! in_array((int) $this->work_item_id, $ids, true)) {
+            array_unshift($ids, (int) $this->work_item_id);
+        }
+
+        $this->workItems()->sync($ids);
+        $this->unsetRelation('workItems');
     }
 
     public function resolvedWorkItemId(?Collection $workOrders = null): ?int

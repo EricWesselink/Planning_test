@@ -234,7 +234,8 @@
                         ->map(fn ($item) => [
                             'id' => $item->id,
                             'name' => $item->productLabel() ?: (\App\Support\WorkType::looksLikeRoom($item->name) ? $item->typeLabel() : $item->name),
-                            'group' => $item->typeLabel(),
+                            'group' => $item->planningTitle(),
+                            'type_key' => $item->typeKey(),
                             'project_id' => $project->id,
                             'project' => $project->displayTitle(),
                         ])
@@ -488,7 +489,8 @@
                 <div id="plan-crew-list" class="space-y-0.5"></div>
             </div>
             <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Wat gaan ze doen</label>
-            <select name="work_item_id" id="plan-work" required class="w-full border border-nicon-line px-2 py-1.5 bg-white"></select>
+            <input type="hidden" name="work_item_id" id="plan-work" value="">
+            <div id="plan-work-list" class="max-h-48 space-y-0.5 overflow-y-auto rounded border border-nicon-line bg-nicon-sand/40 px-2 py-1.5"></div>
             <div id="plan-men-wrap">
                 <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Aantal personen</label>
                 <input type="number" name="people_count" id="plan-men" min="1" max="50" value="1" required class="mt-0 w-full border border-nicon-line px-2 py-1.5">
@@ -517,7 +519,7 @@
             </div>
             <div class="flex flex-wrap gap-x-4 gap-y-1 pt-0.5 text-sm">
                 <label class="flex items-center gap-2">
-                    <input type="checkbox" name="include_saturday" id="plan-include-saturday" value="1" checked>
+                    <input type="checkbox" name="include_saturday" id="plan-include-saturday" value="1">
                     Zaterdag
                 </label>
                 <label class="flex items-center gap-2">

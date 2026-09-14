@@ -9,9 +9,13 @@ use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\WorkActivity;
 use App\Models\WorkActivityCategory;
+use App\Models\Worker;
+use App\Services\PlanningFitService;
 use App\Services\ShopWorkService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
+use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -22,7 +26,7 @@ use Illuminate\View\View;
 
 class ShopProjectController extends Controller
 {
-    public function create(): View
+    public function create(Request $request, PlanningFitService $fit): View
     {
         Gate::authorize('create', Project::class);
 
@@ -36,13 +40,14 @@ class ShopProjectController extends Controller
             'activityHours' => old('activity_hours', []),
             'hourlyRate' => old('basis_uurtarief', SmallWorkType::HOURLY_RATE),
             'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
+            ...$this->preferredWorkerView($request, $fit),
         ]);
     }
 
-    public function store(Request $request, ShopWorkService $shopWork): RedirectResponse
+    public function store(Request $request, ShopWorkService $shopWork, PlanningFitService $fit): RedirectResponse
     {
         Gate::authorize('create', Project::class);
-        $data = $this->validated($request);
+        $data = $this->validated($request, null, $fit);
 
         $project = $shopWork->create($data, $request->user(), $request->file('attachments', []) ?: []);
 
@@ -51,21 +56,46 @@ class ShopProjectController extends Controller
             ->with('status', 'Winkelwerk aangemaakt.');
     }
 
-    public function update(Request $request, Project $project, ShopWorkService $shopWork): RedirectResponse
+    public function update(Request $request, Project $project, ShopWorkService $shopWork, PlanningFitService $fit): RedirectResponse
     {
         Gate::authorize('update', $project);
         abort_unless($project->isWinkel(), 404);
-        $data = $this->validated($request, $project);
-
-        $shopWork->update($project, $data, $request->user(), $request->file('attachments', []) ?: []);
+        $data = $this->validated($request, $project, $fit);
 
         if ($request->hasAny(['start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'])) {
             $project->applyPlanningWindow($data);
         }
 
+        $shopWork->update($project, $data, $request->user(), $request->file('attachments', []) ?: []);
+
         return redirect()
             ->route('projects.show', $project)
             ->with('status', 'Winkelwerk opgeslagen.');
+    }
+
+    public function availableWorkers(Request $request, PlanningFitService $fit): JsonResponse
+    {
+        Gate::authorize('create', Project::class);
+        $data = $request->validate([
+            'start_date' => ['nullable', 'date', 'required_with:end_date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date', 'required_with:start_date'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+        ]);
+
+        $project = isset($data['project_id'])
+            ? Project::query()->find($data['project_id'])
+            : null;
+        if ($project instanceof Project) {
+            Gate::authorize('update', $project);
+            abort_unless($project->isWinkel(), 404);
+        }
+
+        $start = filled($data['start_date'] ?? null) ? Carbon::parse($data['start_date']) : null;
+        $end = filled($data['end_date'] ?? null) ? Carbon::parse($data['end_date']) : null;
+
+        return response()->json([
+            'workers' => $fit->shopCandidates($start, $end, $project?->id),
+        ]);
     }
 
     public function storeAttachments(Request $request, Project $project, ShopWorkService $shopWork): RedirectResponse
@@ -98,7 +128,7 @@ class ShopProjectController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validated(Request $request, ?Project $project = null): array
+    private function validated(Request $request, ?Project $project = null, ?PlanningFitService $fit = null): array
     {
         $this->normalizeDecimalMaps($request, ['activity_quantities', 'activity_hours']);
         $this->normalizeHourlyRate($request);
@@ -126,13 +156,17 @@ class ShopProjectController extends Controller
             'attachments' => ['nullable', 'array', 'max:20'],
             'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,pdf', 'extensions:jpg,jpeg,png,webp,gif,pdf'],
             'basis_uurtarief' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            'worker_id' => ['nullable', 'integer', Rule::exists('workers', 'id')->where('active', true)],
             ...PlanningWeek::rules(),
         ], $this->messages());
-        $validator->after(fn ($weekValidator) => PlanningWeek::validateOrder(
-            $weekValidator,
-            $project?->planned_start_date,
-            $project?->planned_end_date,
-        ));
+        $validator->after(function ($weekValidator) use ($request, $project, $fit): void {
+            PlanningWeek::validateOrder(
+                $weekValidator,
+                $project?->planned_start_date,
+                $project?->planned_end_date,
+            );
+            $this->validatePreferredWorker($weekValidator, $request, $project, $fit);
+        });
         $data = $validator->validate();
         if (($data['basis_uurtarief'] ?? null) === null) {
             $data['basis_uurtarief'] = SmallWorkType::HOURLY_RATE;
@@ -215,10 +249,81 @@ class ShopProjectController extends Controller
             'activity_units.*.in' => 'Kies m², m¹ of stuks.',
             'basis_uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
             'basis_uurtarief.numeric' => 'Vul een geldig uurtarief in.',
+            'worker_id.exists' => 'Deze vakman is niet beschikbaar.',
             'attachments.required' => 'Kies minstens één bestand.',
             'attachments.*.mimes' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
             ...PlanningWeek::messages(),
         ];
+    }
+
+    /**
+     * @return array{
+     *     preferredWorkers: list<array{id: int, name: string, selectable: bool, status: string, status_label: string}>,
+     *     selectedWorkerId: int|string|null,
+     *     multiplePreferredWorkers: bool
+     * }
+     */
+    public function preferredWorkerView(Request $request, PlanningFitService $fit, ?Project $project = null): array
+    {
+        $assignedIds = collect($project?->assignments ?? [])
+            ->pluck('worker_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+        $multiple = $assignedIds->count() > 1;
+        $selected = old('worker_id', $multiple ? null : $assignedIds->first());
+        $dates = PlanningWeek::resolve(
+            $request->all(),
+            $project?->planned_start_date,
+            $project?->planned_end_date,
+        );
+        $start = filled($dates['start']) ? Carbon::parse($dates['start']) : $project?->planned_start_date;
+        $end = filled($dates['end']) ? Carbon::parse($dates['end']) : $project?->planned_end_date;
+
+        return [
+            'preferredWorkers' => $fit->shopCandidates($start, $end, $project?->id),
+            'selectedWorkerId' => $selected,
+            'multiplePreferredWorkers' => $multiple,
+        ];
+    }
+
+    private function validatePreferredWorker(mixed $validator, Request $request, ?Project $project, ?PlanningFitService $fit): void
+    {
+        if ($fit === null || $validator->errors()->isNotEmpty()) {
+            return;
+        }
+
+        $workerId = (int) $request->input('worker_id');
+        if ($workerId <= 0) {
+            return;
+        }
+
+        $dates = PlanningWeek::resolve(
+            $request->all(),
+            $project?->planned_start_date,
+            $project?->planned_end_date,
+        );
+        if ($dates['start'] === null || $dates['end'] === null) {
+            $validator->errors()->add('worker_id', 'Kies eerst start- en klaarweek om een vakman te kiezen.');
+
+            return;
+        }
+
+        $worker = Worker::query()->find($workerId);
+        if (! $worker instanceof Worker) {
+            return;
+        }
+
+        $message = $fit->shopRejection(
+            $worker,
+            Carbon::parse($dates['start']),
+            Carbon::parse($dates['end']),
+            $project?->id,
+        );
+        if ($message !== null) {
+            $validator->errors()->add('worker_id', $message);
+        }
     }
 }

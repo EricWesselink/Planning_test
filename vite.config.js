@@ -11,6 +11,7 @@ export default defineConfig({
                 'resources/js/drawing-board.js',
                 'resources/js/planning.js',
                 'resources/js/planning-weeks.js',
+                'resources/js/winkel-preferred-worker.js',
                 'resources/js/project-upload.js',
                 'resources/js/snag-pdf.js',
             ],

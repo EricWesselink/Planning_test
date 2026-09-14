@@ -400,10 +400,10 @@ class PlanningHoursAssignmentTest extends TestCase
             ->assertSee('data-end-offset="1"', false)
             ->assertSee('Zaterdag', false)
             ->assertSee('Zondag', false)
-            ->assertSee('id="plan-include-saturday" value="1" checked', false);
+            ->assertDontSee('id="plan-include-saturday" value="1" checked', false);
     }
 
-    public function test_a_range_through_the_weekend_includes_saturday_and_skips_sunday_by_default(): void
+    public function test_a_range_through_the_weekend_skips_saturday_and_sunday_by_default(): void
     {
         $user = User::factory()->create();
         [$worker, $project, $linoleum] = $this->makeProject();
@@ -422,18 +422,102 @@ class PlanningHoursAssignmentTest extends TestCase
 
         $assignment = WorkerAssignment::query()->where('worker_id', $worker->id)->first();
         $this->assertNotNull($assignment);
-        $this->assertTrue($assignment->includesSaturday());
+        $this->assertFalse($assignment->includesSaturday());
         $this->assertFalse($assignment->includesSunday());
-        $this->assertSame(88.0, $assignment->plannedHoursValue());
-        $this->assertSame(8.0, $assignment->hoursOnDate(Carbon::parse('2026-09-19')));
+        $this->assertSame(80.0, $assignment->plannedHoursValue());
+        $this->assertSame(0.0, $assignment->hoursOnDate(Carbon::parse('2026-09-19')));
         $this->assertFalse($assignment->coversDate(Carbon::parse('2026-09-20')));
         $this->assertTrue($assignment->coversDate(Carbon::parse('2026-09-21')));
         $this->assertDatabaseHas('worker_assignments', [
             'worker_id' => $worker->id,
-            'include_saturday' => 1,
+            'include_saturday' => 0,
             'include_sunday' => 0,
-            'planned_hours' => 88,
+            'planned_hours' => 80,
         ]);
+    }
+
+    public function test_board_hides_the_bar_on_unchecked_saturdays_across_weeks(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $linoleum] = $this->makeProject();
+        $project->forceFill([
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-25',
+        ])->save();
+        $linoleum->forceFill([
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-25',
+        ])->save();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $linoleum->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-25',
+                'people_count' => 1,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment = WorkerAssignment::query()->where('worker_id', $worker->id)->first();
+        $this->assertNotNull($assignment);
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-14', 'weeks' => 2]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertSame(
+            [
+                ['start' => 0, 'span' => 5],
+                ['start' => 6, 'span' => 5],
+            ],
+            $this->assignmentBarBoxes($html, $assignment->id),
+        );
+    }
+
+    public function test_board_shows_the_bar_on_saturday_when_saturday_is_checked(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $linoleum] = $this->makeProject();
+        $project->forceFill([
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-25',
+        ])->save();
+        $linoleum->forceFill([
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-25',
+        ])->save();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $linoleum->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-25',
+                'people_count' => 1,
+                'hours' => 8,
+                'include_saturday' => true,
+            ])
+            ->assertOk();
+
+        $assignment = WorkerAssignment::query()->where('worker_id', $worker->id)->first();
+        $this->assertNotNull($assignment);
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-14', 'weeks' => 2]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertSame(
+            [
+                ['start' => 0, 'span' => 11],
+            ],
+            $this->assignmentBarBoxes($html, $assignment->id),
+        );
     }
 
     public function test_unchecking_saturday_skips_saturday_hours(): void
@@ -513,7 +597,6 @@ class PlanningHoursAssignmentTest extends TestCase
                 'end_date' => '2026-09-25',
                 'people_count' => 1,
                 'hours' => 8,
-                'include_saturday' => false,
                 'include_sunday' => true,
             ])
             ->assertOk();
@@ -581,8 +664,6 @@ class PlanningHoursAssignmentTest extends TestCase
                 'end_date' => '2026-09-20',
                 'people_count' => 1,
                 'hours' => 8,
-                'include_saturday' => false,
-                'include_sunday' => false,
             ])
             ->assertUnprocessable()
             ->assertJsonPath(
@@ -682,5 +763,26 @@ class PlanningHoursAssignmentTest extends TestCase
         $assignment->save();
 
         return [$assignment, $linoleum, $coating];
+    }
+
+    /**
+     * @return list<array{start: int, span: int}>
+     */
+    private function assignmentBarBoxes(string $html, int $assignmentId): array
+    {
+        preg_match_all(
+            '/data-shift-id="'.$assignmentId.'"[^>]*data-start="(\d+)"[^>]*data-span="(\d+)"/',
+            $html,
+            $matches,
+            PREG_SET_ORDER,
+        );
+
+        return array_map(
+            fn (array $match): array => [
+                'start' => (int) $match[1],
+                'span' => (int) $match[2],
+            ],
+            $matches,
+        );
     }
 }

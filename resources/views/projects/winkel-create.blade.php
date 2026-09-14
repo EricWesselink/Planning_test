@@ -59,6 +59,12 @@
                     <p class="mt-1 text-xs text-nicon-muted">Meerdere foto’s, PDF’s of tekeningen. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
                 </div>
                 @include('projects.partials.planning-weeks', ['idPrefix' => 'winkel-', 'compact' => true])
+                @include('projects.partials.preferred-worker', [
+                    'preferredWorkers' => $preferredWorkers,
+                    'selectedWorkerId' => $selectedWorkerId ?? null,
+                    'multiplePreferredWorkers' => $multiplePreferredWorkers ?? false,
+                    'project' => $project ?? null,
+                ])
             </div>
         </div>
 
@@ -75,3 +81,7 @@
         <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Winkelwerk aanmaken</button>
     </form>
 @endsection
+
+@push('scripts')
+    @vite(['resources/js/winkel-preferred-worker.js'])
+@endpush

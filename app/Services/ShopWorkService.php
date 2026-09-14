@@ -15,7 +15,6 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\PlanningHours;
-use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +44,8 @@ class ShopWorkService
      *     activity_notes?: array<int|string, mixed>,
      *     activity_quantities?: array<int|string, mixed>,
      *     activity_hours?: array<int|string, mixed>,
-     *     activity_units?: array<int|string, mixed>
+     *     activity_units?: array<int|string, mixed>,
+     *     worker_id?: ?int
      * }  $data
      * @param  list<UploadedFile>  $files
      */
@@ -80,9 +80,10 @@ class ShopWorkService
                 $data['activity_units'] ?? [],
                 $data['activity_hours'] ?? [],
             );
+            $this->assignPreferredWorker($project->fresh(['workItems', 'assignments']) ?? $project, $this->preferredWorkerId($data));
             $this->storeFiles($project, $files, $user);
 
-            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents']) ?? $project;
+            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']) ?? $project;
         });
     }
 
@@ -101,7 +102,8 @@ class ShopWorkService
      *     activity_notes?: array<int|string, mixed>,
      *     activity_quantities?: array<int|string, mixed>,
      *     activity_hours?: array<int|string, mixed>,
-     *     activity_units?: array<int|string, mixed>
+     *     activity_units?: array<int|string, mixed>,
+     *     worker_id?: ?int
      * }  $data
      * @param  list<UploadedFile>  $files
      */
@@ -140,9 +142,10 @@ class ShopWorkService
                 $data['activity_units'] ?? [],
                 $data['activity_hours'] ?? [],
             );
+            $this->assignPreferredWorker($project->fresh(['workItems', 'assignments']) ?? $project, $this->preferredWorkerId($data));
             $this->storeFiles($project, $files, $user);
 
-            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents']) ?? $project;
+            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']) ?? $project;
         });
     }
 
@@ -196,6 +199,14 @@ class ShopWorkService
             $assignment->applySchedule($start, $end, PlanningHours::DAY_START, PlanningHours::DAY_END);
             $assignment->save();
 
+            return;
+        }
+
+        $sameWorker = $workerIds->count() === 1 && (int) $workerIds->first() === (int) $worker->id;
+        $sameDates = $assignments->every(
+            fn (WorkerAssignment $assignment): bool => $assignment->start_date?->isSameDay($start) && $assignment->end_date?->isSameDay($end)
+        );
+        if ($sameWorker && $sameDates) {
             return;
         }
 

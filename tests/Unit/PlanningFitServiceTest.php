@@ -191,6 +191,46 @@ class PlanningFitServiceTest extends TestCase
         $this->assertSame(['Kees Jansen', 'Wepro'], collect($payload['workers'])->pluck('name')->all());
     }
 
+    public function test_winkelwerk_skips_skill_match(): void
+    {
+        $item = $this->makeWorkItem('Screens');
+        $item->project->forceFill(['kind' => ProjectKind::Winkel])->save();
+
+        $this->assertTrue($item->fresh('project')->skipsSkillMatch());
+    }
+
+    public function test_shop_candidates_mark_a_busy_vakman_unavailable(): void
+    {
+        $kees = $this->makeWorker('Kees Jansen', 'PVC');
+        $item = $this->makeWorkItem('PVC');
+        $this->assignPerson($kees, $item, '08:00:00', '16:00:00');
+
+        $row = collect(app(PlanningFitService::class)->shopCandidates(
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-07'),
+        ))->firstWhere('name', 'Kees Jansen');
+
+        $this->assertIsArray($row);
+        $this->assertFalse($row['selectable']);
+        $this->assertSame('Bezet 08:00-16:00', $row['status_label']);
+    }
+
+    public function test_shop_candidates_ignore_assignments_on_the_current_winkel_project(): void
+    {
+        $kees = $this->makeWorker('Kees Jansen', 'PVC');
+        $item = $this->makeWorkItem('PVC');
+        $this->assignPerson($kees, $item, '08:00:00', '16:00:00');
+
+        $row = collect(app(PlanningFitService::class)->shopCandidates(
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-07'),
+            (int) $item->project_id,
+        ))->firstWhere('name', 'Kees Jansen');
+
+        $this->assertIsArray($row);
+        $this->assertTrue($row['selectable']);
+    }
+
     /**
      * @param  list<string>  $names
      */

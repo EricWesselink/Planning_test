@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectKind;
 use App\Models\CrewMember;
 use App\Models\Customer;
 use App\Models\Project;
@@ -58,6 +59,45 @@ class PlanningFitAssignmentTest extends TestCase
         $this->assertDatabaseHas('worker_assignments', [
             'worker_id' => $kees->id,
             'work_item_id' => $linoleum->id,
+        ]);
+    }
+
+    public function test_schedules_winkelwerk_without_flooring_vakkennis(): void
+    {
+        $user = User::factory()->create();
+        $kees = $this->makeWorker('Kees Jansen', 'Linoleum');
+        $customer = Customer::query()->create(['name' => 'Jansen']);
+        $project = Project::query()->create([
+            'project_number' => '260200091',
+            'customer_id' => $customer->id,
+            'name' => 'Jansen - Hengelo',
+            'kind' => ProjectKind::Winkel,
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-07',
+            'planned_end_date' => '2026-09-12',
+        ]);
+        $screens = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Screens',
+            'unit' => 'stuks',
+            'ordered_quantity' => 4,
+            'status' => 'gepland',
+        ]);
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $kees->id,
+                'project_id' => $project->id,
+                'work_item_id' => $screens->id,
+                'start_date' => '2026-09-07',
+                'end_date' => '2026-09-07',
+                'people_count' => 1,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('worker_assignments', [
+            'worker_id' => $kees->id,
+            'work_item_id' => $screens->id,
         ]);
     }
 

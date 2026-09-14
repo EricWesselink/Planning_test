@@ -119,7 +119,7 @@ class PlanningBoardService
             ->values();
 
         $assignments = WorkerAssignment::query()
-            ->with(['worker', 'workItem', 'team', 'crewMembers'])
+            ->with(['worker', 'workItem', 'workItems', 'team', 'crewMembers'])
             ->whereHas('project', function ($q) use ($request, $kindFilter): void {
                 $q->active()->accessibleBy($request->user());
                 $this->constrainKind($q, $kindFilter);
@@ -190,20 +190,20 @@ class PlanningBoardService
                     $personBars = [];
 
                     foreach ($projectAssignments as $assignment) {
-                        $workItemId = $assignment->resolvedWorkItemId($project->workOrders);
-
-                        if (! in_array((int) $workItemId, $ids, true)) {
+                        if (! $assignment->coversWorkIds($ids, $project->workOrders)) {
                             continue;
                         }
 
-                        $bar = $this->assignmentBar($assignment, $days);
-                        if (! $bar) {
-                            continue;
-                        }
-
-                        $usedIds[] = $assignment->id;
                         $workName = $assignment->workItem?->typeLabel() ?? $primary->typeLabel();
-                        $personBars[] = $this->personBar($assignment, $bar, $doubleBooked, $days, $workName, $project->name);
+                        [$personBars, $usedIds] = $this->appendAssignmentPersonBars(
+                            $personBars,
+                            $usedIds,
+                            $assignment,
+                            $days,
+                            $doubleBooked,
+                            $workName,
+                            $project->name,
+                        );
                     }
 
                     $budgetHours = round((float) $items->sum(
@@ -239,7 +239,7 @@ class PlanningBoardService
                         'who' => $who,
                         'bar' => $this->bar($starts->min(), $ends->max(), $days),
                         'person_bars' => $personBars,
-                        'bar_count' => count($personBars),
+                        'bar_count' => $this->stackedBarCount($personBars),
                         'warnings' => array_values(array_unique($itemWarnings)),
                         'status' => $primary->status,
                         'labor' => $itemLabor,
@@ -278,12 +278,16 @@ class PlanningBoardService
                 if (in_array($assignment->id, $usedIds, true)) {
                     continue;
                 }
-                $bar = $this->assignmentBar($assignment, $days);
-                if (! $bar) {
-                    continue;
-                }
                 $workName = $assignment->workItem?->typeLabel() ?? 'inzet';
-                $leftoverBars[] = $this->personBar($assignment, $bar, $doubleBooked, $days, $workName, $project->name);
+                [$leftoverBars] = $this->appendAssignmentPersonBars(
+                    $leftoverBars,
+                    $usedIds,
+                    $assignment,
+                    $days,
+                    $doubleBooked,
+                    $workName,
+                    $project->name,
+                );
             }
             $leftoverBars = $this->decorateLeftoverBars($leftoverBars, $projectAssignments, $project);
 
@@ -333,7 +337,7 @@ class PlanningBoardService
                     'missing_craftsman' => $period['missing_craftsman'],
                     'start_week' => $startWeek,
                     'person_bars' => $leftoverBars,
-                    'bar_count' => count($leftoverBars),
+                    'bar_count' => $this->stackedBarCount($leftoverBars),
                     'warnings' => array_values(array_unique(array_filter([
                         ...$projectWarnings,
                         $labor['overrun_label'] ?? null,
@@ -799,6 +803,7 @@ class PlanningBoardService
             'worker_id' => $assignment->worker_id,
             'project_id' => $assignment->project_id,
             'work_item_id' => $assignment->work_item_id,
+            'work_item_ids' => $assignment->linkedWorkItemIds(),
             'people_count' => $assignment->peopleCount(),
             'crew_ids' => $crewIds,
             'label' => $label,
@@ -972,23 +977,114 @@ class PlanningBoardService
         ];
     }
 
-    private function assignmentBar(WorkerAssignment $assignment, Collection $days): ?array
-    {
-        $box = $this->bar($assignment->start_date, $assignment->end_date, $days);
-        if (! $box) {
-            return null;
+    /**
+     * @param  list<array<string, mixed>>  $personBars
+     * @param  list<int>  $usedIds
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<int, array<string, mixed>>  $doubleBooked
+     * @return array{0: list<array<string, mixed>>, 1: list<int>}
+     */
+    private function appendAssignmentPersonBars(
+        array $personBars,
+        array $usedIds,
+        WorkerAssignment $assignment,
+        Collection $days,
+        array $doubleBooked,
+        string $workName,
+        string $projectName = '',
+    ): array {
+        $segments = $this->assignmentBars($assignment, $days);
+        if ($segments === []) {
+            return [$personBars, $usedIds];
         }
 
-        $rangeStart = $days->first()->copy()->startOfDay();
-        $rangeEnd = $days->last()->copy()->startOfDay();
-        $box['start_offset'] = $assignment->start_date->copy()->startOfDay()->gte($rangeStart)
-            ? PlanningHours::fractionFromTime($assignment->startTimeValue())
-            : 0.0;
-        $box['end_offset'] = $assignment->end_date->copy()->startOfDay()->lte($rangeEnd)
-            ? PlanningHours::fractionFromTime($assignment->endTimeValue())
-            : 1.0;
+        $stack = $personBars === []
+            ? 0
+            : (int) ($personBars[array_key_last($personBars)]['stack'] ?? 0) + 1;
+        $lastIndex = count($segments) - 1;
 
-        return $box;
+        foreach ($segments as $index => $box) {
+            $bar = $this->personBar($assignment, $box, $doubleBooked, $days, $workName, $projectName);
+            $bar['stack'] = $stack;
+            $bar['show_start_handle'] = $index === 0;
+            $bar['show_end_handle'] = $index === $lastIndex;
+            $personBars[] = $bar;
+        }
+
+        $usedIds[] = $assignment->id;
+
+        return [$personBars, $usedIds];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $personBars
+     */
+    private function stackedBarCount(array $personBars): int
+    {
+        return count(array_unique(array_map(
+            static fn (array $bar): int => (int) ($bar['stack'] ?? 0),
+            $personBars,
+        )));
+    }
+
+    /**
+     * @param  Collection<int, Carbon>  $days
+     * @return list<array{start: int, span: int, start_offset: float, end_offset: float}>
+     */
+    private function assignmentBars(WorkerAssignment $assignment, Collection $days): array
+    {
+        $visibleDays = $days->values();
+        $segments = [];
+        $runStart = null;
+        $runEnd = null;
+
+        foreach ($visibleDays as $index => $day) {
+            if (! $assignment->coversDate($day)) {
+                if ($runStart !== null) {
+                    $segments[] = $this->assignmentBarSegment($assignment, $visibleDays, $runStart, $runEnd);
+                    $runStart = null;
+                    $runEnd = null;
+                }
+
+                continue;
+            }
+
+            if ($runStart === null) {
+                $runStart = $index;
+            }
+            $runEnd = $index;
+        }
+
+        if ($runStart !== null) {
+            $segments[] = $this->assignmentBarSegment($assignment, $visibleDays, $runStart, $runEnd);
+        }
+
+        return $segments;
+    }
+
+    /**
+     * @param  Collection<int, Carbon>  $days
+     * @return array{start: int, span: int, start_offset: float, end_offset: float}
+     */
+    private function assignmentBarSegment(
+        WorkerAssignment $assignment,
+        Collection $days,
+        int $start,
+        int $end,
+    ): array {
+        $firstDay = $days[$start];
+        $lastDay = $days[$end];
+
+        return [
+            'start' => $start,
+            'span' => $end - $start + 1,
+            'start_offset' => $assignment->start_date->toDateString() === $firstDay->toDateString()
+                ? PlanningHours::fractionFromTime($assignment->startTimeValue())
+                : 0.0,
+            'end_offset' => $assignment->end_date->toDateString() === $lastDay->toDateString()
+                ? PlanningHours::fractionFromTime($assignment->endTimeValue())
+                : 1.0,
+        ];
     }
 
     private function bar(?CarbonInterface $start, ?CarbonInterface $end, Collection $days): ?array
@@ -1039,16 +1135,14 @@ class PlanningBoardService
     ): array {
         $item = $project->workItems->first();
         $personBars = [];
+        $usedIds = [];
         foreach ($projectAssignments as $assignment) {
-            $bar = $this->assignmentBar($assignment, $days);
-            if (! $bar) {
-                continue;
-            }
-            $personBars[] = $this->personBar(
+            [$personBars, $usedIds] = $this->appendAssignmentPersonBars(
+                $personBars,
+                $usedIds,
                 $assignment,
-                $bar,
-                $doubleBooked,
                 $days,
+                $doubleBooked,
                 $item?->name ?? $project->name,
                 $project->displayTitle(),
             );
@@ -1103,19 +1197,15 @@ class PlanningBoardService
         foreach ($extraItems as $item) {
             $personBars = [];
             foreach ($projectAssignments as $assignment) {
-                if ((int) $assignment->work_item_id !== (int) $item->id) {
+                if (! $assignment->coversWorkIds([(int) $item->id], $project->workOrders)) {
                     continue;
                 }
-                $bar = $this->assignmentBar($assignment, $days);
-                if (! $bar) {
-                    continue;
-                }
-                $usedIds[] = $assignment->id;
-                $personBars[] = $this->personBar(
+                [$personBars, $usedIds] = $this->appendAssignmentPersonBars(
+                    $personBars,
+                    $usedIds,
                     $assignment,
-                    $bar,
-                    $doubleBooked,
                     $days,
+                    $doubleBooked,
                     $item->name,
                     $project->displayTitle(),
                 );
@@ -1137,7 +1227,7 @@ class PlanningBoardService
 
             $hours = $budgetHours > 0.0001
                 ? $budgetHours
-                : round((float) collect($personBars)->sum('planned_hours'), 2);
+                : round((float) collect($personBars)->unique('assignment_id')->sum('planned_hours'), 2);
             $sortDate = $item->planned_start_date?->toDateString()
                 ?? collect($personBars)->min('start_date')
                 ?? '';
@@ -1236,7 +1326,7 @@ class PlanningBoardService
             'missing_craftsman' => $personBars === [],
             'start_week' => $startWeek,
             'person_bars' => $personBars,
-            'bar_count' => count($personBars),
+            'bar_count' => $this->stackedBarCount($personBars),
             'warnings' => [],
             'ordered' => $showMaterial ? $ordered : null,
             'ordered_decimals' => $showMaterial && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
@@ -1266,17 +1356,19 @@ class PlanningBoardService
             }
             $personBars = [];
             foreach ($projectAssignments as $assignment) {
-                if ((int) $assignment->work_item_id !== (int) $item->id) {
+                if (! $assignment->coversWorkIds([(int) $item->id], $project->workOrders)) {
                     continue;
                 }
 
-                $bar = $this->assignmentBar($assignment, $days);
-                if (! $bar) {
-                    continue;
-                }
-
-                $usedIds[] = $assignment->id;
-                $personBars[] = $this->personBar($assignment, $bar, $doubleBooked, $days, $item->name, $project->name);
+                [$personBars, $usedIds] = $this->appendAssignmentPersonBars(
+                    $personBars,
+                    $usedIds,
+                    $assignment,
+                    $days,
+                    $doubleBooked,
+                    $item->name,
+                    $project->name,
+                );
             }
 
             $budgetHours = $item->begrote_uren === null ? 0.0 : round((float) $item->begrote_uren, 2);
@@ -1307,7 +1399,7 @@ class PlanningBoardService
                 'who' => collect(),
                 'bar' => $this->bar($item->planned_start_date, $item->planned_end_date, $days),
                 'person_bars' => $personBars,
-                'bar_count' => count($personBars),
+                'bar_count' => $this->stackedBarCount($personBars),
                 'warnings' => [],
                 'status' => $item->status,
             ];

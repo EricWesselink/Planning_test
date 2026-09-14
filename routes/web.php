@@ -107,6 +107,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/projecten/archief', [ProjectController::class, 'archived'])->name('projects.archived');
     Route::get('/projecten/nieuw', [ProjectController::class, 'create'])->name('projects.create');
     Route::get('/projecten/winkel/nieuw', [ShopProjectController::class, 'create'])->name('projects.winkel.create');
+    Route::get('/projecten/winkel/beschikbare-vakmannen', [ShopProjectController::class, 'availableWorkers'])->name('projects.winkel.available-workers');
     Route::post('/projecten/winkel', [ShopProjectController::class, 'store'])->name('projects.winkel.store');
     Route::get('/projecten/klein/nieuw', [SmallWorkController::class, 'create'])->name('projects.small.create');
     Route::post('/projecten/klein', [SmallWorkController::class, 'store'])->name('projects.small.store');

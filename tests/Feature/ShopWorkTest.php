@@ -5,12 +5,14 @@ namespace Tests\Feature;
 use App\Enums\ProjectKind;
 use App\Enums\UserRole;
 use App\Enums\WorkUnit;
+use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\WorkActivity;
 use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -61,6 +63,7 @@ class ShopWorkTest extends TestCase
             ->assertSee('lg:grid-cols-4', false)
             ->assertSee('Telefoon')
             ->assertSee('E-mail')
+            ->assertSee('Voorkeur vakman')
             ->assertSee('>m²</option>', false)
             ->assertSee('>m¹</option>', false)
             ->assertSee('>stuks</option>', false)
@@ -638,6 +641,155 @@ class ShopWorkTest extends TestCase
             ->assertSee('Laakse Tuinen');
     }
 
+    public function test_create_form_lists_a_free_vakman_as_voorkeur(): void
+    {
+        $user = User::factory()->create();
+        $kees = $this->makeShopWorker('Kees Jansen');
+
+        $this->actingAs($user)
+            ->get(route('projects.winkel.create'))
+            ->assertOk()
+            ->assertSee('Voorkeur vakman')
+            ->assertSee('Kees Jansen')
+            ->assertSee('value="'.$kees->id.'"', false);
+    }
+
+    public function test_winkel_assigns_a_free_voorkeur_vakman_to_the_planned_weeks(): void
+    {
+        $user = User::factory()->create();
+        $kees = $this->makeShopWorker('Kees Jansen');
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$screens->id],
+            'worker_id' => $kees->id,
+            'start_year' => 2026,
+            'start_week' => 40,
+            'klaar_year' => 2026,
+            'klaar_week' => 40,
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $assignment = $project->assignments()->first();
+        $this->assertNotNull($assignment);
+        $this->assertSame($kees->id, (int) $assignment->worker_id);
+        $this->assertSame($project->workItems()->first()?->id, (int) $assignment->work_item_id);
+        $this->assertSame('2026-09-28', $assignment->start_date?->toDateString());
+        $this->assertSame('2026-10-03', $assignment->end_date?->toDateString());
+    }
+
+    public function test_winkel_rejects_a_busy_voorkeur_vakman(): void
+    {
+        $user = User::factory()->create();
+        $kees = $this->makeShopWorker('Kees Jansen');
+        $this->bookWorker($kees, '2026-09-28', '2026-10-02');
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), [
+                'customer_name' => 'Jansen',
+                'city' => 'Hengelo',
+                'work_activity_ids' => [$screens->id],
+                'worker_id' => $kees->id,
+                'start_year' => 2026,
+                'start_week' => 40,
+                'klaar_year' => 2026,
+                'klaar_week' => 40,
+            ])
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['worker_id' => 'Kees Jansen is niet vrij (Bezet 08:00-16:00).']);
+
+        $this->assertSame(0, Project::query()->where('kind', ProjectKind::Winkel)->count());
+    }
+
+    public function test_winkel_requires_weeks_before_selecting_a_voorkeur_vakman(): void
+    {
+        $user = User::factory()->create();
+        $kees = $this->makeShopWorker('Kees Jansen');
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), [
+                'customer_name' => 'Jansen',
+                'city' => 'Hengelo',
+                'work_activity_ids' => [$screens->id],
+                'worker_id' => $kees->id,
+            ])
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['worker_id' => 'Kies eerst start- en klaarweek om een vakman te kiezen.']);
+    }
+
+    public function test_planner_can_change_the_winkel_voorkeur_vakman_on_the_planning(): void
+    {
+        $user = User::factory()->create();
+        $kees = $this->makeShopWorker('Kees Jansen');
+        $piet = $this->makeShopWorker('Piet de Vries');
+        $screens = $this->activity('screens');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$screens->id],
+            'worker_id' => $kees->id,
+            'start_year' => 2026,
+            'start_week' => 40,
+            'klaar_year' => 2026,
+            'klaar_week' => 40,
+        ])->assertRedirect();
+
+        $assignment = WorkerAssignment::query()->first();
+        $this->assertNotNull($assignment);
+        $this->assertSame($kees->id, (int) $assignment->worker_id);
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $piet->id,
+                'start_date' => '2026-09-28',
+                'end_date' => '2026-10-02',
+            ])
+            ->assertOk();
+
+        $this->assertSame($piet->id, (int) $assignment->fresh()?->worker_id);
+    }
+
+    public function test_available_workers_endpoint_marks_a_busy_vakman(): void
+    {
+        $user = User::factory()->create();
+        $kees = $this->makeShopWorker('Kees Jansen');
+        $this->bookWorker($kees, '2026-09-28', '2026-10-02');
+
+        $this->actingAs($user)
+            ->getJson(route('projects.winkel.available-workers', [
+                'start_date' => '2026-09-28',
+                'end_date' => '2026-10-03',
+            ]))
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $kees->id,
+                'name' => 'Kees Jansen',
+                'selectable' => false,
+            ]);
+    }
+
+    public function test_uitvoerder_cannot_list_winkel_available_workers(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+
+        $this->actingAs($user)
+            ->getJson(route('projects.winkel.available-workers'))
+            ->assertForbidden();
+    }
+
+    public function test_guest_is_redirected_from_winkel_available_workers(): void
+    {
+        $this->getJson(route('projects.winkel.available-workers'))->assertUnauthorized();
+    }
+
     #[DataProvider('rolesThatMayCreate')]
     public function test_roles_that_may_create_winkelwerk(UserRole $role): void
     {
@@ -654,6 +806,45 @@ class ShopWorkTest extends TestCase
             'planner' => [UserRole::Planner],
             'projectleider' => [UserRole::Projectleider],
         ];
+    }
+
+    private function makeShopWorker(string $name): Worker
+    {
+        return Worker::query()->create([
+            'name' => $name,
+            'employment_type' => 'eigen',
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+    }
+
+    private function bookWorker(Worker $worker, string $start, string $end): WorkerAssignment
+    {
+        $customer = Customer::query()->create(['name' => 'Andere Klant']);
+        $project = Project::query()->create([
+            'project_number' => '2602000'.fake()->unique()->numerify('##'),
+            'customer_id' => $customer->id,
+            'name' => 'Ander werk',
+            'status' => 'gepland',
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+        ]);
+        $item = $project->workItems()->create([
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'gepland',
+        ]);
+        $assignment = new WorkerAssignment([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'people_count' => 1,
+        ]);
+        $assignment->applySchedule(Carbon::parse($start), Carbon::parse($end), '08:00', '16:00');
+        $assignment->save();
+
+        return $assignment;
     }
 
     /**

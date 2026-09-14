@@ -23,6 +23,7 @@ if (board) {
     const form = document.getElementById('plan-form');
     const whoSelect = document.getElementById('plan-who');
     const workSelect = document.getElementById('plan-work');
+    const workList = document.getElementById('plan-work-list');
     const startInput = document.getElementById('plan-start');
     const endInput = document.getElementById('plan-end');
     const menInput = document.getElementById('plan-men');
@@ -126,51 +127,108 @@ if (board) {
         bar.dataset.endTime = endTime;
     }
 
+    function selectedWorkIds() {
+        return [...(workList?.querySelectorAll('input[type="checkbox"]:checked') || [])]
+            .map((input) => Number(input.value))
+            .filter((id) => id > 0);
+    }
+
+    function workGroups(items) {
+        const grouped = [];
+        const index = {};
+        items.forEach((item) => {
+            const key = item.type_key || item.group || String(item.id);
+            if (!index[key]) {
+                index[key] = {
+                    key,
+                    label: item.group || item.name || 'Werk',
+                    project_id: item.project_id,
+                    project: item.project,
+                    ids: [],
+                };
+                grouped.push(index[key]);
+            }
+            index[key].ids.push(Number(item.id));
+        });
+
+        return grouped;
+    }
+
     function fillWorkItems(projectId, selectedId) {
+        const selected = new Set(
+            (Array.isArray(selectedId) ? selectedId : [selectedId])
+                .map((id) => Number(id))
+                .filter((id) => id > 0),
+        );
         const edit = Boolean(form.dataset.assignmentId);
         const sources = edit
             ? Object.entries(workItems)
             : [[String(projectId), workItems[projectId] || workItems[String(projectId)] || []]];
-        workSelect.innerHTML = sources.map(([pid, items]) => {
-            const rows = Array.isArray(items) ? items : [];
-            if (rows.length === 0) {
-                return '';
-            }
-            const optionsFor = (groupRows) => groupRows.map((item) => {
-                const projectKey = item.project_id || pid;
-                const workLabel = item.name || item.group || 'Werk';
-                const label = edit && item.project
-                    ? `${item.project} — ${workLabel}`
-                    : workLabel;
-                return `<option value="${item.id}" data-project-id="${escapeHtml(String(projectKey))}">${escapeHtml(label)}</option>`;
-            }).join('');
-            if (edit) {
-                const projectLabel = rows[0]?.project || `Project ${pid}`;
-                return `<optgroup label="${escapeHtml(projectLabel)}">${optionsFor(rows)}</optgroup>`;
-            }
-            const grouped = {};
-            rows.forEach((item) => {
-                const key = item.group || '';
-                grouped[key] = grouped[key] || [];
-                grouped[key].push(item);
-            });
-            return Object.entries(grouped).map(([label, groupRows]) => {
-                const options = optionsFor(groupRows);
-                if (!label || groupRows.length === 1) {
-                    return options;
-                }
-                return `<optgroup label="${escapeHtml(label)}">${options}</optgroup>`;
-            }).join('');
-        }).join('') || '<option value="">Geen werkzaamheden</option>';
-        if (selectedId) {
-            workSelect.value = String(selectedId);
+        if (workList) {
+            workList.innerHTML = '';
         }
+        sources.forEach(([pid, items]) => {
+            const rows = Array.isArray(items) ? items : [];
+            if (rows.length === 0 || !workList) {
+                return;
+            }
+            const groups = workGroups(rows);
+            if (edit && groups.length > 0) {
+                const heading = document.createElement('div');
+                heading.className = 'pt-1 text-[10px] uppercase tracking-wide text-nicon-muted';
+                heading.textContent = groups[0].project || `Project ${pid}`;
+                workList.append(heading);
+            }
+            groups.forEach((group) => {
+                const checkedId = group.ids.find((id) => selected.has(id)) || group.ids[0];
+                const row = document.createElement('label');
+                row.className = 'flex items-center gap-2 text-sm leading-tight';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.value = String(checkedId);
+                input.dataset.projectId = String(group.project_id || pid);
+                input.checked = group.ids.some((id) => selected.has(id));
+                input.addEventListener('change', () => {
+                    if (input.checked) {
+                        const projectKey = input.dataset.projectId;
+                        workList.querySelectorAll('input[type="checkbox"]:checked').forEach((other) => {
+                            if (other !== input && other.dataset.projectId !== projectKey) {
+                                other.checked = false;
+                            }
+                        });
+                    }
+                    const ids = selectedWorkIds();
+                    workSelect.value = ids[0] ? String(ids[0]) : '';
+                    syncProjectFromWork();
+                    refreshCandidates();
+                });
+                const text = document.createElement('span');
+                text.className = 'min-w-0 truncate';
+                text.textContent = group.label;
+                row.append(input, text);
+                workList.append(row);
+            });
+        });
+        if (workList && workList.children.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'text-sm text-nicon-muted';
+            empty.textContent = 'Geen werkzaamheden';
+            workList.append(empty);
+        }
+        const ids = selectedWorkIds();
+        if (ids.length === 0 && selected.size > 0 && workList) {
+            const first = workList.querySelector('input[type="checkbox"]');
+            if (first) {
+                first.checked = true;
+            }
+        }
+        workSelect.value = selectedWorkIds()[0] ? String(selectedWorkIds()[0]) : '';
         syncProjectFromWork();
     }
 
     function syncProjectFromWork() {
-        const option = workSelect.selectedOptions[0];
-        const projectId = option?.dataset.projectId;
+        const checked = workList?.querySelector('input[type="checkbox"]:checked');
+        const projectId = checked?.dataset.projectId;
         if (projectId) {
             projectInput.value = projectId;
         }
@@ -480,7 +538,7 @@ if (board) {
         });
         startInput.value = date;
         endInput.value = date;
-        setWeekendDays(true, false);
+        setWeekendDays(false, false);
         menInput.value = '1';
         menInput.readOnly = false;
         crewBox.classList.add('hidden');
@@ -512,7 +570,7 @@ if (board) {
         });
         whoSelect.value = `worker:${bar.dataset.workerId}`;
         projectInput.value = bar.dataset.projectId;
-        fillWorkItems(bar.dataset.projectId, bar.dataset.workItemId);
+        fillWorkItems(bar.dataset.projectId, (bar.dataset.workItemIds || bar.dataset.workItemId || '').split(','));
         startInput.value = bar.dataset.startDate;
         endInput.value = bar.dataset.endDate;
         setWeekendDays(bar.dataset.includeSaturday === '1', bar.dataset.includeSunday === '1');
@@ -559,11 +617,29 @@ if (board) {
         hoursHint.classList.remove('hidden');
     }
 
+    function siblingSegments(bar) {
+        const id = bar.dataset.shiftId;
+        if (!id) {
+            return [];
+        }
+
+        return [...board.querySelectorAll(`.person-bar[data-shift-id="${id}"]`)].filter((el) => el !== bar);
+    }
+
+    function hideSiblingSegments(bar) {
+        siblingSegments(bar).forEach((el) => el.classList.add('hidden'));
+    }
+
+    function showSiblingSegments(bar) {
+        siblingSegments(bar).forEach((el) => el.classList.remove('hidden'));
+    }
+
     function restoreBar(current) {
         applyBarBox(current.bar, current.originStart, current.originSpan, current.originStartOffset, current.originEndOffset);
         current.bar.dataset.workItemId = current.originWorkItemId;
         current.bar.dataset.startDate = current.startDate;
         current.bar.dataset.endDate = current.endDate;
+        showSiblingSegments(current.bar);
         if (current.originStack) {
             current.originStack.appendChild(current.bar);
             current.bar.style.top = current.originTop;
@@ -574,7 +650,9 @@ if (board) {
         if (bar.parentElement !== stack) {
             stack.appendChild(bar);
         }
-        const others = [...stack.querySelectorAll('.person-bar')].filter((el) => el !== bar).length;
+        const others = [...stack.querySelectorAll('.person-bar')].filter(
+            (el) => el !== bar && !el.classList.contains('hidden'),
+        ).length;
         bar.style.top = `${4 + (others * 24)}px`;
         bar.dataset.workItemId = stack.dataset.workItemId || '';
     }
@@ -632,6 +710,7 @@ if (board) {
             applyBarBox(drag.bar, box.start, box.span, box.startOffset, box.endOffset);
             showHoursHint(clientX, clientY, intervalLabel(box));
             if (drag.moved) {
+                hideSiblingSegments(drag.bar);
                 previewDropTarget(clientX, clientY);
             }
             return;
@@ -670,8 +749,17 @@ if (board) {
         const startOffset = Number(current.bar.dataset.startOffset || 0);
         const endOffset = Number(current.bar.dataset.endOffset || 1);
         const dayDelta = startIdx - current.originStart;
-        const startDate = addDays(current.startDate, dayDelta);
-        const endDate = addDays(startDate, Math.max(0, span - 1));
+        let startDate = current.startDate;
+        let endDate = current.endDate;
+        if (current.mode === 'move') {
+            startDate = addDays(current.startDate, dayDelta);
+            endDate = addDays(current.endDate, dayDelta);
+        } else if (current.mode === 'resize-start') {
+            startDate = dates[startIdx] || addDays(current.startDate, dayDelta);
+        } else {
+            const endIdx = startIdx + Math.max(1, span) - 1;
+            endDate = dates[endIdx] || addDays(current.endDate, dayDelta);
+        }
         const startTime = timeFromFraction(startOffset);
         const endTime = timeFromFraction(endOffset);
         const workItemId = current.bar.dataset.workItemId || '';
@@ -787,7 +875,7 @@ if (board) {
     }
 
     whoSelect.addEventListener('change', syncMenFromWho);
-    workSelect.addEventListener('change', () => {
+    workSelect?.addEventListener('change', () => {
         syncProjectFromWork();
         refreshCandidates();
     });
@@ -836,10 +924,16 @@ if (board) {
             window.alert('De einddatum moet op of na de startdatum liggen.');
             return null;
         }
+        const workIds = selectedWorkIds();
+        if (workIds.length === 0) {
+            window.alert('Kies minstens één werkzaamheid.');
+            return null;
+        }
         const times = selectedTimes();
         const body = {
             project_id: Number(projectInput.value),
-            work_item_id: Number(workSelect.value),
+            work_item_id: workIds[0],
+            work_item_ids: workIds,
             start_date: startInput.value,
             end_date: endInput.value,
             people_count: Math.max(1, Number(menInput.value || 1)),

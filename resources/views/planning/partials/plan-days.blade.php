@@ -34,7 +34,7 @@
     @foreach ($personBars as $index => $personBar)
         @include('planning.partials.person-bar', [
             'personBar' => $personBar,
-            'index' => $index,
+            'index' => $personBar['stack'] ?? $index,
             'dayCount' => $dayCount,
             'personBarOffset' => $personBarOffset,
         ])

@@ -100,6 +100,19 @@
                         'klaarYear' => $project->planningEndYear(),
                         'klaarWeek' => $project->planningEndWeek(),
                     ])
+                    @can('update', $project)
+                        @include('projects.partials.preferred-worker', [
+                            'preferredWorkers' => $preferredWorkers,
+                            'selectedWorkerId' => $selectedWorkerId ?? null,
+                            'multiplePreferredWorkers' => $multiplePreferredWorkers ?? false,
+                            'project' => $project,
+                            'canUpdate' => true,
+                        ])
+                    @else
+                        @if ($project->assignments->isNotEmpty())
+                            <p class="text-sm">{{ $project->assignments->map(fn ($assignment) => $assignment->worker?->planName())->filter()->unique()->implode(', ') }}</p>
+                        @endif
+                    @endcan
                 </div>
             </div>
 
@@ -121,7 +134,17 @@
         <div class="grid gap-6 lg:grid-cols-3">
             <section class="border border-nicon-line bg-white p-5">
                 <h2 class="text-xs uppercase tracking-wide text-nicon-muted">Planning</h2>
-                <p class="mt-2 text-sm">Personen inplannen op dit Winkelwerk gebeurt in de bestaande Nicon Planning.</p>
+                <p class="mt-2 text-sm">Personen inplannen op dit Winkelwerk gebeurt in de bestaande Nicon Planning. Een voorkeur-vakman kun je daar altijd wijzigen.</p>
+                @php
+                    $assignedNames = $project->assignments
+                        ->map(fn ($assignment) => $assignment->worker?->planName())
+                        ->filter()
+                        ->unique()
+                        ->values();
+                @endphp
+                @if ($assignedNames->isNotEmpty())
+                    <p class="mt-2 text-sm">Ingepland: {{ $assignedNames->implode(', ') }}</p>
+                @endif
                 <a href="{{ route('planning', ['project_id' => $project->id]) }}" class="mt-4 inline-block bg-nicon-orange px-4 py-2 text-sm text-white">Open planning</a>
                 @if ($project->nawLine())
                     <p class="mt-3 text-sm text-nicon-muted">{{ $project->nawLine() }}</p>
@@ -208,3 +231,7 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    @vite(['resources/js/winkel-preferred-worker.js'])
+@endpush

@@ -4,6 +4,7 @@
      data-worker-id="{{ $personBar['worker_id'] }}"
      data-project-id="{{ $personBar['project_id'] }}"
      data-work-item-id="{{ $personBar['work_item_id'] }}"
+     data-work-item-ids="{{ implode(',', $personBar['work_item_ids'] ?? array_filter([(int) ($personBar['work_item_id'] ?? 0)])) }}"
      data-start="{{ $personBar['bar']['start'] }}"
      data-span="{{ $personBar['bar']['span'] }}"
      data-start-offset="{{ $personBar['bar']['start_offset'] ?? 0 }}"
@@ -23,7 +24,11 @@
     @if (! empty($personBar['has_budget_overrun']))
         <span class="person-bar-overrun" style="left: {{ $personBar['overrun_from'] ?? '100%' }}" aria-hidden="true"></span>
     @endif
-    <span class="bar-handle bar-handle-start" data-edge="start"></span>
+    @if ($personBar['show_start_handle'] ?? true)
+        <span class="bar-handle bar-handle-start" data-edge="start"></span>
+    @endif
     <span class="bar-label">{{ $personBar['label'] }}</span>
-    <span class="bar-handle bar-handle-end" data-edge="end"></span>
+    @if ($personBar['show_end_handle'] ?? true)
+        <span class="bar-handle bar-handle-end" data-edge="end"></span>
+    @endif
 </div>

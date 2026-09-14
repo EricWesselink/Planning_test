@@ -134,7 +134,9 @@ class PlanningActionController extends Controller
             'worker_id' => ['nullable', 'integer', 'exists:workers,id', 'required_without:team_id'],
             'team_id' => ['nullable', 'integer', 'exists:teams,id', 'required_without:worker_id'],
             'project_id' => ['required', 'integer', 'exists:projects,id'],
-            'work_item_id' => ['required', 'integer', 'exists:work_items,id'],
+            'work_item_id' => ['nullable', 'integer', 'exists:work_items,id', 'required_without:work_item_ids'],
+            'work_item_ids' => ['nullable', 'array', 'min:1', 'required_without:work_item_id'],
+            'work_item_ids.*' => ['integer', 'distinct', 'exists:work_items,id'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'people_count' => ['nullable', 'integer', 'min:1', 'max:50', 'required_without:crew_member_ids'],
@@ -151,10 +153,15 @@ class PlanningActionController extends Controller
             'confirm_conflict' => ['sometimes', 'boolean'],
         ]);
 
+        $workItemIds = $this->requestedWorkItemIds($data, (int) $data['project_id']);
+        if ($workItemIds === []) {
+            return response()->json(['message' => 'Kies minstens één werkzaamheid.'], 422);
+        }
+
         $item = WorkItem::query()
             ->with('project')
             ->where('project_id', $data['project_id'])
-            ->findOrFail($data['work_item_id']);
+            ->findOrFail($workItemIds[0]);
         Gate::authorize('view', $item->project);
 
         $start = Carbon::parse($data['start_date']);
@@ -234,6 +241,7 @@ class PlanningActionController extends Controller
                     $ids,
                     $includeSaturday,
                     $includeSunday,
+                    $workItemIds,
                 );
             }
         }
@@ -249,6 +257,8 @@ class PlanningActionController extends Controller
             'worker_id' => ['sometimes', 'integer', 'exists:workers,id'],
             'project_id' => ['sometimes', 'nullable', 'integer', 'exists:projects,id'],
             'work_item_id' => ['sometimes', 'nullable', 'integer', 'exists:work_items,id'],
+            'work_item_ids' => ['sometimes', 'nullable', 'array', 'min:1'],
+            'work_item_ids.*' => ['integer', 'distinct', 'exists:work_items,id'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'people_count' => ['sometimes', 'integer', 'min:1', 'max:50'],
@@ -273,7 +283,7 @@ class PlanningActionController extends Controller
             return $emptyRange;
         }
         $workerId = (int) ($data['worker_id'] ?? $assignment->worker_id);
-        $assignment->loadMissing(['crewMembers', 'workItem.workActivity', 'project']);
+        $assignment->loadMissing(['crewMembers', 'workItem.workActivity', 'project', 'workItems']);
 
         $worker = Worker::query()->with(['crewPeople', 'availabilities'])->findOrFail($workerId);
         $originalCrewIds = $assignment->crewMembers
@@ -383,6 +393,15 @@ class PlanningActionController extends Controller
         $originalWorkerId = (int) $assignment->worker_id;
         $targetProjectId = $targetItem ? (int) $targetItem->project_id : (int) $assignment->project_id;
         $targetWorkItemId = $targetItem?->id ?? $assignment->work_item_id;
+        $linkedWorkItemIds = $this->linkedWorkItemIdsForUpdate(
+            $assignment,
+            $data,
+            $targetProjectId,
+            (int) ($targetWorkItemId ?? 0),
+        );
+        if ($linkedWorkItemIds !== []) {
+            $targetWorkItemId = $linkedWorkItemIds[0];
+        }
 
         DB::transaction(function () use (
             $assignment,
@@ -395,6 +414,7 @@ class PlanningActionController extends Controller
             $originalWorkerId,
             $targetProjectId,
             $targetWorkItemId,
+            $linkedWorkItemIds,
             $staySnapshot,
             $stayingIds,
             $includeSaturday,
@@ -406,6 +426,7 @@ class PlanningActionController extends Controller
             $assignment->people_count = $first['people_count'];
             $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time'], $includeSaturday, $includeSunday);
             $assignment->save();
+            $assignment->syncLinkedWorkItems($linkedWorkItemIds);
             if (array_key_exists('crew_member_ids', $data) || $first['crew_ids'] !== [] || $stayingIds !== []) {
                 $assignment->syncPresentCrew($first['crew_ids']);
             } elseif ($originalWorkerId !== $workerId) {
@@ -428,6 +449,7 @@ class PlanningActionController extends Controller
                     $group['crew_ids'],
                     $includeSaturday,
                     $includeSunday,
+                    $linkedWorkItemIds,
                 );
             }
 
@@ -684,15 +706,20 @@ class PlanningActionController extends Controller
         string $endTime,
         int $peopleCount,
         array $crewIds,
-        bool $includeSaturday = true,
+        bool $includeSaturday = false,
         bool $includeSunday = false,
+        array $linkedWorkItemIds = [],
     ): WorkerAssignment {
         $startTime = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $endTime = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
+        $linkedWorkItemIds = array_values(array_unique(array_filter(
+            array_map(static fn (mixed $id): int => (int) $id, $linkedWorkItemIds !== [] ? $linkedWorkItemIds : [(int) $workItemId]),
+            static fn (int $id): bool => $id > 0,
+        )));
         $fingerprint = implode(':', [
             $workerId,
             $projectId,
-            $workItemId ?? 0,
+            implode(',', $linkedWorkItemIds) ?: (string) ($workItemId ?? 0),
             $start->toDateString(),
             $end->toDateString(),
             $startTime,
@@ -705,6 +732,7 @@ class PlanningActionController extends Controller
             $workerId,
             $projectId,
             $workItemId,
+            $linkedWorkItemIds,
             $teamId,
             $start,
             $end,
@@ -719,6 +747,7 @@ class PlanningActionController extends Controller
                 $workerId,
                 $projectId,
                 $workItemId,
+                $linkedWorkItemIds,
                 $teamId,
                 $start,
                 $end,
@@ -747,6 +776,8 @@ class PlanningActionController extends Controller
                     ->first();
 
                 if ($existing) {
+                    $existing->syncLinkedWorkItems($linkedWorkItemIds);
+
                     return $existing;
                 }
 
@@ -759,6 +790,7 @@ class PlanningActionController extends Controller
                 ]);
                 $assignment->applySchedule($start, $end, $startTime, $endTime, $includeSaturday, $includeSunday);
                 $assignment->save();
+                $assignment->syncLinkedWorkItems($linkedWorkItemIds);
                 if ($crewIds !== []) {
                     $assignment->syncPresentCrew($crewIds);
                 }
@@ -867,13 +899,78 @@ class PlanningActionController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $data
+     * @return list<int>
+     */
+    private function requestedWorkItemIds(array $data, int $projectId): array
+    {
+        $ids = [];
+        foreach ($data['work_item_ids'] ?? [] as $id) {
+            $ids[] = (int) $id;
+        }
+        if (! empty($data['work_item_id'])) {
+            array_unshift($ids, (int) $data['work_item_id']);
+        }
+
+        $ids = array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+
+        $owned = WorkItem::query()
+            ->where('project_id', $projectId)
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        $ownedSet = array_flip($owned);
+        $kept = [];
+        foreach ($ids as $id) {
+            if (isset($ownedSet[$id])) {
+                $kept[] = $id;
+            }
+        }
+
+        return $kept;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<int>
+     */
+    private function linkedWorkItemIdsForUpdate(
+        WorkerAssignment $assignment,
+        array $data,
+        int $projectId,
+        int $targetWorkItemId,
+    ): array {
+        if (array_key_exists('work_item_ids', $data)) {
+            $ids = $this->requestedWorkItemIds($data, $projectId);
+            if ($assignment->work_item_id && in_array((int) $assignment->work_item_id, $ids, true)) {
+                array_unshift($ids, (int) $assignment->work_item_id);
+                $ids = array_values(array_unique($ids));
+            }
+
+            return $ids !== [] ? $ids : array_values(array_filter([$targetWorkItemId]));
+        }
+
+        if ($targetWorkItemId > 0 && $targetWorkItemId !== (int) $assignment->work_item_id) {
+            return [$targetWorkItemId];
+        }
+
+        $ids = $assignment->linkedWorkItemIds();
+
+        return $ids !== [] ? $ids : array_values(array_filter([$targetWorkItemId]));
+    }
+
+    /**
      * @return array{0: bool, 1: bool}
      */
     private function weekendInclusion(Request $request, ?WorkerAssignment $assignment = null): array
     {
         $includeSaturday = $request->exists('include_saturday')
             ? $request->boolean('include_saturday')
-            : ($assignment?->includesSaturday() ?? true);
+            : ($assignment?->includesSaturday() ?? false);
         $includeSunday = $request->exists('include_sunday')
             ? $request->boolean('include_sunday')
             : ($assignment?->includesSunday() ?? false);
