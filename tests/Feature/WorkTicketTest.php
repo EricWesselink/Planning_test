@@ -75,6 +75,25 @@ class WorkTicketTest extends TestCase
             ->assertDontSee('id="complete-form"', false);
     }
 
+    public function test_projectleider_ticket_mode_keeps_the_drawing_and_omits_the_progress_form(): void
+    {
+        $user = User::factory()->projectleider()->create();
+        $seed = $this->seedJob(zzp: true);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Opdrachtbon maken')
+            ->assertSee('"pdf":true', false)
+            ->assertSee('"canEnterProgress":true', false)
+            ->assertDontSee('id="complete-form"', false)
+            ->assertSee('id="draw-canvas"', false)
+            ->assertSee('Materialen kiezen');
+    }
+
     public function test_drawing_board_without_ticket_mode_does_not_show_bonselectie(): void
     {
         $user = User::factory()->create();

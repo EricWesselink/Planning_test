@@ -2309,12 +2309,15 @@ function boot() {
     }
 
     function refreshCompleteForm() {
-        if (!data.canEnterProgress) {
+        if (ticketMode || !data.canEnterProgress) {
             return;
         }
         const nameEl = document.getElementById('complete-task-name');
         const qty = document.getElementById('complete-qty');
         const submit = document.getElementById('complete-submit');
+        if (!nameEl || !qty || !submit || !groupsEl) {
+            return;
+        }
         const picked = pickedCards();
         const openPicked = picked.filter((card) => !card.classList.contains('is-done'));
         const donePicked = picked.filter((card) => card.classList.contains('is-done'));
@@ -4849,8 +4852,6 @@ function boot() {
         ? 'Kies materialen of klik Hele werk. Daarna Selectie toevoegen.'
         : 'Tik op + Opleverpunt, zet het op de tekening, foto, tekst, versturen.');
     bindTaskCards();
-    bindTicketPanel();
-    refreshCompleteForm();
     loadDrawing().catch(() => {
         setHint('Tekening kon niet worden geladen.');
     }).finally(() => {
@@ -4867,4 +4868,6 @@ function boot() {
             openExistingSnag(openId);
         }
     });
+    bindTicketPanel();
+    refreshCompleteForm();
 }
