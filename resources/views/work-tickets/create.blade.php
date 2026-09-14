@@ -190,9 +190,6 @@
                 <a href="{{ route('planning') }}" class="border border-nicon-line bg-white px-4 py-2">Annuleren</a>
             </div>
         </form>
+        @include('work-tickets._script')
     @endif
 @endsection
-
-@push('scripts')
-    @vite(['resources/js/work-tickets.js'])
-@endpush

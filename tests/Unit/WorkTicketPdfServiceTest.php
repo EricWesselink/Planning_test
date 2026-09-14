@@ -7,7 +7,6 @@ use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
 use App\Models\Customer;
 use App\Models\Project;
-use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;

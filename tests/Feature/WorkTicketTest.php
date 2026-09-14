@@ -18,6 +18,7 @@ use App\Models\WorkerRate;
 use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Tests\TestCase;
 
 class WorkTicketTest extends TestCase
@@ -43,6 +44,13 @@ class WorkTicketTest extends TestCase
     {
         $user = User::factory()->create();
         $seed = $this->seedJob();
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.create', $seed['assignment']))
+            ->assertOk()
+            ->assertSee('Werkbon maken')
+            ->assertSee('1.63 oefenruimte')
+            ->assertSee('PVC');
 
         $this->actingAs($user)
             ->post(route('work-tickets.store', $seed['assignment']), [
@@ -299,7 +307,7 @@ class WorkTicketTest extends TestCase
         $this->actingAs($vakman)
             ->get(route('work-tickets.pdf', $ticket))
             ->assertOk()
-            ->assertHeader('content-type', 'application/pdf');
+            ->assertSee('%PDF', false);
     }
 
     /**
@@ -308,7 +316,7 @@ class WorkTicketTest extends TestCase
      *     colleague: Worker,
      *     assignment: WorkerAssignment,
      *     floor: ProjectFloor,
-     *     areas: \Illuminate\Support\Collection<int, ProjectArea>,
+     *     areas: Collection<int, ProjectArea>,
      *     primer: WorkItem,
      *     pvc: WorkItem,
      *     plinten: WorkItem,
