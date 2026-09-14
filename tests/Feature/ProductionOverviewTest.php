@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\WorkTicketBilling;
+use App\Enums\WorkTicketKind;
+use App\Enums\WorkUnit;
 use App\Models\AreaTask;
 use App\Models\Customer;
 use App\Models\Project;
@@ -12,6 +15,7 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkProgressEntry;
+use App\Models\WorkTicket;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -208,6 +212,54 @@ class ProductionOverviewTest extends TestCase
             ->assertForbidden();
 
         $this->assertNull($task->fresh()->approved_at);
+    }
+
+    public function test_overview_lists_an_opdrachtbon_before_rooms_are_checked_off(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $area] = $this->makeNamedProject('Het Vloerenhuis', '250100010', 'Gezondheidscentrum Laren');
+        $item = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC',
+            'unit' => WorkUnit::SquareMeter,
+            'ordered_quantity' => 84,
+            'status' => 'gepland',
+            'sort_order' => 2,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $item->id,
+            'ordered_quantity' => 84,
+            'unit' => WorkUnit::SquareMeter,
+            'status' => 'niet_gestart',
+        ]);
+        $ticket = WorkTicket::query()->create([
+            'number' => 'OB-2026-0001',
+            'kind' => WorkTicketKind::Opdrachtbon,
+            'project_id' => $project->id,
+            'worker_id' => $worker->id,
+            'created_by' => $user->id,
+            'billing_method' => WorkTicketBilling::Hourly,
+            'hourly_rate' => 42.5,
+            'start_date' => '2026-09-15',
+            'end_date' => '2026-09-17',
+        ]);
+        $ticket->lines()->create([
+            'work_item_id' => $item->id,
+            'quantity' => 84,
+            'unit' => WorkUnit::SquareMeter,
+        ]);
+        $ticket->areas()->attach($area->id);
+
+        $this->actingAs($user)
+            ->get(route('production.index'))
+            ->assertOk()
+            ->assertSee('OB-2026-0001')
+            ->assertSee('Gezondheidscentrum Laren')
+            ->assertSee('Open bon')
+            ->assertSee('uren nog niet ingevuld')
+            ->assertSee('0.07 groepsruimte')
+            ->assertSee('Op opdrachtbon');
     }
 
     private function assignWorker(Worker $worker, Project $project): void

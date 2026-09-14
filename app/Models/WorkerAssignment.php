@@ -79,6 +79,22 @@ class WorkerAssignment extends Model
         return $this->hasMany(WorkTicket::class)->orderByDesc('id');
     }
 
+    protected static function booted(): void
+    {
+        static::saved(function (self $assignment): void {
+            if (! $assignment->wasChanged(['start_date', 'end_date', 'project_id', 'worker_id'])) {
+                return;
+            }
+
+            $assignment->workTickets()->update([
+                'start_date' => $assignment->start_date->toDateString(),
+                'end_date' => $assignment->end_date->toDateString(),
+                'project_id' => $assignment->project_id,
+                'worker_id' => $assignment->worker_id,
+            ]);
+        });
+    }
+
     public function crewMembers(): BelongsToMany
     {
         return $this->belongsToMany(CrewMember::class, 'crew_member_worker_assignment')

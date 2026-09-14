@@ -773,14 +773,10 @@ if (board) {
         refreshCandidates();
     });
 
-    form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (saving) {
-            return;
-        }
+    function assignmentBody() {
         const [kind, id] = (whoSelect.value || '').split(':');
         if (!kind || !id) {
-            return;
+            return null;
         }
         const assignmentId = form.dataset.assignmentId;
         const crewIds = selectedCrewIds();
@@ -789,7 +785,11 @@ if (board) {
             window.alert(assignmentId
                 ? 'Vink aan wie er naar dit werk gaat.'
                 : 'Vink aan wie er naar dit project gaat.');
-            return;
+            return null;
+        }
+        if (startInput.value > endInput.value) {
+            window.alert('De einddatum moet op of na de startdatum liggen.');
+            return null;
         }
         const times = selectedTimes();
         const body = {
@@ -808,24 +808,51 @@ if (board) {
             body.people_count = crewIds.length;
             body.crew_hours = selectedCrewHours();
         }
-        if (startInput.value > endInput.value) {
-            window.alert('De einddatum moet op of na de startdatum liggen.');
-            return;
-        }
         if (assignmentId) {
             body.worker_id = Number(id);
+        } else if (kind === 'team') {
+            body.team_id = Number(id);
+        } else {
+            body.worker_id = Number(id);
+        }
+
+        return body;
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (saving) {
+            return;
+        }
+        const body = assignmentBody();
+        if (!body) {
+            return;
+        }
+        const assignmentId = form.dataset.assignmentId;
+        if (assignmentId) {
             if (await save(assignmentUrl(assignmentId), 'PATCH', body)) {
                 window.location.reload();
             }
             return;
         }
-        if (kind === 'team') {
-            body.team_id = Number(id);
-        } else {
-            body.worker_id = Number(id);
-        }
         if (await save(board.dataset.storeUrl, 'POST', body)) {
             window.location.reload();
+        }
+    });
+
+    ticketLink?.addEventListener('click', async (event) => {
+        const assignmentId = form.dataset.assignmentId;
+        const href = ticketLink.getAttribute('href');
+        if (!assignmentId || !href || href === '#') {
+            return;
+        }
+        event.preventDefault();
+        const body = assignmentBody();
+        if (!body) {
+            return;
+        }
+        if (await save(assignmentUrl(assignmentId), 'PATCH', body)) {
+            window.location.assign(href);
         }
     });
 

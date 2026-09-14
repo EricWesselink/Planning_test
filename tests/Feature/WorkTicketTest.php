@@ -6,6 +6,7 @@ use App\Enums\ProjectKind;
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
+use App\Models\AreaDrawingMarker;
 use App\Models\AreaTask;
 use App\Models\Customer;
 use App\Models\Project;
@@ -18,8 +19,10 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkerRate;
 use App\Models\WorkItem;
 use App\Models\WorkTicket;
+use App\Notifications\WorkTicketHoursSubmittedNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class WorkTicketTest extends TestCase
@@ -366,6 +369,68 @@ class WorkTicketTest extends TestCase
         $this->assertSame(16.0, (float) $ticket->fresh()->worked_hours);
     }
 
+    public function test_vakman_hours_notify_the_planner_to_make_a_billing_voucher(): void
+    {
+        Notification::fake();
+        $planner = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $this->actingAs($planner)->post(route('work-tickets.store', $seed['assignment']), [
+            'floors' => [
+                $seed['floor']->id => [
+                    'included' => '1',
+                    'scope' => 'entire',
+                ],
+            ],
+            'work_item_ids' => [$seed['pvc']->id],
+            'billing_method' => 'hourly',
+            'hourly_rate' => '42.50',
+        ]);
+        $ticket = WorkTicket::query()->first();
+        $vakman = User::factory()->vakman($seed['worker']->id)->create();
+
+        $this->actingAs($vakman)
+            ->from(route('work-tickets.show', $ticket))
+            ->patch(route('work-tickets.hours.update', $ticket), ['worked_hours' => '16'])
+            ->assertRedirect(route('work-tickets.show', $ticket))
+            ->assertSessionHas('status', 'Uren zijn teruggestuurd. De planner kan nu een bon maken om te factureren.');
+
+        Notification::assertSentTo($planner, WorkTicketHoursSubmittedNotification::class);
+        Notification::assertNotSentTo($vakman, WorkTicketHoursSubmittedNotification::class);
+
+        $this->actingAs($planner)
+            ->get(route('production.index', ['worker_id' => $seed['worker']->id, 'project_id' => $seed['project']->id]))
+            ->assertOk()
+            ->assertSee($ticket->number)
+            ->assertSee('Uren teruggestuurd')
+            ->assertSee('Bon maken');
+    }
+
+    public function test_updating_assignment_dates_updates_the_opdrachtbon_period(): void
+    {
+        $planner = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $this->actingAs($planner)->post(route('work-tickets.store', $seed['assignment']), [
+            'floors' => [
+                $seed['floor']->id => [
+                    'included' => '1',
+                    'scope' => 'entire',
+                ],
+            ],
+            'work_item_ids' => [$seed['pvc']->id],
+            'billing_method' => 'hourly',
+            'hourly_rate' => '42.50',
+        ]);
+        $ticket = WorkTicket::query()->first();
+        $assignment = $seed['assignment'];
+        $assignment->start_date = '2026-09-15';
+        $assignment->end_date = '2026-09-17';
+        $assignment->save();
+
+        $ticket->refresh();
+        $this->assertSame('2026-09-15', $ticket->start_date->toDateString());
+        $this->assertSame('2026-09-17', $ticket->end_date->toDateString());
+    }
+
     public function test_store_rejects_selection_without_meetstaat_quantity(): void
     {
         $user = User::factory()->create();
@@ -508,6 +573,49 @@ class WorkTicketTest extends TestCase
 
         $this->assertStringNotContainsString('Nicon Vloeren', $html);
         $this->assertStringNotContainsString('images/nicon-vloeren.png', $html);
+    }
+
+    public function test_werkbon_shows_plattegrond_layer_with_room_pins(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+        foreach ($seed['areas'] as $index => $area) {
+            AreaDrawingMarker::query()->create([
+                'project_area_id' => $area->id,
+                'project_document_id' => $seed['drawing']->id,
+                'page' => 2,
+                'x' => 0.20 + ($index * 0.15),
+                'y' => 0.40,
+                'width' => 0.10,
+                'height' => 0.04,
+                'label_text' => $area->label(),
+                'source' => 'auto',
+            ]);
+        }
+
+        $this->actingAs($user)->post(route('work-tickets.store', $seed['assignment']), [
+            'floors' => [
+                $seed['floor']->id => [
+                    'included' => '1',
+                    'scope' => 'rooms',
+                    'area_ids' => $seed['areas']->pluck('id')->all(),
+                ],
+            ],
+            'work_item_ids' => [$seed['pvc']->id],
+            'document_ids' => [$seed['drawing']->id],
+        ]);
+        $ticket = WorkTicket::query()->first();
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('data-page="2"', false)
+            ->assertSee('Tekening laden')
+            ->assertSee('class="room-pin"', false)
+            ->assertSee('1.63')
+            ->assertSee('1e verdieping')
+            ->assertSee('data-drawing-url="'.route('projects.documents.show', [$seed['project'], $seed['drawing']], false).'"', false)
+            ->assertSee('snag-pdf');
     }
 
     /**

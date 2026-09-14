@@ -69,6 +69,9 @@
             @foreach ($groups as $group)
                 <a href="{{ route('production.index', $chipQuery + ['worker_id' => $group['worker']->id]) }}" @class(['border px-3 py-1.5', 'border-nicon-ink bg-nicon-ink text-white' => (int) $filters['worker_id'] === (int) $group['worker']->id, 'border-nicon-line bg-white' => (int) $filters['worker_id'] !== (int) $group['worker']->id])>
                     {{ $group['worker']->planName() }}
+                    @if (($group['hours_pending'] ?? 0) > 0)
+                        <span @class(['text-nicon-orange' => (int) $filters['worker_id'] === (int) $group['worker']->id, 'text-nicon-orange-dark' => (int) $filters['worker_id'] !== (int) $group['worker']->id])>· {{ $group['hours_pending'] }} uren</span>
+                    @endif
                     @if (($group['provisional_count'] ?? 0) > 0)
                         <span @class(['text-nicon-orange' => (int) $filters['worker_id'] === (int) $group['worker']->id, 'text-nicon-orange-dark' => (int) $filters['worker_id'] !== (int) $group['worker']->id])>· {{ $group['provisional_count'] }} te keuren</span>
                     @endif

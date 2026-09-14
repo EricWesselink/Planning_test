@@ -9,6 +9,11 @@
     $showUnitPrices = $showPrices && ($billing === \App\Enums\WorkTicketBilling::Unit || ($priceMode ?? null) === 'unit');
     $rows = $rows ?? ($ticket?->lines ?? collect());
     $drawingItems = $drawingItems ?? ($drawingEmbeds ?? []);
+    $floorLayers = $floorLayers ?? [];
+    $drawingUrl = $drawingUrl ?? null;
+    $drawingIsPdf = $drawingIsPdf ?? false;
+    $drawingIsImage = $drawingIsImage ?? false;
+    $drawingName = $drawingName ?? null;
     $total = $total ?? $ticket?->totalAmount();
     $colleagues = $colleagues ?? [];
     $number = $number ?? '';
@@ -74,6 +79,37 @@
         @endif
         @if ($rooms !== '' && $rooms !== 'Hele verdieping')
             <p><strong>Ruimtes:</strong> {{ $rooms }}</p>
+        @endif
+
+        @foreach ($floorLayers as $layer)
+            <div class="floor-layer">
+                <p><strong>{{ $layer['name'] }}</strong></p>
+                @php
+                    $layerPage = (int) ($layer['page'] ?? 0);
+                    $layerImage = $layer['image'] ?? null;
+                    $showMap = $layerPage > 0 && (
+                        ($isPdf && filled($layerImage))
+                        || (! $isPdf && filled($drawingUrl) && ($drawingIsPdf || $drawingIsImage))
+                    );
+                @endphp
+                @if ($showMap)
+                    <div class="map" data-page="{{ $layerPage }}">
+                        @if ($isPdf && filled($layerImage))
+                            <img class="map-drawing" src="{{ $layerImage }}" alt="">
+                        @elseif ($drawingIsImage)
+                            <img class="map-drawing" src="{{ $drawingUrl }}" alt="">
+                        @elseif ($drawingIsPdf)
+                            <p class="map-loading">Tekening laden…</p>
+                        @endif
+                        @foreach ($layer['pins'] ?? [] as $pin)
+                            <span class="room-pin" style="left: {{ $pin['x'] * 100 }}%; top: {{ $pin['y'] * 100 }}%;">{{ $pin['label'] }}</span>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+        @endforeach
+        @if ($floorLayers !== [] && filled($drawingName))
+            <div class="drawing-name">{{ $drawingName }}</div>
         @endif
 
         <table class="lines">
@@ -148,7 +184,7 @@
         </div>
     @endif
 
-    @if ($drawingItems !== [])
+    @if ($floorLayers === [] && $drawingItems !== [])
         <div class="section drawings">
             <div class="section-title">Tekeningen</div>
             @foreach ($drawingItems as $drawing)

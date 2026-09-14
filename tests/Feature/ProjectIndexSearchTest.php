@@ -94,7 +94,20 @@ class ProjectIndexSearchTest extends TestCase
             ->assertDontSee('Laakse Tuinen');
     }
 
-    private function makeProject(string $name, string $number, ?string $notes = null): Project
+    public function test_week_filter_shows_only_projects_starting_that_week(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('11P251047 Griftland college', '251000077', null, '2026-09-07');
+        $this->makeProject('11P260141 Laakse Tuinen Amersfoort', '260200090', null, '2026-10-05');
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['week' => 41, 'year' => 2026]))
+            ->assertOk()
+            ->assertSee('Laakse Tuinen')
+            ->assertDontSee('Griftland college');
+    }
+
+    private function makeProject(string $name, string $number, ?string $notes = null, ?string $start = null): Project
     {
         $customer = Customer::query()->first() ?? Customer::query()->create(['name' => 'Nicon vloeren']);
 
@@ -105,6 +118,7 @@ class ProjectIndexSearchTest extends TestCase
             'city' => 'Amersfoort',
             'status' => 'gepland',
             'notes' => $notes,
+            'planned_start_date' => $start,
         ]);
     }
 }

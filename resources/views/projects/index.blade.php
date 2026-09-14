@@ -9,7 +9,7 @@
             <p class="text-sm text-nicon-muted">Actieve werken. Afgeronde of testdata zet je in het archief.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <form method="GET" action="{{ route('projects.index') }}" class="flex min-w-[16rem] flex-1 items-center gap-2 sm:max-w-md">
+            <form method="GET" action="{{ route('projects.index') }}" class="flex min-w-[16rem] flex-1 items-center gap-2 sm:max-w-lg">
                 <label class="sr-only" for="project-search">Zoek op projectnummer of werk</label>
                 <input
                     id="project-search"
@@ -19,11 +19,30 @@
                     placeholder="Zoek op projectnr. of werk"
                     class="min-w-0 flex-1 border border-nicon-line bg-white px-3 py-2 text-sm"
                 >
+                <label class="sr-only" for="project-week">Startweek</label>
+                <input
+                    id="project-week"
+                    type="number"
+                    name="week"
+                    min="1"
+                    max="53"
+                    value="{{ $week }}"
+                    placeholder="Wk"
+                    title="Startweek"
+                    class="w-16 shrink-0 border border-nicon-line bg-white px-2 py-2 text-sm"
+                >
+                @if ($week !== null && $weekYear !== null)
+                    <input type="hidden" name="year" value="{{ $weekYear }}">
+                @endif
                 <button type="submit" class="border border-nicon-line bg-white px-4 py-2 text-sm">Zoeken</button>
-                @if ($search !== '')
+                @if ($search !== '' || $week !== null)
                     <a href="{{ route('projects.index') }}" class="whitespace-nowrap text-sm text-nicon-muted">Wis</a>
                 @endif
             </form>
+            <a
+                href="{{ route('projects.pdf', array_filter(['q' => $search !== '' ? $search : null, 'week' => $week, 'year' => $week !== null ? $weekYear : null])) }}"
+                class="border border-nicon-line bg-white px-4 py-2 text-sm"
+            >PDF projectenoverzicht</a>
             @unless (auth()->user()?->isVakman())
                 <a href="{{ route('projects.archived') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm">Archief</a>
             @endunless
@@ -218,8 +237,8 @@
             @empty
                 <tr>
                     <td colspan="9" class="px-3 py-6 text-sm text-nicon-muted">
-                        @if ($search !== '')
-                            Geen projecten voor “{{ $search }}”.
+                        @if ($search !== '' || $week !== null)
+                            Geen projecten voor deze selectie.
                         @else
                             Geen actieve projecten.
                         @endif

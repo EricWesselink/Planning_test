@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Enums\WorkTicketKind;
+use App\Models\AreaDrawingMarker;
+use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
 use App\Models\WorkerAssignment;
 use App\Models\WorkTicket;
@@ -37,6 +39,11 @@ class WorkTicketPdfService
      *     drawings: list<string>,
      *     drawingItems: list<array{name: string, url: ?string, path: ?string, is_image: bool}>,
      *     drawingEmbeds: list<array{name: string, path: ?string, is_image: bool}>,
+     *     drawingUrl: ?string,
+     *     drawingIsPdf: bool,
+     *     drawingIsImage: bool,
+     *     drawingName: ?string,
+     *     floorLayers: list<array{name: string, rooms: string, page: int, pins: list<array{x: float, y: float, label: string}>}>,
      *     colleagues: list<string>,
      *     showPrices: bool
      * }
@@ -46,8 +53,10 @@ class WorkTicketPdfService
         $ticket->loadMissing([
             'worker',
             'project.customer',
+            'project.documents',
             'lines.workItem',
             'areas.floor',
+            'areas.markers',
             'floors',
             'documents',
             'assignment.crewMembers',
@@ -55,6 +64,7 @@ class WorkTicketPdfService
 
         $project = $ticket->project;
         $logoRelative = $project?->issuerLogo() ?? (string) config('company.logo');
+        $drawing = $this->drawingFor($ticket);
         $drawingItems = $ticket->documents
             ->map(fn (ProjectDocument $document): array => [
                 'name' => (string) $document->original_filename,
@@ -97,6 +107,13 @@ class WorkTicketPdfService
                 ->all(),
             'drawingItems' => $drawingItems,
             'drawingEmbeds' => $drawingItems,
+            'drawingUrl' => $project !== null && $drawing !== null
+                ? route('projects.documents.show', [$project, $drawing], false)
+                : null,
+            'drawingIsPdf' => (bool) $drawing?->isPdf(),
+            'drawingIsImage' => (bool) $drawing?->isImage(),
+            'drawingName' => $drawing !== null ? (string) $drawing->original_filename : null,
+            'floorLayers' => $this->floorLayers($ticket, $drawing),
             'colleagues' => $this->colleagueNames($ticket),
             'showPrices' => $showPrices && $ticket->kind === WorkTicketKind::Opdrachtbon,
         ];
@@ -159,6 +176,133 @@ class WorkTicketPdfService
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<array{name: string, rooms: string, page: int, pins: list<array{x: float, y: float, label: string}>}>
+     */
+    private function floorLayers(WorkTicket $ticket, ?ProjectDocument $drawing): array
+    {
+        if ($drawing === null) {
+            return [];
+        }
+
+        $pageByFloor = [];
+        foreach ($ticket->areas as $area) {
+            $marker = $this->markerFor($area, $drawing);
+            $page = (int) ($marker?->page ?? 0);
+            if ($page < 1) {
+                continue;
+            }
+            $floorId = (int) ($area->project_floor_id ?? 0);
+            $pageByFloor[$floorId][$page] = ($pageByFloor[$floorId][$page] ?? 0) + 1;
+        }
+
+        $grouped = [];
+        foreach ($ticket->areas as $area) {
+            $marker = $this->markerFor($area, $drawing);
+            $page = $this->pageForArea($area, $marker, $pageByFloor);
+            $grouped[$page] ??= [
+                'floors' => [],
+                'rooms' => [],
+                'pins' => [],
+            ];
+            $floorName = trim((string) ($area->floor?->name ?? ''));
+            $grouped[$page]['floors'][$floorName !== '' ? $floorName : 'Overige ruimtes'] = true;
+            $grouped[$page]['rooms'][] = $area->label();
+            $pin = $this->pinFor($area, $marker);
+            if ($pin !== null) {
+                $grouped[$page]['pins'][] = $pin;
+            }
+        }
+
+        if ($grouped === []) {
+            $name = $ticket->floorsLabel();
+
+            return [[
+                'name' => $name !== '' ? $name : 'Plattegrond',
+                'rooms' => $ticket->roomsLabel(),
+                'page' => 1,
+                'pins' => [],
+            ]];
+        }
+
+        ksort($grouped);
+
+        return collect($grouped)
+            ->map(function (array $group, int $page): array {
+                return [
+                    'name' => implode(', ', array_keys($group['floors'])),
+                    'rooms' => implode(', ', array_values(array_unique($group['rooms']))),
+                    'page' => $page,
+                    'pins' => $group['pins'],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, array<int, int>>  $pageByFloor
+     */
+    private function pageForArea(ProjectArea $area, ?AreaDrawingMarker $marker, array $pageByFloor): int
+    {
+        $page = (int) ($marker?->page ?? 0);
+        if ($page > 0) {
+            return $page;
+        }
+
+        $counts = $pageByFloor[(int) ($area->project_floor_id ?? 0)] ?? [];
+        if ($counts === []) {
+            return 1;
+        }
+        arsort($counts);
+
+        return (int) array_key_first($counts);
+    }
+
+    private function markerFor(ProjectArea $area, ProjectDocument $drawing): ?AreaDrawingMarker
+    {
+        $markers = $area->markers;
+        if ($markers->isEmpty()) {
+            return null;
+        }
+
+        return $markers->firstWhere('project_document_id', $drawing->id) ?? $markers->first();
+    }
+
+    /**
+     * @return array{x: float, y: float, label: string}|null
+     */
+    private function pinFor(ProjectArea $area, ?AreaDrawingMarker $marker): ?array
+    {
+        $box = $marker?->focusBox();
+        if ($box === null) {
+            return null;
+        }
+
+        $label = trim((string) ($area->displayNumber() ?: $area->label()));
+        if ($label === '') {
+            return null;
+        }
+
+        return [
+            'x' => round($box['x'] + ($box['w'] / 2), 6),
+            'y' => round($box['y'] + ($box['h'] / 2), 6),
+            'label' => $label,
+        ];
+    }
+
+    private function drawingFor(WorkTicket $ticket): ?ProjectDocument
+    {
+        $attached = $ticket->documents->first(
+            fn (ProjectDocument $document): bool => $document->isPdf() || $document->isImage()
+        );
+        if ($attached !== null) {
+            return $attached;
+        }
+
+        return $ticket->project?->plattegrond();
     }
 
     private function recipientName(WorkTicket $ticket): string

@@ -73,6 +73,24 @@ class Project extends Model
         });
     }
 
+    public function scopeStartingInIsoWeek(Builder $query, ?int $week, ?int $year = null): void
+    {
+        if ($week === null) {
+            return;
+        }
+
+        $year ??= (int) now()->isoWeekYear();
+        $monday = PlanningWeek::monday($year, $week);
+        if ($monday === null) {
+            $query->whereRaw('0 = 1');
+
+            return;
+        }
+
+        $query->whereDate('planned_start_date', '>=', $monday->toDateString())
+            ->whereDate('planned_start_date', '<=', $monday->copy()->addDays(6)->toDateString());
+    }
+
     public function isArchived(): bool
     {
         return $this->archived_at !== null;

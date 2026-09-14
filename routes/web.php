@@ -23,7 +23,6 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VakmanPlanningController;
 use App\Http\Controllers\VoucherController;
-use App\Http\Controllers\WorkTicketController;
 use App\Http\Controllers\WorkActivityCategoryController;
 use App\Http\Controllers\WorkActivityController;
 use App\Http\Controllers\WorkerAvailabilityController;
@@ -31,6 +30,7 @@ use App\Http\Controllers\WorkerController;
 use App\Http\Controllers\WorkerLoginInviteController;
 use App\Http\Controllers\WorkerPdfImportController;
 use App\Http\Controllers\WorkerRateController;
+use App\Http\Controllers\WorkTicketController;
 use App\Http\Middleware\EnsureProjectAccess;
 use Illuminate\Support\Facades\Route;
 
@@ -102,6 +102,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/voortgang', [ProgressController::class, 'create'])->name('progress.create');
     Route::post('/voortgang', [ProgressController::class, 'store'])->name('progress.store');
     Route::get('/projecten', [ProjectController::class, 'index'])->name('projects.index');
+    Route::get('/projecten/pdf', [ProjectController::class, 'pdf'])->name('projects.pdf');
     Route::get('/projecten/archief', [ProjectController::class, 'archived'])->name('projects.archived');
     Route::get('/projecten/nieuw', [ProjectController::class, 'create'])->name('projects.create');
     Route::get('/projecten/winkel/nieuw', [ShopProjectController::class, 'create'])->name('projects.winkel.create');

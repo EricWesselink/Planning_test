@@ -87,6 +87,32 @@
         padding-top: 8px;
     }
     .notes { font-size: 9.5pt; }
+    .floor-layer { margin: 8px 0 10px; page-break-inside: avoid; }
+    .floor-layer p { margin: 0 0 4px; }
+    .map {
+        position: relative;
+        width: 100%;
+        min-height: 160px;
+        background: #f4efe6;
+        border: 0.4pt solid #d5dde5;
+        margin: 6px 0 4px;
+    }
+    .map-drawing { display: block; width: 100%; height: auto; }
+    .map-loading { margin: 0; padding: 64px 12px; text-align: center; color: #5b6570; }
+    .room-pin {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        background: #163a5f;
+        color: #fff;
+        font-size: 8px;
+        font-weight: 700;
+        line-height: 1;
+        padding: 3px 5px;
+        border-radius: 99px;
+        border: 1.5px solid #fff;
+        z-index: 2;
+        white-space: nowrap;
+    }
     .drawings { margin-top: 8px; }
     .drawing {
         margin: 8px 0 12px;
@@ -139,5 +165,6 @@
         .no-print { display: none !important; }
         body { margin: 0; background: #fff; }
         a { text-decoration: none; color: inherit; }
+        .map, .room-pin { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     }
 </style>

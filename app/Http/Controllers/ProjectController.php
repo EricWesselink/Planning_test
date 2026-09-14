@@ -14,12 +14,15 @@ use App\Models\WorkTicket;
 use App\Services\ProjectBoardService;
 use App\Services\ProjectIntakeService;
 use App\Services\ProjectLaborCalculator;
+use App\Services\ProjectOverviewPdfService;
 use App\Services\RoomWorkSetup;
 use App\Services\WorkTicketService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -29,24 +32,38 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProjectController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, ProjectOverviewPdfService $overview): View
     {
-        $search = mb_substr(trim($request->string('q')->toString()), 0, 80);
-
-        $projects = Project::query()
-            ->accessibleBy($request->user())
-            ->active()
-            ->matchingSearch($search)
-            ->with(['customer', 'workActivities.category', 'workItems.progressEntries', 'assignments.worker', 'assignments.crewMembers'])
-            ->orderByRaw('planned_start_date is null')
-            ->orderBy('planned_start_date')
-            ->orderBy('id')
-            ->get();
+        $filters = $overview->filters($request);
 
         return view('projects.index', [
-            'projects' => $projects,
-            'search' => $search,
+            'projects' => $overview->projects($request),
+            'search' => $filters['search'],
+            'week' => $filters['week'],
+            'weekYear' => $filters['weekYear'],
         ]);
+    }
+
+    public function pdf(Request $request, ProjectOverviewPdfService $overview): Response
+    {
+        Gate::authorize('viewAny', Project::class);
+
+        $data = $overview->build($request);
+        $pdf = Pdf::loadView('projects.overview-pdf', $data)
+            ->setPaper('a4', 'landscape')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => 'NICON VLOEREN · '.$data['heading'],
+            'Author' => $data['companyName'],
+        ]);
+        $pdf->render();
+
+        $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
+        $muted = [0.35, 0.35, 0.38];
+        $pdf->getCanvas()->page_text(28, 18, 'NICON VLOEREN | Projectenoverzicht | Gegenereerd op '.$data['generatedOn'], $font, 8, $muted);
+        $pdf->getCanvas()->page_text(700, 18, 'Pagina {PAGE_NUM} van {PAGE_COUNT}', $font, 8, $muted);
+
+        return $pdf->download($data['filename']);
     }
 
     public function archived(Request $request): View

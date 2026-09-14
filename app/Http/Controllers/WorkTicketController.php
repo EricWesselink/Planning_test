@@ -6,6 +6,7 @@ use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Models\WorkerAssignment;
 use App\Models\WorkTicket;
+use App\Services\WorkTicketHoursNotifier;
 use App\Services\WorkTicketPdfService;
 use App\Services\WorkTicketService;
 use App\Support\Format;
@@ -79,7 +80,7 @@ class WorkTicketController extends Controller
         return $pdf->download($data['filename']);
     }
 
-    public function updateHours(Request $request, WorkTicket $workTicket): RedirectResponse
+    public function updateHours(Request $request, WorkTicket $workTicket, WorkTicketHoursNotifier $hours): RedirectResponse
     {
         $this->loadTicket($workTicket);
         Gate::authorize('recordHours', $workTicket);
@@ -96,9 +97,16 @@ class WorkTicketController extends Controller
             'worked_hours' => round((float) $data['worked_hours'], 2),
         ])->save();
 
+        $fromVakman = $request->user()?->isVakman() ?? false;
+        if ($fromVakman && $workTicket->wasChanged('worked_hours')) {
+            $hours->submitted($workTicket, $request->user());
+        }
+
         return redirect()
             ->route('work-tickets.show', $workTicket)
-            ->with('status', 'Bestede uren zijn opgeslagen.');
+            ->with('status', $fromVakman
+                ? 'Uren zijn teruggestuurd. De planner kan nu een bon maken om te factureren.'
+                : 'Bestede uren zijn opgeslagen.');
     }
 
     private function loadTicket(WorkTicket $ticket): void
@@ -108,8 +116,10 @@ class WorkTicketController extends Controller
             'project.customer',
             'lines.workItem',
             'areas.floor',
+            'areas.markers',
             'floors',
             'documents',
+            'project.documents',
             'assignment.crewMembers',
         ]);
     }

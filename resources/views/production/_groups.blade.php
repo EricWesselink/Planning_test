@@ -38,6 +38,9 @@
                         · {{ \App\Support\Format::qty($group['total_m1'], 2) }} m¹
                     @endif
                 @endif
+                @if (($group['hours_pending'] ?? 0) > 0)
+                    · {{ $group['hours_pending'] }} uren teruggestuurd
+                @endif
                 @if (($group['provisional_count'] ?? 0) > 0)
                     · {{ $group['provisional_count'] }} {{ $group['provisional_count'] === 1 ? 'wacht op akkoord' : 'wachten op akkoord' }}
                 @endif
@@ -111,6 +114,30 @@
                     </div>
                 </div>
 
+                @if (($projectGroup['tickets'] ?? []) !== [])
+                    <ul class="border-t border-nicon-line bg-white px-3 py-2 text-sm">
+                        @foreach ($projectGroup['tickets'] as $ticket)
+                            <li class="flex flex-wrap items-center justify-between gap-2 py-1">
+                                <div>
+                                    <a class="font-medium text-nicon-orange-dark" href="{{ $ticket['url'] }}">{{ $ticket['kind_label'] }} {{ $ticket['number'] }}</a>
+                                    <span class="text-nicon-muted">· {{ $ticket['period'] }}</span>
+                                    @if ($ticket['hours_submitted'])
+                                        <span class="ml-1 border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">Uren teruggestuurd · {{ \App\Support\Format::hours($ticket['hours']) }}</span>
+                                    @else
+                                        <span class="text-nicon-muted">· uren nog niet ingevuld</span>
+                                    @endif
+                                </div>
+                                <div class="flex shrink-0 items-center gap-1.5 text-xs no-print">
+                                    <a class="border border-nicon-line bg-white px-2 py-0.5" href="{{ $ticket['url'] }}">Open bon</a>
+                                    @if ($canCreateVouchers && $ticket['hours_submitted'])
+                                        <a class="bg-nicon-orange px-2 py-0.5 text-white" href="{{ route('vouchers.create', $ticket['voucher_query'] + ['type' => $sheet ? 'facturatie' : 'opdracht']) }}">Bon maken</a>
+                                    @endif
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+
                 @if ($sheet)
                     @include('production._sheet', [
                         'group' => $group,
@@ -165,6 +192,8 @@
                                                             <span class="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">Klaar gemeld · wacht op akkoord</span>
                                                         @elseif ($material['approved'] ?? false)
                                                             <span class="border border-nicon-line bg-nicon-sand px-1.5 py-0.5 text-[11px] text-nicon-ok">Akkoord</span>
+                                                        @elseif ($material['status_label'] ?? null)
+                                                            <span class="text-nicon-muted">{{ $material['status_label'] }}</span>
                                                         @else
                                                             <span class="text-nicon-muted">Geregistreerd</span>
                                                         @endif
