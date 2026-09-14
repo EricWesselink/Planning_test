@@ -677,20 +677,7 @@ class ProjectIntakeService
                     if (! $item) {
                         continue;
                     }
-                    $unit = $task['unit'] ?? $item->unit;
-                    $quantity = ($unit === WorkUnit::LinearMeter->value || $unit === WorkUnit::LinearMeter)
-                        ? (float) $task['perimeter']
-                        : (float) $task['quantity'];
-
-                    AreaTask::query()->create([
-                        'project_area_id' => $area->id,
-                        'work_item_id' => $item->id,
-                        'ordered_quantity' => $quantity,
-                        'perimeter' => (float) ($task['perimeter'] ?? 0),
-                        'seams' => (float) ($task['seams'] ?? 0),
-                        'unit' => $unit instanceof WorkUnit ? $unit->value : $unit,
-                        'status' => AreaStatus::NietGestart,
-                    ]);
+                    $this->persistAreaTask($area, $item, $task);
                 }
             }
 
@@ -820,20 +807,7 @@ class ProjectIntakeService
                     if (! $item) {
                         continue;
                     }
-                    $unit = $task['unit'] ?? $item->unit;
-                    $quantity = ($unit === WorkUnit::LinearMeter->value || $unit === WorkUnit::LinearMeter)
-                        ? (float) $task['perimeter']
-                        : (float) $task['quantity'];
-
-                    AreaTask::query()->create([
-                        'project_area_id' => $area->id,
-                        'work_item_id' => $item->id,
-                        'ordered_quantity' => $quantity,
-                        'perimeter' => (float) ($task['perimeter'] ?? 0),
-                        'seams' => (float) ($task['seams'] ?? 0),
-                        'unit' => $unit instanceof WorkUnit ? $unit->value : $unit,
-                        'status' => AreaStatus::NietGestart,
-                    ]);
+                    $this->persistAreaTask($area, $item, $task);
                 }
             }
 
@@ -893,12 +867,52 @@ class ProjectIntakeService
                 continue;
             }
             $seen[$id] = true;
-            if ($this->materialIdentity->sharesIdentity((string) $item->name, $taskName)) {
+            if ($this->materialIdentity->sharesIdentity((string) $item->name, $taskName)
+                && $this->materialIdentity->sameExecutionVariant((string) $item->name, $taskName)) {
                 return $item;
             }
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $task
+     */
+    private function persistAreaTask(ProjectArea $area, WorkItem $item, array $task): void
+    {
+        $unit = $task['unit'] ?? $item->unit;
+        $unitValue = $unit instanceof WorkUnit ? $unit->value : (string) $unit;
+        $quantity = ($unitValue === WorkUnit::LinearMeter->value)
+            ? (float) ($task['perimeter'] ?? 0)
+            : (float) ($task['quantity'] ?? 0);
+        $perimeter = (float) ($task['perimeter'] ?? 0);
+        $seams = (float) ($task['seams'] ?? 0);
+
+        $existing = AreaTask::query()
+            ->where('project_area_id', $area->id)
+            ->where('work_item_id', $item->id)
+            ->first();
+
+        if ($existing === null) {
+            AreaTask::query()->create([
+                'project_area_id' => $area->id,
+                'work_item_id' => $item->id,
+                'ordered_quantity' => $quantity,
+                'perimeter' => $perimeter,
+                'seams' => $seams,
+                'unit' => $unitValue,
+                'status' => AreaStatus::NietGestart,
+            ]);
+
+            return;
+        }
+
+        $existing->forceFill([
+            'ordered_quantity' => round((float) $existing->ordered_quantity + $quantity, 2),
+            'perimeter' => round((float) $existing->perimeter + $perimeter, 2),
+            'seams' => round((float) $existing->seams + $seams, 2),
+        ])->save();
     }
 
     /**

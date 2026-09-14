@@ -179,4 +179,64 @@ class ProjectIntakeTest extends TestCase
             0.001
         );
     }
+
+    public function test_duplicate_preview_tasks_for_the_same_work_are_merged_on_import(): void
+    {
+        $user = User::factory()->create();
+        $preview = [
+            'header' => [
+                'project_number' => '251000100',
+                'project_name' => 'Duplicate tasks',
+                'customer_name' => 'Nicon vloeren',
+                'address' => null,
+                'postal_code' => null,
+                'city' => 'Test',
+                'date' => null,
+                'reference' => null,
+            ],
+            'works' => [
+                [
+                    'name' => 'Marmoleum Real, 3120 rosato, Linoleum',
+                    'unit' => 'm2',
+                    'calculated_total' => 30.0,
+                    'source_names' => ['Marmoleum Real, 3120 rosato, Linoleum'],
+                ],
+            ],
+            'areas' => [
+                [
+                    'floor' => 'begane grond',
+                    'room_number' => '0.01',
+                    'room_name' => 'hal',
+                    'square_meters' => 30.0,
+                    'tasks' => [
+                        [
+                            'work_name' => 'Marmoleum Real, 3120 rosato, Linoleum',
+                            'quantity' => 10.0,
+                            'unit' => 'm2',
+                            'perimeter' => 0,
+                            'seams' => 0,
+                        ],
+                        [
+                            'work_name' => 'Marmoleum Real, 3120 rosato, Linoleum',
+                            'quantity' => 20.0,
+                            'unit' => 'm2',
+                            'perimeter' => 0,
+                            'seams' => 0,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $project = app(ProjectIntakeService::class)->importPreview($preview, $user);
+
+        $area = $project->areas()->first();
+        $this->assertNotNull($area);
+        $this->assertSame(1, AreaTask::query()->where('project_area_id', $area->id)->count());
+        $this->assertEqualsWithDelta(
+            30.0,
+            (float) AreaTask::query()->where('project_area_id', $area->id)->sum('ordered_quantity'),
+            0.001
+        );
+    }
 }
