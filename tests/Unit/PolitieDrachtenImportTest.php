@@ -4,12 +4,15 @@ namespace Tests\Unit;
 
 use App\Services\CalculationExcelParser;
 use App\Services\CalculationImportService;
+use App\Services\Meetstaat\FloorPlanParser;
 use App\Services\Meetstaat\Formats\NiconMeetbonParser;
 use App\Services\Meetstaat\MaterialenstaatParser;
 use App\Services\Meetstaat\MaterialIdentity;
+use App\Services\Meetstaat\MeetstaatReader;
 use App\Services\Meetstaat\PdfTextExtractor;
 use App\Services\Meetstaat\RoomImportAssembler;
 use Illuminate\Http\UploadedFile;
+use Tests\Support\RealDrawingFixtures;
 use Tests\TestCase;
 
 class PolitieDrachtenImportTest extends TestCase
@@ -18,6 +21,8 @@ class PolitieDrachtenImportTest extends TestCase
     {
         $parsed = (new NiconMeetbonParser)->parse($this->meetstaatText());
         $names = collect($parsed['works'])->pluck('name');
+
+        $this->assertSame([], $parsed['uncertain']);
 
         $this->assertTrue($names->contains(fn ($name) => str_starts_with((string) $name, '43.20.01a')));
         $this->assertTrue($names->contains(fn ($name) => str_starts_with((string) $name, '43.20.03a')));
@@ -45,7 +50,7 @@ TXT);
         $drawing = [
             'areas' => [[
                 'floor' => 'begane grond',
-                'room_number' => '99.99',
+                'room_number' => '00.99',
                 'room_name' => 'tekeningrest',
                 'square_meters' => 12.0,
                 'source' => 'plattegrond',
@@ -94,14 +99,68 @@ TXT);
         $this->assertNotNull($product);
         $this->assertEqualsWithDelta(876.68, (float) $product['leading_quantity'], 0.05);
         $this->assertEqualsWithDelta(1677.90, (float) $product['excel_quantity'], 0.05);
-        $this->assertTrue($product['meetstaat_is_leading']);
+        $this->assertTrue((bool) ($product['meetstaat_is_leading'] ?? false));
         $this->assertNotNull($unmatched);
         $this->assertNotEmpty($unmatched['tasks'] ?? []);
         $this->assertNotNull($coatingFloor);
         $this->assertNotSame('Kelvinlaan 2 begane grond', $coatingFloor['floor']);
         $this->assertTrue(collect($preview['areas'])->contains(
-            fn (array $area) => ($area['room_number'] ?? '') === '99.99'
+            fn (array $area) => ($area['room_number'] ?? '') === '00.99'
         ));
+        $this->assertEqualsWithDelta($parsedMeters, (float) ($preview['import_closure']['totals']['expected'] ?? 0), 0.05);
+        $this->assertEqualsWithDelta($parsedMeters, (float) ($preview['import_closure']['totals']['processed'] ?? 0), 0.05);
+    }
+
+    public function test_real_drachten_meetstaat_keeps_471_tasks_and_allows_import_with_drawing_warnings(): void
+    {
+        $bundle = RealDrawingFixtures::drachtenBundlePaths();
+        if ($bundle === null) {
+            $this->markTestSkipped('Echte Politie Drachten-bundel ontbreekt.');
+        }
+
+        $extractor = new PdfTextExtractor;
+        $meetstaat = (new MeetstaatReader($extractor))
+            ->parseFile($bundle['meetstaat'], 'meetstaat.pdf');
+        $parsedTasks = $this->taskCount($meetstaat['areas']);
+        $parsedMeters = $this->taskMeters($meetstaat['areas']);
+
+        $this->assertSame(471, $parsedTasks);
+        $this->assertEqualsWithDelta(12562.28, $parsedMeters, 0.01);
+
+        $materials = null;
+        if (($bundle['materials'] ?? null) !== null) {
+            $materials = (new MaterialenstaatParser($extractor))
+                ->parseFile($bundle['materials'], 'materialenstaat.pdf');
+        }
+        $drawing = null;
+        if (($bundle['drawing'] ?? null) !== null) {
+            $drawing = (new FloorPlanParser($extractor))
+                ->parseFile($bundle['drawing'], 'plattegrond.pdf');
+        }
+
+        $preview = (new RoomImportAssembler)->assemble($meetstaat, $drawing, $materials);
+        $names = collect($preview['works'])->pluck('name');
+        $closure = $preview['import_closure'];
+        $report = $preview['import_report'];
+
+        $this->assertSame(471, $this->taskCount($preview['areas']));
+        $this->assertEqualsWithDelta(12562.28, (float) ($report['task_meters'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) ($report['task_source_meters_lost'] ?? 99), 0.01);
+        $this->assertFalse($names->contains('Entreemat'));
+        $this->assertFalse($names->contains('Coating'));
+        $this->assertFalse($names->contains('Tapijttegels'));
+        $this->assertFalse($names->contains('Linoleum'));
+        $this->assertFalse($names->contains('Coral Brush'));
+        $this->assertFalse($names->contains('Desso Airmaster'));
+        $this->assertFalse($names->contains('Marmoleum Concrete'));
+        $this->assertFalse($names->contains('Vloercoating Ral'));
+        $this->assertGreaterThanOrEqual(1, $names->filter(fn ($name) => str_contains((string) $name, '43.20.03a') && str_contains((string) $name, '(sp)'))->count());
+        $this->assertGreaterThanOrEqual(1, $names->filter(fn ($name) => str_contains((string) $name, '43.20.03a') && str_contains((string) $name, '(hp)'))->count());
+        $this->assertTrue((bool) $closure['ready']);
+        $this->assertContains($closure['decision'], ['READY_AUTOMATIC', 'READY_WITH_WARNINGS']);
+        $this->assertSame(0, (int) $closure['hard_conflict_count']);
+        $this->assertEqualsWithDelta(12562.28, (float) ($closure['totals']['expected'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(12562.28, (float) ($closure['totals']['processed'] ?? 0), 0.01);
     }
 
     public function test_work_codes_with_letter_suffix_are_distinct_identities(): void

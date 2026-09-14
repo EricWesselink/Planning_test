@@ -213,7 +213,7 @@ class NiconMeetbonParser implements MeetstaatFormatParser
 
     private function looksLikeProductName(string $line): bool
     {
-        if ($this->isColumnHeader($line) || $this->looksLikeRoomLabel($line)) {
+        if ($this->isColumnHeader($line)) {
             return false;
         }
         if (preg_match('/\d+\s*m(²|2)?\b/u', $line)) {
@@ -227,6 +227,9 @@ class NiconMeetbonParser implements MeetstaatFormatParser
         }
         if ($this->materialIdentity()->leadingWorkCode($line) !== null) {
             return true;
+        }
+        if ($this->looksLikeRoomLabel($line)) {
+            return false;
         }
 
         if ($this->materialIdentity()->looksLikeStrongProductHeader($line)) {
@@ -298,7 +301,14 @@ class NiconMeetbonParser implements MeetstaatFormatParser
         $pendingCode = $this->leadingWorkCode($pending);
         $currentCode = $this->leadingWorkCode((string) ($works[$currentWorkIndex]['name'] ?? ''));
         if ($pendingCode !== null) {
-            return $pendingCode !== $currentCode;
+            if ($pendingCode !== $currentCode) {
+                return true;
+            }
+
+            return ! $this->materialIdentity()->sameExecutionVariant(
+                (string) ($works[$currentWorkIndex]['name'] ?? ''),
+                $pending
+            );
         }
         if ($currentCode !== null) {
             return false;
@@ -403,6 +413,10 @@ class NiconMeetbonParser implements MeetstaatFormatParser
 
     private function looksLikeRoomLabel(string $label): bool
     {
+        if ($this->leadingWorkCode($label) !== null) {
+            return false;
+        }
+
         return (bool) preg_match('/^\d+[.\-]\d+/', $label);
     }
 

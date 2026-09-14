@@ -176,7 +176,7 @@ class MeetstaatImportController extends Controller
         $preview = $calculationImport->applyReview($preview, $data['calculation_labor'] ?? []);
 
         $cachedReady = (bool) ($payload['preview']['import_closure']['ready'] ?? false)
-            || (($payload['preview']['import_closure']['decision'] ?? '') === ImportDecision::ReadyAutomatic->value);
+            || ImportDecision::tryFrom((string) ($payload['preview']['import_closure']['decision'] ?? ''))?->allowsImport() === true;
 
         if ($cachedReady) {
             // READY_AUTOMATIC: behoud geassembleerde preview. Geen form-areas (max_input_vars kapt

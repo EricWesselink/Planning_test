@@ -95,6 +95,38 @@ class RealDrawingFixtures
     /**
      * @return array{meetstaat: string, materials: ?string, drawing: ?string}|null
      */
+    /**
+     * @return array{meetstaat: string, materials: ?string, drawing: ?string}|null
+     */
+    public static function drachtenBundlePaths(): ?array
+    {
+        $meetstaatName = 'Meetbon_012D.00047_20260907131411380.pdf';
+        $materialsName = 'MaterialList_012D.00047_20260907131441997.pdf';
+        $drawingName = 'Plattegrond_012D.00047_20260907131233820.pdf';
+        $dropbox = 'C:/Users/Administrator/Dropbox/Niconvloeren/Werken Nicon vloeren/11p250459';
+        $meetstaat = $dropbox.'/'.$meetstaatName;
+        $materials = $dropbox.'/'.$materialsName;
+        $drawing = $dropbox.'/'.$drawingName;
+        if (is_file($meetstaat) && filesize($meetstaat) > 50_000) {
+            return [
+                'meetstaat' => $meetstaat,
+                'materials' => is_file($materials) ? $materials : null,
+                'drawing' => is_file($drawing) && filesize($drawing) > 1_000_000 ? $drawing : null,
+            ];
+        }
+
+        $meetstaat = self::attachmentNamed($meetstaatName);
+        if ($meetstaat === null) {
+            return null;
+        }
+
+        return [
+            'meetstaat' => $meetstaat,
+            'materials' => self::attachmentNamed($materialsName),
+            'drawing' => self::attachmentNamed($drawingName),
+        ];
+    }
+
     public static function rovaBundlePaths(): ?array
     {
         $meetstaat = base_path('tests/fixtures/nicon-meetbon-rova.pdf');

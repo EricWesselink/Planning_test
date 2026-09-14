@@ -7,8 +7,8 @@ class WorkType
     public static function looksLikeRoom(string $name): bool
     {
         $name = trim($name);
-        // Productcodes zoals 43.20.02 zijn geen ruimtenummers (0.07 / 2.01 wel).
-        if (preg_match('/^\d{2,}\.\d{2}\.\d{2}\b/u', $name) === 1) {
+        // Product-/werkcodes zoals 43.20.02 en 43.20.01a zijn geen ruimtenummers (0.07 / 2.01 wel).
+        if (preg_match('/^\d{2,}\.\d{2}\.\d{2}[a-z]?\b/iu', $name) === 1) {
             return false;
         }
 

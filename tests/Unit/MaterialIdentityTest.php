@@ -146,4 +146,24 @@ class MaterialIdentityTest extends TestCase
         $this->assertFalse($identity->sharesIdentity($full, $other));
         $this->assertFalse($identity->sharesFlooringVariantCode($full, $other));
     }
+
+    public function test_same_work_code_keeps_sp_and_hp_as_separate_executions(): void
+    {
+        $identity = new MaterialIdentity;
+        $sp = '43.20.03a Epoxy gietvloer (sp) S 3500-N, donkergrijs, Coating';
+        $hp = '43.20.03a Epoxy gietvloer (hp) S 3500-N, donkergrijs, Coating';
+        $ral = '43.20.05a PU gietvloer Ral 7023, Coating';
+        $sp05 = '43.20.05a PU gietvloer (sp) S 3500-N, Coating';
+
+        $this->assertTrue($identity->sharesWorkCode($sp, $hp));
+        $this->assertFalse($identity->sameExecutionVariant($sp, $hp));
+        $this->assertFalse($identity->sharesIdentity($sp, $hp));
+        $this->assertSame('43.20.03a|sp|s3500n', $identity->executionKey($sp));
+        $this->assertSame('43.20.03a|hp|s3500n', $identity->executionKey($hp));
+        $this->assertSame($sp, $identity->resolveUniqueCanonical($sp, [$sp, $hp]));
+        $this->assertSame($hp, $identity->resolveUniqueCanonical($hp, [$sp, $hp]));
+        $this->assertNull($identity->resolveUniqueCanonical('43.20.03a Epoxy gietvloer S 3500-N', [$sp, $hp]));
+        $this->assertFalse($identity->sameExecutionVariant($sp05, $ral));
+        $this->assertFalse($identity->sharesIdentity($sp05, $ral));
+    }
 }

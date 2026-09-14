@@ -267,4 +267,51 @@ TXT;
         $this->assertStringContainsString('V.02', (string) $hal['tasks'][0]['work_name']);
         $this->assertStringContainsString('V.04', (string) $kantoor['tasks'][0]['work_name']);
     }
+
+    public function test_same_work_code_keeps_sp_and_hp_as_separate_works_with_own_declared_totals(): void
+    {
+        $parsed = (new NiconMeetbonParser)->parse(<<<'TXT'
+Meetstaat
+Opdrachtgever : Nicon vloeren
+Referentie    : Politie Drachten
+Werknr        : 260200199
+Datum         : 07/09/2026
+
+43.20.03a Epoxy gietvloer (sp) S 3500-N,
+donkergrijs, Coating
+Bouwlaag: Kelvinlaan 2 begane grond
+Ruimte Oppervlakte Omtrek
+00.10 hal 200.00 m² 60.00 m
+Totaal 200.00 m² 60.00 m
+Netto : 2371,00 m²
+
+43.20.03a Epoxy gietvloer (hp) S 3500-N,
+donkergrijs, Coating
+Bouwlaag: Kelvinlaan 2 begane grond Coatingvloeren
+Ruimte Oppervlakte Omtrek
+00.20 archief 150.00 m² 50.00 m
+Totaal 150.00 m² 50.00 m
+Netto : 1684,52 m²
+TXT);
+
+        $works = collect($parsed['works'])->filter(
+            fn (array $work) => str_contains((string) $work['name'], '43.20.03a')
+        );
+        $sp = $works->first(fn (array $work) => str_contains((string) $work['name'], '(sp)'));
+        $hp = $works->first(fn (array $work) => str_contains((string) $work['name'], '(hp)'));
+
+        $this->assertCount(2, $works);
+        $this->assertNotNull($sp);
+        $this->assertNotNull($hp);
+        $this->assertEqualsWithDelta(2371.00, (float) $sp['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(1684.52, (float) $hp['declared_total'], 0.01);
+        $this->assertTrue(collect($parsed['areas'])->contains(
+            fn (array $area) => ($area['room_number'] ?? '') === '00.10'
+                && str_contains((string) ($area['tasks'][0]['work_name'] ?? ''), '(sp)')
+        ));
+        $this->assertTrue(collect($parsed['areas'])->contains(
+            fn (array $area) => ($area['room_number'] ?? '') === '00.20'
+                && str_contains((string) ($area['tasks'][0]['work_name'] ?? ''), '(hp)')
+        ));
+    }
 }

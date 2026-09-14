@@ -22,7 +22,7 @@ class ImportClosureEvaluatorTest extends TestCase
         $this->assertSame(100, $closure['percentages']['quantities']);
     }
 
-    public function test_controleren_room_blocks_import_and_lists_issue(): void
+    public function test_controleren_room_is_a_warning_and_does_not_block_import(): void
     {
         $preview = $this->closedPreview();
         $preview['areas'][0]['confidence'] = 'controleren';
@@ -31,13 +31,65 @@ class ImportClosureEvaluatorTest extends TestCase
 
         $closure = (new ImportClosureEvaluator)->evaluate($preview);
 
-        $this->assertFalse($closure['ready']);
-        $this->assertSame('BLOCKED_CONFLICT', $closure['decision']);
-        $this->assertGreaterThan(0, $closure['open_points']);
-        $this->assertStringContainsString('controleren', mb_strtolower($closure['button_label']));
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
+        $this->assertSame(0, $closure['open_points']);
+        $this->assertGreaterThan(0, $closure['warning_count']);
+        $this->assertSame('Importeren toegestaan', $closure['button_label']);
         $this->assertTrue(collect($closure['issues'])->contains(
-            fn (array $issue) => str_contains((string) $issue['problem'], 'Gemengde vloerbedekking')
-                || str_contains((string) $issue['problem'], 'Controleren')
+            fn (array $issue) => (str_contains((string) $issue['problem'], 'Gemengde vloerbedekking')
+                || str_contains((string) $issue['problem'], 'Controleren'))
+                && ($issue['severity'] ?? '') === 'warning'
+        ));
+    }
+
+    public function test_unknown_drawing_floor_allows_import_with_warnings(): void
+    {
+        $preview = $this->closedPreview();
+        $preview['sources']['plattegrond'] = true;
+        $preview['areas'][] = [
+            'floor' => 'Onbekend',
+            'room_number' => '00.99',
+            'room_name' => 'tekeningrest',
+            'square_meters' => 12.0,
+            'tasks' => [],
+            'source' => 'plattegrond',
+            'source_label' => 'Plattegrond',
+            'confidence' => 'hoog',
+            'needs_review' => false,
+        ];
+
+        $closure = (new ImportClosureEvaluator)->evaluate($preview);
+
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
+        $this->assertSame(0, $closure['hard_conflict_count']);
+        $this->assertGreaterThan(0, $closure['warning_count']);
+        $this->assertSame('Importeren toegestaan', $closure['button_label']);
+        $this->assertStringContainsString('tekeningswaarschuwingen', (string) $closure['summary']);
+    }
+
+    public function test_legend_mismatch_is_a_warning_when_meetstaat_is_closed(): void
+    {
+        $preview = $this->closedPreview();
+        $preview['legend'] = [[
+            'material' => 'Coral Brush',
+            'canonical_material' => 'Coral Brush',
+            'floor' => 'begane grond',
+            'declared_total' => 100.0,
+            'calculated_total' => 0.0,
+            'difference' => -100.0,
+            'status' => 'controleren',
+        ]];
+
+        $closure = (new ImportClosureEvaluator)->evaluate($preview);
+
+        $this->assertTrue($closure['ready']);
+        $this->assertSame('READY_WITH_WARNINGS', $closure['decision']);
+        $this->assertSame(0, $closure['open_points']);
+        $this->assertTrue(collect($closure['issues'])->contains(
+            fn (array $issue) => ($issue['category'] ?? '') === 'legend'
+                && ($issue['severity'] ?? '') === 'warning'
         ));
     }
 
@@ -195,6 +247,9 @@ class ImportClosureEvaluatorTest extends TestCase
             'status' => 'controleren',
         ]];
         $preview['import_report']['task_meters'] = 105.33;
+        $preview['import_report']['meetstaat_task_meters'] = 105.33;
+        $preview['import_report']['task_source_meters_parsed'] = 105.33;
+        $preview['import_report']['task_meters_expected'] = 105.33;
         $preview['import_report']['materials'][0]['material'] = 'Desso Airmaster Atmos B747 9092, Tapijttegels';
         $preview['import_report']['materials'][0]['found_task_meters'] = 105.33;
         $preview['import_report']['materials'][0]['expected_task_meters'] = 105.34;

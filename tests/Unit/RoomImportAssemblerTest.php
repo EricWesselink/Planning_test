@@ -1687,6 +1687,87 @@ class RoomImportAssemblerTest extends TestCase
         $this->assertNotSame('controleren', $room['confidence'] ?? '');
     }
 
+    public function test_same_work_code_does_not_overwrite_declared_totals_across_sp_and_hp(): void
+    {
+        $sp = '43.20.03a Epoxy gietvloer (sp) S 3500-N, donkergrijs, Coating';
+        $hp = '43.20.03a Epoxy gietvloer (hp) S 3500-N, donkergrijs, Coating';
+        $preview = (new RoomImportAssembler)->assemble([
+            'format' => 'nicon_meetbon',
+            'header' => [],
+            'works' => [
+                ['name' => $sp, 'unit' => 'm2', 'declared_total' => 2371.00],
+                ['name' => $hp, 'unit' => 'm2', 'declared_total' => 1684.52],
+            ],
+            'areas' => [
+                $this->taskRoom('begane grond', '00.10', 'hal', $sp, 2371.00),
+                $this->taskRoom('begane grond', '00.20', 'archief', $hp, 1684.52),
+            ],
+            'warnings' => [],
+            'uncertain' => [],
+            'duplicates' => [],
+        ], null);
+
+        $works = collect($preview['works'])->filter(
+            fn (array $work) => str_contains((string) $work['name'], '43.20.03a')
+        );
+        $spWork = $works->first(fn (array $work) => str_contains((string) $work['name'], '(sp)'));
+        $hpWork = $works->first(fn (array $work) => str_contains((string) $work['name'], '(hp)'));
+
+        $this->assertCount(2, $works);
+        $this->assertNotNull($spWork);
+        $this->assertNotNull($hpWork);
+        $this->assertEqualsWithDelta(2371.00, (float) $spWork['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(1684.52, (float) $hpWork['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(4055.52, (float) ($preview['expected_task_totals']['project_total'] ?? 0), 0.01);
+        $this->assertCount(2, $preview['areas']);
+    }
+
+    public function test_uncoded_legend_names_do_not_create_extra_works_when_coded_meetstaat_exists(): void
+    {
+        $coded = '43.20.02 Coral Brush 5730-hurricane grey, Entreemat Banen';
+        $preview = (new RoomImportAssembler)->assemble([
+            'format' => 'nicon_meetbon',
+            'header' => [],
+            'works' => [
+                ['name' => $coded, 'unit' => 'm2', 'declared_total' => 110.90],
+            ],
+            'areas' => [
+                $this->taskRoom('begane grond', '00.01', 'entree', $coded, 110.90),
+            ],
+            'warnings' => [],
+            'uncertain' => [],
+            'duplicates' => [],
+        ], [
+            'areas' => [
+                $this->drawingRoom('Onbekend', '00.99', 'legenda-vlak', 12.0, 1),
+            ],
+            'legend' => [[
+                'material' => 'Coral Brush',
+                'color' => '#cccccc',
+                'declared_total' => 0.0,
+                'page' => 1,
+                'floor' => 'Onbekend',
+                'unit' => 'm2',
+            ]],
+            'works' => [
+                ['name' => 'Coral Brush', 'unit' => 'm2', 'declared_total' => 0.0, 'calculated_total' => 0.0],
+                ['name' => 'Desso Airmaster', 'unit' => 'm2', 'declared_total' => 0.0, 'calculated_total' => 0.0],
+                ['name' => 'Marmoleum Concrete', 'unit' => 'm2', 'declared_total' => 0.0, 'calculated_total' => 0.0],
+                ['name' => 'Vloercoating Ral', 'unit' => 'm2', 'declared_total' => 0.0, 'calculated_total' => 0.0],
+            ],
+            'warnings' => [],
+            'uncertain' => [],
+        ]);
+
+        $names = collect($preview['works'])->pluck('name');
+        $this->assertTrue($names->contains($coded));
+        $this->assertFalse($names->contains('Coral Brush'));
+        $this->assertFalse($names->contains('Desso Airmaster'));
+        $this->assertFalse($names->contains('Marmoleum Concrete'));
+        $this->assertFalse($names->contains('Vloercoating Ral'));
+        $this->assertEqualsWithDelta(110.90, (float) ($preview['import_report']['task_meters'] ?? 0), 0.01);
+    }
+
     /**
      * @return array<string, mixed>
      */

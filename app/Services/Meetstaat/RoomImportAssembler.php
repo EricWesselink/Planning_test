@@ -2,6 +2,7 @@
 
 namespace App\Services\Meetstaat;
 
+use App\Enums\ImportDecision;
 use App\Enums\WorkUnit;
 use App\Support\DutchNumber;
 use App\Support\WorkType;
@@ -173,7 +174,9 @@ class RoomImportAssembler
         // Eindstatus moet consistent zijn met IMPORTCONTROLE (geen 100% én "Onvolledig").
         if ($preview['import_closure']['ready'] ?? false) {
             $preview['import_report']['incomplete_recognition'] = false;
-            $preview['import_report']['quality_label'] = 'Import gereed';
+            $preview['import_report']['quality_label'] = ($preview['import_closure']['decision'] ?? '') === ImportDecision::ReadyWithWarnings->value
+                ? 'Importeren toegestaan met waarschuwingen'
+                : 'Import gereed';
         } elseif (($preview['import_closure']['open_points'] ?? 0) > 0) {
             $preview['import_report']['incomplete_recognition'] = true;
             $preview['import_report']['quality_label'] = 'Onvolledige herkenning – controleren';
@@ -1386,8 +1389,13 @@ class RoomImportAssembler
                 if (str_contains(mb_strtolower($name), 'plint') && in_array($taskUnit, ['m2', 'm²', ''], true)) {
                     continue;
                 }
-                if (! isset($works[$name])) {
-                    $works[$name] = [
+                $identityKey = $this->findWorkKeyByMaterialIdentity($works, $name);
+                if ($identityKey === null && $this->shouldSkipUncodedLegendWork($works, $name)) {
+                    continue;
+                }
+                $identityKey = $identityKey ?? ($this->materialIdentity()->executionKey($name) ?: $name);
+                if (! isset($works[$identityKey])) {
+                    $works[$identityKey] = [
                         'name' => $name,
                         'unit' => $task['unit'] ?? WorkUnit::SquareMeter->value,
                         'declared_total' => 0.0,
@@ -1395,11 +1403,11 @@ class RoomImportAssembler
                         'source_names' => [$name],
                     ];
                 }
-                $unit = $works[$name]['unit'] ?? WorkUnit::SquareMeter->value;
+                $unit = $works[$identityKey]['unit'] ?? WorkUnit::SquareMeter->value;
                 $amount = ($unit === WorkUnit::LinearMeter->value || $unit === WorkUnit::LinearMeter)
                     ? (float) ($task['perimeter'] ?? 0)
                     : (float) ($task['quantity'] ?? 0);
-                $works[$name]['calculated_total'] = round($works[$name]['calculated_total'] + $amount, 2);
+                $works[$identityKey]['calculated_total'] = round($works[$identityKey]['calculated_total'] + $amount, 2);
             }
         }
 
@@ -1428,7 +1436,11 @@ class RoomImportAssembler
             $incomingDeclared = array_key_exists('declared_total', $work) && $work['declared_total'] !== null
                 ? (float) $work['declared_total']
                 : 0.0;
-            $identityKey = $this->findWorkKeyByMaterialIdentity($works, $name) ?? $name;
+            $identityKey = $this->findWorkKeyByMaterialIdentity($works, $name);
+            if ($identityKey === null && $this->shouldSkipUncodedLegendWork($works, $name)) {
+                continue;
+            }
+            $identityKey = $identityKey ?? ($this->materialIdentity()->executionKey($name) ?: $name);
             if (! isset($works[$identityKey])) {
                 $works[$identityKey] = [
                     'name' => $name,
@@ -1541,6 +1553,27 @@ class RoomImportAssembler
             && $this->materialIdentity()->sameExecutionVariant($left, $right);
     }
 
+    /**
+     * Tekeninglegenda zonder werkcode mag geen extra werkzaamheid maken
+     * wanneer de Meetstaat al gecodeerde werkzaamheden heeft.
+     *
+     * @param  array<string, array<string, mixed>>  $works
+     */
+    private function shouldSkipUncodedLegendWork(array $works, string $name): bool
+    {
+        if ($this->materialIdentity()->workCodes($name) !== []) {
+            return false;
+        }
+        foreach ($works as $work) {
+            $candidate = (string) ($work['name'] ?? '');
+            if ($candidate !== '' && $this->materialIdentity()->workCodes($candidate) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function floorLabel(): FloorLabel
     {
         return new FloorLabel;
@@ -1549,6 +1582,14 @@ class RoomImportAssembler
     private function preferCanonicalMaterialName(string $incoming, string $existing): bool
     {
         $identity = $this->materialIdentity();
+        if (! $identity->sameExecutionVariant($incoming, $existing)) {
+            return false;
+        }
+        $incomingKey = $identity->executionKey($incoming);
+        $existingKey = $identity->executionKey($existing);
+        if (substr_count($existingKey, '|') > substr_count($incomingKey, '|')) {
+            return false;
+        }
         $incomingCodes = $identity->productCodes($incoming);
         $existingCodes = $identity->productCodes($existing);
         if ($incomingCodes !== [] && $existingCodes === []) {
@@ -2008,7 +2049,7 @@ class RoomImportAssembler
      */
     private function taskBelongsToMaterial(string $material, string $taskName): bool
     {
-        return $this->materialIdentity()->sharesIdentity($material, $taskName);
+        return $this->materialsShareIdentity($material, $taskName);
     }
 
     /**
@@ -2315,10 +2356,10 @@ class RoomImportAssembler
                     if ($ratio !== null && abs($ratio - 2.0) <= 0.05) {
                         $explanation .= sprintf(' MaterialList ≈ factor %.2f t.o.v. meetstaat (audit).', $ratio);
                     }
-                    // MaterialList mag niet hard blokkeren wanneer taken de sterke bron(nen) volgen.
-                    if ($status === 'ok' || ($difference !== null && abs($difference) <= 0.10) || $consensus) {
-                        $status = 'informatief';
-                    }
+                    // MaterialList mag de import niet blokkeren: Meetstaat blijft leidend.
+                    $status = ($status === 'ok' && abs($materialListNetto - $meetstaatDeclared) <= 0.10)
+                        ? 'ok'
+                        : 'informatief';
                 }
             }
 
@@ -2509,7 +2550,8 @@ class RoomImportAssembler
         $meetstaatTasks = round($meetstaatTaskMeters, 2);
         if ($meetstaatAreas !== []) {
             $taskExpectedKnown = true;
-            $taskExpected = $meetstaatTasks;
+            $tasksExpected = $meetstaatTasks;
+            $tasksDifference = round($tasksFound - $meetstaatTasks, 2);
         }
         $taskSourceLost = $meetstaatAreas === []
             ? 0.0
@@ -3101,6 +3143,10 @@ class RoomImportAssembler
             $incomingCodes = $this->materialIdentity()->workCodes($name);
             $existingCodes = $this->materialIdentity()->workCodes($existingName);
             if ($incomingCodes !== [] && $existingCodes !== [] && array_intersect($incomingCodes, $existingCodes) === []) {
+                continue;
+            }
+            if ($incomingCodes !== [] && $existingCodes !== []
+                && ! $this->materialIdentity()->sameExecutionVariant($name, $existingName)) {
                 continue;
             }
             if (! $this->isDuplicateMaterialLabel($existingName, $name)) {

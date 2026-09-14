@@ -192,7 +192,8 @@ class MaterialIdentity
         $leftWork = $this->workCodes($left);
         $rightWork = $this->workCodes($right);
         if ($leftWork !== [] && $rightWork !== []) {
-            return array_intersect($leftWork, $rightWork) !== [];
+            return array_intersect($leftWork, $rightWork) !== []
+                && $this->sameExecutionVariant($left, $right);
         }
         if ($this->sharesFlooringVariantCode($left, $right)) {
             return true;
@@ -259,7 +260,7 @@ class MaterialIdentity
 
         $workHits = [];
         foreach ($canonicalCandidates as $candidate) {
-            if ($this->sharesWorkCode($needle, $candidate)) {
+            if ($this->sharesWorkCode($needle, $candidate) && $this->sameExecutionVariant($needle, $candidate)) {
                 $workHits[] = $candidate;
             }
         }
@@ -381,13 +382,37 @@ class MaterialIdentity
     }
 
     /**
+     * Interne uitvoeringsidentiteit, bijv. 43.20.03a|sp|s3500n versus 43.20.03a|hp|s3500n.
      * Gedeelde productcode is niet genoeg wanneer beide namen al een complete variant zijn
      * en de ene een extra uitvoering toevoegt (bijv. "op kurk" vs dezelfde Lino Art zonder kurk).
-     * Korte/afgekorte labels blijven via de productcode koppelen.
      */
+    public function executionKey(string $name): string
+    {
+        $parts = [];
+        $code = $this->leadingWorkCode($name);
+        if ($code !== null) {
+            $parts[] = $code;
+        }
+        $markers = $this->executionMarkers($name);
+        if ($markers['method'] !== null) {
+            $parts[] = $markers['method'];
+        }
+        if ($markers['ral'] !== null) {
+            $parts[] = 'ral'.$markers['ral'];
+        }
+        if ($markers['series'] !== null) {
+            $parts[] = $markers['series'];
+        }
+
+        return implode('|', $parts);
+    }
+
     public function sameExecutionVariant(string $left, string $right): bool
     {
-        if ($this->sharesWorkCode($left, $right) || $this->sharesFlooringVariantCode($left, $right)) {
+        if ($this->sharesWorkCode($left, $right)) {
+            return $this->executionMarkersCompatible($left, $right);
+        }
+        if ($this->sharesFlooringVariantCode($left, $right)) {
             return true;
         }
 
@@ -395,6 +420,51 @@ class MaterialIdentity
         $rightTokens = $this->distinctiveTokens($right);
         if (count($leftTokens) >= 5 && count($rightTokens) >= 5) {
             return $this->longerAddsNoDistinctiveTokens($left, $right);
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array{method: ?string, ral: ?string, series: ?string}
+     */
+    private function executionMarkers(string $name): array
+    {
+        $method = null;
+        if (preg_match('/\((sp|hp)\)/iu', $name, $match)) {
+            $method = strtolower($match[1]);
+        }
+        $ral = null;
+        if (preg_match('/\bral\s*(\d{3,5})\b/iu', $name, $match)) {
+            $ral = $match[1];
+        }
+        $series = null;
+        if (preg_match('/\bs\s*(\d{3,5})\s*-?\s*([a-z])?\b/iu', $name, $match)) {
+            $series = 's'.$match[1].strtolower($match[2] ?? '');
+        }
+
+        return [
+            'method' => $method,
+            'ral' => $ral,
+            'series' => $series,
+        ];
+    }
+
+    private function executionMarkersCompatible(string $left, string $right): bool
+    {
+        $a = $this->executionMarkers($left);
+        $b = $this->executionMarkers($right);
+        if ($a['method'] !== null && $b['method'] !== null && $a['method'] !== $b['method']) {
+            return false;
+        }
+        if ($a['ral'] !== null && $b['ral'] !== null && $a['ral'] !== $b['ral']) {
+            return false;
+        }
+        if ($a['series'] !== null && $b['series'] !== null && $a['series'] !== $b['series']) {
+            return false;
+        }
+        if (($a['ral'] !== null) !== ($b['ral'] !== null)) {
+            return false;
         }
 
         return true;

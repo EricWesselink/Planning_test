@@ -41,6 +41,8 @@ class WorkTypeTest extends TestCase
         $this->assertSame('Vloer', WorkType::labelFromName('0.07 groepsruimte', 'Vloer'));
         $this->assertNull(WorkType::productFromName('0.07 groepsruimte'));
         $this->assertFalse(WorkType::looksLikeRoom('43.20.02 Coral Brush 5721-hurricane grey, Entreemat Banen'));
+        $this->assertFalse(WorkType::looksLikeRoom('43.20.01a Emco diplomaat 522 R, zwart, Entreemat'));
+        $this->assertFalse(WorkType::looksLikeRoom('43.20.03a Epoxy gietvloer, donkergrijs, Coating'));
         $this->assertSame('Entreemat', WorkType::labelFromName('43.20.02 Coral Brush 5721-hurricane grey, Entreemat Banen'));
         $this->assertSame('Screens', WorkType::labelFromName('BNR 11 Screen H: 1574 mm B: 770 mm'));
         $this->assertTrue(WorkType::isWindowCovering('Screen H: 1700 mm B: 960 mm'));

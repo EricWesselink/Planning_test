@@ -8,7 +8,7 @@ use App\Support\Format;
 /**
  * Harde eindcontrole vóór definitief importeren.
  * Geen project-/bestandsnaam-regels: alleen preview-inhoud.
- * Centrale beslissing: READY_AUTOMATIC of BLOCKED_CONFLICT.
+ * Centrale beslissing: READY_AUTOMATIC, READY_WITH_WARNINGS of BLOCKED_CONFLICT.
  */
 class ImportClosureEvaluator
 {
@@ -106,6 +106,7 @@ class ImportClosureEvaluator
                     suggested: 'Corrigeer of bevestig de ruimte op de controlepagina',
                     anchor: '#area-'.$index,
                     category: 'rooms',
+                    severity: 'warning',
                 );
             }
         }
@@ -123,6 +124,7 @@ class ImportClosureEvaluator
                     suggested: 'Kies of typ de juiste bouwlaag',
                     anchor: '#area-'.$index,
                     category: 'floors',
+                    severity: 'warning',
                 );
             }
         }
@@ -248,6 +250,7 @@ class ImportClosureEvaluator
                 suggested: 'Controleer canonieke materiaalkoppeling of taakhoeveelheden op deze bouwlaag',
                 anchor: '#legend-'.$legendIndex,
                 category: 'legend',
+                severity: 'warning',
             );
         }
 
@@ -352,12 +355,16 @@ class ImportClosureEvaluator
                     suggested: 'Koppel contour/kleur of markeer als handmatig bevestigd',
                     anchor: '#area-'.$index,
                     category: 'drawing',
+                    severity: 'warning',
                 );
             }
         }
 
         $expected = null;
-        if (($preview['expected_task_totals']['project_total'] ?? null) !== null) {
+        $meetstaatTaskTotal = $report['task_source_meters_parsed'] ?? $report['meetstaat_task_meters'] ?? null;
+        if ($meetstaatTaskTotal !== null) {
+            $expected = round((float) $meetstaatTaskTotal, 2);
+        } elseif (($preview['expected_task_totals']['project_total'] ?? null) !== null) {
             $expected = round((float) $preview['expected_task_totals']['project_total'], 2);
         } elseif (($report['expected_task_totals']['project_total'] ?? null) !== null) {
             $expected = round((float) $report['expected_task_totals']['project_total'], 2);
@@ -441,24 +448,34 @@ class ImportClosureEvaluator
             $this->check('project_total', 'Projecttotaal = som van de gecontroleerde materiaaltotalen', $quantitiesOk, $quantitiesOk ? 0 : 1),
         ];
 
-        $openPoints = count($issues);
+        $warningIssues = array_values(array_filter(
+            $issues,
+            fn (array $issue): bool => ($issue['severity'] ?? 'hard') === 'warning'
+        ));
+        $hardIssues = array_values(array_filter(
+            $issues,
+            fn (array $issue): bool => ($issue['severity'] ?? 'hard') !== 'warning'
+        ));
+        $openPoints = count($hardIssues);
+        $warningCount = count($warningIssues);
         $differenceAcceptable = $difference === null
             ? ! $this->expectsMaterials($sources)
             : (
                 abs((float) $difference) <= self::TOLERANCE
                 || $this->sourceRoundingProvesDifference($preview, (float) $difference, $materials, $areas)
             );
-        $ready = $openPoints === 0
-            && $projectHeaderOk
-            && $sourceRulesOk
-            && $roomsOk
-            && $tasksOk
-            && $materialsOk
-            && $floorsOk
-            && $drawingOk
+        $meetstaatClosed = $taskSourceOk
             && $quantitiesOk
             && $differenceAcceptable
-            && $taskSourceOk;
+            && $areas !== [];
+        $hardOk = $meetstaatClosed
+            && $projectHeaderOk
+            && $sourceRulesOk
+            && $tasksOk
+            && $materialsOk
+            && $floorMismatches === []
+            && $hardIssues === [];
+        $ready = $hardOk;
 
         $roomTotal = max(count($areas), 1);
         $percentages = [
@@ -485,9 +502,12 @@ class ImportClosureEvaluator
             && abs((float) $difference) > self::TOLERANCE
             && $this->sourceRoundingProvesDifference($preview, (float) $difference, $materials, $areas);
 
-        $decision = $ready
-            ? ImportDecision::ReadyAutomatic
-            : ImportDecision::BlockedConflict;
+        $decision = ImportDecision::BlockedConflict;
+        if ($ready) {
+            $decision = $warningCount > 0
+                ? ImportDecision::ReadyWithWarnings
+                : ImportDecision::ReadyAutomatic;
+        }
 
         $differenceLabel = null;
         if ($difference !== null) {
@@ -501,11 +521,26 @@ class ImportClosureEvaluator
             }
         }
 
+        $buttonLabel = 'Nog '.$openPoints.' '.($openPoints === 1 ? 'punt' : 'punten').' controleren';
+        if ($decision === ImportDecision::ReadyAutomatic) {
+            $buttonLabel = 'Project definitief importeren';
+        } elseif ($decision === ImportDecision::ReadyWithWarnings) {
+            $buttonLabel = 'Importeren toegestaan';
+        }
+
         return [
             'ready' => $ready,
             'decision' => $decision->value,
             'decision_label' => $decision->label(),
             'open_points' => $openPoints,
+            'warning_count' => $warningCount,
+            'hard_conflict_count' => $openPoints,
+            'meetstaat_closed' => $meetstaatClosed,
+            'summary' => $meetstaatClosed
+                ? ($warningCount > 0
+                    ? 'Meetstaat sluitend — '.$warningCount.' tekeningswaarschuwingen'
+                    : 'Meetstaat sluitend')
+                : null,
             'percentages' => $percentages,
             'checks' => $checks,
             'issues' => $issues,
@@ -516,9 +551,7 @@ class ImportClosureEvaluator
                 'rounding_explained' => $explainedRounding,
                 'difference_label' => $differenceLabel,
             ],
-            'button_label' => $ready
-                ? 'Project definitief importeren'
-                : 'Nog '.$openPoints.' '.($openPoints === 1 ? 'punt' : 'punten').' controleren',
+            'button_label' => $buttonLabel,
         ];
     }
 
@@ -565,7 +598,9 @@ class ImportClosureEvaluator
                 foreach ($areas as $area) {
                     foreach ($this->flooringTasks($area) as $task) {
                         $taskName = trim((string) ($task['work_name'] ?? ''));
-                        if ($taskName === '' || ! $identity->sharesIdentity($name, $taskName)) {
+                        if ($taskName === ''
+                            || ! $identity->sharesIdentity($name, $taskName)
+                            || ! $identity->sameExecutionVariant($name, $taskName)) {
                             continue;
                         }
                         $found += (float) ($task['quantity'] ?? 0);
@@ -704,6 +739,7 @@ class ImportClosureEvaluator
         string $suggested,
         string $anchor,
         string $category,
+        string $severity = 'hard',
     ): array {
         return [
             'found' => $found,
@@ -713,6 +749,7 @@ class ImportClosureEvaluator
             'suggested_match' => $suggested,
             'anchor' => $anchor,
             'category' => $category,
+            'severity' => $severity,
         ];
     }
 

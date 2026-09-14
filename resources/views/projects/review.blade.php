@@ -14,6 +14,8 @@
         $sources = $preview['sources'] ?? [];
         $closure = $preview['import_closure'] ?? [];
         $closureReady = (bool) ($closure['ready'] ?? false);
+        $withWarnings = ($closure['decision'] ?? '') === \App\Enums\ImportDecision::ReadyWithWarnings->value;
+        $warningCount = (int) ($closure['warning_count'] ?? 0);
         $closurePerc = $closure['percentages'] ?? [];
         $closureTotals = $closure['totals'] ?? [];
         $closureIssues = $closure['issues'] ?? [];
@@ -81,7 +83,13 @@
 
     <a href="{{ route('projects.create') }}" class="text-sm text-nicon-muted">← Andere PDF kiezen</a>
     <h1 class="mt-2 text-2xl font-semibold">
-        {{ $closureReady ? 'Importcontrole (audit)' : 'Import geblokkeerd — bronconflict' }}
+        @if ($closureReady && $withWarnings)
+            Meetstaat sluitend — import toegestaan
+        @elseif ($closureReady)
+            Importcontrole (audit)
+        @else
+            Import geblokkeerd — bronconflict
+        @endif
     </h1>
     <p class="text-sm text-nicon-muted">
         {{ $filename }}
@@ -97,13 +105,17 @@
     <form method="POST" action="{{ route('projects.import', $token) }}" enctype="multipart/form-data" class="mt-4 space-y-4" data-review-form id="review-import-form" @if ($closureReady) data-import-ready="1" @endif>
         @csrf
 
-        <div id="importcontrole" class="border {{ $closureReady ? 'border-green-600 bg-green-50' : 'border-amber-400 bg-amber-50' }} px-4 py-3">
+        <div id="importcontrole" class="border {{ $closureReady ? ($withWarnings ? 'border-amber-400 bg-amber-50' : 'border-green-600 bg-green-50') : 'border-amber-400 bg-amber-50' }} px-4 py-3">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 class="text-sm font-semibold tracking-wide">IMPORTCONTROLE</h2>
-                <span class="text-sm font-medium {{ $closureReady ? 'text-green-800' : 'text-nicon-warn' }}">
+                <span class="text-sm font-medium {{ $closureReady && ! $withWarnings ? 'text-green-800' : 'text-nicon-warn' }}">
                     {{ $closure['button_label'] ?? 'Nog controleren' }}
                 </span>
             </div>
+            @if ($closureReady && ($closure['summary'] ?? null))
+                <p class="mt-2 text-sm font-medium">{{ $closure['summary'] }}</p>
+                <p class="text-sm">Importeren toegestaan</p>
+            @endif
             <div class="mt-2 grid gap-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <div>Ruimtes: {{ $closurePerc['rooms'] ?? 0 }}%</div>
                 <div>Hoeveelheden: {{ $closurePerc['quantities'] ?? 0 }}%</div>
@@ -114,7 +126,9 @@
             </div>
             <div class="mt-3 flex flex-wrap items-end justify-between gap-4 text-sm">
                 <div>
-                    <div><span class="font-medium">Totaal verwacht:</span>
+                    <div>
+                        <span class="font-medium">Totaal verwacht:</span>
+                        <span class="ml-1 text-[10px] font-semibold uppercase tracking-wide text-nicon-ok">Meetstaat netto LEIDEND</span>
                         @if (($closureTotals['expected'] ?? null) !== null)
                             {{ \App\Support\Format::qty($closureTotals['expected'], 2) }} m²
                         @else
@@ -140,7 +154,7 @@
                     class="px-5 py-3 font-medium {{ $closureReady ? 'bg-nicon-orange text-white' : 'bg-nicon-sand text-nicon-muted border border-nicon-line' }}"
                     @disabled(! $closureReady)
                 >
-                    {{ $closureReady ? 'Project definitief importeren' : ($closure['button_label'] ?? 'Nog controleren') }}
+                    {{ $closureReady ? ($withWarnings ? 'Importeren toegestaan' : 'Project definitief importeren') : ($closure['button_label'] ?? 'Nog controleren') }}
                 </button>
             </div>
             @if (! $closureReady && ! empty($closureChecks))
@@ -159,7 +173,10 @@
                     @endforeach
                 </ul>
             @endif
-            @if (! $closureReady && ! empty($closureIssues))
+            @if ((! $closureReady || $withWarnings) && ! empty($closureIssues))
+                @if ($withWarnings)
+                    <p class="mt-3 text-xs font-medium">Tekeningswaarschuwingen (blokkeren importeren niet)</p>
+                @endif
                 <div class="mt-3 overflow-x-auto">
                     <table class="w-full text-xs border border-nicon-line bg-white">
                         <thead class="bg-nicon-sand text-left">
@@ -192,7 +209,9 @@
                 </div>
             @endif
             <p class="mt-2 text-xs text-nicon-muted">
-                @if ($closureReady)
+                @if ($closureReady && $withWarnings)
+                    Meetstaat is leidend en sluitend. Tekeningswaarschuwingen mogen definitief opslaan niet blokkeren.
+                @elseif ($closureReady)
                     100% betekent dat iedere m² verklaard is. Details staan ingeklapt; open een onderdeel alleen als je wilt controleren.
                 @else
                     100% betekent dat iedere m² verklaard is. Totalen worden nooit kunstmatig passend gemaakt.
