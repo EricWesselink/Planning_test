@@ -95,12 +95,16 @@
                 </div>
                 <div class="flex flex-col gap-2 border-t border-nicon-line p-4">
                     <a href="{{ $job['project_url'] }}" class="bg-nicon-ink px-4 py-3 text-center text-sm font-medium text-white">Projectinformatie</a>
-                    @if ($job['werkbon_url'])
-                        <a href="{{ $job['werkbon_url'] }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">Werkbon</a>
-                    @endif
-                    @if ($job['opdrachtbon_url'])
-                        <a href="{{ $job['opdrachtbon_url'] }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">Opdrachtbon</a>
-                    @endif
+                    @forelse ($job['tickets'] as $ticket)
+                        <a href="{{ route('work-tickets.show', $ticket) }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">{{ $ticket->kind->label() }} {{ $ticket->number }}</a>
+                    @empty
+                        @if ($job['werkbon_url'])
+                            <a href="{{ $job['werkbon_url'] }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">Werkbon</a>
+                        @endif
+                        @if ($job['opdrachtbon_url'])
+                            <a href="{{ $job['opdrachtbon_url'] }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">Opdrachtbon</a>
+                        @endif
+                    @endforelse
                 </div>
             </article>
         @empty

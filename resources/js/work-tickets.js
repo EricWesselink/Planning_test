@@ -150,6 +150,13 @@ function initWorkTicketForm(form) {
             }
             suggestDrawings(form);
         }
+        if (target.classList.contains('work-ticket-area') && target instanceof HTMLInputElement && target.checked) {
+            const block = target.closest('[data-floor-block]');
+            const included = block?.querySelector('.work-ticket-floor');
+            if (included instanceof HTMLInputElement) {
+                included.checked = true;
+            }
+        }
         if (target.classList.contains('work-ticket-drawing')) {
             target.dataset.touched = '1';
         }

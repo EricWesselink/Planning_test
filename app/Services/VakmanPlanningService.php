@@ -135,6 +135,7 @@ class VakmanPlanningService
                 'worker.rates',
                 'workItem.areaTasks.area.floor',
                 'crewMembers',
+                'workTickets',
             ])
             ->where('worker_id', $workerId)
             ->whereDate('end_date', '>=', $from)
@@ -204,6 +205,7 @@ class VakmanPlanningService
                 'headline' => $this->headlineWork($assignment),
                 'colleagues' => $this->colleagueNames($user, $assignment, $others, $date),
                 'url' => route('vakman.planning.day', $date->toDateString()),
+                'tickets' => $assignment->workTickets,
             ];
 
             if (! $detailed) {
