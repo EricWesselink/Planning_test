@@ -104,6 +104,7 @@ class ProjectController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'city' => ['nullable', 'string', 'max:255'],
+            'work_code' => ['sometimes', 'nullable', 'string', 'max:32'],
             'basis_uurtarief' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999.99'],
             'work_items' => ['sometimes', 'array'],
             'work_items.*.begrote_uren' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
@@ -129,6 +130,9 @@ class ProjectController extends Controller
         $canViewLabor = $request->user()?->canViewLaborCosts() ?? false;
         if ($canViewLabor && $request->exists('basis_uurtarief')) {
             $fields[] = 'basis_uurtarief';
+        }
+        if ($request->exists('work_code')) {
+            $project->applyWorkCode($data['work_code'] ?? null);
         }
         $project->update(collect($data)->only($fields)->all());
 
@@ -157,6 +161,7 @@ class ProjectController extends Controller
         Gate::authorize('create', Project::class);
         $validator = Validator::make($request->all(), [
             'project_number' => ['nullable', 'string', 'max:32', 'unique:projects,project_number'],
+            'work_code' => ['nullable', 'string', 'max:32'],
             'name' => ['required', 'string', 'max:255'],
             'customer_name' => ['required', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],

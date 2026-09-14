@@ -26,6 +26,7 @@ class ScreenExcelImportTest extends TestCase
             ->assertSee('Handmatig project')
             ->assertSee('Bedrijf / opdrachtgever')
             ->assertSee('Excel raambekleding / zonwering')
+            ->assertSee('Projectnr.')
             ->assertSee('Projectbestanden')
             ->assertSee('Sleep bestanden hierheen');
     }
@@ -43,6 +44,32 @@ class ScreenExcelImportTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame(0, Project::query()->count());
+    }
+
+    public function test_manual_project_stores_a_typed_project_number(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('projects.store'), [
+            'customer_name' => 'Koopmans',
+            'work_code' => '11p260521',
+            'name' => 'Zeewolde, Bouw Havenkwartier Zuyd',
+            'city' => 'Zeewolde',
+            'excel' => $this->screenFile(),
+        ]);
+
+        $project = Project::query()->where('name', 'Zeewolde, Bouw Havenkwartier Zuyd')->first();
+        $this->assertNotNull($project);
+        $response->assertRedirect(route('projects.show', $project));
+        $this->assertSame('11P260521', $project->workCode());
+        $this->assertSame('Zeewolde, Bouw Havenkwartier Zuyd', $project->displayTitle());
+        $this->assertNotSame('11P260521', $project->workNumber());
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Projectnr.')
+            ->assertSee('11P260521');
     }
 
     public function test_planner_creates_separate_screen_lines_and_skips_labor_hours(): void
@@ -185,6 +212,35 @@ class ScreenExcelImportTest extends TestCase
         $this->assertSame(3, $project->workItems()->count());
         $this->assertSame(0, $project->documents()->where('document_type', 'meetstaat')->count());
         $this->assertSame(1, $project->documents()->where('document_type', 'opdrachtlijst')->count());
+    }
+
+    public function test_screen_review_stores_a_typed_project_number(): void
+    {
+        $user = User::factory()->create();
+        Cache::flush();
+
+        $preview = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [$this->screenFile()],
+        ]);
+        $preview->assertRedirect();
+        $token = basename((string) parse_url((string) $preview->headers->get('Location'), PHP_URL_PATH));
+
+        $this->actingAs($user)
+            ->get(route('projects.screens.review', $token))
+            ->assertOk()
+            ->assertSee('Projectnr.');
+
+        $this->actingAs($user)->post(route('projects.screens.import', $token), [
+            'customer_name' => 'Koopmans',
+            'work_code' => '11p260521',
+            'name' => 'Zeewolde, Bouw Havenkwartier Zuyd',
+            'city' => 'Zeewolde',
+        ])->assertRedirect();
+
+        $project = Project::query()->where('name', 'Zeewolde, Bouw Havenkwartier Zuyd')->first();
+        $this->assertNotNull($project);
+        $this->assertSame('11P260521', $project->workCode());
+        $this->assertSame('Zeewolde, Bouw Havenkwartier Zuyd', $project->displayTitle());
     }
 
     public function test_review_escapes_excel_descriptions(): void

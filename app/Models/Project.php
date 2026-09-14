@@ -66,41 +66,11 @@ class Project extends Model
         }
 
         $like = '%'.addcslashes($term, '%_\\').'%';
-        $compact = mb_strtolower((string) preg_replace('/[^a-z0-9]+/iu', '', $term));
-        $compactLike = $compact !== '' ? '%'.addcslashes($compact, '%_\\').'%' : null;
-        $columns = [
-            'project_number', 'name', 'notes', 'address', 'postal_code', 'city',
-            'work_description', 'contact_name',
-        ];
-
-        $query->where(function (Builder $inner) use ($query, $like, $compactLike, $columns): void {
-            foreach ($columns as $index => $column) {
-                $method = $index === 0 ? 'where' : 'orWhere';
-                $inner->{$method}($column, 'like', $like);
-                if ($compactLike !== null) {
-                    $inner->orWhereRaw($this->compactSearchSql($query->qualifyColumn($column)).' like ?', [$compactLike]);
-                }
-            }
-
-            $inner->orWhereHas('customer', function (Builder $customer) use ($like, $compactLike): void {
-                $customer->where(function (Builder $match) use ($customer, $like, $compactLike): void {
-                    $match->where('name', 'like', $like)
-                        ->orWhere('city', 'like', $like);
-                    if ($compactLike !== null) {
-                        $match->orWhereRaw($this->compactSearchSql($customer->qualifyColumn('name')).' like ?', [$compactLike]);
-                    }
-                });
-            });
-
-            $inner->orWhereHas('assignments.worker', function (Builder $worker) use ($like): void {
-                $worker->where('name', 'like', $like);
-            });
+        $query->where(function (Builder $inner) use ($like): void {
+            $inner->where('project_number', 'like', $like)
+                ->orWhere('name', 'like', $like)
+                ->orWhere('notes', 'like', $like);
         });
-    }
-
-    private function compactSearchSql(string $qualifiedColumn): string
-    {
-        return "replace(replace(replace(replace(replace(lower(coalesce({$qualifiedColumn}, '')), ' ', ''), '-', ''), '.', ''), '/', ''), ',', '')";
     }
 
     public function isArchived(): bool
@@ -351,6 +321,38 @@ class Project extends Model
         }
 
         return null;
+    }
+
+    /**
+     * Zet of wist de 11P-projectcode in de referentie. Het werknummer blijft ongewijzigd.
+     */
+    public function applyWorkCode(?string $code): void
+    {
+        $code = strtoupper(preg_replace('/\s+/', '', trim((string) $code)) ?? '');
+        $title = $this->displayTitle();
+        if ($title === '') {
+            $title = trim((string) $this->name);
+        }
+
+        $notes = trim((string) $this->notes);
+        $isReferentieNotes = $notes === '' || preg_match('/^Referentie\s*:/iu', $notes) === 1;
+
+        if ($code === '') {
+            if ($isReferentieNotes && $this->workCode() !== null) {
+                $this->notes = null;
+            }
+
+            return;
+        }
+
+        $referentie = 'Referentie: '.$code.($title !== '' ? ' '.$title : '');
+        if (! $isReferentieNotes) {
+            $this->notes = trim($notes."\n".$referentie);
+
+            return;
+        }
+
+        $this->notes = $referentie;
     }
 
     /**

@@ -23,62 +23,83 @@
     @endif
 
     @can('create', \App\Models\Worker::class)
-        <form method="POST" action="{{ route('workers.store') }}" class="mt-6 border border-nicon-line bg-white p-4">
-            @csrf
-            <div class="flex flex-wrap items-end gap-3">
-                <div class="min-w-56 flex-1">
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-name">Naam van het team</label>
-                    <input id="worker-name" type="text" name="name" value="{{ old('name') }}" required placeholder="Bijv. Team Wespro" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-type">Type</label>
-                    <select id="worker-type" name="employment_type" class="mt-1 border border-nicon-line px-3 py-2 bg-white text-sm">
-                        @foreach ([\App\Enums\EmploymentType::Eigen, \App\Enums\EmploymentType::Zzp] as $type)
-                            <option value="{{ $type->value }}" @selected(old('employment_type', 'eigen') === $type->value)>{{ $type->label() }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="w-28">
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-people">Personen</label>
-                    <input id="worker-people" type="number" name="people_count" value="{{ old('people_count', 1) }}" min="1" max="50" required class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-                </div>
-            </div>
-            <div class="mt-4">
-                @include('workers._specialties', [
-                    'inputName' => 'specialties[]',
-                    'selected' => old('specialties', []),
-                    'specialtyCatalog' => $specialtyCatalog,
-                    'compact' => true,
-                    'heading' => 'Vakkennis van dit team',
-                    'hint' => 'Wat dit team kan. Mag je later nog aanpassen.',
-                    'allowAdd' => true,
-                ])
-            </div>
-            <div class="mt-4 space-y-3">
-                <p class="text-xs text-nicon-muted">Inlog is optioneel. Zonder e-mail staat het team al in de lijst; inloggen en een uitnodiging voor de planning kan later.</p>
+        <div class="mt-6 border border-nicon-line bg-white">
+            <form method="POST" action="{{ route('workers.pdf.preview') }}" enctype="multipart/form-data" class="border-b border-nicon-line p-4">
+                @csrf
                 <div class="flex flex-wrap items-end gap-3">
                     <div class="min-w-56 flex-1">
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-email">E-mail (inlog)</label>
-                        <input id="worker-email" type="email" name="email" value="{{ old('email') }}" placeholder="leeg = nog geen inlog" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="off">
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="team-pdf">PDF met team</label>
+                        <p class="mt-1 text-xs text-nicon-muted">Naam, type, personen en vakkennis worden in het formulier gezet. Daarna kun je nog aanpassen.</p>
+                        <input id="team-pdf" type="file" name="pdf" accept=".pdf,application/pdf" required class="mt-1 w-full text-sm">
                     </div>
-                    <div class="min-w-40 flex-1">
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-password">Tijdelijk wachtwoord</label>
-                        <input id="worker-password" type="password" name="password" minlength="8" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="new-password">
+                    <button class="bg-nicon-ink text-white px-4 py-2 text-sm">PDF uitlezen</button>
+                </div>
+            </form>
+            <form method="POST" action="{{ route('workers.store') }}" class="p-4">
+                @csrf
+                @foreach (['crew_names', 'company', 'phone', 'address', 'postal_code', 'city', 'contact_name'] as $extra)
+                    @if (old($extra))
+                        <input type="hidden" name="{{ $extra }}" value="{{ old($extra) }}">
+                    @endif
+                @endforeach
+                <div class="flex flex-wrap items-end gap-3">
+                    <div class="min-w-56 flex-1">
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-name">Naam van het team</label>
+                        <input id="worker-name" type="text" name="name" value="{{ old('name') }}" required placeholder="Bijv. Team Wespro" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
                     </div>
-                    <div class="min-w-40 flex-1">
-                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-password-confirmation">Wachtwoord herhalen</label>
-                        <input id="worker-password-confirmation" type="password" name="password_confirmation" minlength="8" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="new-password">
+                    <div>
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-type">Type</label>
+                        <select id="worker-type" name="employment_type" class="mt-1 border border-nicon-line px-3 py-2 bg-white text-sm">
+                            @foreach ([\App\Enums\EmploymentType::Eigen, \App\Enums\EmploymentType::Zzp] as $type)
+                                <option value="{{ $type->value }}" @selected(old('employment_type', 'eigen') === $type->value)>{{ $type->label() }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="w-28">
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-people">Personen</label>
+                        <input id="worker-people" type="number" name="people_count" value="{{ old('people_count', 1) }}" min="1" max="50" required class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" name="invite" value="1" @checked((int) old('invite') === 1) class="size-4 accent-nicon-ok">
-                        Stuur uitnodiging voor de planning
-                    </label>
-                    <button class="bg-nicon-orange text-white px-4 py-2 text-sm">Toevoegen</button>
+                @if (old('crew_names'))
+                    <p class="mt-2 text-xs text-nicon-muted">Uit PDF: {{ old('crew_names') }}</p>
+                @endif
+                <div class="mt-4">
+                    @include('workers._specialties', [
+                        'inputName' => 'specialties[]',
+                        'selected' => old('specialties', []),
+                        'specialtyCatalog' => $specialtyCatalog,
+                        'compact' => true,
+                        'heading' => 'Vakkennis van dit team',
+                        'hint' => 'Wat dit team kan. Mag je later nog aanpassen.',
+                        'allowAdd' => true,
+                    ])
                 </div>
-            </div>
-        </form>
+                <div class="mt-4 space-y-3">
+                    <p class="text-xs text-nicon-muted">Inlog is optioneel. Zonder e-mail staat het team al in de lijst; inloggen en een uitnodiging voor de planning kan later.</p>
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div class="min-w-56 flex-1">
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-email">E-mail (inlog)</label>
+                            <input id="worker-email" type="email" name="email" value="{{ old('email') }}" placeholder="leeg = nog geen inlog" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="off">
+                        </div>
+                        <div class="min-w-40 flex-1">
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-password">Tijdelijk wachtwoord</label>
+                            <input id="worker-password" type="password" name="password" minlength="8" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="new-password">
+                        </div>
+                        <div class="min-w-40 flex-1">
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-password-confirmation">Wachtwoord herhalen</label>
+                            <input id="worker-password-confirmation" type="password" name="password_confirmation" minlength="8" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="new-password">
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" name="invite" value="1" @checked((int) old('invite') === 1) class="size-4 accent-nicon-ok">
+                            Stuur uitnodiging voor de planning
+                        </label>
+                        <button class="bg-nicon-orange text-white px-4 py-2 text-sm">Toevoegen</button>
+                    </div>
+                </div>
+            </form>
+        </div>
     @endcan
 
     <div class="mt-6">

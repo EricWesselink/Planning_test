@@ -36,6 +36,10 @@
                 <input id="customer_name" name="customer_name" value="{{ old('customer_name') }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Opdrachtgever">
             </div>
             <div>
+                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="work_code">Projectnr.</label>
+                <input id="work_code" name="work_code" value="{{ old('work_code') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="11P260521">
+            </div>
+            <div>
                 <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="name">Projectnaam</label>
                 <input id="name" name="name" value="{{ old('name') }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Projectnaam">
             </div>

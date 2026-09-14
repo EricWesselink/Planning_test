@@ -34,4 +34,20 @@ class ProjectDisplayLabelTest extends TestCase
         $this->assertSame('TMZ Meubelenbelt Fase 2', $project->displayTitle());
         $this->assertSame("Werk\u{00A0}2024-118", $project->labeledNumbersLine());
     }
+
+    public function test_apply_work_code_sets_projectnr_without_changing_the_work_number(): void
+    {
+        $project = new Project([
+            'project_number' => '2026-001',
+            'name' => 'Zeewolde, Bouw Havenkwartier Zuyd',
+            'notes' => null,
+        ]);
+
+        $project->applyWorkCode('11p260521');
+
+        $this->assertSame('2026-001', $project->workNumber());
+        $this->assertSame('11P260521', $project->workCode());
+        $this->assertSame('Zeewolde, Bouw Havenkwartier Zuyd', $project->displayTitle());
+        $this->assertSame("Projectnr.\u{00A0}11P260521\u{00A0}·\u{00A0}Werk\u{00A0}2026-001", $project->labeledNumbersLine());
+    }
 }

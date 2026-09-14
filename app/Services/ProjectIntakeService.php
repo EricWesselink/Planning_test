@@ -36,6 +36,7 @@ class ProjectIntakeService
     /**
      * @param  array{
      *     project_number?: ?string,
+     *     work_code?: ?string,
      *     name: string,
      *     customer_name: string,
      *     city?: ?string,
@@ -68,6 +69,12 @@ class ProjectIntakeService
                 'status' => ProjectStatus::Gepland,
                 'notes' => $data['notes'] ?? null,
             ]);
+            if (array_key_exists('work_code', $data)) {
+                $project->applyWorkCode($data['work_code'] ?? null);
+                if ($project->isDirty('notes')) {
+                    $project->save();
+                }
+            }
 
             $warnings = [];
             $rooms = 0;
@@ -230,10 +237,6 @@ class ProjectIntakeService
             }
 
             $rows = $this->reader->rows($path, $file->getClientOriginalName());
-        }
-
-        if (! $this->screenExcel->looksLike($rows) && $this->calculationExcel->looksLike($rows)) {
-            return $this->calculationImport->importFile($project, $file, $user);
         }
 
         $document = $this->storeDocument($project, $file, 'opdrachtlijst', $user);

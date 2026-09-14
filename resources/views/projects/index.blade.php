@@ -10,13 +10,13 @@
         </div>
         <div class="flex flex-wrap items-center gap-2">
             <form method="GET" action="{{ route('projects.index') }}" class="flex min-w-[16rem] flex-1 items-center gap-2 sm:max-w-md">
-                <label class="sr-only" for="project-search">Zoek in projecten</label>
+                <label class="sr-only" for="project-search">Zoek op projectnummer of werk</label>
                 <input
                     id="project-search"
                     type="search"
                     name="q"
                     value="{{ $search }}"
-                    placeholder="Zoek op nummer, werk, adres, plaats…"
+                    placeholder="Zoek op projectnr. of werk"
                     class="min-w-0 flex-1 border border-nicon-line bg-white px-3 py-2 text-sm"
                 >
                 <button type="submit" class="border border-nicon-line bg-white px-4 py-2 text-sm">Zoeken</button>

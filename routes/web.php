@@ -24,6 +24,7 @@ use App\Http\Controllers\WorkActivityCategoryController;
 use App\Http\Controllers\WorkActivityController;
 use App\Http\Controllers\WorkerAvailabilityController;
 use App\Http\Controllers\WorkerController;
+use App\Http\Controllers\WorkerPdfImportController;
 use App\Http\Controllers\WorkerRateController;
 use App\Http\Middleware\EnsureProjectAccess;
 use Illuminate\Support\Facades\Route;
@@ -151,6 +152,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/vakmensen', [WorkerController::class, 'index'])->name('workers.index');
     Route::get('/vakmensen/nieuw', [WorkerController::class, 'create'])->name('workers.create');
     Route::post('/vakmensen', [WorkerController::class, 'store'])->name('workers.store');
+    Route::post('/vakmensen/pdf', [WorkerPdfImportController::class, 'preview'])->name('workers.pdf.preview');
     Route::post('/vakmensen/vakkennis', [WorkerController::class, 'storeSpecialty'])->name('workers.specialties.store');
     Route::get('/vakmensen/{worker}', [WorkerController::class, 'show'])->name('workers.show');
     Route::post('/vakmensen/{worker}/inlog', [WorkerController::class, 'storeLogin'])->name('workers.login.store');

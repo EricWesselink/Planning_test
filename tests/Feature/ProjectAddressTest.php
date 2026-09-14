@@ -60,6 +60,30 @@ class ProjectAddressTest extends TestCase
             ->assertSee('Project bewerken');
     }
 
+    public function test_planner_can_fill_in_a_project_number_later(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject();
+
+        $this->actingAs($user)
+            ->patch(route('projects.update', $project), [
+                'work_code' => '11p260521',
+                'address' => $project->address,
+                'postal_code' => $project->postal_code,
+                'city' => $project->city,
+            ])
+            ->assertRedirect();
+
+        $project->refresh();
+        $this->assertSame('11P260521', $project->workCode());
+        $this->assertSame('Laakse Tuinen Amersfoort', $project->displayTitle());
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('11P260521');
+    }
+
     public function test_project_list_shows_editable_work_address_fields(): void
     {
         $user = User::factory()->create();

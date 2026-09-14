@@ -76,6 +76,7 @@ class ScreenExcelImportController extends Controller
         $validator = Validator::make($request->all(), [
             'customer_name' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
+            'work_code' => ['nullable', 'string', 'max:32'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'city' => ['nullable', 'string', 'max:255'],

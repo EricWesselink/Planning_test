@@ -61,7 +61,7 @@ class ProjectIndexSearchTest extends TestCase
         $this->actingAs($user)
             ->get(route('projects.index'))
             ->assertOk()
-            ->assertSee('Zoek op nummer, werk, adres, plaats…')
+            ->assertSee('Zoek op projectnr. of werk')
             ->assertSee('Griftland college')
             ->assertSee('Laakse Tuinen');
     }
@@ -94,74 +94,15 @@ class ProjectIndexSearchTest extends TestCase
             ->assertDontSee('Laakse Tuinen');
     }
 
-    public function test_search_matches_spaced_or_dashed_project_codes(): void
+    private function makeProject(string $name, string $number, ?string $notes = null): Project
     {
-        $user = User::factory()->create();
-        $this->makeProject('11P251047 Griftland college', '251000077');
-        $this->makeProject('11P260141 Laakse Tuinen Amersfoort', '260200090');
-
-        $this->actingAs($user)
-            ->get(route('projects.index', ['q' => '11p 251-047']))
-            ->assertOk()
-            ->assertSee('Griftland college')
-            ->assertDontSee('Laakse Tuinen');
-    }
-
-    public function test_search_matches_address_city_customer_and_similar_work_names(): void
-    {
-        $user = User::factory()->create();
-        $this->makeProject('11P260521 Zeewolde, Bouw Havenkwartier Zuyd', '260200521', null, [
-            'address' => 'Flaauwe Werk 2',
-            'postal_code' => '3894 KW',
-            'city' => 'Zeewolde',
-            'customer' => 'Koopmans',
-        ]);
-        $this->makeProject('11P260141 Laakse Tuinen Amersfoort', '260200090', null, [
-            'city' => 'Amersfoort',
-            'customer' => 'Nicon vloeren',
-        ]);
-
-        $this->actingAs($user)
-            ->get(route('projects.index', ['q' => '3894kw']))
-            ->assertOk()
-            ->assertSee('Havenkwartier')
-            ->assertDontSee('Laakse Tuinen');
-
-        $this->actingAs($user)
-            ->get(route('projects.index', ['q' => 'haven kwartier']))
-            ->assertOk()
-            ->assertSee('Havenkwartier')
-            ->assertDontSee('Laakse Tuinen');
-
-        $this->actingAs($user)
-            ->get(route('projects.index', ['q' => 'koopmans']))
-            ->assertOk()
-            ->assertSee('Havenkwartier')
-            ->assertDontSee('Laakse Tuinen');
-
-        $this->actingAs($user)
-            ->get(route('projects.index', ['q' => 'flaauwe']))
-            ->assertOk()
-            ->assertSee('Havenkwartier')
-            ->assertDontSee('Laakse Tuinen');
-    }
-
-    /**
-     * @param  array{address?: string, postal_code?: string, city?: string, customer?: string}  $extra
-     */
-    private function makeProject(string $name, string $number, ?string $notes = null, array $extra = []): Project
-    {
-        $customerName = $extra['customer'] ?? 'Nicon vloeren';
-        $customer = Customer::query()->where('name', $customerName)->first()
-            ?? Customer::query()->create(['name' => $customerName]);
+        $customer = Customer::query()->first() ?? Customer::query()->create(['name' => 'Nicon vloeren']);
 
         return Project::query()->create([
             'project_number' => $number,
             'customer_id' => $customer->id,
             'name' => $name,
-            'address' => $extra['address'] ?? null,
-            'postal_code' => $extra['postal_code'] ?? null,
-            'city' => $extra['city'] ?? 'Amersfoort',
+            'city' => 'Amersfoort',
             'status' => 'gepland',
             'notes' => $notes,
         ]);
