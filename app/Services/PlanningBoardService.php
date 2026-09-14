@@ -327,6 +327,7 @@ class PlanningBoardService
                     'bar' => $period['bar'],
                     'start_marker' => $period['start_marker'],
                     'end_marker' => $period['end_marker'],
+                    'werk_start' => $period['werk_start'],
                     'missing_craftsman' => $period['missing_craftsman'],
                     'start_week' => $startWeek,
                     'person_bars' => $leftoverBars,
@@ -854,7 +855,7 @@ class PlanningBoardService
      * Projectperiode op de projectregel: exacte start-/einddatum, geen personeelsbalk.
      *
      * @param  Collection<int, Carbon>  $days
-     * @return array{bar: ?array{start: int, span: int}, start_marker: ?array{index: int, date: string}, end_marker: ?array{index: int, date: string, done: bool}, missing_craftsman: bool}
+     * @return array{bar: ?array{start: int, span: int}, start_marker: ?array{index: int, date: string}, end_marker: ?array{index: int, date: string, done: bool}, werk_start: ?string, missing_craftsman: bool}
      */
     private function projectPeriod(Project $project, Collection $days): array
     {
@@ -867,8 +868,28 @@ class PlanningBoardService
             'bar' => $this->bar($project->planned_start_date, $project->planned_end_date, $days),
             'start_marker' => $this->dateMarker($project->planned_start_date, $days),
             'end_marker' => $endMarker,
+            'werk_start' => $this->offgridStartLabel($project->planned_start_date, $days),
             'missing_craftsman' => $project->assignments->isEmpty(),
         ];
+    }
+
+    /**
+     * Start date for the WERK column when it falls after the visible days.
+     *
+     * @param  Collection<int, Carbon>  $days
+     */
+    private function offgridStartLabel(?CarbonInterface $start, Collection $days): ?string
+    {
+        if ($start === null || $days->isEmpty() || $this->dateMarker($start, $days) !== null) {
+            return null;
+        }
+
+        $last = $days->last()->copy()->startOfDay();
+        if ($start->copy()->startOfDay()->lte($last)) {
+            return null;
+        }
+
+        return $start->format('d-m-Y');
     }
 
     /**
@@ -1151,6 +1172,7 @@ class PlanningBoardService
             'bar' => $this->bar($start, $end, $days),
             'start_marker' => $this->dateMarker($start, $days),
             'end_marker' => $endMarker,
+            'werk_start' => $this->offgridStartLabel($start, $days),
             'missing_craftsman' => $personBars === [],
             'start_week' => $startWeek,
             'person_bars' => $personBars,

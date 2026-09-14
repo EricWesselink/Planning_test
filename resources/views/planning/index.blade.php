@@ -370,6 +370,20 @@
                                                 @endif
                                             </div>
                                         @endif
+                                        @if (! empty($projectRow['werk_start']))
+                                            @if (! empty($projectRow['start_week']))
+                                                <a
+                                                    href="{{ route('planning', array_merge($query, [
+                                                        'week' => $projectRow['start_week'],
+                                                        'project_id' => $projectRow['id'],
+                                                    ])) }}"
+                                                    class="plan-werk-start"
+                                                    title="Ga naar startweek"
+                                                >▶ Start {{ $projectRow['werk_start'] }}</a>
+                                            @else
+                                                <span class="plan-werk-start">▶ Start {{ $projectRow['werk_start'] }}</span>
+                                            @endif
+                                        @endif
                                     </div>
                                     @if (! empty($projectRow['missing_craftsman']) && ! empty($projectRow['start_week']))
                                         <a

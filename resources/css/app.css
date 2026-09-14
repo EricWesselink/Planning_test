@@ -657,6 +657,23 @@ body {
     line-height: 1.15;
 }
 
+.plan-werk-start {
+    display: block;
+    margin-top: 2px;
+    color: var(--color-nicon-danger);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+a.plan-werk-start:hover {
+    text-decoration: underline;
+}
+
 .plan-missing-craftsman {
     position: absolute;
     top: 2px;

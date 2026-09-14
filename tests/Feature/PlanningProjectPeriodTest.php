@@ -29,13 +29,16 @@ class PlanningProjectPeriodTest extends TestCase
         $this->assertNull($row['bar']);
         $this->assertNull($row['start_marker']);
         $this->assertNull($row['end_marker']);
+        $this->assertSame('14-09-2026', $row['werk_start']);
         $this->assertTrue($row['missing_craftsman']);
 
         $this->actingAs($user)
             ->get(route('planning', ['week_nr' => 37, 'year' => 2026, 'project_id' => $project->id]))
             ->assertOk()
+            ->assertSee('plan-werk-start', false)
+            ->assertSee('▶ Start 14-09-2026', false)
+            ->assertDontSee('period-marker--start', false)
             ->assertDontSee('Start werk')
-            ->assertDontSee('14-09-2026')
             ->assertDontSee('period-band', false)
             ->assertDontSee('Klaar werk');
     }
@@ -53,6 +56,7 @@ class PlanningProjectPeriodTest extends TestCase
         $this->assertSame(0, $row['start_marker']['index']);
         $this->assertSame('14-09-2026', $row['start_marker']['date']);
         $this->assertNull($row['end_marker']);
+        $this->assertNull($row['werk_start']);
         $this->assertTrue($row['missing_craftsman']);
         $this->assertSame('2026-09-14', $row['start_week']);
         $this->assertSame([], $row['person_bars']);
@@ -87,6 +91,7 @@ class PlanningProjectPeriodTest extends TestCase
         $this->assertSame(6, $row['bar']['span']);
         $this->assertNull($row['start_marker']);
         $this->assertNull($row['end_marker']);
+        $this->assertNull($row['werk_start']);
         $this->assertTrue($row['missing_craftsman']);
 
         $this->actingAs($user)
@@ -98,6 +103,7 @@ class PlanningProjectPeriodTest extends TestCase
             ->assertSee('week=2026-09-14', false)
             ->assertSee('project_id='.$project->id, false)
             ->assertDontSee('⚠ Geen vakman ingepland', false)
+            ->assertDontSee('plan-werk-start', false)
             ->assertDontSee('Start werk')
             ->assertDontSee('Klaar werk')
             ->assertDontSee('person-bar', false);
@@ -295,12 +301,15 @@ class PlanningProjectPeriodTest extends TestCase
         $this->assertNull($laterRow['bar']);
         $this->assertNull($laterRow['start_marker']);
         $this->assertNull($laterRow['end_marker']);
+        $this->assertSame('02-11-2026', $laterRow['werk_start']);
 
         $this->actingAs($user)
             ->get(route('planning', ['week_nr' => 38, 'year' => 2026, 'weeks' => 1]))
             ->assertOk()
             ->assertSee('TWC studentenhuisvesting Utrecht')
-            ->assertSee('Toekomstig werk Almere');
+            ->assertSee('Toekomstig werk Almere')
+            ->assertSee('plan-werk-start', false)
+            ->assertSee('▶ Start 02-11-2026', false);
     }
 
     public function test_extra_work_in_the_visible_week_keeps_the_parent_project_on_the_board(): void
