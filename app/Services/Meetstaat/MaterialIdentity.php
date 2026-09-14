@@ -24,9 +24,9 @@ class MaterialIdentity
                 $codes[] = mb_strtolower($code);
             }
         }
-        if (preg_match_all('/\b(\d{2,}\.\d{2}\.\d{2})\b/u', $name, $match)) {
+        if (preg_match_all('/\b(\d{2,}\.\d{2}\.\d{2}[a-z]?)\b/iu', $name, $match)) {
             foreach ($match[1] as $code) {
-                $codes[] = $code;
+                $codes[] = mb_strtolower($code);
             }
         }
         $withoutRal = preg_replace('/\bral\s*\d{3,5}\b/iu', ' ', $name) ?? $name;
@@ -37,6 +37,69 @@ class MaterialIdentity
         }
 
         return array_values(array_unique($codes));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function flooringVariantCodes(string $name): array
+    {
+        $codes = [];
+        if (preg_match_all('/\bv\.(\d{2})\b/iu', $name, $match)) {
+            foreach ($match[1] as $number) {
+                $codes[] = 'v.'.$number;
+            }
+        }
+
+        return array_values(array_unique($codes));
+    }
+
+    public function sharesFlooringVariantCode(string $left, string $right): bool
+    {
+        $leftCodes = $this->flooringVariantCodes($left);
+        $rightCodes = $this->flooringVariantCodes($right);
+        if ($leftCodes === [] || $rightCodes === []) {
+            return false;
+        }
+
+        return array_intersect($leftCodes, $rightCodes) !== [];
+    }
+
+    /**
+     * STABU/werkcode: 43.20.03a is een andere werkzaamheid dan 43.20.03b.
+     *
+     * @return list<string>
+     */
+    public function workCodes(string $name): array
+    {
+        $codes = [];
+        if (preg_match_all('/\b(\d{2}\.\d{2}\.\d{2}[a-z]?)\b/iu', $name, $match)) {
+            foreach ($match[1] as $code) {
+                $codes[] = mb_strtolower($code);
+            }
+        }
+
+        return array_values(array_unique($codes));
+    }
+
+    public function sharesWorkCode(string $left, string $right): bool
+    {
+        $leftCodes = $this->workCodes($left);
+        $rightCodes = $this->workCodes($right);
+        if ($leftCodes === [] || $rightCodes === []) {
+            return false;
+        }
+
+        return array_intersect($leftCodes, $rightCodes) !== [];
+    }
+
+    public function leadingWorkCode(string $line): ?string
+    {
+        if (! preg_match('/^(\d{2}\.\d{2}\.\d{2}[a-z]?)\b/iu', trim($line), $match)) {
+            return null;
+        }
+
+        return mb_strtolower($match[1]);
     }
 
     public function isGenericTypeLabel(string $name): bool
@@ -81,6 +144,9 @@ class MaterialIdentity
         if ($flat === '') {
             return false;
         }
+        if ($this->leadingWorkCode($flat) !== null) {
+            return true;
+        }
 
         $hasBrand = (bool) preg_match(
             '/\b(ege|tarkett|desso|forbo|sikkens|interface|modulyss|nora|objectcarpet|coral)\b/iu',
@@ -122,6 +188,14 @@ class MaterialIdentity
         $right = trim($right);
         if ($left === '' || $right === '') {
             return false;
+        }
+        $leftWork = $this->workCodes($left);
+        $rightWork = $this->workCodes($right);
+        if ($leftWork !== [] && $rightWork !== []) {
+            return array_intersect($leftWork, $rightWork) !== [];
+        }
+        if ($this->sharesFlooringVariantCode($left, $right)) {
+            return true;
         }
         if ($this->sharesProductCode($left, $right)) {
             return $this->sameExecutionVariant($left, $right);
@@ -181,6 +255,34 @@ class MaterialIdentity
             if ($this->normalizedKey($needle) === $this->normalizedKey($candidate)) {
                 return $candidate;
             }
+        }
+
+        $workHits = [];
+        foreach ($canonicalCandidates as $candidate) {
+            if ($this->sharesWorkCode($needle, $candidate)) {
+                $workHits[] = $candidate;
+            }
+        }
+        $workHits = array_values(array_unique($workHits));
+        if (count($workHits) === 1) {
+            return $workHits[0];
+        }
+        if (count($workHits) > 1) {
+            return null;
+        }
+
+        $variantHits = [];
+        foreach ($canonicalCandidates as $candidate) {
+            if ($this->sharesFlooringVariantCode($needle, $candidate)) {
+                $variantHits[] = $candidate;
+            }
+        }
+        $variantHits = array_values(array_unique($variantHits));
+        if (count($variantHits) === 1) {
+            return $variantHits[0];
+        }
+        if (count($variantHits) > 1) {
+            return null;
         }
 
         $needleKey = $this->normalizedKey($needle);
@@ -285,6 +387,10 @@ class MaterialIdentity
      */
     public function sameExecutionVariant(string $left, string $right): bool
     {
+        if ($this->sharesWorkCode($left, $right) || $this->sharesFlooringVariantCode($left, $right)) {
+            return true;
+        }
+
         $leftTokens = $this->distinctiveTokens($left);
         $rightTokens = $this->distinctiveTokens($right);
         if (count($leftTokens) >= 5 && count($rightTokens) >= 5) {

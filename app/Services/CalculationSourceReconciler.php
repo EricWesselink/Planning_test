@@ -29,7 +29,7 @@ class CalculationSourceReconciler
         foreach ($excelProducts as $product) {
             $meetstaatWork = $this->findWork($product['name'], $meetstaat);
             $materialWork = $this->findWork($product['name'], $materials);
-            $canonical = (string) ($materialWork['name'] ?? $meetstaatWork['name'] ?? $product['name']);
+            $canonical = (string) ($meetstaatWork['name'] ?? $materialWork['name'] ?? $product['name']);
             $key = mb_strtolower($canonical);
             if (isset($seen[$key])) {
                 $products[$seen[$key]]['excel_quantity'] = round(
@@ -55,7 +55,7 @@ class CalculationSourceReconciler
             if ($meetstaatWork === null && $materialWork === null) {
                 continue;
             }
-            $canonical = (string) ($materialWork['name'] ?? $meetstaatWork['name'] ?? $name);
+            $canonical = (string) ($meetstaatWork['name'] ?? $materialWork['name'] ?? $name);
             $seen[mb_strtolower($canonical)] = count($products);
             $products[] = $this->productRow($canonical, [
                 'name' => $canonical,
@@ -169,35 +169,48 @@ class CalculationSourceReconciler
         $excelQty = $excel['quantity'];
         $meetstaatQty = $this->declaredQuantity($meetstaat);
         $materialQty = $this->declaredQuantity($materials);
-        $values = array_values(array_filter(
-            [$excelQty, $meetstaatQty, $materialQty],
-            fn ($value): bool => $value !== null
-        ));
+        $quantitiesDiffer = $this->quantitiesDiffer($meetstaatQty, $excelQty, $materialQty);
         $status = 'confirmed';
         $message = null;
-        if (count($values) >= 2) {
-            $max = max($values);
-            $min = min($values);
-            $diff = round($max - $min, 4);
-            if ($diff > 0.05 && $diff > $max * 0.02) {
-                $status = 'warning';
-                $message = 'Hoeveelheid wijkt af tussen bronnen (Excel / meetstaat / materialenstaat).';
-            }
+        if ($meetstaatQty === null && $excelQty !== null) {
+            $status = 'review';
+            $message = 'Alleen in Excel: geen netto Meetstaat-m². Calculatieregel, niet automatisch als vloeropdracht overnemen.';
+        } elseif ($meetstaatQty !== null && $quantitiesDiffer) {
+            $message = 'Meetstaat is leidend voor netto m². Excel- en Materialenstaat-verschillen mogen bestaan en overschrijven deze hoeveelheid niet.';
         }
 
         $codes = $this->identity->productCodes($canonical);
+        $workCodes = $this->identity->workCodes($canonical);
+        $workCode = $workCodes[0] ?? $this->identity->leadingWorkCode($canonical);
+        $description = $canonical;
+        if ($workCode !== null) {
+            $description = trim(preg_replace('/^'.preg_quote($workCode, '/').'\b/iu', '', $canonical) ?? $canonical, " \t,");
+        }
+        $difference = null;
+        if ($meetstaatQty !== null && $excelQty !== null) {
+            $difference = round($excelQty - $meetstaatQty, 4);
+        } elseif ($meetstaatQty !== null && $materialQty !== null) {
+            $difference = round($materialQty - $meetstaatQty, 4);
+        }
         $type = WorkType::knownType($canonical);
 
         return [
             'name' => $canonical,
+            'work_code' => $workCode,
+            'description' => $description,
             'type' => $type,
             'codes' => $codes,
             'unit' => $excel['unit'] ?? (string) ($meetstaat['unit'] ?? $materials['unit'] ?? 'm2'),
             'excel_quantity' => $excelQty,
             'meetstaat_quantity' => $meetstaatQty,
             'materialenstaat_quantity' => $materialQty,
+            'leading_quantity' => $meetstaatQty,
+            'leading_source' => $meetstaatQty !== null ? 'meetstaat' : null,
+            'meetstaat_is_leading' => $meetstaatQty !== null,
+            'quantities_differ' => $quantitiesDiffer,
+            'difference' => $difference,
             'status' => $status,
-            'status_label' => $status === 'confirmed' ? 'Automatisch bevestigd' : 'Waarschuwing',
+            'status_label' => $status === 'review' ? 'Controleren' : 'Automatisch bevestigd',
             'message' => $message,
         ];
     }
@@ -220,6 +233,21 @@ class CalculationSourceReconciler
         return null;
     }
 
+    private function quantitiesDiffer(?float $meetstaatQty, ?float $excelQty, ?float $materialQty): bool
+    {
+        if ($meetstaatQty === null) {
+            return $excelQty !== null && $materialQty !== null && abs($excelQty - $materialQty) > 0.05;
+        }
+
+        foreach ([$excelQty, $materialQty] as $other) {
+            if ($other !== null && abs($other - $meetstaatQty) > 0.05) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * @param  array<string, mixed>  $preview
      * @param  list<array<string, mixed>>  $products
@@ -237,19 +265,19 @@ class CalculationSourceReconciler
                 'key' => 'excel_meetstaat',
                 'label' => 'Excel ↔ meetstaat',
                 'status' => $this->pairStatus($products, 'excel_quantity', 'meetstaat_quantity'),
-                'message' => 'Producten en hoeveelheden uit Excel en meetstaat.',
+                'message' => 'Meetstaat is leidend voor netto m²; Excel is calculatie/uren. Een verschil mag bestaan.',
             ],
             [
                 'key' => 'excel_materialenstaat',
                 'label' => 'Excel ↔ materialenstaat',
                 'status' => $this->pairStatus($products, 'excel_quantity', 'materialenstaat_quantity'),
-                'message' => 'Producten en hoeveelheden uit Excel en materialenstaat.',
+                'message' => 'Excel is calculatie; Materialenstaat is materiaalcontrole. Geen van beide overschrijft Meetstaat-netto.',
             ],
             [
                 'key' => 'meetstaat_materialenstaat',
                 'label' => 'Meetstaat ↔ materialenstaat',
                 'status' => $this->pairStatus($products, 'meetstaat_quantity', 'materialenstaat_quantity'),
-                'message' => 'Producten en hoeveelheden uit meetstaat en materialenstaat.',
+                'message' => 'Meetstaat is leidend voor netto m²; Materialenstaat is alleen materiaalcontrole.',
             ],
             [
                 'key' => 'project_number',
@@ -276,7 +304,7 @@ class CalculationSourceReconciler
                 continue;
             }
             $compared++;
-            if (($product['status'] ?? '') === 'warning') {
+            if (($product['status'] ?? '') === 'review') {
                 $warnings++;
             }
         }

@@ -54,7 +54,7 @@ class CalculationSourceReconcilerTest extends TestCase
         $this->assertNotEquals($result['products'][0]['name'], $result['products'][1]['name']);
     }
 
-    public function test_warns_on_small_quantity_deviation_without_blocking(): void
+    public function test_quantity_deviation_keeps_meetstaat_leading_without_blocking(): void
     {
         $excel = app(CalculationExcelParser::class)->parse([
             ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs', 'Kostprijs Tot.'],
@@ -75,7 +75,90 @@ class CalculationSourceReconcilerTest extends TestCase
         ]);
 
         $this->assertSame(0, $result['open_conflicts']);
-        $this->assertSame('warning', $result['products'][0]['status']);
+        $this->assertSame('confirmed', $result['products'][0]['status']);
+        $this->assertTrue($result['products'][0]['meetstaat_is_leading']);
+        $this->assertEqualsWithDelta(102.4, (float) $result['products'][0]['leading_quantity'], 0.01);
+        $this->assertEqualsWithDelta(100.0, (float) $result['products'][0]['excel_quantity'], 0.01);
+    }
+
+    public function test_meetstaat_quantity_stays_leading_when_excel_differs(): void
+    {
+        $excel = app(CalculationExcelParser::class)->parse([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs', 'Kostprijs Tot.'],
+            ['M', '100', 'M', 'Elastische vloerbedekking', 'NovaFloor Real 1100 coral, Linoleum', '1677.90', 'm2', '9', '15101.1'],
+            ['M', '100', 'M', 'Elastische vloerbedekking', 'NovaFloor Walton 2200 pine, Linoleum', '3098.54', 'm2', '9', '27886.86'],
+        ], 'calc.xlsx');
+
+        $result = app(CalculationSourceReconciler::class)->reconcile($excel['lines'], [
+            'header' => ['project_number' => '260200099'],
+            'works' => [],
+            'closure_baselines' => [
+                'meetstaat_works' => [
+                    ['name' => 'NovaFloor Real 1100 coral, Linoleum', 'unit' => 'm2', 'declared_total' => 1596.84],
+                    ['name' => 'NovaFloor Walton 2200 pine, Linoleum', 'unit' => 'm2', 'declared_total' => 2693.64],
+                ],
+                'material_works' => [
+                    ['name' => 'NovaFloor Real 1100 coral, Linoleum', 'unit' => 'm2', 'declared_total' => 1677.90],
+                    ['name' => 'NovaFloor Walton 2200 pine, Linoleum', 'unit' => 'm2', 'declared_total' => 3098.54],
+                ],
+            ],
+        ]);
+
+        $this->assertSame(0, $result['open_conflicts']);
+        $this->assertCount(2, $result['products']);
+        $this->assertSame('confirmed', $result['products'][0]['status']);
+        $this->assertTrue($result['products'][0]['meetstaat_is_leading']);
+        $this->assertTrue($result['products'][0]['quantities_differ']);
+        $this->assertEqualsWithDelta(1677.90, (float) $result['products'][0]['excel_quantity'], 0.01);
+        $this->assertEqualsWithDelta(1596.84, (float) $result['products'][0]['leading_quantity'], 0.01);
+        $this->assertEqualsWithDelta(1596.84, (float) $result['products'][0]['meetstaat_quantity'], 0.01);
+        $this->assertEqualsWithDelta(2693.64, (float) $result['products'][1]['leading_quantity'], 0.01);
+        $this->assertSame('meetstaat', $result['products'][0]['leading_source']);
+        $this->assertStringContainsString('leidend', mb_strtolower((string) $result['products'][0]['message']));
+    }
+
+    public function test_excel_only_floor_product_stays_a_review_calculation_row(): void
+    {
+        $excel = app(CalculationExcelParser::class)->parse([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs', 'Kostprijs Tot.'],
+            ['M', '100', 'M', 'Elastische vloerbedekking', 'NovaFloor Extra 3300 sage, Linoleum', '80', 'm2', '9', '720'],
+        ], 'calc.xlsx');
+
+        $result = app(CalculationSourceReconciler::class)->reconcile($excel['lines'], [
+            'header' => ['project_number' => '260200099'],
+            'works' => [],
+            'closure_baselines' => [
+                'meetstaat_works' => [],
+                'material_works' => [],
+            ],
+        ]);
+
+        $this->assertSame(1, $result['open_conflicts']);
+        $this->assertSame('review', $result['products'][0]['status']);
+        $this->assertNull($result['products'][0]['leading_quantity']);
+        $this->assertFalse($result['products'][0]['meetstaat_is_leading']);
+        $this->assertStringContainsString('Excel', (string) $result['products'][0]['message']);
+    }
+
+    public function test_meetstaat_quantity_stays_valid_without_excel_row(): void
+    {
+        $result = app(CalculationSourceReconciler::class)->reconcile([], [
+            'header' => ['project_number' => '260200099'],
+            'works' => [],
+            'closure_baselines' => [
+                'meetstaat_works' => [
+                    ['name' => 'NovaFloor Real 1100 coral, Linoleum', 'unit' => 'm2', 'declared_total' => 1596.84],
+                ],
+                'material_works' => [],
+            ],
+        ]);
+
+        $this->assertSame(0, $result['open_conflicts']);
+        $this->assertSame('confirmed', $result['products'][0]['status']);
+        $this->assertNull($result['products'][0]['excel_quantity']);
+        $this->assertEqualsWithDelta(1596.84, (float) $result['products'][0]['leading_quantity'], 0.01);
+        $this->assertTrue($result['products'][0]['meetstaat_is_leading']);
+        $this->assertFalse($result['products'][0]['quantities_differ']);
     }
 
     public function test_attaches_laakse_style_labor_to_specific_colors_without_review(): void

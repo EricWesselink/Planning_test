@@ -5,19 +5,21 @@
     $options = $preview['calculation']['options'] ?? [];
     $products = $preview['calculation']['products'] ?? [];
     $sourceChecks = $preview['calculation']['source_checks'] ?? [];
+    $quantitiesDiffer = collect($products)->contains(fn (array $product): bool => (bool) ($product['quantities_differ'] ?? false));
+    $productReview = collect($products)->contains(fn (array $product): bool => ($product['status'] ?? '') === 'review');
 @endphp
 @if ($laborLines !== [])
     <x-review-fold
         id="begrote-arbeidsuren"
         title="Begrote arbeidsuren uit calculatie"
-        :expanded="$openLabor > 0 || $errors->has('calculation_labor')"
-        :badge="$openLabor > 0 ? 'Handmatige controle' : ($laborWarnings > 0 ? 'Waarschuwing' : null)"
+        :expanded="$openLabor > 0 || $productReview || $quantitiesDiffer || $errors->has('calculation_labor')"
+        :badge="$openLabor > 0 || $productReview ? 'Handmatige controle' : ($laborWarnings > 0 || $quantitiesDiffer ? 'Meetstaat leidend' : null)"
     >
         @error('calculation_labor')
             <p class="text-sm text-nicon-danger">{{ $message }}</p>
         @enderror
         <p class="text-sm text-nicon-muted">
-            Uren en tarieven komen uit de Excel-calculatie (M/U = U en EH = uur). Hoeveelheden komen uit de bronbestanden, nooit terugrekend vanuit uren.
+            Uren en tarieven komen uit de Excel-calculatie (M/U = U en EH = uur). Netto m²/m¹ komen uit de Meetstaat en worden niet overschreven door Excel of Materialenstaat.
             @if (! empty($preview['calculation']['filenames']))
                 Bron: {{ implode(', ', $preview['calculation']['filenames']) }}
             @endif
@@ -116,26 +118,44 @@
             </table>
         </div>
         @if ($products !== [])
-            <h3 class="mt-4 text-sm font-medium">Hoeveelheden per type en kleur</h3>
+            <h3 class="mt-4 text-sm font-medium">Hoeveelheden per werkzaamheid</h3>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-nicon-sand text-left">
                         <tr>
-                            <th class="px-3 py-2">Product</th>
+                            <th class="px-3 py-2">Code</th>
+                            <th class="px-3 py-2">Omschrijving</th>
+                            <th class="px-3 py-2">
+                                Meetstaat netto
+                                <span class="ml-1 text-[10px] font-semibold uppercase tracking-wide text-nicon-ok">LEIDEND</span>
+                            </th>
                             <th class="px-3 py-2">Excel</th>
-                            <th class="px-3 py-2">Meetstaat</th>
                             <th class="px-3 py-2">Materialenstaat</th>
+                            <th class="px-3 py-2">Verschil</th>
                             <th class="px-3 py-2">Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($products as $product)
                             <tr class="border-t border-nicon-line">
-                                <td class="px-3 py-2">{{ $product['name'] ?? '' }}</td>
+                                <td class="px-3 py-2 font-medium">{{ $product['work_code'] ?? '—' }}</td>
+                                <td class="px-3 py-2">{{ $product['description'] ?? $product['name'] ?? '' }}</td>
+                                <td class="px-3 py-2">
+                                    {{ $product['meetstaat_quantity'] === null ? '—' : \App\Support\Format::qty($product['meetstaat_quantity'], 2) }}
+                                    @if (($product['meetstaat_is_leading'] ?? false) && ($product['quantities_differ'] ?? false))
+                                        <span class="ml-1 text-[10px] font-semibold uppercase tracking-wide text-nicon-ok">LEIDEND</span>
+                                    @endif
+                                </td>
                                 <td class="px-3 py-2">{{ $product['excel_quantity'] === null ? '—' : \App\Support\Format::qty($product['excel_quantity'], 2) }}</td>
-                                <td class="px-3 py-2">{{ $product['meetstaat_quantity'] === null ? '—' : \App\Support\Format::qty($product['meetstaat_quantity'], 2) }}</td>
                                 <td class="px-3 py-2">{{ $product['materialenstaat_quantity'] === null ? '—' : \App\Support\Format::qty($product['materialenstaat_quantity'], 2) }}</td>
-                                <td class="px-3 py-2 {{ ($product['status'] ?? '') === 'warning' ? 'text-nicon-warn' : 'text-nicon-muted' }}">
+                                <td class="px-3 py-2">
+                                    @if (($product['difference'] ?? null) !== null)
+                                        {{ (($product['difference'] ?? 0) > 0 ? '+' : '') . \App\Support\Format::qty($product['difference'], 2) }}
+                                    @else
+                                        —
+                                    @endif
+                                </td>
+                                <td class="px-3 py-2 {{ in_array($product['status'] ?? '', ['warning', 'review'], true) ? 'text-nicon-warn' : 'text-nicon-muted' }}">
                                     {{ $product['status_label'] ?? '' }}
                                     @if (! empty($product['message']))
                                         <div class="text-xs">{{ $product['message'] }}</div>

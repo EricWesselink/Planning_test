@@ -109,6 +109,7 @@ class CalculationImportService
         }
 
         $reconciliation = $this->reconciler->reconcile($lines, $preview);
+        $labor = $this->applyMeetstaatLeadingQuantities($labor, $reconciliation['products']);
         $preview['calculation'] = [
             'filenames' => array_values(array_filter($filenames)),
             'lines' => $lines,
@@ -319,7 +320,7 @@ class CalculationImportService
             fn (array $line): bool => ($line['status'] ?? '') === 'warning'
         )) + count(array_filter(
             $products,
-            fn (array $row): bool => ($row['status'] ?? '') === 'warning'
+            fn (array $row): bool => in_array($row['status'] ?? '', ['warning', 'review'], true)
         ));
     }
 
@@ -360,6 +361,54 @@ class CalculationImportService
         }
 
         return $article;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $labor
+     * @param  list<array<string, mixed>>  $products
+     * @return list<array<string, mixed>>
+     */
+    private function applyMeetstaatLeadingQuantities(array $labor, array $products): array
+    {
+        foreach ($labor as $index => $line) {
+            $workName = trim((string) ($line['work_name'] ?? ''));
+            if ($workName === '') {
+                continue;
+            }
+            $product = $this->productForWork($workName, $products);
+            if ($product === null) {
+                continue;
+            }
+            if (($product['meetstaat_quantity'] ?? null) !== null) {
+                $labor[$index]['excel_quantity'] = $line['quantity'] ?? null;
+                $labor[$index]['quantity'] = $product['meetstaat_quantity'];
+                $labor[$index]['quantity_source'] = 'meetstaat';
+            }
+        }
+
+        return $labor;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $products
+     * @return array<string, mixed>|null
+     */
+    private function productForWork(string $workName, array $products): ?array
+    {
+        $hits = [];
+        foreach ($products as $product) {
+            $name = trim((string) ($product['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            if (strcasecmp($name, $workName) === 0
+                || $this->identity->sharesIdentity($name, $workName)
+                || $this->identity->sharesIdentity($workName, $name)) {
+                $hits[] = $product;
+            }
+        }
+
+        return count($hits) === 1 ? $hits[0] : null;
     }
 
     /**
@@ -464,7 +513,7 @@ class CalculationImportService
             'project_id' => $project->id,
             'name' => $workName,
             'unit' => $unit->value,
-            'ordered_quantity' => $this->quantityForUnit($line, $unit),
+            'ordered_quantity' => 0,
             'status' => 'gepland',
             'sort_order' => (int) $project->workItems->max('sort_order') + 1,
         ]);
@@ -528,22 +577,6 @@ class CalculationImportService
             'st', 'stk', 'stuk', 'stuks' => WorkUnit::Pieces,
             default => WorkUnit::SquareMeter,
         };
-    }
-
-    /**
-     * @param  array<string, mixed>  $line
-     */
-    private function quantityForUnit(array $line, WorkUnit $unit): float
-    {
-        $lineUnit = rtrim(mb_strtolower(trim((string) ($line['quantity_unit'] ?? $line['unit'] ?? ''))), '.');
-        if ($unit === WorkUnit::SquareMeter && in_array($lineUnit, ['m2', 'm²'], true)) {
-            return (float) ($line['quantity'] ?? 0);
-        }
-        if ($unit === WorkUnit::LinearMeter && in_array($lineUnit, ['m1', 'm¹', 'lm'], true)) {
-            return (float) ($line['quantity'] ?? 0);
-        }
-
-        return 0.0;
     }
 
     private function isSpreadsheet(UploadedFile $file): bool

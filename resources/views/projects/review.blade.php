@@ -286,7 +286,7 @@
                 {{ $preview['source_priority_note'] ?? '' }}
                 @if (empty($preview['source_priority_note']))
                     @if (!empty($sources['meetstaat']))
-                        Meetstaat is de leidende bron voor ruimtes, werkzaamheden en materiaal-m².
+                        Meetstaat is leidend voor de netto m²/m¹ van het uit te voeren werk. Excel is calculatie/uren; Materialenstaat is materiaalcontrole; de plattegrond koppelt ruimtes.
                     @elseif (!empty($sources['plattegrond']))
                         De plattegrond bepaalt de fysieke ruimtes. Snijmaten en MaterialList mogen geen ruimtes of bouwlagen toevoegen; ze dienen alleen als controle/verrijking.
                     @elseif (!empty($sources['snijmaten']) || !empty($sources['materialenstaat']))

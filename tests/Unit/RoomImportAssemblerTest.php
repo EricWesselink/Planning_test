@@ -1881,4 +1881,34 @@ TXT);
         $this->assertSame([], $preview['project_header_mismatches']);
         $this->assertSame('Materialenstaat', $preview['header']['source_label']);
     }
+
+    public function test_material_list_netto_does_not_replace_meetstaat_declared_total(): void
+    {
+        $meetstaat = (new NiconMeetbonParser)->parse(<<<'TXT'
+Meetstaat
+Opdrachtgever : Nicon vloeren
+Referentie    : test
+Werknr        : 260200099
+Datum         : 07/09/2026
+Bouwlaag: begane grond
+NovaFloor Real 1100 coral, Linoleum
+0.01 hal 1596,84 m²
+Totaal 1596,84 m²
+Netto : 1596,84 m²
+TXT);
+        $materials = (new MaterialenstaatParser(new PdfTextExtractor))->parseText(<<<'TXT'
+Materialenstaat
+NovaFloor Real 1100 coral, Linoleum
+Netto : 1677,90 m²
+TXT);
+
+        $preview = (new RoomImportAssembler)->assemble($meetstaat, null, $materials);
+        $work = collect($preview['works'])->first(
+            fn (array $item): bool => str_contains((string) $item['name'], 'NovaFloor Real')
+        );
+
+        $this->assertNotNull($work);
+        $this->assertEqualsWithDelta(1596.84, (float) $work['declared_total'], 0.01);
+        $this->assertNotEquals(1677.90, (float) $work['declared_total']);
+    }
 }

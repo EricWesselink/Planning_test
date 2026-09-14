@@ -1,0 +1,45 @@
+Meetstaat
+Opdrachtgever : Nicon vloeren
+Referentie    : Politie Drachten
+Werknr        : 260200199
+Datum         : 07/09/2026
+
+43.20.01a Emco diplomaat 522 R , zwart,
+Entreemat Banen
+Bouwlaag: Kelvinlaan 2 begane grond
+Ruimte Oppervlakte Omtrek
+00.01 entreeruimte 12.50 m² 14.00 m
+Totaal 12.50 m² 14.00 m
+Netto : 12,50 m²
+
+43.20.03a Epoxy gietvloer (sp) S 3500-N,
+donkergrijs, Coating
+Bouwlaag: Kelvinlaan 2 begane grond
+Ruimte Oppervlakte Omtrek
+00.10 hal 200.00 m² 60.00 m
+00.11 kantoor 321.86 m² 80.00 m
+Totaal 521.86 m² 140.00 m
+Pagina 2
+
+Bouwlaag: Kelvinlaan 2 begane grond Coatingvloeren
+Ruimte Oppervlakte Omtrek
+00.10 hal 150.00 m² 50.00 m
+00.20 archief 204.82 m² 70.00 m
+Totaal 354.82 m² 120.00 m
+Netto : 876,68 m²
+
+43.20.03b Epoxy gietvloer antislip, lichtgrijs,
+Coating
+Bouwlaag: Kelvinlaan 2 verdieping 1
+Ruimte Oppervlakte Omtrek
+01.02 vergaderzaal 40.00 m² 26.00 m
+Totaal 40.00 m² 26.00 m
+Netto : 40,00 m²
+
+43.20.05a Tapijttegel Desso Airmaster,
+Tapijttegels
+Bouwlaag: Kelvinlaan 2 verdieping 1
+Ruimte Oppervlakte Omtrek
+01.05 kantoor 80.00 m² 36.00 m
+Totaal 80.00 m² 36.00 m
+Netto : 80,00 m²

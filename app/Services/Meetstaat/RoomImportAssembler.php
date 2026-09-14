@@ -74,8 +74,8 @@ class RoomImportAssembler
         );
 
         $works = $this->mergeWorks(array_merge(
-            $materials['works'] ?? [],
             $meetstaat['works'] ?? [],
+            $materials['works'] ?? [],
             $snijmaten['works'] ?? [],
             $drawing['works'] ?? [],
         ), $areas);
@@ -1407,8 +1407,8 @@ class RoomImportAssembler
     }
 
     /**
-     * Voeg declared works samen. Zelfde productidentiteit (code of canonieke naam) wordt één regel;
-     * bij conflict op exacte merge zonder TASK_SOURCE-preferentie wint het hoogste eindtotaal.
+     * Voeg declared works samen. Zelfde productidentiteit (code of canonieke naam) wordt één regel.
+     * Een bestaande netto-hoeveelheid wordt niet overschreven: Meetstaat eerst, daarna alleen vullen als die leeg is.
      *
      * @param  list<array<string, mixed>>  $declared
      * @return array<string, array<string, mixed>>
@@ -1444,7 +1444,7 @@ class RoomImportAssembler
             if ($this->preferCanonicalMaterialName($name, $existingName)) {
                 $works[$identityKey]['name'] = $name;
             }
-            if ($incomingDeclared > (float) ($works[$identityKey]['declared_total'] ?? 0)) {
+            if ((float) ($works[$identityKey]['declared_total'] ?? 0) <= 0 && $incomingDeclared > 0) {
                 $works[$identityKey]['declared_total'] = $incomingDeclared;
             }
             $works[$identityKey]['source_names'] = array_values(array_unique(array_merge(
@@ -1467,7 +1467,7 @@ class RoomImportAssembler
     private function mergeExpectedTaskSourceWorks(array $materialWorks, array $meetstaatWorks, bool $meetstaatIsTaskSource): array
     {
         if (! $meetstaatIsTaskSource) {
-            return $this->mergeDeclaredWorks(array_merge($materialWorks, $meetstaatWorks));
+            return $this->mergeDeclaredWorks(array_merge($meetstaatWorks, $materialWorks));
         }
 
         $works = $this->mergeDeclaredWorks($meetstaatWorks);
@@ -2273,8 +2273,8 @@ class RoomImportAssembler
             }
             $calculated = round($calculated, 2);
 
-            // Met meetstaat als TASK_SOURCE: vergelijk taken met meetstaat declared, niet met MaterialList Netto.
-            $taskExpected = $meetstaatIsTaskSource && $meetstaatDeclared !== null
+            // Meetstaat-netto is leidend voor de werkhoeveelheid; MaterialList is alleen controle.
+            $taskExpected = $meetstaatDeclared !== null
                 ? $meetstaatDeclared
                 : $materialListNetto;
             $declaredKnown = $taskExpected !== null;
@@ -2286,10 +2286,10 @@ class RoomImportAssembler
             $audit = null;
             $consensus = $this->strongSourceConsensus($meetstaatDeclared, $legendDeclared, $calculated);
 
-            if ($meetstaatIsTaskSource && $meetstaatDeclared !== null) {
+            if ($meetstaatDeclared !== null) {
                 $expectedSource = $consensus
                     ? 'Meetstaat + tekeninglegenda (bronconsensus)'
-                    : 'Meetstaat (TASK_SOURCE)';
+                    : 'Meetstaat';
 
                 if ($materialListNetto !== null && abs($materialListNetto - $meetstaatDeclared) > 0.10) {
                     $ratio = $meetstaatDeclared > 0.0001
@@ -2507,6 +2507,10 @@ class RoomImportAssembler
         $tasksExpected = $taskExpectedKnown ? round($taskExpected, 2) : null;
         $tasksDifference = $tasksExpected !== null ? round($tasksFound - $tasksExpected, 2) : null;
         $meetstaatTasks = round($meetstaatTaskMeters, 2);
+        if ($meetstaatAreas !== []) {
+            $taskExpectedKnown = true;
+            $taskExpected = $meetstaatTasks;
+        }
         $taskSourceLost = $meetstaatAreas === []
             ? 0.0
             : round(max(0.0, $meetstaatTasks - $tasksFound), 2);
@@ -3092,6 +3096,11 @@ class RoomImportAssembler
         foreach ($tasks as $index => $existingTask) {
             $existingName = trim((string) ($existingTask['work_name'] ?? ''));
             if ($existingName === '' || $this->taskUnitValue($existingTask) !== $unit) {
+                continue;
+            }
+            $incomingCodes = $this->materialIdentity()->workCodes($name);
+            $existingCodes = $this->materialIdentity()->workCodes($existingName);
+            if ($incomingCodes !== [] && $existingCodes !== [] && array_intersect($incomingCodes, $existingCodes) === []) {
                 continue;
             }
             if (! $this->isDuplicateMaterialLabel($existingName, $name)) {

@@ -46,6 +46,13 @@ class MaterialenstaatParser
                 continue;
             }
 
+            if ($this->materialCode($line) !== null) {
+                $works[] = $this->startCodedMaterial($line);
+                $current = array_key_last($works);
+
+                continue;
+            }
+
             $inline = $this->parseInlineProductRow($line);
             if ($inline !== null) {
                 $works[] = $inline;
@@ -62,6 +69,17 @@ class MaterialenstaatParser
                 }
 
                 continue;
+            }
+
+            if ($current !== null && $this->materialCode((string) $works[$current]['name']) !== null) {
+                if ($this->isSectionBoundary($line)) {
+                    continue;
+                }
+                if (! $this->looksLikeIndependentProductStart($line)) {
+                    $this->appendProductContinuation($works[$current], $line);
+
+                    continue;
+                }
             }
 
             if (! $this->looksLikeProductName($line)) {
@@ -115,6 +133,66 @@ class MaterialenstaatParser
         $line = str_replace("\xC2\xA0", ' ', $line);
 
         return trim(preg_replace('/[ \t]+/', ' ', $line) ?? $line);
+    }
+
+    private function materialCode(string $line): ?string
+    {
+        if (preg_match('/^V\.(\d{2})\b/u', $line, $match)) {
+            return 'V.'.$match[1];
+        }
+        if (preg_match('/^(\d{2}\.\d{2}\.\d{2}[a-z]?)\b/iu', $line, $match)) {
+            return mb_strtolower($match[1]);
+        }
+
+        return null;
+    }
+
+    private function isSectionBoundary(string $line): bool
+    {
+        return (bool) preg_match('/^(materialenstaat|materiaalstaat|pagina|totaal|bouwlaag|artikel|opdrachtgever|referentie|werknr|werknummer|datum)\b/iu', $line);
+    }
+
+    private function looksLikeIndependentProductStart(string $line): bool
+    {
+        return (bool) preg_match('/\b(tarkett|desso|ege|marmoleum|sikkens|coral)\b/iu', $line);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function startCodedMaterial(string $line): array
+    {
+        $quantity = null;
+        $nameLine = $line;
+        if (preg_match('/^(.+?)\s+(\d+(?:[.,]\d+)?)\s*m(?:²|2)\b/u', $line, $match)) {
+            $nameLine = $match[1];
+            $quantity = DutchNumber::parse($match[2]);
+        }
+
+        $name = $this->cleanProductName($nameLine);
+
+        return [
+            'name' => $name,
+            'unit' => $this->unitFromProductName($name),
+            'declared_total' => $quantity,
+            'calculated_total' => 0.0,
+            'source_names' => [$name],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $work
+     */
+    private function appendProductContinuation(array &$work, string $line): void
+    {
+        $fragment = trim(preg_replace('/\s+/', ' ', $line) ?? $line, ' ,');
+        if ($fragment === '') {
+            return;
+        }
+
+        $work['name'] = trim($work['name'].' '.$fragment, ' ,');
+        $work['source_names'] = [$work['name']];
+        $work['unit'] = $this->unitFromProductName($work['name']);
     }
 
     /**

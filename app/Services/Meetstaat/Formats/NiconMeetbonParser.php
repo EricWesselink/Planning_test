@@ -63,8 +63,12 @@ class NiconMeetbonParser implements MeetstaatFormatParser
                 $pending = trim(implode(' ', $pendingName));
                 if ($pending !== '' && $this->looksLikeProductName($pending)
                     && ($currentWorkIndex === null || $this->workAlreadyHasRooms($works[$currentWorkIndex]))) {
-                    $currentWorkIndex = $this->startWork($works, $pendingName, $pending);
-                    $pendingName = [];
+                    if ($this->pendingStartsNewWork($pending, $works, $currentWorkIndex)) {
+                        $currentWorkIndex = $this->startWork($works, $pendingName, $pending);
+                        $pendingName = [];
+                    } else {
+                        $this->applyPendingName($works, $currentWorkIndex, $pendingName);
+                    }
                 } else {
                     $this->applyPendingName($works, $currentWorkIndex, $pendingName);
                 }
@@ -76,9 +80,13 @@ class NiconMeetbonParser implements MeetstaatFormatParser
 
             if (preg_match('/^(Netto|Bruto(?:\s*-\s*Deur)?|Snijverlies)\s*:/i', $line)) {
                 $needNew = $currentWorkIndex === null
-                    || ($pendingName !== [] && $this->workAlreadyHasRooms($works[$currentWorkIndex]));
+                    || ($pendingName !== []
+                        && $this->workAlreadyHasRooms($works[$currentWorkIndex])
+                        && $this->pendingStartsNewWork(trim(implode(' ', $pendingName)), $works, $currentWorkIndex));
                 if ($needNew) {
                     $currentWorkIndex = $this->startWork($works, $pendingName, $line);
+                } else {
+                    $this->applyPendingName($works, $currentWorkIndex, $pendingName);
                 }
                 $this->applyDeclaredTotal($works[$currentWorkIndex], $line);
                 $pendingName = [];
@@ -164,6 +172,10 @@ class NiconMeetbonParser implements MeetstaatFormatParser
             } elseif ($pendingName !== [] && $this->materialIdentity()->looksLikeProductTypeContinuation($line)) {
                 // Tweede regel van een productkop: "… 7133080 (96 x 96 cm)," + "Tapijttegels".
                 $pendingName[] = $line;
+            } elseif ($currentWorkIndex !== null
+                && $this->leadingWorkCode((string) $works[$currentWorkIndex]['name']) !== null
+                && $this->isDescriptionContinuation($line)) {
+                $pendingName[] = $line;
             } else {
                 $uncertain[] = ['line' => $line, 'reason' => 'Regel niet herkend.'];
             }
@@ -210,6 +222,12 @@ class NiconMeetbonParser implements MeetstaatFormatParser
         if (preg_match('/^(omtrek|oppervlakte|naden|ruimte|totaal|pagina|bouwlaag)\b/i', $line)) {
             return false;
         }
+        if (preg_match('/^V\.\d{2}\b/u', $line)) {
+            return true;
+        }
+        if ($this->materialIdentity()->leadingWorkCode($line) !== null) {
+            return true;
+        }
 
         if ($this->materialIdentity()->looksLikeStrongProductHeader($line)) {
             return true;
@@ -253,11 +271,56 @@ class NiconMeetbonParser implements MeetstaatFormatParser
     /** @param list<string> $pendingName */
     private function applyPendingName(array &$works, ?int $index, array &$pendingName): void
     {
-        if ($index !== null && $pendingName !== [] && in_array($works[$index]['name'], ['Onbekend product', ''], true)) {
-            $works[$index]['name'] = $this->cleanProductName(implode(' ', $pendingName));
-            $works[$index]['unit'] = $this->unitFromProductName($works[$index]['name']);
+        if ($index !== null && $pendingName !== []) {
+            $pending = $this->cleanProductName(implode(' ', $pendingName));
+            if (in_array($works[$index]['name'], ['Onbekend product', ''], true)) {
+                $works[$index]['name'] = $pending;
+                $works[$index]['unit'] = $this->unitFromProductName($works[$index]['name']);
+            } elseif ($pending !== ''
+                && $this->leadingWorkCode((string) $works[$index]['name']) !== null
+                && $this->leadingWorkCode($pending) === null
+                && ! str_contains(mb_strtolower((string) $works[$index]['name']), mb_strtolower($pending))) {
+                $works[$index]['name'] = $this->cleanProductName($works[$index]['name'].' '.$pending);
+                $works[$index]['unit'] = $this->unitFromProductName($works[$index]['name']);
+            }
         }
         $pendingName = [];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $works
+     */
+    private function pendingStartsNewWork(string $pending, array $works, ?int $currentWorkIndex): bool
+    {
+        if ($currentWorkIndex === null) {
+            return true;
+        }
+        $pendingCode = $this->leadingWorkCode($pending);
+        $currentCode = $this->leadingWorkCode((string) ($works[$currentWorkIndex]['name'] ?? ''));
+        if ($pendingCode !== null) {
+            return $pendingCode !== $currentCode;
+        }
+        if ($currentCode !== null) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function leadingWorkCode(string $line): ?string
+    {
+        return $this->materialIdentity()->leadingWorkCode($line);
+    }
+
+    private function isDescriptionContinuation(string $line): bool
+    {
+        if ($this->leadingWorkCode($line) !== null) {
+            return false;
+        }
+
+        return $this->materialIdentity()->looksLikeProductTypeContinuation($line)
+            || $this->materialIdentity()->isGenericTypeLabel($line)
+            || (bool) preg_match('/^(donkergrijs|lichtgrijs|zwart|wit|grijs)\b/iu', $line);
     }
 
     private function workAlreadyHasRooms(array $work): bool

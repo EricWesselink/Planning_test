@@ -47,6 +47,50 @@ class CalculationExcelImportTest extends TestCase
         $this->assertSame(0, Project::query()->count());
     }
 
+    public function test_review_marks_meetstaat_as_leading_when_excel_quantity_differs(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [
+                new UploadedFile(
+                    SimplePdf::path(<<<'TXT'
+Meetstaat
+Opdrachtgever : Nicon vloeren
+Referentie    : Eric Wesselink
+Werknr        : 260200099
+Bouwlaag: begane grond
+NovaFloor Real 1100 coral, Linoleum
+0.01 hal 1596,84 m²
+Totaal 1596,84 m²
+Netto : 1596,84 m²
+TXT),
+                    'Meetstaat.pdf',
+                    'application/pdf',
+                    null,
+                    true
+                ),
+                UploadedFile::fake()->createWithContent('calc.csv', implode("\n", [
+                    'KM;Groep;M/U;Productie Eenheid Omschrijving;Artikel Omschrijving;Aantal;EH;Kostprijs;Kostprijs Tot.',
+                    'L;100;U;Elastische vloerbedekking;Elastische vloerbedekking;20;uur;48;960',
+                    'M;100;M;Elastische vloerbedekking;NovaFloor Real 1100 coral, Linoleum;1677.90;m2;9;15101.1',
+                ])),
+            ],
+            'types' => ['meetstaat', 'calculatie'],
+        ]);
+
+        $response->assertRedirect();
+        $this->followRedirects($response)
+            ->assertOk()
+            ->assertSee('LEIDEND')
+            ->assertSee('1.596,84')
+            ->assertSee('1.677,90')
+            ->assertSee('Meetstaat is leidend voor de netto')
+            ->assertDontSee('Hoeveelheid wijkt af tussen bronnen');
+
+        $this->assertSame(0, Project::query()->count());
+    }
+
     public function test_import_stores_original_lines_and_applies_budget_hours_from_excel_rates(): void
     {
         $user = User::factory()->create();

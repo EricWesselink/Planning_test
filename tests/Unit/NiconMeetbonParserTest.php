@@ -213,4 +213,58 @@ TXT;
         $this->assertEqualsWithDelta(120.39, (float) $cork['declared_total'], 0.01);
         $this->assertEqualsWithDelta(120.39, (float) $cork['calculated_total'], 0.01);
     }
+
+    public function test_wrapped_flooring_variant_header_stays_one_work_per_code(): void
+    {
+        $text = <<<'TXT'
+Meetstaat
+Opdrachtgever : Nicon vloeren
+Referentie    : test
+Werknr        : 250500046
+Datum         : 07/09/2026
+
+V.02 Zomer Gerflor Mipolam affinity 4424
+Smoked Opal, PVC Banen / Vinyl
+Bouwlaag: begane grond
+Ruimte Oppervlakte Omtrek
+00.01 hal 100.00 m² 40.00 m
+Totaal 100.00 m² 40.00 m
+Netto : 708,36 m²
+
+V.04 Zomer Gerflor Mipolam affinity 4424
+Cloudy Night, PVC Banen / Vinyl
+Bouwlaag: verdieping 1
+Ruimte Oppervlakte Omtrek
+01.02 kantoor 80.00 m² 36.00 m
+Totaal 80.00 m² 36.00 m
+Netto : 609,44 m²
+TXT;
+
+        $parsed = (new NiconMeetbonParser)->parse($text);
+        $names = collect($parsed['works'])->pluck('name');
+        $v02 = collect($parsed['works'])->first(fn (array $work) => str_contains((string) $work['name'], 'V.02'));
+        $v04 = collect($parsed['works'])->first(fn (array $work) => str_contains((string) $work['name'], 'V.04'));
+        $hal = collect($parsed['areas'])->first(fn (array $area) => ($area['room_number'] ?? '') === '00.01');
+        $kantoor = collect($parsed['areas'])->first(fn (array $area) => ($area['room_number'] ?? '') === '01.02');
+
+        $this->assertCount(2, $parsed['works']);
+        $this->assertFalse($names->contains('Smoked Opal, PVC Banen / Vinyl'));
+        $this->assertFalse($names->contains('Cloudy Night, PVC Banen / Vinyl'));
+        $this->assertNotNull($v02);
+        $this->assertNotNull($v04);
+        $this->assertStringContainsString('Smoked Opal', (string) $v02['name']);
+        $this->assertStringContainsString('Cloudy Night', (string) $v04['name']);
+        $this->assertEqualsWithDelta(708.36, (float) $v02['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(609.44, (float) $v04['declared_total'], 0.01);
+        $this->assertNotNull($hal);
+        $this->assertNotNull($kantoor);
+        $this->assertSame('begane grond', $hal['floor']);
+        $this->assertSame('verdieping 1', $kantoor['floor']);
+        $this->assertSame('hal', $hal['room_name']);
+        $this->assertSame('kantoor', $kantoor['room_name']);
+        $this->assertEqualsWithDelta(100.0, (float) $hal['tasks'][0]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(80.0, (float) $kantoor['tasks'][0]['quantity'], 0.001);
+        $this->assertStringContainsString('V.02', (string) $hal['tasks'][0]['work_name']);
+        $this->assertStringContainsString('V.04', (string) $kantoor['tasks'][0]['work_name']);
+    }
 }

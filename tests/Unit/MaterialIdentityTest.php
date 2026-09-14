@@ -130,4 +130,20 @@ class MaterialIdentityTest extends TestCase
         $this->assertTrue($identity->looksLikeStrongProductHeader('Lino Art Urban R893-0555 op kurk, flashy street'));
         $this->assertTrue($identity->looksLikeProductTypeContinuation('Tapijttegels'));
     }
+
+    public function test_flooring_variant_code_keeps_wrapped_color_on_the_same_material(): void
+    {
+        $identity = new MaterialIdentity;
+        $short = 'V.02 Zomer Gerflor Mipolam affinity 4424';
+        $full = 'V.02 Zomer Gerflor Mipolam affinity 4424 Smoked Opal, PVC Banen / Vinyl';
+        $other = 'V.04 Zomer Gerflor Mipolam affinity 4424 Cloudy Night, PVC Banen / Vinyl';
+
+        $this->assertSame(['v.02'], $identity->flooringVariantCodes($full));
+        $this->assertTrue($identity->sharesFlooringVariantCode($short, $full));
+        $this->assertTrue($identity->sharesIdentity($short, $full));
+        $this->assertTrue($identity->sameExecutionVariant($short, $full));
+        $this->assertSame($full, $identity->resolveUniqueCanonical($short, [$full, $other]));
+        $this->assertFalse($identity->sharesIdentity($full, $other));
+        $this->assertFalse($identity->sharesFlooringVariantCode($full, $other));
+    }
 }

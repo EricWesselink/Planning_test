@@ -89,4 +89,40 @@ TXT;
 
         $this->assertSame('250200015', $parsed['header']['project_number']);
     }
+
+    public function test_wrapped_flooring_variant_lines_stay_one_material_each(): void
+    {
+        $text = <<<'TXT'
+Materialenstaat
+V.02 Zomer Gerflor Mipolam affinity 4424
+Smoked Opal, PVC Banen / Vinyl
+Bouwlaag: begane grond
+Netto : 708,36 m²
+V.04 Zomer Gerflor Mipolam affinity 4424
+Cloudy Night, PVC Banen / Vinyl
+Bouwlaag: verdieping 1
+Netto : 609,44 m²
+TXT;
+
+        $parsed = (new MaterialenstaatParser(new PdfTextExtractor))->parseText($text);
+        $names = collect($parsed['works'])->pluck('name');
+        $v02 = collect($parsed['works'])->first(fn (array $work) => str_starts_with((string) $work['name'], 'V.02'));
+        $v04 = collect($parsed['works'])->first(fn (array $work) => str_starts_with((string) $work['name'], 'V.04'));
+
+        $this->assertCount(2, $parsed['works']);
+        $this->assertFalse($names->contains('Smoked Opal, PVC Banen / Vinyl'));
+        $this->assertFalse($names->contains('Cloudy Night, PVC Banen / Vinyl'));
+        $this->assertNotNull($v02);
+        $this->assertNotNull($v04);
+        $this->assertStringContainsString('Smoked Opal', (string) $v02['name']);
+        $this->assertStringContainsString('PVC', (string) $v02['name']);
+        $this->assertStringContainsString('Vinyl', (string) $v02['name']);
+        $this->assertStringContainsString('Cloudy Night', (string) $v04['name']);
+        $this->assertEqualsWithDelta(708.36, (float) $v02['declared_total'], 0.01);
+        $this->assertEqualsWithDelta(609.44, (float) $v04['declared_total'], 0.01);
+        $this->assertSame('m2', $v02['unit']);
+        $this->assertSame('m2', $v04['unit']);
+        $this->assertSame([], $parsed['areas']);
+        $this->assertSame([], $parsed['floors']);
+    }
 }

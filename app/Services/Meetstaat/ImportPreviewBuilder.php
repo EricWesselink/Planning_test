@@ -335,7 +335,7 @@ class ImportPreviewBuilder
             return 'Plattegrond bepaalt fysieke ruimtes. Kleur/legenda + Snijmaten-hints bepalen materiaal per ruimte. MaterialList is projectbrede controle.';
         }
         if (! empty($sources['meetstaat'])) {
-            return 'Meetstaat is de leidende bron voor ruimtes, werkzaamheden en materiaal-m².';
+            return 'Meetstaat is leidend voor de netto m²/m¹ van het uit te voeren werk. Excel is calculatie/uren; Materialenstaat is materiaalcontrole; de plattegrond koppelt ruimtes.';
         }
         if (! empty($sources['plattegrond'])) {
             return 'De plattegrond bepaalt de fysieke ruimtes. Snijmaten en MaterialList mogen geen ruimtes of bouwlagen toevoegen; ze dienen alleen als controle/verrijking.';
