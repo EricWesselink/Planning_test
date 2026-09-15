@@ -18,6 +18,47 @@ class PlanningWeekTest extends TestCase
         $this->assertTrue($monday->isMonday());
     }
 
+    public function test_friday_of_iso_week_forty_four_in_2026_is_30_october(): void
+    {
+        $friday = PlanningWeek::friday(2026, 44);
+
+        $this->assertNotNull($friday);
+        $this->assertSame('2026-10-30', $friday->toDateString());
+        $this->assertTrue($friday->isFriday());
+    }
+
+    public function test_assignment_range_uses_monday_through_friday(): void
+    {
+        $range = PlanningWeek::assignmentRange(2026, 40, 44);
+
+        $this->assertNotNull($range);
+        $this->assertSame('2026-09-28', $range['start']->toDateString());
+        $this->assertSame('2026-10-30', $range['end']->toDateString());
+    }
+
+    public function test_assignment_range_allows_a_single_week(): void
+    {
+        $range = PlanningWeek::assignmentRange(2026, 42, 42);
+
+        $this->assertNotNull($range);
+        $this->assertSame('2026-10-12', $range['start']->toDateString());
+        $this->assertSame('2026-10-16', $range['end']->toDateString());
+    }
+
+    public function test_assignment_range_rejects_a_week_that_does_not_exist(): void
+    {
+        $this->assertNull(PlanningWeek::assignmentRange(2025, 53, 53));
+    }
+
+    public function test_assignment_range_keeps_week_fifty_three_across_new_year(): void
+    {
+        $range = PlanningWeek::assignmentRange(2026, 53, 53);
+
+        $this->assertNotNull($range);
+        $this->assertSame('2026-12-28', $range['start']->toDateString());
+        $this->assertSame('2027-01-01', $range['end']->toDateString());
+    }
+
     public function test_saturday_of_iso_week_forty_four_in_2026_is_31_october(): void
     {
         $saturday = PlanningWeek::saturday(2026, 44);

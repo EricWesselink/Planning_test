@@ -1,4 +1,4 @@
-<div class="person-bar {{ $personBar['double'] ? 'double' : '' }}{{ ! empty($personBar['has_budget_overrun']) ? ' person-bar--over' : '' }}{{ ! empty($personBar['ticket_mark']) ? ' person-bar--ticket' : '' }}"
+<div class="person-bar {{ $personBar['double'] ? 'double' : '' }}{{ ! empty($personBar['has_budget_overrun']) ? ' person-bar--over' : '' }}{{ ! empty($personBar['ticket_mark']) ? ' person-bar--ticket' : '' }}{{ ! empty($personBar['is_provisional']) ? ' person-bar--provisional' : '' }}"
      data-shift-type="assignment"
      data-shift-id="{{ $personBar['assignment_id'] }}"
      data-worker-id="{{ $personBar['worker_id'] }}"
@@ -15,6 +15,7 @@
      data-end-time="{{ $personBar['end_time'] ?? '16:00' }}"
      data-include-saturday="{{ ! empty($personBar['include_saturday']) ? '1' : '0' }}"
      data-include-sunday="{{ ! empty($personBar['include_sunday']) ? '1' : '0' }}"
+     data-provisional="{{ ! empty($personBar['is_provisional']) ? '1' : '0' }}"
      data-people-count="{{ $personBar['people_count'] }}"
      data-planned-hours="{{ $personBar['planned_hours'] ?? 8 }}"
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"

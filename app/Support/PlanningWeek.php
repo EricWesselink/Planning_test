@@ -154,6 +154,15 @@ class PlanningWeek
         return Carbon::now()->setISODate($year, $week, Carbon::MONDAY)->startOfDay();
     }
 
+    public static function friday(?int $year, ?int $week): ?Carbon
+    {
+        if ($year === null || $week === null || ! self::weekExists($year, $week)) {
+            return null;
+        }
+
+        return Carbon::now()->setISODate($year, $week, Carbon::FRIDAY)->startOfDay();
+    }
+
     public static function saturday(?int $year, ?int $week): ?Carbon
     {
         if ($year === null || $week === null || ! self::weekExists($year, $week)) {
@@ -161,6 +170,20 @@ class PlanningWeek
         }
 
         return Carbon::now()->setISODate($year, $week, Carbon::SATURDAY)->startOfDay();
+    }
+
+    /**
+     * @return array{start: Carbon, end: Carbon}|null
+     */
+    public static function assignmentRange(int $year, int $fromWeek, int $toWeek): ?array
+    {
+        $start = self::monday($year, $fromWeek);
+        $end = self::friday($year, $toWeek);
+        if ($start === null || $end === null || $end->lt($start)) {
+            return null;
+        }
+
+        return ['start' => $start, 'end' => $end];
     }
 
     public static function year(?CarbonInterface $date): ?int
@@ -188,7 +211,7 @@ class PlanningWeek
             return false;
         }
 
-        $maxWeek = (int) Carbon::now()->setISODate($year, 1)->isoWeeksInYear();
+        $maxWeek = (int) Carbon::create($year, 12, 28)->isoWeeksInYear();
 
         return $week <= $maxWeek;
     }

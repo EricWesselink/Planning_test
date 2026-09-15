@@ -821,6 +821,7 @@ class PlanningBoardService
             'end_time' => PlanningHours::formatTime($assignment->endTimeValue()),
             'include_saturday' => $assignment->includesSaturday(),
             'include_sunday' => $assignment->includesSunday(),
+            'is_provisional' => $assignment->isProvisional(),
             'hours_per_day' => (float) $assignment->hours_per_day,
             'planned_hours' => $assignment->plannedHoursValue(),
             'color' => $assignment->worker?->planColor() ?? Format::planColor((int) $assignment->worker_id),
@@ -1085,12 +1086,12 @@ class PlanningBoardService
         return [
             'start' => $start,
             'span' => $end - $start + 1,
-            'start_offset' => $assignment->start_date->toDateString() === $firstDay->toDateString()
-                ? PlanningHours::fractionFromTime($assignment->startTimeValue())
-                : 0.0,
-            'end_offset' => $assignment->end_date->toDateString() === $lastDay->toDateString()
-                ? PlanningHours::fractionFromTime($assignment->endTimeValue())
-                : 1.0,
+            'start_offset' => $assignment->isProvisional() || $assignment->start_date->toDateString() !== $firstDay->toDateString()
+                ? 0.0
+                : PlanningHours::fractionFromTime($assignment->startTimeValue()),
+            'end_offset' => $assignment->isProvisional() || $assignment->end_date->toDateString() !== $lastDay->toDateString()
+                ? 1.0
+                : PlanningHours::fractionFromTime($assignment->endTimeValue()),
         ];
     }
 

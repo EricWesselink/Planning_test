@@ -15,6 +15,8 @@ import {
 } from './planning-hours';
 import { bindLaborFold } from './planning-labor-fold';
 import { bindPlanningScrollRestore, reloadPlanningBoard } from './planning-scroll';
+import { bindPlanningDatePickers, workdaysForIsoWeek } from './planning-datepicker.js';
+import { isoWeekFromDate } from './planning-weeks.js';
 
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 const board = document.getElementById('plan-board');
@@ -36,6 +38,14 @@ if (board) {
     const crewHeading = document.getElementById('plan-crew-heading');
     const crewHint = document.getElementById('plan-crew-hint');
     const hoursSelect = document.getElementById('plan-hours');
+    const hoursWrap = document.getElementById('plan-hours-wrap');
+    const datesWrap = document.getElementById('plan-dates-wrap');
+    const weeksWrap = document.getElementById('plan-weeks-wrap');
+    const whenDatesInput = document.getElementById('plan-when-dates');
+    const whenWeeksInput = document.getElementById('plan-when-weeks');
+    const startWeekInput = document.getElementById('plan-start-week');
+    const endWeekInput = document.getElementById('plan-end-week');
+    const weekYearInput = document.getElementById('plan-week-year');
     const slotWrap = document.getElementById('plan-slot-wrap');
     const slotList = document.getElementById('plan-slot-list');
     const hoursSummary = document.getElementById('plan-hours-summary');
@@ -279,7 +289,7 @@ if (board) {
     }
 
     async function refreshCandidates() {
-        if (!candidatesUrl || !workSelect.value || !startInput.value || !endInput.value) {
+        if (weekMode() || !candidatesUrl || !workSelect.value || !startInput.value || !endInput.value) {
             return;
         }
         const times = selectedTimes();
@@ -394,6 +404,84 @@ if (board) {
             }
         });
         return hours;
+    }
+
+    function defaultWeekYear() {
+        return Number(board.dataset.weekYear || new Date().getFullYear());
+    }
+
+    function weekMode() {
+        return Boolean(whenWeeksInput?.checked);
+    }
+
+    function syncWeeksFromDates() {
+        const start = isoWeekFromDate(startInput.value);
+        const end = isoWeekFromDate(endInput.value) || start;
+        if (weekYearInput) {
+            weekYearInput.value = String(start?.year || defaultWeekYear());
+        }
+        if (startWeekInput) {
+            startWeekInput.value = start ? String(start.week) : '';
+        }
+        if (endWeekInput) {
+            endWeekInput.value = end ? String(end.week) : '';
+        }
+    }
+
+    function syncDatesFromWeeks() {
+        const year = Number(weekYearInput?.value || defaultWeekYear());
+        const fromWeek = Number(startWeekInput?.value);
+        const toWeek = Number(endWeekInput?.value || fromWeek);
+        const start = workdaysForIsoWeek(year, fromWeek);
+        const end = workdaysForIsoWeek(year, toWeek);
+        if (start) {
+            startInput.value = start.start;
+        }
+        if (end) {
+            endInput.value = end.end;
+        }
+    }
+
+    function setWhenMode(mode) {
+        const weeks = mode === 'weeks';
+        if (whenDatesInput) {
+            whenDatesInput.checked = !weeks;
+        }
+        if (whenWeeksInput) {
+            whenWeeksInput.checked = weeks;
+        }
+        datesWrap?.classList.toggle('hidden', weeks);
+        weeksWrap?.classList.toggle('hidden', !weeks);
+        hoursWrap?.classList.toggle('hidden', weeks);
+        startInput.required = !weeks;
+        endInput.required = !weeks;
+        if (startWeekInput) {
+            startWeekInput.required = weeks;
+        }
+        if (endWeekInput) {
+            endWeekInput.required = weeks;
+        }
+        if (weekYearInput) {
+            weekYearInput.required = weeks;
+        }
+        if (weeks) {
+            if (!weekYearInput?.value) {
+                if (weekYearInput) {
+                    weekYearInput.value = String(defaultWeekYear());
+                }
+            }
+            if (!startWeekInput?.value || !endWeekInput?.value) {
+                syncWeeksFromDates();
+            } else {
+                syncDatesFromWeeks();
+            }
+            return;
+        }
+        if (startWeekInput?.value && endWeekInput?.value) {
+            syncDatesFromWeeks();
+        }
+        syncHoursSummary();
+        refreshCandidates();
     }
 
     function includeSaturday() {
@@ -554,6 +642,11 @@ if (board) {
         crewList.innerHTML = '';
         menWrap.classList.remove('hidden');
         setHoursUi(hours, startTime);
+        setWhenMode('dates');
+        if (weekYearInput) {
+            weekYearInput.value = String(defaultWeekYear());
+        }
+        syncWeeksFromDates();
         dialog.showModal();
         whoSelect.focus();
         refreshCandidates();
@@ -614,6 +707,8 @@ if (board) {
         if (workerCrew(bar.dataset.workerId).length < 2) {
             menInput.readOnly = false;
         }
+        setWhenMode(bar.dataset.provisional === '1' ? 'weeks' : 'dates');
+        syncWeeksFromDates();
         dialog.showModal();
         refreshCandidates();
     }
@@ -805,6 +900,7 @@ if (board) {
             end_time: endTime,
             include_saturday: current.bar.dataset.includeSaturday === '1',
             include_sunday: current.bar.dataset.includeSunday === '1',
+            is_provisional: current.bar.dataset.provisional === '1',
         });
         if (ok) {
             reloadPlanningBoard(scroller);
@@ -902,10 +998,12 @@ if (board) {
         refreshCandidates();
     });
     startInput.addEventListener('change', () => {
+        syncWeeksFromDates();
         syncHoursSummary();
         refreshCandidates();
     });
     endInput.addEventListener('change', () => {
+        syncWeeksFromDates();
         syncHoursSummary();
         refreshCandidates();
     });
@@ -927,6 +1025,35 @@ if (board) {
         syncHoursSummary();
         refreshCandidates();
     });
+    whenDatesInput?.addEventListener('change', () => {
+        if (whenDatesInput.checked) {
+            setWhenMode('dates');
+        }
+    });
+    whenWeeksInput?.addEventListener('change', () => {
+        if (whenWeeksInput.checked) {
+            setWhenMode('weeks');
+        }
+    });
+    [startWeekInput, endWeekInput, weekYearInput].forEach((input) => {
+        input?.addEventListener('change', () => {
+            if (weekMode()) {
+                syncDatesFromWeeks();
+            }
+        });
+        input?.addEventListener('input', () => {
+            if (weekMode()) {
+                syncDatesFromWeeks();
+            }
+        });
+    });
+    bindPlanningDatePickers(startInput, endInput, {
+        onChange: () => {
+            syncWeeksFromDates();
+            syncHoursSummary();
+            refreshCandidates();
+        },
+    });
 
     function assignmentBody() {
         const [kind, id] = (whoSelect.value || '').split(':');
@@ -942,13 +1069,31 @@ if (board) {
                 : 'Vink aan wie er naar dit project gaat.');
             return null;
         }
-        if (startInput.value > endInput.value) {
-            window.alert('De einddatum moet op of na de startdatum liggen.');
-            return null;
-        }
         const workIds = selectedWorkIds();
         if (workIds.length === 0) {
             window.alert('Kies minstens één werkzaamheid.');
+            return null;
+        }
+        const usingWeeks = weekMode();
+        if (usingWeeks) {
+            const year = Number(weekYearInput?.value || defaultWeekYear());
+            const fromWeek = Number(startWeekInput?.value);
+            const toWeek = Number(endWeekInput?.value);
+            if (!fromWeek || !toWeek || !year) {
+                window.alert('Vul Van week, Tot week en jaar in.');
+                return null;
+            }
+            if (toWeek < fromWeek) {
+                window.alert('Tot week moet op of na Van week liggen.');
+                return null;
+            }
+            if (!workdaysForIsoWeek(year, fromWeek) || !workdaysForIsoWeek(year, toWeek)) {
+                window.alert(`Dit weeknummer bestaat niet in ${year}.`);
+                return null;
+            }
+            syncDatesFromWeeks();
+        } else if (startInput.value > endInput.value) {
+            window.alert('De einddatum moet op of na de startdatum liggen.');
             return null;
         }
         const times = selectedTimes();
@@ -959,17 +1104,27 @@ if (board) {
             start_date: startInput.value,
             end_date: endInput.value,
             people_count: Math.max(1, Number(menInput.value || 1)),
-            hours: times.hours,
-            slot: times.hours >= WORKDAY_HOURS ? 'full' : selectedSlot(),
-            start_time: times.start,
-            end_time: times.end,
             include_saturday: includeSaturday(),
             include_sunday: includeSunday(),
+            when: usingWeeks ? 'weeks' : 'dates',
+            is_provisional: usingWeeks,
         };
+        if (usingWeeks) {
+            body.start_week = Number(startWeekInput.value);
+            body.end_week = Number(endWeekInput.value);
+            body.year = Number(weekYearInput.value || defaultWeekYear());
+        } else {
+            body.hours = times.hours;
+            body.slot = times.hours >= WORKDAY_HOURS ? 'full' : selectedSlot();
+            body.start_time = times.start;
+            body.end_time = times.end;
+        }
         if (people.length >= 2) {
             body.crew_member_ids = crewIds;
             body.people_count = crewIds.length;
-            body.crew_hours = selectedCrewHours();
+            if (!usingWeeks) {
+                body.crew_hours = selectedCrewHours();
+            }
         }
         if (assignmentId) {
             body.worker_id = Number(id);

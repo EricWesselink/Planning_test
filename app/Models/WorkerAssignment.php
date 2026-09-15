@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\WorkTicketKind;
 use App\Support\PlanningHours;
+use App\Support\PlanningWeek;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -17,7 +18,7 @@ use Illuminate\Support\Collection;
     'worker_id', 'project_id', 'work_item_id', 'team_id',
     'start_date', 'end_date', 'start_time', 'end_time',
     'include_saturday', 'include_sunday',
-    'people_count', 'hours_per_day', 'planned_hours', 'notes',
+    'people_count', 'hours_per_day', 'planned_hours', 'is_provisional', 'notes',
 ])]
 class WorkerAssignment extends Model
 {
@@ -29,6 +30,7 @@ class WorkerAssignment extends Model
         'end_time' => '16:00:00',
         'include_saturday' => false,
         'include_sunday' => false,
+        'is_provisional' => false,
     ];
 
     protected function casts(): array
@@ -41,6 +43,7 @@ class WorkerAssignment extends Model
             'planned_hours' => 'decimal:2',
             'include_saturday' => 'boolean',
             'include_sunday' => 'boolean',
+            'is_provisional' => 'boolean',
         ];
     }
 
@@ -187,6 +190,11 @@ class WorkerAssignment extends Model
         return (bool) $this->include_sunday;
     }
 
+    public function isProvisional(): bool
+    {
+        return (bool) $this->is_provisional;
+    }
+
     public function coversDate(CarbonInterface $date): bool
     {
         return $date->betweenIncluded($this->start_date, $this->end_date)
@@ -205,6 +213,10 @@ class WorkerAssignment extends Model
 
     public function plannedHoursValue(): float
     {
+        if ($this->isProvisional()) {
+            return 0.0;
+        }
+
         return PlanningHours::totalHours(
             $this->start_date,
             $this->end_date,
@@ -238,6 +250,10 @@ class WorkerAssignment extends Model
      */
     public function intervalOnDate(CarbonInterface $date): ?array
     {
+        if ($this->isProvisional()) {
+            return null;
+        }
+
         return PlanningHours::intervalOnDate(
             $date,
             $this->start_date,
@@ -254,6 +270,10 @@ class WorkerAssignment extends Model
      */
     public function intervalOnDateForMember(CarbonInterface $date, ?CrewMember $member): ?array
     {
+        if ($this->isProvisional()) {
+            return null;
+        }
+
         if ($member === null || $member->pivot === null) {
             return $this->intervalOnDate($date);
         }
@@ -274,6 +294,10 @@ class WorkerAssignment extends Model
 
     public function hoursOnDate(CarbonInterface $date): float
     {
+        if ($this->isProvisional()) {
+            return 0.0;
+        }
+
         return PlanningHours::hoursOnDate(
             $date,
             $this->start_date,
@@ -321,6 +345,7 @@ class WorkerAssignment extends Model
         string $endTime,
         ?bool $includeSaturday = null,
         ?bool $includeSunday = null,
+        bool $isProvisional = false,
     ): void {
         if ($includeSaturday !== null) {
             $this->include_saturday = $includeSaturday;
@@ -333,6 +358,14 @@ class WorkerAssignment extends Model
         $this->end_date = $end->toDateString();
         $this->start_time = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $this->end_time = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
+        $this->is_provisional = $isProvisional;
+        if ($isProvisional) {
+            $this->hours_per_day = 0;
+            $this->planned_hours = 0;
+
+            return;
+        }
+
         $duration = PlanningHours::hoursBetween($this->start_time, $this->end_time);
         $this->hours_per_day = $start->isSameDay($end) ? $duration : PlanningHours::WORKDAY_HOURS;
         $this->planned_hours = PlanningHours::totalHours(
@@ -429,6 +462,21 @@ class WorkerAssignment extends Model
     public function planningLabel(): string
     {
         $team = $this->worker?->planName() ?? 'Onbekend';
+        if ($this->isProvisional()) {
+            $weeks = $this->weekPeriodLabel();
+            $names = $this->presentNamesLabel();
+
+            if ($names !== null) {
+                return $team.' · '.$names.' · voorlopig · '.$weeks;
+            }
+
+            if ($this->peopleCount() > 1) {
+                return $team.' · '.$this->peopleCountLabel().' · voorlopig · '.$weeks;
+            }
+
+            return $team.' · voorlopig · '.$weeks;
+        }
+
         $hours = $this->hoursLabel();
         $names = $this->presentNamesLabel();
 
@@ -445,6 +493,17 @@ class WorkerAssignment extends Model
 
     public function detailTitle(string $workName, string $projectName = ''): string
     {
+        if ($this->isProvisional()) {
+            $lines = array_values(array_filter([
+                $this->planningLabel(),
+                $projectName !== '' ? $projectName : null,
+                $workName !== '' ? $workName : null,
+                $this->dateRangeLabel(),
+            ]));
+
+            return implode(' · ', $lines);
+        }
+
         $lines = array_values(array_filter([
             $this->planningLabel(),
             $projectName !== '' ? $projectName : null,
@@ -456,6 +515,17 @@ class WorkerAssignment extends Model
         ]));
 
         return implode(' · ', $lines);
+    }
+
+    public function weekPeriodLabel(): string
+    {
+        $from = PlanningWeek::number($this->start_date);
+        $to = PlanningWeek::number($this->end_date);
+        if ($from === null || $to === null || $from === $to) {
+            return 'week '.($from ?? $to ?? '');
+        }
+
+        return 'week '.$from.'–'.$to;
     }
 
     public function dateRangeLabel(): string

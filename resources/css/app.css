@@ -1323,6 +1323,105 @@ button.plan-labor-toggle:hover {
     background: rgba(28, 25, 23, 0.45);
 }
 
+.plan-when-options,
+.plan-week-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+}
+
+.plan-week-fields label {
+    min-width: 4.5rem;
+}
+
+.plan-calendar {
+    width: min(20.5rem, calc(100vw - 2rem));
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    color: var(--color-nicon-ink);
+    padding: 0.6rem;
+    box-shadow: 0 12px 28px rgba(28, 25, 23, 0.16);
+}
+
+.plan-calendar.hidden {
+    display: none;
+}
+
+.plan-calendar-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.plan-calendar-title {
+    flex: 1;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 650;
+    text-transform: capitalize;
+}
+
+.plan-calendar-nav {
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    width: 1.75rem;
+    height: 1.75rem;
+    line-height: 1.6rem;
+}
+
+.plan-calendar-grid {
+    display: grid;
+    grid-template-columns: 2.4rem repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    font-size: 11px;
+    text-align: center;
+}
+
+.plan-calendar-week-head,
+.plan-calendar-day-head {
+    color: var(--color-nicon-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    padding: 0.15rem 0;
+}
+
+.plan-calendar-week {
+    border: 0;
+    background: var(--color-nicon-sand);
+    color: var(--color-nicon-steel);
+    font-size: 10px;
+    font-weight: 650;
+    padding: 0.2rem 0;
+}
+
+.plan-calendar-week:hover {
+    background: #f3d5c8;
+    color: var(--color-nicon-orange-dark);
+}
+
+.plan-calendar-day {
+    border: 0;
+    background: transparent;
+    min-height: 1.6rem;
+}
+
+.plan-calendar-day.is-muted {
+    color: var(--color-nicon-muted);
+}
+
+.plan-calendar-day.is-selected,
+.plan-calendar-day:hover {
+    background: var(--color-nicon-orange);
+    color: white;
+}
+
+.person-bar--provisional {
+    outline: 1px dashed rgba(255, 255, 255, 0.85);
+    outline-offset: -2px;
+    opacity: 0.88;
+}
+
 .person-bar.double {
     outline: 2px solid var(--color-nicon-danger);
     outline-offset: -1px;

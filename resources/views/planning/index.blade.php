@@ -253,6 +253,7 @@
                  data-assignment-url="{{ url('/planning/assignments') }}"
                  data-ticket-url="{{ url('/planning/assignments') }}"
                  data-readonly="{{ $canManagePlanning ? '0' : '1' }}"
+                 data-week-year="{{ $weekStart->isoWeekYear() }}"
                  data-crews='@json($workers->mapWithKeys(fn ($worker) => [$worker->id => $worker->crewPeople->unique(function ($person) {
                     $name = trim((string) $person->name);
 
@@ -522,27 +523,61 @@
                 <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Aantal personen</label>
                 <input type="number" name="people_count" id="plan-men" min="1" max="50" value="1" required class="mt-0 w-full border border-nicon-line px-2 py-1.5">
             </div>
-            <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Uren</label>
-            <select name="hours" id="plan-hours" class="w-full border border-nicon-line px-2 py-1.5 bg-white">
-                <option value="8">Hele dag · 8u</option>
-                <option value="6">6 uur</option>
-                <option value="4">Halve dag · 4u</option>
-                <option value="2">2 uur</option>
-            </select>
-            <div id="plan-slot-wrap" class="hidden">
-                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Tijdvak</div>
-                <div id="plan-slot-list" class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm"></div>
+            <div id="plan-hours-wrap">
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Uren</label>
+                <select name="hours" id="plan-hours" class="w-full border border-nicon-line px-2 py-1.5 bg-white">
+                    <option value="8">Hele dag · 8u</option>
+                    <option value="6">6 uur</option>
+                    <option value="4">Halve dag · 4u</option>
+                    <option value="2">2 uur</option>
+                </select>
+                <div id="plan-slot-wrap" class="hidden">
+                    <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Tijdvak</div>
+                    <div id="plan-slot-list" class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm"></div>
+                </div>
+                <p id="plan-hours-summary" class="text-xs text-nicon-muted">08:00–16:00 · 8u</p>
             </div>
-            <p id="plan-hours-summary" class="text-xs text-nicon-muted">08:00–16:00 · 8u</p>
-            <div class="grid grid-cols-2 gap-2">
-                <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Van</label>
-                    <input type="date" name="start_date" id="plan-start" required class="w-full border border-nicon-line px-2 py-1.5">
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Wanneer</div>
+                <div class="plan-when-options mt-1 text-sm">
+                    <label class="flex items-center gap-2">
+                        <input type="radio" name="when" id="plan-when-dates" value="dates" checked>
+                        Exacte datum
+                    </label>
+                    <label class="flex items-center gap-2">
+                        <input type="radio" name="when" id="plan-when-weeks" value="weeks">
+                        Weeknummer(s)
+                    </label>
                 </div>
-                <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Tot</label>
-                    <input type="date" name="end_date" id="plan-end" required class="w-full border border-nicon-line px-2 py-1.5">
+            </div>
+            <div id="plan-dates-wrap" class="space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Van</label>
+                        <input type="date" name="start_date" id="plan-start" required class="w-full border border-nicon-line px-2 py-1.5">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Tot</label>
+                        <input type="date" name="end_date" id="plan-end" required class="w-full border border-nicon-line px-2 py-1.5">
+                    </div>
                 </div>
+            </div>
+            <div id="plan-weeks-wrap" class="hidden space-y-2">
+                <div class="plan-week-fields">
+                    <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                        Van week
+                        <input type="number" name="start_week" id="plan-start-week" min="1" max="53" inputmode="numeric" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
+                    </label>
+                    <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                        Tot week
+                        <input type="number" name="end_week" id="plan-end-week" min="1" max="53" inputmode="numeric" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
+                    </label>
+                    <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                        Jaar
+                        <input type="number" name="year" id="plan-week-year" min="2000" max="2100" inputmode="numeric" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
+                    </label>
+                </div>
+                <p class="text-xs text-nicon-muted">Voorlopige periode: er worden nog geen uren per werkdag ingepland.</p>
             </div>
             <div class="flex flex-wrap gap-x-4 gap-y-1 pt-0.5 text-sm">
                 <label class="flex items-center gap-2">

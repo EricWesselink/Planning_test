@@ -11,6 +11,7 @@ use App\Models\WorkItem;
 use App\Services\ConflictService;
 use App\Services\PlanningFitService;
 use App\Support\PlanningHours;
+use App\Support\PlanningWeek;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -137,8 +138,13 @@ class PlanningActionController extends Controller
             'work_item_id' => ['nullable', 'integer', 'exists:work_items,id', 'required_without:work_item_ids'],
             'work_item_ids' => ['nullable', 'array', 'min:1', 'required_without:work_item_id'],
             'work_item_ids.*' => ['integer', 'distinct', 'exists:work_items,id'],
-            'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'when' => ['sometimes', 'in:dates,weeks'],
+            'start_week' => ['nullable', 'integer', 'min:1', 'max:53', 'required_if:when,weeks'],
+            'end_week' => ['nullable', 'integer', 'min:1', 'max:53', 'required_if:when,weeks'],
+            'year' => ['nullable', 'integer', 'min:'.PlanningWeek::MIN_YEAR, 'max:'.PlanningWeek::MAX_YEAR, 'required_if:when,weeks'],
+            'start_date' => ['nullable', 'date', 'required_unless:when,weeks'],
+            'end_date' => ['nullable', 'date', 'required_unless:when,weeks', 'after_or_equal:start_date'],
+            'is_provisional' => ['sometimes', 'boolean'],
             'people_count' => ['nullable', 'integer', 'min:1', 'max:50', 'required_without:crew_member_ids'],
             'crew_member_ids' => ['nullable', 'array', 'max:50'],
             'crew_member_ids.*' => ['integer', 'distinct', 'exists:crew_members,id'],
@@ -164,9 +170,17 @@ class PlanningActionController extends Controller
             ->findOrFail($workItemIds[0]);
         Gate::authorize('view', $item->project);
 
-        $start = Carbon::parse($data['start_date']);
-        $end = Carbon::parse($data['end_date']);
+        $period = $this->assignmentPeriod($data);
+        if ($period instanceof JsonResponse) {
+            return $period;
+        }
+        $start = $period['start'];
+        $end = $period['end'];
+        $isProvisional = $period['provisional'];
         [$includeSaturday, $includeSunday] = $this->weekendInclusion($request);
+        if ($isProvisional) {
+            $end = $this->provisionalPeriodEnd($end, $includeSaturday, $includeSunday);
+        }
         $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
         if ($emptyRange) {
             return $emptyRange;
@@ -198,30 +212,34 @@ class PlanningActionController extends Controller
             }
         }
 
-        foreach ($workers as $worker) {
-            $message = $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
-            if ($message) {
-                return response()->json(['message' => $message], 422);
+        if (! $isProvisional) {
+            foreach ($workers as $worker) {
+                $message = $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
+                if ($message) {
+                    return response()->json(['message' => $message], 422);
+                }
             }
         }
 
         $groups = $this->scheduleGroups($data, $crewIds, $teamId ? 1 : (int) ($data['people_count'] ?? 1));
-        foreach ($groups as $group) {
-            $blocked = $this->firstConflict(
-                $conflicts,
-                $workers,
-                $start,
-                $end,
-                $group['people_count'],
-                $request->boolean('confirm_conflict'),
-                $group['crew_ids'],
-                $group['start_time'],
-                $group['end_time'],
-                $includeSaturday,
-                $includeSunday,
-            );
-            if ($blocked) {
-                return $blocked;
+        if (! $isProvisional) {
+            foreach ($groups as $group) {
+                $blocked = $this->firstConflict(
+                    $conflicts,
+                    $workers,
+                    $start,
+                    $end,
+                    $group['people_count'],
+                    $request->boolean('confirm_conflict'),
+                    $group['crew_ids'],
+                    $group['start_time'],
+                    $group['end_time'],
+                    $includeSaturday,
+                    $includeSunday,
+                );
+                if ($blocked) {
+                    return $blocked;
+                }
             }
         }
 
@@ -242,6 +260,7 @@ class PlanningActionController extends Controller
                     $includeSaturday,
                     $includeSunday,
                     $workItemIds,
+                    $isProvisional,
                 );
             }
         }
@@ -259,8 +278,13 @@ class PlanningActionController extends Controller
             'work_item_id' => ['sometimes', 'nullable', 'integer', 'exists:work_items,id'],
             'work_item_ids' => ['sometimes', 'nullable', 'array', 'min:1'],
             'work_item_ids.*' => ['integer', 'distinct', 'exists:work_items,id'],
-            'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'when' => ['sometimes', 'in:dates,weeks'],
+            'start_week' => ['nullable', 'integer', 'min:1', 'max:53', 'required_if:when,weeks'],
+            'end_week' => ['nullable', 'integer', 'min:1', 'max:53', 'required_if:when,weeks'],
+            'year' => ['nullable', 'integer', 'min:'.PlanningWeek::MIN_YEAR, 'max:'.PlanningWeek::MAX_YEAR, 'required_if:when,weeks'],
+            'start_date' => ['nullable', 'date', 'required_unless:when,weeks'],
+            'end_date' => ['nullable', 'date', 'required_unless:when,weeks', 'after_or_equal:start_date'],
+            'is_provisional' => ['sometimes', 'boolean'],
             'people_count' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'crew_member_ids' => ['sometimes', 'nullable', 'array', 'max:50'],
             'crew_member_ids.*' => ['integer', 'distinct', 'exists:crew_members,id'],
@@ -275,9 +299,17 @@ class PlanningActionController extends Controller
             'confirm_conflict' => ['sometimes', 'boolean'],
         ]);
 
-        $start = Carbon::parse($data['start_date']);
-        $end = Carbon::parse($data['end_date']);
+        $period = $this->assignmentPeriod($data, $assignment);
+        if ($period instanceof JsonResponse) {
+            return $period;
+        }
+        $start = $period['start'];
+        $end = $period['end'];
+        $isProvisional = $period['provisional'];
         [$includeSaturday, $includeSunday] = $this->weekendInclusion($request, $assignment);
+        if ($isProvisional) {
+            $end = $this->provisionalPeriodEnd($end, $includeSaturday, $includeSunday);
+        }
         $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
         if ($emptyRange) {
             return $emptyRange;
@@ -317,17 +349,24 @@ class PlanningActionController extends Controller
             return response()->json(['message' => 'Vink aan wie er naar dit werk gaat.'], 422);
         }
 
-        $away = $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
+        $away = $isProvisional ? null : $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
         if ($away) {
             return response()->json(['message' => $away], 422);
         }
 
-        $keepTimes = ! array_key_exists('hours', $data)
+        $keepTimes = ! $isProvisional
+            && ! array_key_exists('hours', $data)
             && ! array_key_exists('slot', $data)
             && ! array_key_exists('start_time', $data)
             && ! array_key_exists('end_time', $data)
             && empty($data['crew_hours']);
-        $defaultTimes = $keepTimes
+        $defaultTimes = $isProvisional
+            ? [
+                'start_time' => PlanningHours::DAY_START.':00',
+                'end_time' => PlanningHours::DAY_END.':00',
+                'hours' => 0,
+            ]
+            : ($keepTimes
             ? [
                 'start_time' => $assignment->startTimeValue(),
                 'end_time' => $assignment->endTimeValue(),
@@ -338,10 +377,16 @@ class PlanningActionController extends Controller
                 $data['slot'] ?? null,
                 $data['start_time'] ?? null,
                 $data['end_time'] ?? null,
-            );
-        $data['hours'] = $data['hours'] ?? $defaultTimes['hours'];
-        $data['start_time'] = $data['start_time'] ?? PlanningHours::formatTime($defaultTimes['start_time']);
-        $data['end_time'] = $data['end_time'] ?? PlanningHours::formatTime($defaultTimes['end_time']);
+            ));
+        if ($isProvisional) {
+            unset($data['hours'], $data['slot'], $data['crew_hours']);
+            $data['start_time'] = PlanningHours::formatTime(PlanningHours::DAY_START);
+            $data['end_time'] = PlanningHours::formatTime(PlanningHours::DAY_END);
+        } else {
+            $data['hours'] = $data['hours'] ?? $defaultTimes['hours'];
+            $data['start_time'] = $data['start_time'] ?? PlanningHours::formatTime($defaultTimes['start_time']);
+            $data['end_time'] = $data['end_time'] ?? PlanningHours::formatTime($defaultTimes['end_time']);
+        }
 
         $groups = $this->scheduleGroups(
             $data,
@@ -358,6 +403,9 @@ class PlanningActionController extends Controller
         ];
 
         foreach (array_merge([$first], $groups) as $index => $group) {
+            if ($isProvisional) {
+                break;
+            }
             $ignoreId = $index === 0 ? $assignment->id : null;
             $conflict = $conflicts->capacityConflict(
                 $workerId,
@@ -387,6 +435,7 @@ class PlanningActionController extends Controller
             'end_time' => $assignment->endTimeValue(),
             'include_saturday' => $assignment->includesSaturday(),
             'include_sunday' => $assignment->includesSunday(),
+            'is_provisional' => $assignment->isProvisional(),
             'hours_by_id' => $this->crewScheduleSnapshot($assignment, $stayingIds),
         ];
 
@@ -419,12 +468,13 @@ class PlanningActionController extends Controller
             $stayingIds,
             $includeSaturday,
             $includeSunday,
+            $isProvisional,
         ): void {
             $assignment->project_id = $targetProjectId;
             $assignment->work_item_id = $targetWorkItemId;
             $assignment->worker_id = $workerId;
             $assignment->people_count = $first['people_count'];
-            $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time'], $includeSaturday, $includeSunday);
+            $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time'], $includeSaturday, $includeSunday, $isProvisional);
             $assignment->save();
             $assignment->syncLinkedWorkItems($linkedWorkItemIds);
             if (array_key_exists('crew_member_ids', $data) || $first['crew_ids'] !== [] || $stayingIds !== []) {
@@ -450,6 +500,7 @@ class PlanningActionController extends Controller
                     $includeSaturday,
                     $includeSunday,
                     $linkedWorkItemIds,
+                    $isProvisional,
                 );
             }
 
@@ -467,6 +518,8 @@ class PlanningActionController extends Controller
                     $stayingIds,
                     $staySnapshot['include_saturday'],
                     $staySnapshot['include_sunday'],
+                    [],
+                    $staySnapshot['is_provisional'],
                 );
                 if ($staySnapshot['hours_by_id'] !== []) {
                     $staying->syncPresentCrew($stayingIds, $staySnapshot['hours_by_id']);
@@ -709,6 +762,7 @@ class PlanningActionController extends Controller
         bool $includeSaturday = false,
         bool $includeSunday = false,
         array $linkedWorkItemIds = [],
+        bool $isProvisional = false,
     ): WorkerAssignment {
         $startTime = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $endTime = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
@@ -726,6 +780,7 @@ class PlanningActionController extends Controller
             $endTime,
             $includeSaturday ? '1' : '0',
             $includeSunday ? '1' : '0',
+            $isProvisional ? 'p' : 'h',
         ]);
 
         return Cache::lock('planning-assignment:'.$fingerprint, 15)->block(10, function () use (
@@ -742,6 +797,7 @@ class PlanningActionController extends Controller
             $crewIds,
             $includeSaturday,
             $includeSunday,
+            $isProvisional,
         ): WorkerAssignment {
             return DB::transaction(function () use (
                 $workerId,
@@ -757,6 +813,7 @@ class PlanningActionController extends Controller
                 $crewIds,
                 $includeSaturday,
                 $includeSunday,
+                $isProvisional,
             ): WorkerAssignment {
                 $existing = WorkerAssignment::query()
                     ->where('worker_id', $workerId)
@@ -772,6 +829,7 @@ class PlanningActionController extends Controller
                     ->where('end_time', $endTime)
                     ->where('include_saturday', $includeSaturday)
                     ->where('include_sunday', $includeSunday)
+                    ->where('is_provisional', $isProvisional)
                     ->lockForUpdate()
                     ->first();
 
@@ -788,7 +846,7 @@ class PlanningActionController extends Controller
                     'team_id' => $teamId,
                     'people_count' => max(1, $peopleCount),
                 ]);
-                $assignment->applySchedule($start, $end, $startTime, $endTime, $includeSaturday, $includeSunday);
+                $assignment->applySchedule($start, $end, $startTime, $endTime, $includeSaturday, $includeSunday, $isProvisional);
                 $assignment->save();
                 $assignment->syncLinkedWorkItems($linkedWorkItemIds);
                 if ($crewIds !== []) {
@@ -976,6 +1034,68 @@ class PlanningActionController extends Controller
             : ($assignment?->includesSunday() ?? false);
 
         return [$includeSaturday, $includeSunday];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{start: Carbon, end: Carbon, provisional: bool}|JsonResponse
+     */
+    private function assignmentPeriod(array $data, ?WorkerAssignment $assignment = null): array|JsonResponse
+    {
+        $when = $data['when'] ?? null;
+        if ($when === 'weeks') {
+            $year = (int) ($data['year'] ?? 0);
+            $fromWeek = (int) ($data['start_week'] ?? 0);
+            $toWeek = (int) ($data['end_week'] ?? 0);
+            $range = PlanningWeek::assignmentRange($year, $fromWeek, $toWeek);
+            if ($range === null) {
+                $field = $toWeek < $fromWeek ? 'end_week' : 'start_week';
+                $message = $toWeek < $fromWeek
+                    ? 'Tot week moet op of na Van week liggen.'
+                    : 'Dit weeknummer bestaat niet in '.$year.'.';
+
+                return response()->json(['message' => $message, 'errors' => [$field => [$message]]], 422);
+            }
+
+            return [
+                'start' => $range['start'],
+                'end' => $range['end'],
+                'provisional' => true,
+            ];
+        }
+
+        $start = Carbon::parse((string) $data['start_date']);
+        $end = Carbon::parse((string) $data['end_date']);
+        if ($when === 'dates') {
+            return [
+                'start' => $start,
+                'end' => $end,
+                'provisional' => false,
+            ];
+        }
+
+        $provisional = array_key_exists('is_provisional', $data)
+            ? (bool) $data['is_provisional']
+            : ($assignment?->isProvisional() ?? false);
+
+        return [
+            'start' => $start,
+            'end' => $end,
+            'provisional' => $provisional,
+        ];
+    }
+
+    private function provisionalPeriodEnd(Carbon $end, bool $includeSaturday, bool $includeSunday): Carbon
+    {
+        $monday = $end->copy()->startOfWeek(Carbon::MONDAY);
+        if ($includeSunday) {
+            return $monday->copy()->addDays(6);
+        }
+        if ($includeSaturday) {
+            return $monday->copy()->addDays(5);
+        }
+
+        return $end;
     }
 
     private function emptyWorkdaysResponse(
