@@ -68,6 +68,7 @@
                         <a href="{{ $project->googleMapsUrl() }}" target="_blank" rel="noopener noreferrer" class="text-nicon-orange-dark">Navigeren</a>
                     @endif
                     @can('update', $project)
+                        @include('projects.partials.source-files', ['project' => $project, 'sourceCatalog' => $sourceCatalog ?? []])
                         <details class="relative" @if ($errors->hasAny(['address', 'postal_code', 'city', 'work_code', 'basis_uurtarief', 'work_items', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date']) || $errors->has('work_items.*')) open @endif>
                             <summary class="cursor-pointer hover:text-nicon-ink">Project bewerken</summary>
                             <form method="POST" action="{{ route('projects.update', $project) }}" class="absolute z-30 mt-1 w-[28rem] max-h-[80vh] overflow-auto border border-nicon-line bg-white p-3 shadow-sm space-y-2">
@@ -198,7 +199,7 @@
                     @foreach ($floorAreas as $area)
                         <button type="button" class="room-row {{ (int) $selectedAreaId === (int) $area['id'] ? 'is-on is-picked' : '' }}" data-area-id="{{ $area['id'] }}" data-tone="{{ $area['tone'] }}" data-floor="{{ $floorName }}" data-page="{{ $area['page'] ?? '' }}" data-works="{{ collect($area['works'] ?? [])->pluck('key')->implode(',') }}" style="--material-color: {{ $area['material_color'] ?? '#9ca3af' }}; --material-color-soft: {{ $area['material_color_soft'] ?? 'rgba(156, 163, 175, 0.14)' }};" title="{{ $area['number'] }} {{ $area['unique_name'] ?? $area['name'] }} · {{ $area['m2_label'] }} · {{ $area['status_label'] }}">
                             <span class="room-num">{{ $area['number'] ?: '—' }}</span>
-                            <span class="room-name">{{ $area['unique_name'] ?? $area['name'] }}</span>
+                            <span class="room-name">{{ $area['unique_name'] ?? $area['name'] }}@if (! empty($area['link_review'])) <span class="text-[10px] text-nicon-warn">koppeling controleren</span>@endif</span>
                             <span class="room-m2">{{ $area['m2_label'] }}</span>
                             <span class="status-pill tone-{{ $area['tone'] }}" title="{{ $area['status_label'] }}{{ $canEnterProgress ? ' · tik om extra aan te vinken' : '' }}"></span>
                         </button>

@@ -20,6 +20,7 @@ class CalculationImportService
         private CalculationWorkMatcher $matcher,
         private CalculationSourceReconciler $reconciler,
         private MaterialIdentity $identity,
+        private SourceDocumentService $sourceDocuments,
     ) {}
 
     /**
@@ -87,12 +88,16 @@ class CalculationImportService
         $filenames = [];
         $totalHours = 0.0;
         $totalCost = 0.0;
+        $workNumber = null;
         $works = $preview['works'] ?? [];
         $sourceProducts = $this->reconciler->sourceProducts($preview);
 
         foreach ($files as $file) {
             $parsed = $file['parsed'];
             $filenames[] = $parsed['filename'];
+            if ($workNumber === null && filled($parsed['work_number'] ?? null)) {
+                $workNumber = (string) $parsed['work_number'];
+            }
             foreach ($parsed['lines'] as $line) {
                 $lines[] = $line;
             }
@@ -121,7 +126,11 @@ class CalculationImportService
             'total_labor_cost' => round($totalCost, 2),
             'open_matches' => $this->openMatchCount($labor),
             'warnings' => $this->warningCount($labor, $reconciliation['products']),
+            'work_number' => $workNumber,
         ];
+        if ($workNumber !== null && blank($preview['header']['project_number'] ?? null)) {
+            $preview['header'] = array_merge($preview['header'] ?? [], ['project_number' => $workNumber]);
+        }
 
         return $preview;
     }
@@ -172,6 +181,30 @@ class CalculationImportService
      * @param  array<string, mixed>  $preview
      * @param  list<array{path: string, type: string, original: string}>  $extraDocuments
      */
+    public function replaceFromPreview(Project $project, array $preview): int
+    {
+        $oldIds = $project->documents()
+            ->where('document_type', 'calculatie')
+            ->where('is_current', false)
+            ->pluck('id');
+        if ($oldIds->isNotEmpty()) {
+            ProjectCalculationLine::query()
+                ->where('project_id', $project->id)
+                ->whereIn('project_document_id', $oldIds)
+                ->delete();
+        }
+
+        $project->unsetRelation('calculationLines');
+        $project->load(['documents', 'workItems']);
+
+        return $this->persist($project, $preview);
+    }
+
+    public function refreshBudgets(Project $project): void
+    {
+        $this->applyBudgets($project);
+    }
+
     public function persist(Project $project, array $preview): int
     {
         $calculation = $preview['calculation'] ?? [];
@@ -182,7 +215,13 @@ class CalculationImportService
         $project->loadMissing(['documents', 'workItems']);
         $documents = $project->documents
             ->where('document_type', 'calculatie')
+            ->filter(fn (ProjectDocument $document): bool => (bool) $document->is_current)
             ->values();
+        if ($documents->isEmpty()) {
+            $documents = $project->documents
+                ->where('document_type', 'calculatie')
+                ->values();
+        }
         if ($documents->isEmpty()) {
             return 0;
         }
@@ -260,29 +299,14 @@ class CalculationImportService
             'works' => $project->workItems->map(fn (WorkItem $item): array => ['name' => $item->name])->all(),
         ], [['file' => $file, 'parsed' => $parsed]]);
 
-        $extension = strtolower($file->getClientOriginalExtension() ?: 'xlsx');
-        $stored = $file->storeAs(
-            'projects/'.$project->id.'/calculatie',
-            uniqid('calc-', true).'.'.$extension,
-            'local'
-        );
-        $document = ProjectDocument::query()->create([
-            'project_id' => $project->id,
-            'document_type' => 'calculatie',
-            'original_filename' => $file->getClientOriginalName(),
-            'file_path' => $stored,
-            'mime_type' => $file->getMimeType(),
-            'file_size' => $file->getSize(),
-            'parse_status' => 'ok',
-            'parsed_json' => [
-                'filename' => $parsed['filename'],
-                'work_number' => $parsed['work_number'],
-                'total_hours' => $parsed['total_hours'],
-                'total_labor_cost' => $parsed['total_labor_cost'],
-            ],
-            'uploaded_by' => $user->id,
+        $this->sourceDocuments->storeUploaded($project, $file, 'calculatie', $user, 'ok', [
+            'filename' => $parsed['filename'],
+            'work_number' => $parsed['work_number'],
+            'total_hours' => $parsed['total_hours'],
+            'total_labor_cost' => $parsed['total_labor_cost'],
         ]);
-        $project->setRelation('documents', $project->documents->push($document));
+        $project->unsetRelation('documents');
+        $project->load('documents');
 
         $created = $this->persist($project, $preview);
 

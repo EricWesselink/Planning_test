@@ -11,12 +11,16 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Models\WorkTicket;
-use App\Services\PlanningFitService;
+use App\Services\CalculationImportService;
+use App\Services\Meetstaat\ImportDocumentClassifier;
+use App\Services\Meetstaat\ImportPreviewBuilder;
 use App\Services\ProjectBoardService;
 use App\Services\ProjectIntakeService;
 use App\Services\ProjectLaborCalculator;
 use App\Services\ProjectOverviewPdfService;
 use App\Services\RoomWorkSetup;
+use App\Services\SourceDocumentService;
+use App\Services\SourceUpdateService;
 use App\Services\WorkTicketService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
@@ -221,7 +225,7 @@ class ProjectController extends Controller
             ->with('warnings', $result['warnings']);
     }
 
-    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets, PlanningFitService $fit): View
+    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets, PlanningFitService $fit, SourceDocumentService $sourceDocuments): View
     {
         Gate::authorize('view', $project);
 
@@ -352,6 +356,7 @@ class ProjectController extends Controller
             'firstDetail' => $firstDetail,
             'openSnagId' => $openSnagId,
             'todayPresence' => $todayPresence,
+            'sourceCatalog' => $sourceDocuments->catalog($project),
         ]);
     }
 
@@ -375,14 +380,31 @@ class ProjectController extends Controller
         return $tickets->boardMode($assignment);
     }
 
-    public function storeMeetstaat(Request $request, Project $project, ProjectIntakeService $intake): RedirectResponse
-    {
+    public function storeMeetstaat(
+        Request $request,
+        Project $project,
+        ProjectIntakeService $intake,
+        SourceUpdateController $sources,
+        ImportPreviewBuilder $builder,
+        CalculationImportService $calculations,
+        SourceUpdateService $updates,
+        ImportDocumentClassifier $classifier,
+    ): RedirectResponse {
         Gate::authorize('update', $project);
         $request->validate([
             'meetstaat' => ['required', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:csv,txt,xlsx,xlsm,xls,pdf', 'extensions:csv,txt,xlsx,xlsm,xls,pdf'],
         ]);
 
-        $result = $intake->importMeetstaat($project, $request->file('meetstaat'), $request->user());
+        $file = $request->file('meetstaat');
+        $classified = $classifier->classify($file);
+        $type = $classified['type'] ?? 'meetstaat';
+        if ($updates->hasExistingVersions($project, [$type])) {
+            return $sources->startFromUploads($request, $project, [
+                ['file' => $file, 'type' => $type],
+            ], $builder, $calculations, $updates);
+        }
+
+        $result = $intake->importMeetstaat($project, $file, $request->user());
 
         $status = $result['rooms'] > 0
             ? $result['rooms'].' ruimtes ingelezen.'
@@ -397,14 +419,28 @@ class ProjectController extends Controller
         return back()->with('status', $status)->with('warnings', $result['warnings']);
     }
 
-    public function storePlattegrond(Request $request, Project $project, ProjectIntakeService $intake): RedirectResponse
-    {
+    public function storePlattegrond(
+        Request $request,
+        Project $project,
+        ProjectIntakeService $intake,
+        SourceUpdateController $sources,
+        ImportPreviewBuilder $builder,
+        CalculationImportService $calculations,
+        SourceUpdateService $updates,
+    ): RedirectResponse {
         Gate::authorize('update', $project);
         $request->validate([
             'plattegrond' => ['required', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:pdf,jpg,jpeg,png,webp', 'extensions:pdf,jpg,jpeg,png,webp'],
         ]);
 
-        $intake->storeDocument($project, $request->file('plattegrond'), 'plattegrond', $request->user());
+        $file = $request->file('plattegrond');
+        if ($updates->hasExistingVersions($project, ['plattegrond'])) {
+            return $sources->startFromUploads($request, $project, [
+                ['file' => $file, 'type' => 'plattegrond'],
+            ], $builder, $calculations, $updates);
+        }
+
+        $intake->storeDocument($project, $file, 'plattegrond', $request->user());
 
         return back()->with('status', 'Plattegrond opgeslagen.');
     }

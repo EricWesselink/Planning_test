@@ -11,6 +11,7 @@ use App\Services\Meetstaat\ImportPreviewBuilder;
 use App\Services\Meetstaat\RoomImportAssembler;
 use App\Services\ProjectIntakeService;
 use App\Services\ScannedDimensions\ScannedDimensionsImportService;
+use App\Services\SourceUpdateService;
 use App\Support\PlanningWeek;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,6 +32,8 @@ class MeetstaatImportController extends Controller
         ScannedDimensionsImportController $afmetingen,
         ScannedDimensionsImportService $afmetingenService,
         CalculationImportService $calculationImport,
+        SourceUpdateService $updates,
+        SourceUpdateController $sourceUpdates,
     ): RedirectResponse {
         Gate::authorize('create', Project::class);
         $maxKilobytes = $this->projectFileMaxKilobytes();
@@ -91,6 +94,19 @@ class MeetstaatImportController extends Controller
             'extra' => $stored['extra'],
         ], now()->addHours(2));
 
+        $number = $preview['header']['project_number'] ?? $preview['calculation']['work_number'] ?? null;
+        $existing = $updates->findProjectByWorkNumber(is_string($number) ? $number : null);
+        if ($existing !== null) {
+            if (! Gate::allows('update', $existing)) {
+                return back()->withErrors([
+                    $this->uploadErrorKey($request) => 'Dit werknummer hoort bij een bestaand project waarop je geen toegang hebt.',
+                ]);
+            }
+            $sourceUpdates->cacheExistingPreview($existing, $token, Cache::get('meetstaat.'.$token), $updates);
+
+            return redirect()->route('projects.sources.review', $token);
+        }
+
         return redirect()->route('projects.review', $token);
     }
 
@@ -110,7 +126,7 @@ class MeetstaatImportController extends Controller
         ]);
     }
 
-    public function import(Request $request, string $token, ProjectIntakeService $intake, RoomImportAssembler $assembler, CalculationImportService $calculationImport): RedirectResponse
+    public function import(Request $request, string $token, ProjectIntakeService $intake, RoomImportAssembler $assembler, CalculationImportService $calculationImport, SourceUpdateService $updates, SourceUpdateController $sourceUpdates): RedirectResponse
     {
         Gate::authorize('create', Project::class);
         logger()->info('import.submit: route bereikt', ['token' => $token]);
@@ -230,6 +246,16 @@ class MeetstaatImportController extends Controller
                 ->withErrors([
                     'import_closure' => 'Importeren is geblokkeerd door een technische fout. Inhoudelijke waarschuwingen blokkeren het opslaan niet.',
                 ]);
+        }
+
+        $number = $preview['header']['project_number'] ?? null;
+        $existing = $updates->findProjectByWorkNumber(is_string($number) ? $number : null);
+        if ($existing !== null && Gate::allows('update', $existing)) {
+            $sourceUpdates->cacheExistingPreview($existing, $token, $payload, $updates);
+
+            return redirect()
+                ->route('projects.sources.review', $token)
+                ->with('status', SourceUpdateService::CONFIRM_MESSAGE);
         }
 
         $drawing = $this->storePreviewDrawing($token, $request->file('plattegrond'));

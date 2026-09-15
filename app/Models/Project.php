@@ -265,7 +265,10 @@ class Project extends Model
 
     public function plattegrond(): ?ProjectDocument
     {
-        return $this->documents->firstWhere('document_type', 'plattegrond');
+        $drawings = $this->documents->where('document_type', 'plattegrond');
+
+        return $drawings->firstWhere('is_current', true)
+            ?? $drawings->sortByDesc('revision')->sortByDesc('id')->first();
     }
 
     public function productionByWorker(): Collection

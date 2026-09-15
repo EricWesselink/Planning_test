@@ -3898,6 +3898,28 @@ button.plan-labor-toggle:hover {
     }
 }
 
+.source-status {
+    display: inline-block;
+    margin-right: 0.35rem;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid var(--color-nicon-line);
+}
+.source-status-new {
+    color: var(--color-nicon-ok, #15803d);
+}
+.source-status-changed {
+    color: var(--color-nicon-warn);
+}
+.source-status-unchanged {
+    color: var(--color-nicon-muted);
+}
+.source-status-removed {
+    color: var(--color-nicon-danger);
+}
+
 @media print {
     .nicon-topbar,
     .no-print {

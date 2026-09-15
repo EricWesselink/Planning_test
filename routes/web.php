@@ -19,6 +19,7 @@ use App\Http\Controllers\ScreenExcelImportController;
 use App\Http\Controllers\ShopProjectController;
 use App\Http\Controllers\SmallWorkController;
 use App\Http\Controllers\SnagController;
+use App\Http\Controllers\SourceUpdateController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VakmanPlanningController;
@@ -132,6 +133,10 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/projecten/{project}/archiveren', [ProjectController::class, 'archive'])->name('projects.archive');
     Route::post('/projecten/{project}/terugzetten', [ProjectController::class, 'restore'])->name('projects.restore');
     Route::delete('/projecten/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');
+    Route::post('/projecten/{project}/bronbestanden', [SourceUpdateController::class, 'store'])->name('projects.sources.store');
+    Route::get('/projecten/bronbestanden/{token}', [SourceUpdateController::class, 'review'])->name('projects.sources.review');
+    Route::post('/projecten/bronbestanden/{token}', [SourceUpdateController::class, 'confirm'])->name('projects.sources.confirm');
+    Route::post('/projecten/{project}/bronbestanden/{document}/activeren', [SourceUpdateController::class, 'activate'])->name('projects.sources.activate')->scopeBindings();
     Route::post('/projecten/{project}/meetstaat', [ProjectController::class, 'storeMeetstaat'])->name('projects.meetstaat.store');
     Route::post('/projecten/{project}/opdrachtlijst', [ScreenExcelImportController::class, 'storeOnProject'])->name('projects.screens.store');
     Route::post('/projecten/{project}/plattegrond', [ProjectController::class, 'storePlattegrond'])->name('projects.plattegrond.store');

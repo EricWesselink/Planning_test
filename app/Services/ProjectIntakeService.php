@@ -31,6 +31,7 @@ class ProjectIntakeService
         private ScreenExcelParser $screenExcel,
         private CalculationExcelParser $calculationExcel,
         private CalculationImportService $calculationImport,
+        private SourceDocumentService $sourceDocuments,
     ) {}
 
     /**
@@ -497,23 +498,13 @@ class ProjectIntakeService
 
     public function storeDocument(Project $project, UploadedFile $file, string $type, User $user): ProjectDocument
     {
-        $extension = strtolower($file->getClientOriginalExtension() ?: 'bin');
-        $path = $file->storeAs(
-            'projects/'.$project->id.'/'.$type,
-            Str::uuid()->toString().'.'.$extension,
-            'local'
+        return $this->sourceDocuments->storeUploaded(
+            $project,
+            $file,
+            $type,
+            $user,
+            $type === 'meetstaat' ? 'pending' : 'none',
         );
-
-        return ProjectDocument::query()->create([
-            'project_id' => $project->id,
-            'document_type' => $type,
-            'original_filename' => $file->getClientOriginalName(),
-            'file_path' => $path,
-            'mime_type' => $file->getMimeType(),
-            'file_size' => $file->getSize(),
-            'parse_status' => $type === 'meetstaat' ? 'pending' : 'none',
-            'uploaded_by' => $user->id,
-        ]);
     }
 
     public function nextProjectNumber(): string
@@ -567,21 +558,15 @@ class ProjectIntakeService
         string $parseStatus = 'none',
         ?array $parsedJson = null,
     ): ProjectDocument {
-        $filename = Str::uuid()->toString().'.'.(pathinfo($absolutePath, PATHINFO_EXTENSION) ?: 'pdf');
-        $stored = 'projects/'.$project->id.'/'.$type.'/'.$filename;
-        Storage::disk('local')->put($stored, (string) file_get_contents($absolutePath));
-
-        return ProjectDocument::query()->create([
-            'project_id' => $project->id,
-            'document_type' => $type,
-            'original_filename' => $originalName,
-            'file_path' => $stored,
-            'mime_type' => $this->mimeFromPath($absolutePath),
-            'file_size' => filesize($absolutePath) ?: null,
-            'parse_status' => $parseStatus,
-            'parsed_json' => $parsedJson,
-            'uploaded_by' => $user->id,
-        ]);
+        return $this->sourceDocuments->storeFromPath(
+            $project,
+            $absolutePath,
+            $type,
+            $originalName,
+            $user,
+            $parseStatus,
+            $parsedJson,
+        );
     }
 
     /**

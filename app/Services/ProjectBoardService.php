@@ -34,7 +34,7 @@ class ProjectBoardService
             'areas.tasks.completedByWorker',
             'areas.markers',
             'areas.floor',
-            'documents',
+            'documents.uploader',
             'workItems',
             'progressEntries.worker',
             'progressEntries.workItem',
@@ -63,7 +63,7 @@ class ProjectBoardService
             ] : null,
             'areas' => $areas,
             'work_filters' => $this->workFilters($areas),
-            'snags' => $project->snags->map(fn (SnagItem $snag) => $this->snagSummary($snag))->values()->all(),
+            'snags' => $project->snags->map(fn (SnagItem $snag) => $this->snagSummary($snag, $drawing))->values()->all(),
             'next_snag_number' => (int) $project->snags->max('number') + 1,
             'production' => $this->production($project),
         ];
@@ -186,6 +186,7 @@ class ProjectBoardService
             'material_color' => $materialColor,
             'material_color_soft' => MaterialColor::softBackground($materialColor),
             'has_position' => $this->markerHasPosition($marker),
+            'link_review' => $this->areaNeedsLinkReview($area, $drawing),
             'page' => $marker?->page,
             'x' => $this->markerHasPosition($marker) ? (float) $marker->x : null,
             'y' => $this->markerHasPosition($marker) ? (float) $marker->y : null,
@@ -228,6 +229,22 @@ class ProjectBoardService
         }
 
         return $area->displayName();
+    }
+
+    private function areaNeedsLinkReview(ProjectArea $area, ?ProjectDocument $drawing): bool
+    {
+        if ($drawing === null) {
+            return false;
+        }
+        $onCurrent = $area->markers->firstWhere('project_document_id', $drawing->id);
+        if ($this->markerHasPosition($onCurrent)) {
+            return false;
+        }
+
+        return $area->markers->contains(
+            fn (AreaDrawingMarker $marker): bool => (int) $marker->project_document_id !== (int) $drawing->id
+                && $marker->hasPosition()
+        );
     }
 
     private function markerHasPosition(?AreaDrawingMarker $marker): bool
@@ -420,9 +437,12 @@ class ProjectBoardService
         return $task->phase()->label();
     }
 
-    public function snagSummary(SnagItem $snag): array
+    public function snagSummary(SnagItem $snag, ?ProjectDocument $drawing = null): array
     {
         $snag->loadMissing(['area', 'assignee', 'photos']);
+        $hidePin = $drawing !== null
+            && $snag->link_status === 'review'
+            && (int) $snag->document_id !== (int) $drawing->id;
 
         return [
             'id' => $snag->id,
@@ -430,8 +450,9 @@ class ProjectBoardService
             'title' => $snag->title(),
             'description' => $snag->description,
             'page' => $snag->drawing_page,
-            'x' => $snag->x,
-            'y' => $snag->y,
+            'x' => $hidePin ? null : $snag->x,
+            'y' => $hidePin ? null : $snag->y,
+            'link_review' => $snag->link_status === 'review',
             'status' => $snag->status->value,
             'status_label' => $snag->status->boardLabel(),
             'tone' => $snag->status->tone(),

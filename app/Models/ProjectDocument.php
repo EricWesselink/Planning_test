@@ -7,15 +7,25 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'project_id', 'document_type', 'original_filename', 'file_path', 'mime_type',
+    'project_id', 'document_type', 'revision', 'is_current', 'original_filename', 'file_path', 'mime_type',
     'file_size', 'parse_status', 'parsed_json', 'uploaded_by',
 ])]
 class ProjectDocument extends Model
 {
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'revision' => 1,
+        'is_current' => true,
+    ];
+
     protected function casts(): array
     {
         return [
             'parsed_json' => 'array',
+            'revision' => 'integer',
+            'is_current' => 'boolean',
         ];
     }
 

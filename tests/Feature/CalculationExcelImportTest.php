@@ -157,13 +157,19 @@ TXT),
         $user = User::factory()->create();
         $project = $this->importProject($user);
 
-        $this->actingAs($user)->post(route('projects.meetstaat.store', $project), [
+        $response = $this->actingAs($user)->post(route('projects.meetstaat.store', $project), [
             'meetstaat' => $this->calculationFile(),
-        ])->assertRedirect();
+        ]);
+        $response->assertRedirect();
+        $token = basename((string) parse_url((string) $response->headers->get('Location'), PHP_URL_PATH));
+        $this->actingAs($user)
+            ->post(route('projects.sources.confirm', $token))
+            ->assertRedirect(route('projects.show', $project));
 
         $this->assertSame(18, $project->calculationLines()->count());
         $this->assertSame(6, $project->calculationLines()->where('is_labor', true)->count());
-        $this->assertSame(1, $project->documents()->where('document_type', 'calculatie')->count());
+        $this->assertSame(2, $project->documents()->where('document_type', 'calculatie')->count());
+        $this->assertSame(1, $project->documents()->where('document_type', 'calculatie')->where('is_current', true)->count());
     }
 
     public function test_generic_covering_rows_import_without_manual_work_selection(): void
