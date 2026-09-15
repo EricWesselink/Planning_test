@@ -554,11 +554,31 @@
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Van</label>
-                        <input type="date" name="start_date" id="plan-start" required class="w-full border border-nicon-line px-2 py-1.5">
+                        <div class="plan-date-wrap">
+                            <input type="text" name="start_date" id="plan-start" required inputmode="numeric" autocomplete="off" placeholder="jjjj-mm-dd" spellcheck="false" class="w-full border border-nicon-line px-2 py-1.5 pr-8">
+                            <button type="button" class="plan-date-icon" data-plan-calendar-for="plan-start" title="Kalender" aria-label="Kalender openen">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="5" width="18" height="16" rx="1"/>
+                                    <path d="M3 9h18"/>
+                                    <path d="M8 3v4"/>
+                                    <path d="M16 3v4"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Tot</label>
-                        <input type="date" name="end_date" id="plan-end" required class="w-full border border-nicon-line px-2 py-1.5">
+                        <div class="plan-date-wrap">
+                            <input type="text" name="end_date" id="plan-end" required inputmode="numeric" autocomplete="off" placeholder="jjjj-mm-dd" spellcheck="false" class="w-full border border-nicon-line px-2 py-1.5 pr-8">
+                            <button type="button" class="plan-date-icon" data-plan-calendar-for="plan-end" title="Kalender" aria-label="Kalender openen">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="5" width="18" height="16" rx="1"/>
+                                    <path d="M3 9h18"/>
+                                    <path d="M8 3v4"/>
+                                    <path d="M16 3v4"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -1312,6 +1312,7 @@ button.plan-labor-toggle:hover {
     color: var(--color-nicon-ink);
     padding: 0.9rem 1rem;
     box-shadow: 0 16px 40px rgba(28, 25, 23, 0.18);
+    overflow: visible;
 }
 
 .plan-dialog select option:disabled,
@@ -1334,6 +1335,30 @@ button.plan-labor-toggle:hover {
     min-width: 4.5rem;
 }
 
+.plan-date-wrap {
+    position: relative;
+}
+
+.plan-date-icon {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: var(--color-nicon-muted);
+    cursor: pointer;
+}
+
+.plan-date-icon svg {
+    width: 1rem;
+    height: 1rem;
+}
+
 .plan-calendar {
     width: min(20.5rem, calc(100vw - 2rem));
     border: 1px solid var(--color-nicon-line);
@@ -1341,6 +1366,7 @@ button.plan-labor-toggle:hover {
     color: var(--color-nicon-ink);
     padding: 0.6rem;
     box-shadow: 0 12px 28px rgba(28, 25, 23, 0.16);
+    z-index: 1000;
 }
 
 .plan-calendar.hidden {

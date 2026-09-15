@@ -29,8 +29,12 @@ class PlanningWeekAssignmentTest extends TestCase
             ->assertSee('Weeknummer(s)')
             ->assertSee('Van week')
             ->assertSee('Tot week')
-            ->assertSee('id="plan-start"', false)
-            ->assertSee('id="plan-end"', false)
+            ->assertSee('type="text" name="start_date" id="plan-start"', false)
+            ->assertSee('type="text" name="end_date" id="plan-end"', false)
+            ->assertDontSee('type="date" name="start_date" id="plan-start"', false)
+            ->assertDontSee('type="date" name="end_date" id="plan-end"', false)
+            ->assertSee('data-plan-calendar-for="plan-start"', false)
+            ->assertSee('data-plan-calendar-for="plan-end"', false)
             ->assertSee('data-week-year="2026"', false);
     }
 

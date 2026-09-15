@@ -80,22 +80,76 @@ export function applyIsoWeekToRange(startInput, endInput, year, week) {
     return range;
 }
 
+export function calendarMarkup(year, monthIndex, selectedDates = []) {
+    const weeks = calendarWeeks(year, monthIndex);
+    const selected = new Set((selectedDates || []).filter(Boolean));
+
+    return `
+        <div class="plan-calendar-head">
+            <button type="button" class="plan-calendar-nav" data-cal-nav="-1" aria-label="Vorige maand">‹</button>
+            <div class="plan-calendar-title">${MONTH_NAMES[monthIndex]} ${year}</div>
+            <button type="button" class="plan-calendar-nav" data-cal-nav="1" aria-label="Volgende maand">›</button>
+        </div>
+        <div class="plan-calendar-grid">
+            <span class="plan-calendar-week-head">Wk</span>
+            ${WEEKDAY_LABELS.map((label) => `<span class="plan-calendar-day-head">${label}</span>`).join('')}
+            ${weeks.map((week) => `
+                <button type="button" class="plan-calendar-week" data-cal-week="${week.week}" data-cal-week-year="${week.year}" title="Selecteer maandag t/m vrijdag van week ${week.week}">WK ${week.week}</button>
+                ${week.days.map((day) => {
+                    const selectedClass = selected.has(day.date) ? ' is-selected' : '';
+                    const mutedClass = day.inMonth ? '' : ' is-muted';
+                    return `<button type="button" class="plan-calendar-day${selectedClass}${mutedClass}" data-cal-date="${day.date}">${Number(day.date.slice(-2))}</button>`;
+                }).join('')}
+            `).join('')}
+        </div>
+    `;
+}
+
+export function disableNativeDatePicker(input) {
+    if (! input) {
+        return;
+    }
+
+    if (input.type === 'date' || input.getAttribute?.('type') === 'date') {
+        const value = input.value;
+        try {
+            input.type = 'text';
+        } catch {
+            input.setAttribute('type', 'text');
+        }
+        if (value && ! input.value) {
+            input.value = value;
+        }
+        input.setAttribute('inputmode', 'numeric');
+        input.setAttribute('autocomplete', 'off');
+        if (! input.getAttribute('placeholder')) {
+            input.setAttribute('placeholder', 'jjjj-mm-dd');
+        }
+    }
+}
+
 export function bindPlanningDatePickers(startInput, endInput, { onChange, document: doc = globalThis.document } = {}) {
-    if (! (startInput instanceof HTMLInputElement) || ! (endInput instanceof HTMLInputElement) || ! doc) {
+    if (! startInput || ! endInput || typeof startInput.addEventListener !== 'function' || ! doc?.createElement) {
         return () => {};
     }
+
+    disableNativeDatePicker(startInput);
+    disableNativeDatePicker(endInput);
 
     const calendar = doc.createElement('div');
     calendar.className = 'plan-calendar hidden';
     calendar.hidden = true;
     calendar.setAttribute('role', 'dialog');
     calendar.setAttribute('aria-label', 'Kalender');
-    const host = startInput.closest('dialog') || startInput.parentElement || doc.body;
+    const host = startInput.closest?.('dialog') || startInput.parentElement || doc.body;
     host.append(calendar);
 
     let viewYear = new Date().getFullYear();
     let viewMonth = new Date().getMonth();
     let activeInput = startInput;
+
+    const startToggle = dateToggleFor(startInput, doc);
+    const endToggle = dateToggleFor(endInput, doc);
 
     const close = () => {
         calendar.classList.add('hidden');
@@ -119,38 +173,18 @@ export function bindPlanningDatePickers(startInput, endInput, { onChange, docume
     };
 
     const place = (input) => {
-        const rect = input.getBoundingClientRect();
+        const rect = input.getBoundingClientRect?.() || { left: 8, bottom: 8 };
         calendar.style.position = 'fixed';
         calendar.style.left = `${Math.max(8, rect.left)}px`;
         calendar.style.top = `${rect.bottom + 4}px`;
-        calendar.style.zIndex = '80';
+        calendar.style.zIndex = '1000';
     };
 
     const render = () => {
-        const weeks = calendarWeeks(viewYear, viewMonth);
-        const selected = new Set([startInput.value, endInput.value].filter(Boolean));
-        calendar.innerHTML = `
-            <div class="plan-calendar-head">
-                <button type="button" class="plan-calendar-nav" data-cal-nav="-1" aria-label="Vorige maand">‹</button>
-                <div class="plan-calendar-title">${MONTH_NAMES[viewMonth]} ${viewYear}</div>
-                <button type="button" class="plan-calendar-nav" data-cal-nav="1" aria-label="Volgende maand">›</button>
-            </div>
-            <div class="plan-calendar-grid">
-                <span class="plan-calendar-week-head">Wk</span>
-                ${WEEKDAY_LABELS.map((label) => `<span class="plan-calendar-day-head">${label}</span>`).join('')}
-                ${weeks.map((week) => `
-                    <button type="button" class="plan-calendar-week" data-cal-week="${week.week}" data-cal-week-year="${week.year}" title="Selecteer maandag t/m vrijdag van week ${week.week}">WK ${week.week}</button>
-                    ${week.days.map((day) => {
-                        const selectedClass = selected.has(day.date) ? ' is-selected' : '';
-                        const mutedClass = day.inMonth ? '' : ' is-muted';
-                        return `<button type="button" class="plan-calendar-day${selectedClass}${mutedClass}" data-cal-date="${day.date}">${Number(day.date.slice(-2))}</button>`;
-                    }).join('')}
-                `).join('')}
-            </div>
-        `;
+        calendar.innerHTML = calendarMarkup(viewYear, viewMonth, [startInput.value, endInput.value]);
     };
 
-    calendar.addEventListener('mousedown', (event) => event.preventDefault());
+    calendar.addEventListener('mousedown', (event) => event.stopPropagation());
     calendar.addEventListener('click', (event) => {
         const nav = event.target.closest('[data-cal-nav]');
         if (nav) {
@@ -187,23 +221,26 @@ export function bindPlanningDatePickers(startInput, endInput, { onChange, docume
         close();
     });
 
-    const onPick = (event) => {
+    const openFor = (input) => (event) => {
         event.preventDefault();
-        open(event.currentTarget);
+        event.stopPropagation();
+        open(input);
     };
 
-    startInput.addEventListener('mousedown', onPick);
-    endInput.addEventListener('mousedown', onPick);
-    startInput.addEventListener('click', onPick);
-    endInput.addEventListener('click', onPick);
+    const onStart = openFor(startInput);
+    const onEnd = openFor(endInput);
+    startToggle?.addEventListener('click', onStart);
+    endToggle?.addEventListener('click', onEnd);
+    startInput.addEventListener('click', onStart);
+    endInput.addEventListener('click', onEnd);
     startInput.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown' || event.key === 'Enter') {
+        if (event.key === 'ArrowDown') {
             event.preventDefault();
             open(startInput);
         }
     });
     endInput.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown' || event.key === 'Enter') {
+        if (event.key === 'ArrowDown') {
             event.preventDefault();
             open(endInput);
         }
@@ -213,7 +250,8 @@ export function bindPlanningDatePickers(startInput, endInput, { onChange, docume
         if (calendar.hidden) {
             return;
         }
-        if (calendar.contains(event.target) || event.target === startInput || event.target === endInput) {
+        if (calendar.contains(event.target) || event.target === startInput || event.target === endInput
+            || startToggle?.contains?.(event.target) || endToggle?.contains?.(event.target)) {
             return;
         }
         close();
@@ -221,11 +259,24 @@ export function bindPlanningDatePickers(startInput, endInput, { onChange, docume
     doc.addEventListener('mousedown', onDoc);
 
     return () => {
-        startInput.removeEventListener('mousedown', onPick);
-        endInput.removeEventListener('mousedown', onPick);
+        startToggle?.removeEventListener('click', onStart);
+        endToggle?.removeEventListener('click', onEnd);
+        startInput.removeEventListener('click', onStart);
+        endInput.removeEventListener('click', onEnd);
         doc.removeEventListener('mousedown', onDoc);
         calendar.remove();
     };
+}
+
+function dateToggleFor(input, doc) {
+    if (input.id) {
+        const named = doc.querySelector?.(`[data-plan-calendar-for="${input.id}"]`);
+        if (named) {
+            return named;
+        }
+    }
+
+    return input.parentElement?.querySelector?.('.plan-date-icon') || null;
 }
 
 function pad(value) {
