@@ -21,6 +21,7 @@ class ShopWorkCatalog
                     ['name' => 'Marmoleum', 'slug' => 'marmoleum'],
                     ['name' => 'Tapijt', 'slug' => 'tapijt'],
                     ['name' => 'Tapijttegels', 'slug' => 'tapijttegels'],
+                    ['name' => 'Primen', 'slug' => 'primen'],
                     ['name' => 'Egaliseren', 'slug' => 'egaliseren'],
                     ['name' => 'Plinten', 'slug' => 'plinten'],
                     ['name' => 'Reparatie / herstel', 'slug' => 'reparatie-herstel'],
@@ -89,6 +90,48 @@ class ShopWorkCatalog
                     'name' => $activity['name'],
                     'slug' => $activity['slug'],
                     'sort_order' => $activityIndex + 1,
+                    'is_active' => true,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+        }
+    }
+
+    public static function ensureMissing(): void
+    {
+        $now = now();
+
+        foreach (self::defaults() as $categoryIndex => $category) {
+            $categoryId = DB::table('work_activity_categories')->where('slug', $category['slug'])->value('id');
+
+            if ($categoryId === null) {
+                $categoryId = DB::table('work_activity_categories')->insertGetId([
+                    'name' => $category['name'],
+                    'slug' => $category['slug'],
+                    'sort_order' => $categoryIndex + 1,
+                    'is_active' => true,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            foreach ($category['activities'] as $activityIndex => $activity) {
+                if (DB::table('work_activities')->where('slug', $activity['slug'])->exists()) {
+                    continue;
+                }
+
+                $sortOrder = $activityIndex + 1;
+                DB::table('work_activities')
+                    ->where('work_activity_category_id', $categoryId)
+                    ->where('sort_order', '>=', $sortOrder)
+                    ->increment('sort_order');
+
+                DB::table('work_activities')->insert([
+                    'work_activity_category_id' => $categoryId,
+                    'name' => $activity['name'],
+                    'slug' => $activity['slug'],
+                    'sort_order' => $sortOrder,
                     'is_active' => true,
                     'created_at' => $now,
                     'updated_at' => $now,

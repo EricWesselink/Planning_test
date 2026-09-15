@@ -50,6 +50,8 @@ class ShopWorkTest extends TestCase
             ->assertOk()
             ->assertSee('Werkzaamheden')
             ->assertSee('PVC')
+            ->assertSee('>Primen</span>', false)
+            ->assertSee('>Egaliseren</span>', false)
             ->assertSee('Screens')
             ->assertSee('Gordijnen')
             ->assertSee('Montage')
