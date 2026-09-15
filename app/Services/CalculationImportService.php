@@ -179,7 +179,6 @@ class CalculationImportService
 
     /**
      * @param  array<string, mixed>  $preview
-     * @param  list<array{path: string, type: string, original: string}>  $extraDocuments
      */
     public function replaceFromPreview(Project $project, array $preview): int
     {

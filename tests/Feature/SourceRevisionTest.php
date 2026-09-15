@@ -109,7 +109,15 @@ class SourceRevisionTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $this->makeProject('251000077');
+        $project = $this->makeProject('251000077');
+        $project->documents()->create([
+            'document_type' => 'meetstaat',
+            'revision' => 1,
+            'is_current' => true,
+            'original_filename' => 'Meetstaat-oud.pdf',
+            'file_path' => 'projects/'.$project->id.'/meetstaat/oud.pdf',
+            'parse_status' => 'ok',
+        ]);
 
         $response = $this->actingAs($user)->post(route('projects.preview'), [
             'files' => [$this->meetstaatPdf('251000077')],

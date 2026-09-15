@@ -20,7 +20,6 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class ProjectIntakeService
 {
@@ -1008,18 +1007,5 @@ class ProjectIntakeService
         ));
 
         return $issues === [] ? null : $issues;
-    }
-
-    private function mimeFromPath(string $path): string
-    {
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-
-        return match ($extension) {
-            'pdf' => 'application/pdf',
-            'csv', 'txt' => 'text/csv',
-            'xlsx', 'xlsm' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'xls' => 'application/vnd.ms-excel',
-            default => 'application/octet-stream',
-        };
     }
 }
