@@ -84,8 +84,11 @@ export function workFamily(filter) {
     if (key === 'tapijt' || label.includes('tapijt')) {
         return 'Tapijt';
     }
-    if (key === 'gietvloer' || label.includes('gietvloer') || key === 'coating') {
+    if (key === 'gietvloer' || label.includes('gietvloer')) {
         return 'PU gietvloer';
+    }
+    if (key === 'coating' || label.includes('coating')) {
+        return 'Coating';
     }
     if (key === 'plinten' || label.includes('plint')) {
         return 'Plinten';
@@ -94,7 +97,7 @@ export function workFamily(filter) {
     return 'Overig';
 }
 
-const FAMILY_ORDER = ['', 'Marmoleum', 'PVC', 'Tapijt', 'Entreemat', 'PU gietvloer', 'Plinten', 'Overig'];
+const FAMILY_ORDER = ['', 'Marmoleum', 'PVC', 'Tapijt', 'Entreemat', 'PU gietvloer', 'Coating', 'Plinten', 'Overig'];
 const ALWAYS_GROUP = new Set(['', 'Marmoleum', 'PVC']);
 
 export function groupedWorkFilters(filters) {

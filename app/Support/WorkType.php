@@ -58,6 +58,10 @@ class WorkType
 
     public static function knownType(string $value): ?string
     {
+        if (str_contains(mb_strtolower($value), 'gietvloer')) {
+            return 'Gietvloer';
+        }
+
         $parts = array_values(array_filter(array_map('trim', explode(',', $value)), fn ($part) => $part !== ''));
         if (count($parts) >= 2) {
             $fromLast = self::matchType((string) end($parts));
@@ -142,8 +146,8 @@ class WorkType
             str_contains($flat, 'linoleum') || str_contains($flat, 'marmoleum') => 'Linoleum',
             str_contains($flat, 'pvc') => 'PVC',
             str_contains($flat, 'entreemat') || str_contains($flat, 'coral') || str_contains($flat, 'schoonloop') => 'Entreemat',
-            str_contains($flat, 'coating') => 'Coating',
             str_contains($flat, 'gietvloer') => 'Gietvloer',
+            str_contains($flat, 'coating') => 'Coating',
             str_contains($flat, 'tapijt') => 'Tapijt',
             str_contains($flat, 'vinyl') => 'Vinyl',
             default => null,

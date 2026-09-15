@@ -88,6 +88,23 @@ class CalculationWorkMatcherTest extends TestCase
         $this->assertSame('PU gietvloer kleur n.t.b., Coating', $resin['work_name']);
     }
 
+    public function test_keeps_excel_gietvloer_and_coating_on_separate_works(): void
+    {
+        $matcher = app(CalculationWorkMatcher::class);
+        $works = [
+            'PU gietvloer, Ral 7039 met vlok, Coating',
+            'vloercoating op CD vloer, Coating',
+        ];
+
+        $gietvloer = $matcher->match('PU gietvloer in RAL 7039 (eventueel voorzien va inkoop Amipox)', $works);
+        $this->assertSame('matched', $gietvloer['status']);
+        $this->assertSame('PU gietvloer, Ral 7039 met vlok, Coating', $gietvloer['work_name']);
+
+        $coating = $matcher->match('Lijvige Epoxy vloercoating inkoop Amipox', $works);
+        $this->assertSame('matched', $coating['status']);
+        $this->assertSame('vloercoating op CD vloer, Coating', $coating['work_name']);
+    }
+
     public function test_maps_surcharge_rows_to_overige_instead_of_blocking_import(): void
     {
         $matcher = app(CalculationWorkMatcher::class);

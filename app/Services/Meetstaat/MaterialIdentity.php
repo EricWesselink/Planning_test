@@ -233,6 +233,9 @@ class MaterialIdentity
         if ($left === '' || $right === '') {
             return false;
         }
+        if (! $this->sameCoveringKind($left, $right)) {
+            return false;
+        }
         $leftWork = $this->workCodes($left);
         $rightWork = $this->workCodes($right);
         if ($leftWork !== [] && $rightWork !== []) {
@@ -280,6 +283,27 @@ class MaterialIdentity
         }
 
         return $this->sharesStrongTokens($left, $right);
+    }
+
+    private function sameCoveringKind(string $left, string $right): bool
+    {
+        $leftKind = $this->coveringKind($left);
+        $rightKind = $this->coveringKind($right);
+
+        return $leftKind === null || $rightKind === null || $leftKind === $rightKind;
+    }
+
+    private function coveringKind(string $name): ?string
+    {
+        $flat = mb_strtolower($name);
+        if (str_contains($flat, 'gietvloer')) {
+            return 'gietvloer';
+        }
+        if (str_contains($flat, 'coating')) {
+            return 'coating';
+        }
+
+        return null;
     }
 
     /**
@@ -397,6 +421,9 @@ class MaterialIdentity
             if ($this->isGenericTypeLabel($candidate)) {
                 continue;
             }
+            if (! $this->sameCoveringKind($needle, $candidate)) {
+                continue;
+            }
             if ($this->candidateHasMaterialType($candidate, $type)) {
                 $typeHits[] = $candidate;
             }
@@ -460,6 +487,9 @@ class MaterialIdentity
 
     public function sameExecutionVariant(string $left, string $right): bool
     {
+        if (! $this->sameCoveringKind($left, $right)) {
+            return false;
+        }
         if ($this->sharesWorkCode($left, $right)) {
             return $this->executionMarkersCompatible($left, $right);
         }

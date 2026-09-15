@@ -147,7 +147,8 @@ TXT),
             ->assertSee('Totaal bedrag')
             ->assertSee(Format::euro($expectedTotal, 2))
             ->assertDontSee('>Bron</th>', false)
-            ->assertDontSee('11-ericwesselink.xlsx')
+            ->assertSee('11-ericwesselink.xlsx')
+            ->assertSee('Excel calculatie')
             ->assertDontSee('Ingepland:')
             ->assertDontSee('Tarief: €');
     }

@@ -98,6 +98,14 @@ class MaterialIdentityTest extends TestCase
             'PU gietvloer antislip, Ral 7039 met vlok, Coating'
         ));
         $this->assertFalse($identity->sharesIdentity(
+            'PU gietvloer, Ral 7039 met vlok, Coating',
+            'vloercoating op CD vloer, Coating'
+        ));
+        $this->assertFalse($identity->sharesIdentity(
+            'PU gietvloer in RAL 7039 (eventueel voorzien va inkoop Amipox)',
+            'Lijvige Epoxy vloercoating inkoop Amipox'
+        ));
+        $this->assertFalse($identity->sharesIdentity(
             'Tarkett safe.t Granit Dark Sand 0508, PVC / Vinyl',
             'Tarkett safe.t Granit light, PVC / Vinyl'
         ));

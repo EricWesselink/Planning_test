@@ -17,8 +17,20 @@ class WorkTypeTest extends TestCase
         $this->assertNull(WorkType::productFromName('PVC'));
         $this->assertSame('Plinten', WorkType::labelFromName('Plinten wit'));
         $this->assertNull(WorkType::productFromName('Plinten wit'));
-        $this->assertSame('Coating', WorkType::labelFromName('PU gietvloer kleur n.t.b., Coating'));
+        $this->assertSame('Gietvloer', WorkType::labelFromName('PU gietvloer kleur n.t.b., Coating'));
         $this->assertSame('PU gietvloer kleur n.t.b.', WorkType::productFromName('PU gietvloer kleur n.t.b., Coating'));
+    }
+
+    public function test_keeps_gietvloer_and_coating_as_separate_types(): void
+    {
+        $this->assertSame('Gietvloer', WorkType::labelFromName('PU gietvloer, Ral 7039 met vlok, Coating'));
+        $this->assertSame('Gietvloer', WorkType::labelFromName('PU gietvloer in RAL 7039 (eventueel voorzien va inkoop Amipox)'));
+        $this->assertSame('Coating', WorkType::labelFromName('vloercoating op CD vloer, Coating'));
+        $this->assertSame('Coating', WorkType::labelFromName('Lijvige Epoxy vloercoating inkoop Amipox'));
+        $this->assertNotSame(
+            WorkType::labelFromName('PU gietvloer, Ral 7039 met vlok, Coating'),
+            WorkType::labelFromName('vloercoating op CD vloer, Coating')
+        );
     }
 
     public function test_requires_priming_leveling_follows_category_defaults(): void

@@ -15,6 +15,7 @@ import {
     activeSelectionFromFilter,
     activeWorkBarLabel,
     shortWorkLabel,
+    workFamily,
     workFilterSummaryLabel,
     buildTicketChunk,
     groupRoomsByFloor,
@@ -186,6 +187,19 @@ test('shortens product names and groups families in the dropdown', () => {
     assert.equal(groups[0].items[0].key, 'ondergrond');
     assert.equal(groups[1].items.length, 2);
     assert.equal(groups[2].items.length, 3);
+});
+
+test('keeps coating and gietvloer in separate material families', () => {
+    assert.equal(workFamily({
+        key: 'vloer|5',
+        label: 'PU gietvloer, Ral 7039 met vlok, Coating',
+        color_key: 'gietvloer',
+    }), 'PU gietvloer');
+    assert.equal(workFamily({
+        key: 'vloer|7',
+        label: 'vloercoating op CD vloer, Coating',
+        color_key: 'coating',
+    }), 'Coating');
 });
 
 test('prepares an outsource payload without creating a job yet', () => {
