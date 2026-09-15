@@ -144,8 +144,8 @@
                         <span class="inline-block size-3 shrink-0 rounded-full" style="background: {{ $worker->planColor() }}"></span>
                         <span>
                             <span class="block font-semibold text-nicon-ink">{{ $worker->name }}</span>
-                            @if ($worker->crew_names)
-                                <span class="block text-xs text-nicon-muted">{{ $worker->crew_names }}</span>
+                            @if ($worker->crewNamesLabel())
+                                <span class="block text-xs text-nicon-muted">{{ $worker->crewNamesLabel() }}</span>
                             @endif
                         </span>
                     </a>

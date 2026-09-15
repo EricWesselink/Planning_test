@@ -190,6 +190,26 @@ class PlanningWeekTest extends TestCase
         );
     }
 
+    public function test_planning_board_keeps_scroll_position_after_a_reload(): void
+    {
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('id="plan-scroller"', $html);
+        $this->assertStringContainsString('data-scroll-key="nicon.planning.scroll"', $html);
+        $this->assertStringContainsString('sessionStorage.getItem(key)', $html);
+        $this->assertStringContainsString('scroller.scrollLeft', $html);
+        $this->assertStringContainsString('scroller.scrollTop', $html);
+        $this->assertTrue(
+            strpos($html, 'id="plan-scroller"') < strpos($html, 'sessionStorage.getItem(key)'),
+            'Scroll restore must run after the board scroller exists.'
+        );
+    }
+
     public function test_planning_hides_work_types_with_zero_quantity(): void
     {
         $user = User::factory()->create();

@@ -375,11 +375,19 @@ class WorkerAssignment extends Model
      */
     public function presentNames(): array
     {
-        return $this->crewMembers
-            ->sortBy('sort_order')
-            ->map(fn (CrewMember $member): string => $member->label())
-            ->values()
-            ->all();
+        $names = [];
+        $seen = [];
+        foreach ($this->crewMembers->sortBy('sort_order') as $member) {
+            $label = $member->label();
+            $key = mb_strtolower($label);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $names[] = $label;
+        }
+
+        return $names;
     }
 
     public function presentNamesLabel(): ?string

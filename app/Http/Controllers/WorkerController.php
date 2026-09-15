@@ -284,6 +284,7 @@ class WorkerController extends Controller
             $members[0]['phone'] = trim((string) $data['phone']);
         }
         $data['crew_members'] = $members;
+        $data['people_count'] = max(1, count($members));
         $data['crew_names'] = Worker::joinedCrewNames($members);
         $data['phone'] = Worker::firstCrewPhone($members);
         $data['specialty'] = FlooringSpecialty::storedLabels($data['specialties'] ?? []);

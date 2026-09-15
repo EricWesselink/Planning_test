@@ -226,7 +226,7 @@
             @endif
         </div>
 
-        <div class="planning-scroll-area" id="plan-scroller">
+        <div class="planning-scroll-area" id="plan-scroller" data-scroll-key="nicon.planning.scroll">
             @php
                 $workItemsByProject = $projects->mapWithKeys(function ($project) {
                     $items = $project->workItems
@@ -253,7 +253,11 @@
                  data-assignment-url="{{ url('/planning/assignments') }}"
                  data-ticket-url="{{ url('/planning/assignments') }}"
                  data-readonly="{{ $canManagePlanning ? '0' : '1' }}"
-                 data-crews='@json($workers->mapWithKeys(fn ($worker) => [$worker->id => $worker->crewPeople->map(fn ($person) => ['id' => $person->id, 'name' => $person->label()])->values()]))'
+                 data-crews='@json($workers->mapWithKeys(fn ($worker) => [$worker->id => $worker->crewPeople->unique(function ($person) {
+                    $name = trim((string) $person->name);
+
+                    return $name === '' ? 'id:'.$person->id : mb_strtolower($name);
+                })->map(fn ($person) => ['id' => $person->id, 'name' => $person->label()])->values()]))'
                  data-work-items='@json($workItemsByProject)'
                  style="--plan-days: {{ $dayCount }}; --plan-day-min: {{ $dayMin }}px">
                 @if ($canViewLaborCosts)
@@ -468,6 +472,29 @@
                     @endforeach
                 </div>
             </div>
+            <script>
+                (function () {
+                    var scroller = document.getElementById('plan-scroller');
+                    var key = scroller && scroller.getAttribute('data-scroll-key');
+                    if (!scroller || !key) {
+                        return;
+                    }
+                    try {
+                        var raw = sessionStorage.getItem(key);
+                        if (!raw) {
+                            return;
+                        }
+                        var pos = JSON.parse(raw);
+                        if (!pos || pos.href !== (location.pathname + location.search)) {
+                            sessionStorage.removeItem(key);
+                            return;
+                        }
+                        scroller.scrollLeft = Number(pos.left) || 0;
+                        scroller.scrollTop = Number(pos.top) || 0;
+                        window.scrollTo(Number(pos.windowLeft) || 0, Number(pos.windowTop) || 0);
+                    } catch (e) {}
+                })();
+            </script>
         </div>
     </div>
     <div id="plan-hours-hint" class="plan-hours-hint hidden" aria-hidden="true">10:00 - 12:00 · 2u</div>

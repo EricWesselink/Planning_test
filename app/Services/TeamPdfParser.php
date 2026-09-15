@@ -610,10 +610,36 @@ class TeamPdfParser
             $members[] = $this->memberRecord($pendingVoornaam, $pendingPhone);
         }
 
-        return array_values(array_filter(
+        return $this->uniqueRosterMembers(array_values(array_filter(
             $members,
             fn (array $member): bool => $member['name'] !== '',
-        ));
+        )));
+    }
+
+    /**
+     * @param  list<array{name: string, phone: string}>  $members
+     * @return list<array{name: string, phone: string}>
+     */
+    private function uniqueRosterMembers(array $members): array
+    {
+        $unique = [];
+        $indexByName = [];
+        foreach ($members as $member) {
+            $key = mb_strtolower($member['name']);
+            if (isset($indexByName[$key])) {
+                $index = $indexByName[$key];
+                if ($unique[$index]['phone'] === '' && $member['phone'] !== '') {
+                    $unique[$index]['phone'] = $member['phone'];
+                }
+
+                continue;
+            }
+
+            $indexByName[$key] = count($unique);
+            $unique[] = $member;
+        }
+
+        return $unique;
     }
 
     /**

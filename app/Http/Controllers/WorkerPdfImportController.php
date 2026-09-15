@@ -87,6 +87,7 @@ class WorkerPdfImportController extends Controller
                 $type = EmploymentType::tryFrom((string) ($team['employment_type'] ?? '')) ?? EmploymentType::Eigen;
 
                 $members = Worker::normalizeCrewMembers($members, $peopleCount);
+                $peopleCount = max(1, count($members));
 
                 Worker::query()->create([
                     'name' => $name,

@@ -14,10 +14,13 @@ import {
     workdayCount,
 } from './planning-hours';
 import { bindLaborFold } from './planning-labor-fold';
+import { bindPlanningScrollRestore, reloadPlanningBoard } from './planning-scroll';
 
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 const board = document.getElementById('plan-board');
 if (board) {
+    const scroller = document.getElementById('plan-scroller');
+    bindPlanningScrollRestore(scroller);
     const readonly = board.dataset.readonly === '1';
     const dialog = document.getElementById('plan-dialog');
     const form = document.getElementById('plan-form');
@@ -804,7 +807,7 @@ if (board) {
             include_sunday: current.bar.dataset.includeSunday === '1',
         });
         if (ok) {
-            window.location.reload();
+            reloadPlanningBoard(scroller);
             return;
         }
         restoreBar(current);
@@ -991,12 +994,12 @@ if (board) {
         const assignmentId = form.dataset.assignmentId;
         if (assignmentId) {
             if (await save(assignmentUrl(assignmentId), 'PATCH', body)) {
-                window.location.reload();
+                reloadPlanningBoard(scroller);
             }
             return;
         }
         if (await save(board.dataset.storeUrl, 'POST', body)) {
-            window.location.reload();
+            reloadPlanningBoard(scroller);
         }
     });
 
@@ -1027,7 +1030,7 @@ if (board) {
             return;
         }
         if (await save(assignmentUrl(assignmentId), 'DELETE', {})) {
-            window.location.reload();
+            reloadPlanningBoard(scroller);
         }
     });
 

@@ -669,6 +669,7 @@
                                                 $crewNames = $worker->crewPeople
                                                     ->map(fn ($member) => trim((string) $member->name))
                                                     ->filter()
+                                                    ->unique(fn (string $name): string => mb_strtolower($name))
                                                     ->implode(' / ');
                                                 $workerLabel = $crewNames !== '' ? $worker->planName().' – '.$crewNames : $worker->planName();
                                             @endphp

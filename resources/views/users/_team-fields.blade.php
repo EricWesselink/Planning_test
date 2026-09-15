@@ -13,14 +13,23 @@
         }
     } else {
         $people = $worker->relationLoaded('crewPeople') ? $worker->crewPeople : collect();
-        $crewMembers = [];
-        for ($index = 0; $index < $crewCount; $index++) {
-            $person = $people[$index] ?? null;
-            $crewMembers[] = [
-                'id' => $person?->id,
-                'name' => $person?->name ?? '',
-                'email' => $person?->user?->email ?? '',
-            ];
+        if ($worker->exists && $people->isNotEmpty()) {
+            $crewMembers = $worker->crewMembersForForm();
+            foreach ($crewMembers as $index => $member) {
+                $id = (int) ($member['id'] ?? 0);
+                $person = $id > 0 ? $people->firstWhere('id', $id) : ($people[$index] ?? null);
+                $crewMembers[$index]['email'] = (string) ($person?->user?->email ?? '');
+            }
+        } else {
+            $crewMembers = [];
+            for ($index = 0; $index < $crewCount; $index++) {
+                $person = $people[$index] ?? null;
+                $crewMembers[] = [
+                    'id' => $person?->id,
+                    'name' => $person?->name ?? '',
+                    'email' => $person?->user?->email ?? '',
+                ];
+            }
         }
     }
     $hasDetails = filled(old('phone', $worker->phone))

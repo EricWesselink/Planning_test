@@ -124,6 +124,21 @@ TXT);
         $this->assertSame(['Lukas'], array_column($parsed['teams'][4]['crew_members'], 'name'));
     }
 
+    public function test_roster_keeps_one_row_when_the_same_voornaam_appears_twice(): void
+    {
+        $parsed = $this->parser()->parseText(<<<'TXT'
+Team Voornaam Medewerker Rol
+Team 3 Arek A.S. Gorzynski Vakman / voorman
+Sietse
+S.D. van Dijk
+Sietse S.D. van Dijk
+TXT);
+
+        $this->assertSame(['Arek', 'Sietse'], array_column($parsed['teams'][0]['crew_members'], 'name'));
+        $this->assertSame(2, $parsed['teams'][0]['people_count']);
+        $this->assertSame('Arek, Sietse', $parsed['teams'][0]['crew_names']);
+    }
+
     public function test_roster_attaches_06_numbers_on_their_own_line(): void
     {
         $parsed = $this->parser()->parseText(<<<'TXT'

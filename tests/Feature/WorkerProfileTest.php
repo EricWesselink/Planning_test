@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\UserRole;
 use App\Enums\VoucherType;
 use App\Mail\WorkerPlanningInviteMail;
+use App\Models\CrewMember;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\Team;
@@ -1100,6 +1101,94 @@ class WorkerProfileTest extends TestCase
         $this->assertSame([
             ['name' => 'r Korteschiel', 'phone' => '0610767167'],
         ], $worker->crewMembers());
+    }
+
+    public function test_duplicate_teammate_names_are_stored_once(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Team 3',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => ''],
+                ['name' => 'Sietse', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('workers.update', $worker), [
+                'name' => 'Team 3',
+                'employment_type' => 'eigen',
+                'people_count' => '3',
+                'crew_members' => [
+                    ['name' => 'Arek', 'phone' => ''],
+                    ['name' => 'Sietse', 'phone' => ''],
+                    ['name' => 'Sietse', 'phone' => ''],
+                ],
+                'active' => '1',
+            ])
+            ->assertRedirect(route('workers.show', $worker));
+
+        $worker->refresh();
+        $this->assertSame(2, $worker->people_count);
+        $this->assertSame('Arek, Sietse', $worker->crew_names);
+        $this->assertSame([
+            ['name' => 'Arek', 'phone' => ''],
+            ['name' => 'Sietse', 'phone' => ''],
+        ], $worker->crewMembers());
+        $this->assertSame(['Arek', 'Sietse'], $worker->crewPeople()->pluck('name')->all());
+    }
+
+    public function test_team_list_shows_sietse_once_when_the_roster_has_a_duplicate(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Team 3 Arek',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => ''],
+                ['name' => 'Sietse', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        CrewMember::query()->create([
+            'worker_id' => $worker->id,
+            'name' => 'Sietse',
+            'sort_order' => 2,
+        ]);
+        $worker->forceFill([
+            'people_count' => 3,
+            'crew_names' => 'Arek, Sietse, Sietse',
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => ''],
+                ['name' => 'Sietse', 'phone' => ''],
+                ['name' => 'Sietse', 'phone' => ''],
+            ],
+        ])->saveQuietly();
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('Team 3 Arek')
+            ->assertSee('Arek, Sietse')
+            ->assertDontSee('Arek, Sietse, Sietse');
+
+        $html = $this->actingAs($user)
+            ->get(route('workers.show', $worker))
+            ->assertOk()
+            ->assertSee('Arek')
+            ->assertSee('Sietse')
+            ->getContent();
+        $this->assertSame(1, preg_match_all('/name="crew_members\[\d+\]\[name\]"[^>]*value="Sietse"/', $html));
+
+        $worker->collapseDuplicateCrewPeople();
+        $worker->refresh();
+        $this->assertSame(2, $worker->people_count);
+        $this->assertSame('Arek, Sietse', $worker->crew_names);
+        $this->assertSame(['Arek', 'Sietse'], $worker->crewPeople()->pluck('name')->all());
     }
 
     public function test_vakkennis_with_a_comma_is_rejected(): void

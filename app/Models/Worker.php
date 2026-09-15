@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 
 #[Fillable([
     'name', 'employment_type', 'company', 'contact_name', 'phone', 'email',
@@ -120,17 +121,25 @@ class Worker extends Model
     public function crewMembersForForm(): array
     {
         if ($this->exists && $this->crewPeople->isNotEmpty()) {
-            return $this->crewPeople
-                ->map(fn (CrewMember $member): array => [
-                    'id' => $member->id,
-                    'name' => (string) $member->name,
-                    'phone' => (string) $member->phone,
-                ])
-                ->values()
-                ->all();
+            return self::normalizeCrewMembers(
+                $this->crewPeople
+                    ->map(fn (CrewMember $member): array => [
+                        'id' => $member->id,
+                        'name' => (string) $member->name,
+                        'phone' => (string) $member->phone,
+                    ])
+                    ->values()
+                    ->all(),
+                $this->peopleCount(),
+            );
         }
 
         return $this->crewMembers();
+    }
+
+    public function crewNamesLabel(): ?string
+    {
+        return self::joinedCrewNames($this->crewMembers());
     }
 
     /**
@@ -176,11 +185,60 @@ class Worker extends Model
             $normalized[] = $row;
         }
 
+        $namedBefore = 0;
+        foreach ($normalized as $row) {
+            if ($row['name'] !== '') {
+                $namedBefore++;
+            }
+        }
+        $normalized = self::collapseNamedCrewMembers($normalized);
+        $namedAfter = 0;
+        foreach ($normalized as $row) {
+            if ($row['name'] !== '') {
+                $namedAfter++;
+            }
+        }
+        $count = max(1, min(50, $count - max(0, $namedBefore - $namedAfter)));
+
         while (count($normalized) < $count) {
             $normalized[] = ['name' => '', 'phone' => ''];
         }
 
         return array_values(array_slice($normalized, 0, $count));
+    }
+
+    /**
+     * @param  list<array{id?: int, name: string, phone: string}>  $members
+     * @return list<array{id?: int, name: string, phone: string}>
+     */
+    public static function collapseNamedCrewMembers(array $members): array
+    {
+        $collapsed = [];
+        $indexByName = [];
+
+        foreach ($members as $member) {
+            $name = trim((string) ($member['name'] ?? ''));
+            if ($name === '') {
+                $collapsed[] = $member;
+
+                continue;
+            }
+
+            $key = mb_strtolower($name);
+            if (isset($indexByName[$key])) {
+                $index = $indexByName[$key];
+                if (($collapsed[$index]['phone'] ?? '') === '' && trim((string) ($member['phone'] ?? '')) !== '') {
+                    $collapsed[$index]['phone'] = trim((string) $member['phone']);
+                }
+
+                continue;
+            }
+
+            $indexByName[$key] = count($collapsed);
+            $collapsed[] = $member;
+        }
+
+        return $collapsed;
     }
 
     /**
@@ -218,11 +276,20 @@ class Worker extends Model
     public static function joinedCrewNames(array $members): ?string
     {
         $names = [];
+        $seen = [];
         foreach ($members as $member) {
             $name = trim((string) ($member['name'] ?? ''));
-            if ($name !== '') {
-                $names[] = $name;
+            if ($name === '') {
+                continue;
             }
+
+            $key = mb_strtolower($name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $names[] = $name;
         }
 
         if ($names === []) {
@@ -369,6 +436,112 @@ class Worker extends Model
             ->when($keepIds === [], fn ($query) => $query)
             ->whereDoesntHave('assignments')
             ->delete();
+
+        $this->collapseDuplicateCrewPeople();
+    }
+
+    public function collapseDuplicateCrewPeople(): void
+    {
+        $people = CrewMember::query()
+            ->where('worker_id', $this->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+        $keepers = [];
+        $removed = false;
+
+        foreach ($people as $person) {
+            $name = trim((string) $person->name);
+            if ($name === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($name);
+            if (! isset($keepers[$key])) {
+                $keepers[$key] = $person;
+
+                continue;
+            }
+
+            $this->absorbCrewMember($keepers[$key], $person);
+            $removed = true;
+        }
+
+        if (! $removed) {
+            return;
+        }
+
+        $remaining = CrewMember::query()
+            ->where('worker_id', $this->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+        $members = [];
+        foreach ($remaining as $index => $person) {
+            if ((int) $person->sort_order !== $index) {
+                $person->sort_order = $index;
+                $person->save();
+            }
+            $members[] = [
+                'id' => $person->id,
+                'name' => (string) $person->name,
+                'phone' => (string) $person->phone,
+            ];
+        }
+
+        $this->forceFill([
+            'crew_members' => $members,
+            'crew_names' => self::joinedCrewNames($members),
+            'people_count' => max(1, count($members)),
+            'phone' => self::firstCrewPhone($members) ?? $this->phone,
+        ])->saveQuietly();
+        $this->unsetRelation('crewPeople');
+    }
+
+    private function absorbCrewMember(CrewMember $keeper, CrewMember $duplicate): void
+    {
+        $changed = false;
+        if (trim((string) $keeper->phone) === '' && trim((string) $duplicate->phone) !== '') {
+            $keeper->phone = $duplicate->phone;
+            $changed = true;
+        }
+        if (trim((string) $keeper->specialty) === '' && trim((string) $duplicate->specialty) !== '') {
+            $keeper->specialty = $duplicate->specialty;
+            $changed = true;
+        }
+        if ($changed) {
+            $keeper->save();
+        }
+
+        $duplicateUser = User::query()->where('crew_member_id', $duplicate->id)->first();
+        if ($duplicateUser !== null) {
+            $keeperHasUser = User::query()->where('crew_member_id', $keeper->id)->exists();
+            $duplicateUser->forceFill([
+                'crew_member_id' => $keeperHasUser ? null : $keeper->id,
+            ])->save();
+        }
+
+        $pivots = DB::table('crew_member_worker_assignment')
+            ->where('crew_member_id', $duplicate->id)
+            ->get();
+        foreach ($pivots as $pivot) {
+            $exists = DB::table('crew_member_worker_assignment')
+                ->where('worker_assignment_id', $pivot->worker_assignment_id)
+                ->where('crew_member_id', $keeper->id)
+                ->exists();
+            if ($exists) {
+                DB::table('crew_member_worker_assignment')->where('id', $pivot->id)->delete();
+
+                continue;
+            }
+
+            DB::table('crew_member_worker_assignment')->where('id', $pivot->id)->update([
+                'crew_member_id' => $keeper->id,
+                'updated_at' => now(),
+            ]);
+        }
+
+        $duplicate->delete();
     }
 
     public function workOrders(): HasMany

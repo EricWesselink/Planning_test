@@ -225,6 +225,7 @@ class UserController extends Controller
             $data['people_count'] = max(1, (int) ($data['people_count'] ?? 1));
             $members = Worker::normalizeCrewMembers($request->input('crew_members', []), $data['people_count']);
             $data['crew_members'] = $members;
+            $data['people_count'] = max(1, count($members));
             $data['crew_logins'] = $this->crewLoginsFromRequest($request, $data['people_count']);
             $data['specialties'] = $data['specialties'] ?? [];
             $data['phone'] = trim((string) ($data['phone'] ?? ''));
