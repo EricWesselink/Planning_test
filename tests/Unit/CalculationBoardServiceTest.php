@@ -167,9 +167,76 @@ class CalculationBoardServiceTest extends TestCase
         $this->assertSame('local', $room['floors'][1]['role']);
         $this->assertSame('v09', $room['floors'][1]['code']);
         $this->assertSame(MaterialColor::fromCode('v09'), $room['floors'][1]['material_color']);
-        $this->assertNotNull($room['floors'][1]['overlay']);
-        $this->assertSame(1, $room['floors'][1]['overlay']['page']);
+        $this->assertNull($room['floors'][1]['overlay']);
+        $this->assertNull($room['contour']);
         $this->assertTrue(collect($payload['materials'])->contains(fn (array $material) => $material['key'] === 'v09'));
+    }
+
+    public function test_payload_fills_only_a_reliable_room_contour(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'Offerte',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        $drawing = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => 'bg-01.pdf',
+            'file_path' => 'calculations/1/a.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1,
+        ]);
+        $floor = $this->floor($calculation, $drawing, '1.10', 'hal', 'v02', 18.5);
+        $floor->update([
+            'finish_role' => FinishRole::Main,
+            'room_area' => 18.5,
+            'calculation_trace' => json_encode([
+                'role' => 'room_floor',
+                'reliable' => true,
+                'page' => 1,
+                'rects' => [
+                    ['x' => 0.10, 'y' => 0.20, 'w' => 0.08, 'h' => 0.05],
+                ],
+            ]),
+        ]);
+
+        $payload = app(CalculationBoardService::class)->payload($calculation->fresh(['lines.drawing', 'drawings']));
+        $room = collect($payload['rooms'])->firstWhere('number', '1.10');
+
+        $this->assertNotNull($room['contour']);
+        $this->assertTrue($room['contour']['reliable']);
+        $this->assertSame(1, $room['contour']['page']);
+        $this->assertEqualsWithDelta(0.08, (float) $room['contour']['rects'][0]['w'], 0.0001);
+        $this->assertSame(MaterialColor::fromCode('v02'), $room['material_color']);
+    }
+
+    public function test_payload_does_not_invent_a_color_without_a_floor_code(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'Offerte',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'sort_order' => 1,
+            'room_number' => '2.01',
+            'room_name' => 'hal',
+            'product_code' => null,
+            'product' => null,
+            'quantity' => 10,
+            'unit' => WorkUnit::SquareMeter,
+            'finish_role' => FinishRole::Main,
+            'source' => QuantitySource::Review,
+        ]);
+
+        $payload = app(CalculationBoardService::class)->payload($calculation->fresh(['lines.drawing', 'drawings']));
+        $room = collect($payload['rooms'])->firstWhere('number', '2.01');
+
+        $this->assertNull($room['material_color']);
+        $this->assertNull($room['floors'][0]['material_color']);
     }
 
     private function floor(

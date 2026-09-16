@@ -51,6 +51,7 @@ class RoomFloorFinishes
                 $quantity = null;
             }
             if ($quantity !== null) {
+                $quantity = round($quantity, 2);
                 $used += $quantity;
             }
             $locals[] = [
@@ -69,7 +70,7 @@ class RoomFloorFinishes
             }
         }
         if ($localsKnown && $roomArea !== null && $used > 0) {
-            $mainQuantity = round($roomArea - $used, 3);
+            $mainQuantity = round($roomArea - $used, 2);
             if ($mainQuantity <= 0) {
                 $mainQuantity = null;
             }

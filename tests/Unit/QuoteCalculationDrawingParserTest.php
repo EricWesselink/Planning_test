@@ -286,6 +286,40 @@ TXT);
         $this->assertGreaterThanOrEqual(18, $linked);
     }
 
+    public function test_stores_reliable_floor_overlays_across_different_drawing_layouts(): void
+    {
+        $first = RealDrawingFixtures::oisterwijkDrawingPath();
+        $second = RealDrawingFixtures::laakseTuinenDrawingPath()
+            ?? RealDrawingFixtures::griftlandDrawingPath();
+        if ($first === null || $second === null || realpath($first) === realpath($second)) {
+            $this->markTestSkipped('Twee verschillende bouwtekeningen ontbreken.');
+        }
+
+        $parser = $this->parser();
+        $layouts = [];
+        foreach ([$first, $second] as $path) {
+            $parsed = $parser->parseFile($path);
+            $overlays = collect($parsed['lines'])->filter(function (array $line) {
+                $trace = json_decode((string) ($line['calculation_trace'] ?? ''), true);
+
+                return is_array($trace) && ($trace['role'] ?? '') === 'room_floor';
+            });
+            foreach ($overlays as $line) {
+                $trace = json_decode((string) $line['calculation_trace'], true);
+                $this->assertTrue($trace['reliable']);
+                $this->assertSame('room_floor', $trace['role']);
+                $this->assertNotEmpty($trace['rects']);
+            }
+            $layouts[] = [
+                'legend' => collect($parsed['legend'])->pluck('code')->sort()->values()->all(),
+                'numbers' => collect($parsed['lines'])->pluck('room_number')->unique()->filter()->sort()->values()->all(),
+            ];
+        }
+
+        $this->assertNotSame($layouts[0]['legend'], $layouts[1]['legend']);
+        $this->assertNotSame($layouts[0]['numbers'], $layouts[1]['numbers']);
+    }
+
     public function test_links_floor_codes_across_all_supplied_coa_drawings_without_guessing(): void
     {
         $paths = RealDrawingFixtures::coaOisterwijkDrawingPaths();

@@ -7,25 +7,28 @@ class MaterialColor
     public const UNKNOWN = '#9ca3af';
 
     /**
-     * @var list<string>
+     * Vaste kleuren per volledige materiaalcode, niet per hoofdgroep.
+     *
+     * @var array<string, string>
      */
-    private const CODE_PALETTE = [
-        '#2563eb',
-        '#dc2626',
-        '#16a34a',
-        '#d97706',
-        '#7c3aed',
-        '#0891b2',
-        '#db2777',
-        '#65a30d',
-        '#ea580c',
-        '#4f46e5',
-        '#0f766e',
-        '#9333ea',
-        '#b45309',
-        '#0284c7',
-        '#be123c',
-        '#365314',
+    private const CODE_COLORS = [
+        'v01' => '#848482',
+        'v01.a' => '#be0032',
+        'v01.b' => '#f38400',
+        'v01.c' => '#dcd300',
+        'v01.d' => '#008856',
+        'v01.e' => '#c026d3',
+        'v01.f' => '#1d4ed8',
+        'v01.g' => '#7c3aed',
+        'v02' => '#e68fac',
+        'v03' => '#5eead4',
+        'v04' => '#8db600',
+        'v05' => '#0067a5',
+        'v06' => '#604e97',
+        'v07' => '#882d17',
+        'v08' => '#2b3d26',
+        'v09' => '#222222',
+        'v10' => '#b3446c',
     ];
 
     /**
@@ -57,9 +60,63 @@ class MaterialColor
             return self::resolve(null, $productName);
         }
 
-        $index = (int) (hexdec(hash('crc32b', $normalized)) % count(self::CODE_PALETTE));
+        if (isset(self::CODE_COLORS[$normalized])) {
+            return self::CODE_COLORS[$normalized];
+        }
 
-        return self::CODE_PALETTE[$index];
+        return self::hashedColor($normalized);
+    }
+
+    private static function hashedColor(string $code): string
+    {
+        $seed = unpack('N', substr(hash('sha256', 'nicon-material:'.$code, true), 0, 4));
+        $n = (int) ($seed[1] ?? 0);
+        $hue = fmod(abs($n) * 0.38196601125, 360.0);
+        $sat = 62 + abs($n % 16);
+        $light = 36 + abs(($n >> 8) % 12);
+        $hex = self::hslToHex($hue, $sat, $light);
+
+        for ($step = 0; $step < 16; $step++) {
+            $clash = false;
+            foreach (self::CODE_COLORS as $taken) {
+                if (self::hexesMatch($hex, $taken, 52)) {
+                    $clash = true;
+                    break;
+                }
+            }
+            if (! $clash) {
+                return $hex;
+            }
+            $hue = fmod($hue + 137.508, 360.0);
+            $hex = self::hslToHex($hue, $sat, $light);
+        }
+
+        return $hex;
+    }
+
+    private static function hslToHex(float $hue, float $saturation, float $lightness): string
+    {
+        $h = fmod(($hue + 360.0), 360.0);
+        $s = max(0.0, min(100.0, $saturation)) / 100;
+        $l = max(0.0, min(100.0, $lightness)) / 100;
+        $chroma = (1 - abs((2 * $l) - 1)) * $s;
+        $x = $chroma * (1 - abs(fmod($h / 60, 2) - 1));
+        $m = $l - ($chroma / 2);
+        [$r, $g, $b] = match (true) {
+            $h < 60.0 => [$chroma, $x, 0.0],
+            $h < 120.0 => [$x, $chroma, 0.0],
+            $h < 180.0 => [0.0, $chroma, $x],
+            $h < 240.0 => [0.0, $x, $chroma],
+            $h < 300.0 => [$x, 0.0, $chroma],
+            default => [$chroma, 0.0, $x],
+        };
+
+        return sprintf(
+            '#%02x%02x%02x',
+            (int) round(($r + $m) * 255),
+            (int) round(($g + $m) * 255),
+            (int) round(($b + $m) * 255),
+        );
     }
 
     public static function normalizeHex(?string $hex): ?string

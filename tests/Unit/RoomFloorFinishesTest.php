@@ -37,4 +37,13 @@ class RoomFloorFinishesTest extends TestCase
         $this->assertEqualsWithDelta(4.2, (float) $floors[1]['quantity'], 0.001);
         $this->assertTrue((new RoomFloorFinishes)->matchesRoomArea($floors, 78.9));
     }
+
+    public function test_the_remainder_is_rounded_to_two_decimals(): void
+    {
+        $floors = (new RoomFloorFinishes)->split(['v01.d', 'v09'], 78.9, [6.24]);
+
+        $this->assertEqualsWithDelta(72.66, (float) $floors[0]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(6.24, (float) $floors[1]['quantity'], 0.001);
+        $this->assertTrue((new RoomFloorFinishes)->matchesRoomArea($floors, 78.9));
+    }
 }

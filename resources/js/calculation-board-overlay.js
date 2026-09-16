@@ -1,0 +1,328 @@
+import {
+    assessTextLayer,
+    clamp,
+    contourBox,
+    exactRoomHitForArea,
+    normalizeRoomNumber,
+    roomVisualContour,
+    storedJumpTarget,
+} from './room-geometry';
+import { extractPageTextItems } from './pdf-text-layer';
+import {
+    materialFillBox,
+    overlayContrast,
+    roomDrawingState,
+    roomOverlayContent,
+} from './calculation-board-selection';
+
+export function roomFinishes(room) {
+    if (Array.isArray(room?.floors) && room.floors.length > 0) {
+        return room.floors;
+    }
+    if (room?.floor_code) {
+        return [{
+            code: room.floor_code,
+            product: room.floor_product,
+            role: 'main',
+            material_key: room.material_key,
+            material_color: room.material_color,
+            quantity_label: room.m2_label,
+        }];
+    }
+
+    return [];
+}
+
+export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
+    if (!pdfDoc) {
+        return;
+    }
+    const known = rooms
+        .filter((room) => Number(room.drawing_id) === Number(drawingId))
+        .map((room) => room.number)
+        .filter(Boolean);
+    const hits = [];
+    const finishItems = [];
+    for (let number = 1; number <= pdfDoc.numPages; number += 1) {
+        const pdfPage = await pdfDoc.getPage(number);
+        const viewport = pdfPage.getViewport({ scale: 1 });
+        const content = await pdfPage.getTextContent();
+        const items = extractPageTextItems(content, viewport, number);
+        hits.push(...assessTextLayer(items, known).hits);
+        finishItems.push(...items);
+    }
+    rooms
+        .filter((room) => Number(room.drawing_id) === Number(drawingId))
+        .forEach((room) => {
+            const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
+                || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
+            assignHit(room, hit);
+        });
+    assignFinishHits(rooms, drawingId, finishItems);
+}
+
+export function overlayRoomsOnPage(rooms, drawingId, page) {
+    return rooms.filter((room) => (
+        Number(room.drawing_id) === Number(drawingId)
+        && Number(room.marker?.page || room.jump_target?.page) === Number(page)
+        && storedJumpTarget(room)
+    ));
+}
+
+export function paintCalculationOverlays({
+    hitEl,
+    markersEl,
+    rooms,
+    drawingId,
+    page,
+    materialKeys = [],
+    selectedKey = null,
+    filter = 'all',
+    search = '',
+    roomLabels = false,
+    materialCodes = true,
+    chipTag = 'button',
+    chipTransform = null,
+    onRoomPointer = null,
+    showChips = true,
+} = {}) {
+    if (!hitEl || !markersEl) {
+        return;
+    }
+    hitEl.replaceChildren();
+    markersEl.replaceChildren();
+    const materialSet = new Set(materialKeys);
+    overlayRoomsOnPage(rooms, drawingId, page).forEach((room) => {
+        const state = roomDrawingState(room, {
+            selectedKey,
+            materialKeys,
+            filter,
+            search,
+        });
+        if (!state.show) {
+            return;
+        }
+        const contour = roomContourFor(room);
+        const box = contourBox(contour) || storedJumpTarget(room)?.box;
+        if (!contour || !box) {
+            return;
+        }
+        const finishes = roomFinishes(room);
+        finishes.forEach((finish) => {
+            const finishOn = materialSet.size === 0 || materialSet.has(String(finish.material_key || '').toLowerCase());
+            if (!finishOn && !state.selected) {
+                return;
+            }
+            const finishState = {
+                ...state,
+                highlighted: finishOn,
+                filteredOut: !finishOn && !state.selected,
+            };
+            const isLocal = finish.role === 'local' && finishes.length > 1;
+            let finishContour = contour;
+            if (isLocal && Array.isArray(finish.marker?.polygon) && finish.marker.polygon.length >= 3) {
+                finishContour = { type: 'polygon', points: finish.marker.polygon, room };
+            } else if (isLocal && finish.overlay && Number(finish.overlay.w) > 0 && Number(finish.overlay.h) > 0) {
+                finishContour = { type: 'box', box: finish.overlay, room };
+            } else if (isLocal) {
+                return;
+            }
+            appendFill(hitEl, { ...room, material_color: finish.material_color || room.material_color }, finishContour, finishState, onRoomPointer);
+            if (isLocal) {
+                const localBox = contourBox(finishContour);
+                if (localBox) {
+                    appendCodeChip(markersEl, {
+                        ...room,
+                        floor_code: finish.code,
+                        floor_codes_label: finish.code,
+                        material_color: finish.material_color || room.material_color,
+                    }, localBox, { ...finishState, highlighted: true }, {
+                        roomLabels,
+                        materialCodes,
+                        chipTag,
+                        chipTransform,
+                        onRoomPointer,
+                        showChips,
+                    });
+                }
+            }
+        });
+        if (finishes.length <= 1 || materialSet.size === 0 || materialSet.has(String(room.material_key || '').toLowerCase())) {
+            appendCodeChip(markersEl, room, box, state, {
+                roomLabels,
+                materialCodes,
+                chipTag,
+                chipTransform,
+                onRoomPointer,
+                showChips,
+            });
+        }
+    });
+}
+
+function roomContourFor(room) {
+    const visual = roomVisualContour(room);
+    if (visual) {
+        return { ...visual, room };
+    }
+    const jump = storedJumpTarget(room);
+    if (!jump?.box) {
+        return null;
+    }
+
+    return { type: 'box', box: jump.box, room };
+}
+
+function assignHit(room, hit) {
+    if (!hit) {
+        return;
+    }
+    const width = Math.max(0.02, Number(hit.w) || Number(hit.width) || 0.04);
+    const height = Math.max(0.012, Number(hit.h) || Number(hit.height) || 0.02);
+    const x = clamp(Number(hit.x));
+    const y = clamp(Number(hit.y));
+    room.marker = {
+        page: Math.max(1, Number(hit.page) || 1),
+        x,
+        y,
+        width,
+        height,
+        tw: Number(hit.tw) > 0 ? Number(hit.tw) : undefined,
+        th: Number(hit.th) > 0 ? Number(hit.th) : undefined,
+        label_text: String(hit.label_text || hit.text || room.number || '').slice(0, 160),
+        source: hit.source || 'text',
+    };
+    room.has_position = true;
+    room.jump_target = {
+        page: room.marker.page,
+        bbox: { x, y, w: width, h: height },
+        geometry: 'label',
+    };
+    room.number_raw = room.number;
+}
+
+function assignFinishHits(rooms, drawingId, items) {
+    const placed = rooms.filter((room) => Number(room.drawing_id) === Number(drawingId) && room.marker);
+    placed.forEach((room) => {
+        (room.floors || []).forEach((finish) => {
+            const code = String(finish.code || '').toLowerCase();
+            if (code === '') {
+                return;
+            }
+            let best = null;
+            let bestDistance = Infinity;
+            items.forEach((item) => {
+                if (String(item.text || '').toLowerCase().trim() !== code) {
+                    return;
+                }
+                if (Number(item.page) !== Number(room.marker.page)) {
+                    return;
+                }
+                const distance = Math.hypot(Number(item.x) - Number(room.marker.x), Number(item.y) - Number(room.marker.y));
+                const closerOther = placed.some((other) => {
+                    if (other === room || Number(other.marker?.page) !== Number(item.page)) {
+                        return false;
+                    }
+                    return Math.hypot(Number(item.x) - Number(other.marker.x), Number(item.y) - Number(other.marker.y)) + 0.01 < distance;
+                });
+                if (closerOther || distance > 0.22) {
+                    return;
+                }
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = item;
+                }
+            });
+            if (!best) {
+                return;
+            }
+            const width = Math.max(0.035, Number(best.w) || 0.04);
+            const height = Math.max(0.03, Number(best.h) || 0.03);
+            const x = clamp(Number(best.x));
+            const y = clamp(Number(best.y));
+            finish.marker = {
+                page: Number(best.page),
+                x,
+                y,
+                width,
+                height,
+                polygon: [
+                    { x, y },
+                    { x: clamp(x + width), y },
+                    { x: clamp(x + width), y: clamp(y + height) },
+                    { x, y: clamp(y + height) },
+                ],
+            };
+        });
+    });
+}
+
+function appendFill(hitEl, room, contour, state, onRoomPointer) {
+    const fillContour = state.highlighted || state.selected
+        ? (contour.type === 'box' ? { type: 'box', box: materialFillBox(contour.box) || contour.box } : contour)
+        : contour;
+    let shape;
+    if (fillContour.type === 'polygon') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        shape.setAttribute('points', fillContour.points.map((point) => `${point.x},${point.y}`).join(' '));
+    } else {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        shape.setAttribute('x', String(fillContour.box.x));
+        shape.setAttribute('y', String(fillContour.box.y));
+        shape.setAttribute('width', String(fillContour.box.w));
+        shape.setAttribute('height', String(fillContour.box.h));
+    }
+    const classes = ['calc-fill', 'room-label'];
+    if (state.selected) {
+        classes.push('is-on');
+    }
+    if (state.filteredOut) {
+        classes.push('is-filtered-out');
+    }
+    if (room.needs_review) {
+        classes.push('is-review');
+    }
+    shape.setAttribute('class', classes.join(' '));
+    shape.dataset.roomKey = String(room.key);
+    shape.style.fill = 'transparent';
+    shape.style.stroke = 'transparent';
+    onRoomPointer?.(shape, room);
+    hitEl.append(shape);
+}
+
+function appendCodeChip(markersEl, room, box, state, options) {
+    if (options.showChips === false) {
+        return;
+    }
+    const content = roomOverlayContent(room);
+    const parts = [];
+    if (options.roomLabels && content.number) {
+        parts.push(content.number);
+    }
+    if (options.materialCodes !== false && content.code) {
+        parts.push(content.code);
+    }
+    const text = parts.join(' · ');
+    if (!text || (!state.highlighted && !state.selected)) {
+        return;
+    }
+    const contrast = overlayContrast(room.material_color);
+    const chip = document.createElement(options.chipTag || 'button');
+    if (chip.tagName === 'BUTTON') {
+        chip.type = 'button';
+    }
+    chip.className = 'calc-code-chip';
+    if (state.selected) {
+        chip.classList.add('is-on');
+    }
+    chip.textContent = text;
+    chip.dataset.roomKey = String(room.key);
+    chip.style.left = `${((Number(box.x) || 0) + (Number(box.w) || 0) / 2) * 100}%`;
+    chip.style.top = `${((Number(box.y) || 0) + (Number(box.h) || 0) / 2) * 100}%`;
+    chip.style.transform = options.chipTransform?.() || 'translate(-50%, -50%)';
+    chip.style.background = contrast.bg;
+    chip.style.color = contrast.fg;
+    chip.title = content.title;
+    options.onRoomPointer?.(chip, room);
+    markersEl.append(chip);
+}

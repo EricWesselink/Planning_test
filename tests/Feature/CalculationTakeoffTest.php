@@ -295,6 +295,8 @@ TXT, 'bg.pdf')],
         $this->assertStringNotContainsString('78.900', $html);
         $this->assertSame(1, substr_count($html, 'data-calc-room="1"'));
         $this->assertStringContainsString('value="78,90"', $html);
+        $this->assertStringContainsString("document.addEventListener('DOMContentLoaded'", $html);
+        $this->assertStringContainsString('data-filter="review"', $html);
     }
 
     public function test_review_page_shows_a_generous_plinth_as_ready(): void

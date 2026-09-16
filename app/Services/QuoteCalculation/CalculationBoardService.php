@@ -76,7 +76,9 @@ class CalculationBoardService
         foreach ($floors as $line) {
             $code = trim((string) ($line->product_code ?? ''));
             $product = trim((string) ($line->product ?? ''));
-            $color = MaterialColor::fromCode($code !== '' ? $code : null, $product !== '' ? $product : null);
+            $color = $code !== ''
+                ? MaterialColor::fromCode($code, $product !== '' ? $product : null)
+                : null;
             $qty = $line->quantity !== null ? (float) $line->quantity : null;
             $finishes[] = [
                 'id' => $line->id,
@@ -87,13 +89,13 @@ class CalculationBoardService
                 'role' => $line->finish_role?->value ?? FinishRole::Main->value,
                 'material_key' => mb_strtolower($code),
                 'material_color' => $color,
-                'material_color_soft' => MaterialColor::softBackground($color, 0.18),
+                'material_color_soft' => $color === null ? null : MaterialColor::softBackground($color, 0.18),
                 'overlay' => $this->overlayFromTrace($line->calculation_trace),
             ];
         }
         $code = trim((string) ($floor?->product_code ?? ''));
         $product = trim((string) ($floor?->product ?? ''));
-        $color = $finishes[0]['material_color'] ?? MaterialColor::fromCode($code !== '' ? $code : null, $product !== '' ? $product : null);
+        $color = $finishes[0]['material_color'] ?? ($code !== '' ? MaterialColor::fromCode($code, $product !== '' ? $product : null) : null);
         $plinthBreakdown = PlinthLengthCalculator::breakdownFrom($plinth?->calculation_trace);
         $roomArea = is_numeric($row['room_area'] ?? null) ? (float) $row['room_area'] : ($floor?->quantity !== null ? (float) $floor->quantity : null);
         $m2 = $roomArea;
@@ -130,7 +132,8 @@ class CalculationBoardService
             'plinth_trace' => $row['trace'] ?? $plinthBreakdown['label'],
             'material_key' => mb_strtolower($code),
             'material_color' => $color,
-            'material_color_soft' => MaterialColor::softBackground($color, 0.18),
+            'material_color_soft' => $color === null ? null : MaterialColor::softBackground($color, 0.18),
+            'contour' => $this->roomContourFrom($floor?->calculation_trace),
             'needs_review' => (bool) ($row['needs_review'] ?? false),
             'can_confirm' => (bool) ($row['can_confirm'] ?? false),
             'status' => $status->value,
@@ -259,29 +262,75 @@ class CalculationBoardService
 
     private function overlayFromTrace(mixed $trace): ?array
     {
+        $decoded = $this->decodeTrace($trace);
+        if ($decoded === null || ($decoded['reliable'] ?? false) !== true) {
+            return null;
+        }
+        if (($decoded['role'] ?? '') === 'local_floor') {
+            return $this->normalizedOverlay($decoded);
+        }
+
+        return null;
+    }
+
+    private function roomContourFrom(mixed $trace): ?array
+    {
+        $decoded = $this->decodeTrace($trace);
+        if ($decoded === null || ($decoded['role'] ?? '') !== 'room_floor' || ($decoded['reliable'] ?? false) !== true) {
+            return null;
+        }
+
+        return $this->normalizedOverlay($decoded);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function decodeTrace(mixed $trace): ?array
+    {
         if (is_string($trace) && $trace !== '') {
             $decoded = json_decode($trace, true);
             $trace = is_array($decoded) ? $decoded : null;
         }
-        if (! is_array($trace) || ($trace['role'] ?? '') !== 'local_floor') {
+        if (! is_array($trace)) {
             return null;
         }
 
-        $width = (float) ($trace['page_width'] ?? 0);
-        $height = (float) ($trace['page_height'] ?? 0);
-        if ($width < 2 || $height < 2) {
+        return $trace;
+    }
+
+    /**
+     * @param  array<string, mixed>  $trace
+     * @return array<string, mixed>|null
+     */
+    private function normalizedOverlay(array $trace): ?array
+    {
+        $rects = [];
+        foreach ($trace['rects'] ?? [] as $rect) {
+            if (! is_array($rect)) {
+                continue;
+            }
+            $width = (float) ($rect['w'] ?? 0);
+            $height = (float) ($rect['h'] ?? 0);
+            if ($width < 0.002 || $height < 0.002) {
+                continue;
+            }
+            $rects[] = [
+                'x' => max(0.0, (float) ($rect['x'] ?? 0)),
+                'y' => max(0.0, (float) ($rect['y'] ?? 0)),
+                'w' => min(1.0, $width),
+                'h' => min(1.0, $height),
+            ];
+        }
+        if ($rects === []) {
             return null;
         }
-
-        $x = ((float) ($trace['x'] ?? 0) / $width) - 0.012;
-        $y = ((float) ($trace['y'] ?? 0) / $height) - 0.008;
 
         return [
+            'role' => (string) ($trace['role'] ?? 'room_floor'),
+            'reliable' => true,
             'page' => max(1, (int) ($trace['page'] ?? 1)),
-            'x' => max(0.0, $x),
-            'y' => max(0.0, $y),
-            'w' => 0.024,
-            'h' => 0.016,
+            'rects' => $rects,
         ];
     }
 

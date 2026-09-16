@@ -69,6 +69,7 @@ class DrawingTakeoffParser
         $rooms = $this->spatial->link($rooms, $path, $pages);
         $rooms = $this->pairing->apply($rooms, $fromText['legend']);
         $rooms = $this->applyPlinthLengths($rooms, $pages);
+        $rooms = $this->applyFloorOverlays($rooms, $pages);
         $fromText['rooms'] = $rooms;
         $fromText['warnings'] = $this->areaWarnings(
             $this->dropStaleTextWarnings($fromText['warnings'], $rooms, $fromText['legend']),
@@ -338,6 +339,27 @@ class DrawingTakeoffParser
     }
 
     /**
+     * @param  list<array<string, mixed>>  $rooms
+     * @param  list<array<string, mixed>>  $pages
+     * @return list<array<string, mixed>>
+     */
+    private function applyFloorOverlays(array $rooms, array $pages): array
+    {
+        if ($pages === []) {
+            return $rooms;
+        }
+
+        foreach ($rooms as $index => $room) {
+            $overlay = $this->plinthLengths->floorOverlay($room, $pages);
+            if ($overlay !== null) {
+                $rooms[$index]['floor_overlay'] = $overlay;
+            }
+        }
+
+        return $rooms;
+    }
+
+    /**
      * @param  array<string, mixed>  $room
      * @param  array<string, mixed>  $result
      * @return array<string, mixed>
@@ -462,7 +484,7 @@ class DrawingTakeoffParser
                     $note,
                     $role,
                     $roomArea,
-                    $this->localFloorTrace($finish, $role),
+                    $this->finishTrace($room, $finish, $role),
                 );
             }
 
@@ -555,6 +577,36 @@ class DrawingTakeoffParser
                 ? $this->nullableString($room['plinth_trace'] ?? $note)
                 : null),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $room
+     * @param  array<string, mixed>  $finish
+     */
+    private function finishTrace(array $room, array $finish, string $role): ?string
+    {
+        return $this->localFloorTrace($finish, $role) ?? $this->roomFloorTrace($room, $role);
+    }
+
+    /**
+     * @param  array<string, mixed>  $room
+     */
+    private function roomFloorTrace(array $room, string $role): ?string
+    {
+        if ($role !== FinishRole::Main->value) {
+            return null;
+        }
+        $overlay = $room['floor_overlay'] ?? null;
+        if (! is_array($overlay) || ($overlay['reliable'] ?? false) !== true) {
+            return null;
+        }
+        if (($overlay['rects'] ?? []) === []) {
+            return null;
+        }
+
+        $encoded = json_encode($overlay, JSON_UNESCAPED_UNICODE);
+
+        return $encoded === false ? null : $encoded;
     }
 
     /**

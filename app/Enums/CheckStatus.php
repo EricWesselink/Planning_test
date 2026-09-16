@@ -11,6 +11,8 @@ enum CheckStatus: string
     case Generous = 'generous';
     case Estimated = 'estimated';
 
+    case NotApplicable = 'not_applicable';
+
     public function label(): string
     {
         return match ($this) {
@@ -20,6 +22,7 @@ enum CheckStatus: string
             self::Confirmed => 'Bevestigd',
             self::Generous => 'Berekend ruim',
             self::Estimated => 'Geschat ruim',
+            self::NotApplicable => 'Niet van toepassing',
         };
     }
 

@@ -151,8 +151,10 @@ class WorkbookMergeService
             $code = null;
             $product = null;
         }
-        if ($unit === WorkUnit::LinearMeter && mb_strtolower((string) $line->product_code) === FinishPairingRules::PLAKPLINT
-            && is_string($product) && preg_match('/holplint/iu', $product)) {
+        if (
+            $unit === WorkUnit::LinearMeter && mb_strtolower((string) $line->product_code) === FinishPairingRules::PLAKPLINT
+            && is_string($product) && preg_match('/holplint/iu', $product)
+        ) {
             $product = null;
         }
 

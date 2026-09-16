@@ -21,6 +21,7 @@ class CalculationRoomRows
      *     estimated_count: int,
      *     review_count: int,
      *     missing_count: int,
+     *     not_applicable_count: int,
      *     blocking_count: int,
      *     linked_count: int,
      *     floor_linked_count: int,
@@ -80,12 +81,20 @@ class CalculationRoomRows
         $rows = [];
         $squareMeters = 0.0;
         foreach ($groups as $group) {
+            if ($this->isEmptyGroup($group)) {
+                continue;
+            }
             $floors = $group['floors'] ?? array_values(array_filter([$group['floor']]));
             $floor = $group['floor'];
             $plinth = $group['plinth'];
-            $status = $this->status($floors, $plinth);
+            $issues = $this->issues($floors, $plinth);
+            $status = $this->status($floors, $plinth, $issues);
+            $statusLabel = $issues === [] ? $status->label() : implode(' · ', $issues);
+            if ($status === CheckStatus::NotApplicable) {
+                $statusLabel = $status->label();
+            }
             $roomArea = $this->roomArea($floors, $floor);
-            if ($roomArea !== null) {
+            if ($roomArea !== null && $status !== CheckStatus::NotApplicable) {
                 $squareMeters += $roomArea;
             }
             $searchBits = [$group['room_number'], $group['room_name']];
@@ -101,9 +110,10 @@ class CalculationRoomRows
                 'floors' => $floors,
                 'plinth' => $plinth,
                 'status' => $status,
-                'status_label' => $status->label(),
+                'status_label' => $statusLabel,
+                'issues' => $issues,
                 'needs_review' => $status->isBlocking(),
-                'can_confirm' => $this->canConfirm($floors, $plinth, $status),
+                'can_confirm' => $this->canConfirm($floors, $plinth, $status, $issues),
                 'has_floor' => $floors !== [],
                 'has_plinth' => $plinth instanceof CalculationLine,
                 'room_area' => $roomArea,
@@ -126,6 +136,7 @@ class CalculationRoomRows
         $estimated = count(array_filter($rows, fn (array $row) => $row['status'] === CheckStatus::Estimated));
         $review = count(array_filter($rows, fn (array $row) => $row['status'] === CheckStatus::Review));
         $missing = count(array_filter($rows, fn (array $row) => $row['status'] === CheckStatus::Missing));
+        $notApplicable = count(array_filter($rows, fn (array $row) => $row['status'] === CheckStatus::NotApplicable));
         $floorLinked = count(array_filter($rows, fn (array $row) => $this->floorsLinked($row['floors'] ?? [])));
         $plinthLinked = count(array_filter($rows, fn (array $row) => $this->plinthLinked($row['plinth'] ?? null)));
         $plinthMeters = 0;
@@ -163,6 +174,7 @@ class CalculationRoomRows
             'estimated_count' => $estimated,
             'review_count' => $review,
             'missing_count' => $missing,
+            'not_applicable_count' => $notApplicable,
             'blocking_count' => $review + $missing,
             'linked_count' => $floorLinked,
             'floor_linked_count' => $floorLinked,
@@ -174,7 +186,7 @@ class CalculationRoomRows
             'plinth_missing_meters_count' => $plinthMissingMeters,
             'excel_confirmed_count' => $excelConfirmed,
             'square_meters' => $squareMeters,
-            'ready_for_excel' => ($review + $missing) === 0 && $rows !== [],
+            'ready_for_excel' => ($review + $missing) === 0 && ($certain + $generous + $estimated) > 0,
         ];
     }
 
@@ -189,15 +201,43 @@ class CalculationRoomRows
     }
 
     /**
-     * @param  list<CalculationLine>  $floors
+     * @param  array<string, mixed>  $group
      */
-    private function status(array $floors, ?CalculationLine $plinth): CheckStatus
+    private function isEmptyGroup(array $group): bool
     {
+        if (trim((string) ($group['room_number'] ?? '')) !== '' || trim((string) ($group['room_name'] ?? '')) !== '') {
+            return false;
+        }
+        foreach ($group['floors'] ?? [] as $floor) {
+            if (! $floor instanceof CalculationLine) {
+                continue;
+            }
+            if (filled($floor->product_code) || filled($floor->product) || $floor->quantity !== null) {
+                return false;
+            }
+        }
+        $plinth = $group['plinth'] ?? null;
+        if ($plinth instanceof CalculationLine && (filled($plinth->product_code) || filled($plinth->product) || $plinth->quantity !== null)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  list<CalculationLine>  $floors
+     * @param  list<string>  $issues
+     */
+    private function status(array $floors, ?CalculationLine $plinth, array $issues): CheckStatus
+    {
+        if ($this->notApplicable($floors, $plinth)) {
+            return CheckStatus::NotApplicable;
+        }
         if ($this->isConfirmed($floors, $plinth)) {
             return CheckStatus::Confirmed;
         }
-        if ($this->hasMissingRequired($floors, $plinth)) {
-            return CheckStatus::Missing;
+        if ($issues !== []) {
+            return CheckStatus::Review;
         }
         if ($this->isEstimated($plinth)) {
             return CheckStatus::Estimated;
@@ -214,33 +254,88 @@ class CalculationRoomRows
 
     /**
      * @param  list<CalculationLine>  $floors
+     * @return list<string>
      */
-    private function hasMissingRequired(array $floors, ?CalculationLine $plinth): bool
+    private function issues(array $floors, ?CalculationLine $plinth): array
     {
-        if ($floors === []) {
-            return true;
+        if ($this->notApplicable($floors, $plinth)) {
+            return [];
         }
-        foreach ($floors as $floor) {
-            if ($floor->finish_role === FinishRole::Local) {
-                if (! filled($floor->product_code)) {
-                    return true;
+        $issues = [];
+        $floor = $this->mainFloor($floors);
+        if ($floors === [] || ! $floor instanceof CalculationLine) {
+            return ['Vloercode ontbreekt'];
+        }
+        foreach ($floors as $finish) {
+            if ($finish->finish_role === FinishRole::Local) {
+                if (! filled($finish->product_code)) {
+                    $issues[] = 'Vloercode ontbreekt';
                 }
 
                 continue;
             }
-            if (! filled($floor->room_number) || ! filled($floor->room_name) || $floor->quantity === null || ! filled($floor->product_code) || ! filled($floor->product)) {
-                return true;
+            if (! filled($finish->product_code)) {
+                $issues[] = 'Vloercode ontbreekt';
+            } elseif ($this->missingFloorVariant($finish)) {
+                $issues[] = 'Exacte '.mb_strtolower(trim((string) $finish->product_code)).'-variant ontbreekt';
+            }
+            if ($finish->quantity === null) {
+                $issues[] = 'm² ontbreekt';
             }
         }
-        $floor = $this->mainFloor($floors);
-        if (! $floor instanceof CalculationLine || ! $this->plinthRequired($floor, $plinth)) {
+        if ($floor instanceof CalculationLine && $this->plinthRequired($floor, $plinth)) {
+            if (! $plinth instanceof CalculationLine || ! filled($plinth->product_code)) {
+                $issues[] = 'Plintcode ontbreekt';
+            } elseif ($plinth->quantity === null) {
+                $issues[] = 'Plint m¹ ontbreekt';
+            }
+        }
+
+        return array_values(array_unique($issues));
+    }
+
+    private function missingFloorVariant(CalculationLine $finish): bool
+    {
+        $code = mb_strtolower(trim((string) $finish->product_code));
+        if ($code === '' || FinishPairingRules::isSpecific($code)) {
             return false;
         }
-        if (! $plinth instanceof CalculationLine) {
+        if (is_string($finish->note) && str_contains($finish->note, 'variant ontbreekt')) {
             return true;
         }
 
-        return ! filled($plinth->product_code) || ! filled($plinth->product) || $plinth->quantity === null;
+        return ! filled($finish->product) || $this->productLooksLikeCode($finish);
+    }
+
+    /**
+     * @param  list<CalculationLine>  $floors
+     */
+    private function notApplicable(array $floors, ?CalculationLine $plinth): bool
+    {
+        return ! $this->hasIndicatedFloorWork($floors, $plinth);
+    }
+
+    /**
+     * @param  list<CalculationLine>  $floors
+     */
+    private function hasIndicatedFloorWork(array $floors, ?CalculationLine $plinth): bool
+    {
+        foreach ($floors as $floor) {
+            if (filled($floor->product_code) || filled($floor->product) || filled($floor->excel_product_code)) {
+                return true;
+            }
+        }
+
+        return $plinth instanceof CalculationLine
+            && (filled($plinth->product_code) || filled($plinth->product));
+    }
+
+    /**
+     * @param  list<CalculationLine>  $floors
+     */
+    private function hasMissingRequired(array $floors, ?CalculationLine $plinth): bool
+    {
+        return $this->issues($floors, $plinth) !== [];
     }
 
     private function plinthRequired(CalculationLine $floor, ?CalculationLine $plinth): bool
@@ -319,6 +414,11 @@ class CalculationRoomRows
         return $plinth instanceof CalculationLine && filled($plinth->product_code);
     }
 
+    private function productLooksLikeCode(CalculationLine $floor): bool
+    {
+        return mb_strtolower(trim((string) $floor->product)) === mb_strtolower(trim((string) $floor->product_code));
+    }
+
     /**
      * @param  array<string, mixed>  $row
      */
@@ -384,10 +484,11 @@ class CalculationRoomRows
 
     /**
      * @param  list<CalculationLine>  $floors
+     * @param  list<string>  $issues
      */
-    private function canConfirm(array $floors, ?CalculationLine $plinth, CheckStatus $status): bool
+    private function canConfirm(array $floors, ?CalculationLine $plinth, CheckStatus $status, array $issues): bool
     {
-        return $status->isBlocking() && ! $this->hasMissingRequired($floors, $plinth);
+        return $status->isBlocking() && $issues === [];
     }
 
     private function isMainFloor(CalculationLine $candidate, mixed $current): bool
@@ -451,8 +552,10 @@ class CalculationRoomRows
     private function anyExcelConflict(array $floors): bool
     {
         foreach ($floors as $floor) {
-            if ($floor->excel_quantity !== null && $floor->quantity !== null
-                && abs((float) $floor->quantity - (float) $floor->excel_quantity) > 0.05) {
+            if (
+                $floor->excel_quantity !== null && $floor->quantity !== null
+                && abs((float) $floor->quantity - (float) $floor->excel_quantity) > 0.05
+            ) {
                 return true;
             }
         }
@@ -466,8 +569,10 @@ class CalculationRoomRows
     private function anyExcelAreaMismatch(array $floors): bool
     {
         foreach ($floors as $floor) {
-            if ($floor->excel_quantity !== null && $floor->quantity !== null
-                && WorkbookMergeService::areaLooksLikeWrongRoom((float) $floor->quantity, (float) $floor->excel_quantity)) {
+            if (
+                $floor->excel_quantity !== null && $floor->quantity !== null
+                && WorkbookMergeService::areaLooksLikeWrongRoom((float) $floor->quantity, (float) $floor->excel_quantity)
+            ) {
                 return true;
             }
         }
@@ -481,8 +586,10 @@ class CalculationRoomRows
     private function anyExcelCodeConflict(array $floors): bool
     {
         foreach ($floors as $floor) {
-            if (filled($floor->excel_product_code) && filled($floor->product_code)
-                && mb_strtolower((string) $floor->product_code) !== mb_strtolower((string) $floor->excel_product_code)) {
+            if (
+                filled($floor->excel_product_code) && filled($floor->product_code)
+                && mb_strtolower((string) $floor->product_code) !== mb_strtolower((string) $floor->excel_product_code)
+            ) {
                 return true;
             }
         }

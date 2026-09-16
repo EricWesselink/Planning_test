@@ -194,8 +194,15 @@
                                 $lineIndex++;
                             }
                         @endphp
+                        @php
+                            $rowClass = $row['status'] === \App\Enums\CheckStatus::NotApplicable
+                                ? 'text-nicon-muted'
+                                : ($row['status']->isGreen()
+                                    ? ''
+                                    : 'bg-amber-50 shadow-[inset_3px_0_0_var(--color-nicon-warn)]');
+                        @endphp
                         <tr
-                            class="border-t border-nicon-line {{ $row['status']->isGreen() ? '' : ($row['status'] === \App\Enums\CheckStatus::Missing ? 'bg-rose-50 shadow-[inset_3px_0_0_#be123c]' : 'bg-amber-50 shadow-[inset_3px_0_0_var(--color-nicon-warn)]') }}"
+                            class="border-t border-nicon-line {{ $rowClass }}"
                             data-calc-room="1"
                             data-review="{{ $row['needs_review'] ? '1' : '0' }}"
                             data-floor="{{ $row['has_floor'] ? '1' : '0' }}"
@@ -266,7 +273,7 @@
                                     <input name="lines[{{ $plinthIndex }}][quantity]" value="{{ \App\Support\Format::qtyInput($plinthOld['quantity'] ?? $plinth->quantity) }}" inputmode="decimal" class="w-16 border border-nicon-line px-1 py-0.5 text-right tabular-nums" title="{{ $row['trace'] }}">
                                 @endif
                             </td>
-                            <td class="px-1.5 py-1 whitespace-nowrap {{ $row['status']->isGreen() ? 'font-medium text-nicon-ok' : ($row['status'] === \App\Enums\CheckStatus::Missing ? 'font-medium text-nicon-danger' : 'font-medium text-nicon-warn') }}" title="{{ $row['trace'] }}">
+                            <td class="px-1.5 py-1 whitespace-nowrap {{ $row['status'] === \App\Enums\CheckStatus::NotApplicable ? 'text-nicon-muted' : ($row['status']->isGreen() ? 'font-medium text-nicon-ok' : 'font-medium text-nicon-warn') }}" title="{{ $row['trace'] }}">
                                 {{ $row['status_label'] }}
                                 @if ($row['trace'])
                                     <div class="max-w-40 truncate font-normal text-[10px] text-nicon-muted">{{ $row['trace'] }}</div>
@@ -291,7 +298,7 @@
                                 $extraOld = $oldById[$extraFloor->id] ?? [];
                             @endphp
                             <tr
-                                class="border-t border-nicon-line/60 {{ $row['status']->isGreen() ? '' : ($row['status'] === \App\Enums\CheckStatus::Missing ? 'bg-rose-50' : 'bg-amber-50') }}"
+                                class="border-t border-nicon-line/60 {{ $row['status'] === \App\Enums\CheckStatus::NotApplicable ? 'text-nicon-muted' : ($row['status']->isGreen() ? '' : 'bg-amber-50') }}"
                                 data-calc-room="1"
                                 data-review="{{ $row['needs_review'] ? '1' : '0' }}"
                                 data-floor="1"
@@ -353,7 +360,7 @@
 
 @push('scripts')
     <script>
-        (() => {
+        document.addEventListener('DOMContentLoaded', () => {
             const root = document.getElementById('calculation-review');
             if (!root) {
                 return;
@@ -392,7 +399,7 @@
                     });
                 });
             });
-        })();
+        });
     </script>
 @endpush
 

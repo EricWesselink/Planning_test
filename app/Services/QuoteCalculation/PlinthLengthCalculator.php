@@ -67,6 +67,106 @@ class PlinthLengthCalculator
     }
 
     /**
+     * Reliable floor-fill contour from walls. Null when the boundary is not certain.
+     *
+     * @param  array<string, mixed>  $room
+     * @param  list<array<string, mixed>>  $pages
+     * @return array{role: string, reliable: bool, page: int, rects: list<array{x: float, y: float, w: float, h: float}>}|null
+     */
+    public function floorOverlay(array $room, array $pages): ?array
+    {
+        $anchor = $this->roomAnchor($room, $pages);
+        $area = is_numeric($room['square_meters'] ?? null) ? (float) $room['square_meters'] : null;
+        if ($anchor === null || $area === null || $area <= 0 || $pages === []) {
+            return null;
+        }
+
+        foreach ($pages as $page) {
+            if ((int) ($page['page'] ?? $anchor['page']) !== $anchor['page']) {
+                continue;
+            }
+            $walls = $page['walls'] ?? [];
+            if ($walls === []) {
+                continue;
+            }
+            foreach ($this->wallFrames($anchor, $page) as $frame) {
+                $closed = $this->closeDoorGaps($walls);
+                $region = $this->rectilinearRegion(
+                    $frame['x'],
+                    $frame['y'],
+                    $closed,
+                    $frame['width'],
+                    $frame['height'],
+                    $this->foreignRoomPoints($room, $frame),
+                    $area,
+                );
+                if ($region === null || ! $this->contourMatchesRoom($room, $area, $region, $frame)) {
+                    continue;
+                }
+                $overlay = $this->overlayFromRegion($region, $frame, $page, $anchor);
+                if ($overlay !== null) {
+                    return $overlay;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{area: float, cells: list<array{x0: float, y0: float, x1: float, y1: float}>}  $region
+     * @param  array{sx?: float, sy?: float, oy?: float}  $frame
+     * @param  array{width?: float, height?: float}  $page
+     * @param  array{page: int}  $anchor
+     * @return array{role: string, reliable: bool, page: int, rects: list<array{x: float, y: float, w: float, h: float}>}|null
+     */
+    private function overlayFromRegion(array $region, array $frame, array $page, array $anchor): ?array
+    {
+        $sx = (float) ($frame['sx'] ?? 0);
+        $sy = (float) ($frame['sy'] ?? 0);
+        $oy = (float) ($frame['oy'] ?? 0);
+        $pageWidth = max(1.0, (float) ($page['width'] ?? 1));
+        $pageHeight = max(1.0, (float) ($page['height'] ?? 1));
+        if (abs($sx) < 0.0001 || abs($sy) < 0.0001) {
+            return null;
+        }
+
+        $rects = [];
+        foreach ($region['cells'] as $cell) {
+            $x0 = ((float) $cell['x0']) / $sx;
+            $x1 = ((float) $cell['x1']) / $sx;
+            $y0 = (((float) $cell['y0']) - $oy) / $sy;
+            $y1 = (((float) $cell['y1']) - $oy) / $sy;
+            $x = min($x0, $x1) / $pageWidth;
+            $y = min($y0, $y1) / $pageHeight;
+            $width = abs($x1 - $x0) / $pageWidth;
+            $height = abs($y1 - $y0) / $pageHeight;
+            if ($width < 0.0002 || $height < 0.0002) {
+                continue;
+            }
+            $rects[] = [
+                'x' => max(0.0, min(1.0, $x)),
+                'y' => max(0.0, min(1.0, $y)),
+                'w' => min(1.0, $width),
+                'h' => min(1.0, $height),
+            ];
+            if (count($rects) >= 160) {
+                break;
+            }
+        }
+        if ($rects === []) {
+            return null;
+        }
+
+        return [
+            'role' => 'room_floor',
+            'reliable' => true,
+            'page' => (int) $anchor['page'],
+            'rects' => $rects,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>|string|null  $raw
      * @return array{label: ?string, status: string, gross: ?float, doors: list<float>, net: ?float}
      */
@@ -433,6 +533,9 @@ class PlinthLengthCalculator
                 'width' => $candidate['width'],
                 'height' => $candidate['height'],
                 'labels' => $labels,
+                'sx' => (float) $candidate['sx'],
+                'sy' => (float) $candidate['sy'],
+                'oy' => (float) $candidate['oy'],
             ];
         }
 

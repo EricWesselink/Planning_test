@@ -52,4 +52,55 @@ class MaterialColorTest extends TestCase
         $this->assertSame(MaterialColor::UNKNOWN, MaterialColor::fromCode(null, null));
         $this->assertSame('#d4d6c2', MaterialColor::fromCode(null, 'Gietvloer'));
     }
+
+    public function test_full_material_codes_keep_distinct_fixed_colors(): void
+    {
+        $colors = [
+            'v01' => '#848482',
+            'v01.a' => '#be0032',
+            'v01.b' => '#f38400',
+            'v01.c' => '#dcd300',
+            'v01.d' => '#008856',
+            'v01.e' => '#c026d3',
+            'v01.f' => '#1d4ed8',
+            'v01.g' => '#7c3aed',
+            'v02' => '#e68fac',
+            'v03' => '#5eead4',
+            'v04' => '#8db600',
+            'v09' => '#222222',
+        ];
+
+        foreach ($colors as $code => $hex) {
+            $this->assertSame($hex, MaterialColor::fromCode($code));
+            $this->assertSame($hex, MaterialColor::fromCode(mb_strtoupper($code)));
+        }
+
+        $values = array_values($colors);
+        $this->assertSame(count($values), count(array_unique($values)));
+
+        $codes = array_keys($colors);
+        for ($i = 0; $i < count($codes); $i++) {
+            for ($j = $i + 1; $j < count($codes); $j++) {
+                $this->assertFalse(
+                    MaterialColor::hexesMatch($colors[$codes[$i]], $colors[$codes[$j]], 70),
+                    $codes[$i].' and '.$codes[$j].' are too close',
+                );
+            }
+        }
+
+        $mapped = ['v01', 'v01.a', 'v01.b', 'v01.c', 'v01.d', 'v01.e', 'v01.f', 'v01.g', 'v02', 'v03', 'v04', 'v05', 'v06', 'v07', 'v08', 'v09', 'v10'];
+        $hexes = array_map(fn (string $code): string => MaterialColor::fromCode($code), $mapped);
+        $this->assertSame(count($mapped), count(array_unique($hexes)));
+    }
+
+    public function test_unknown_full_codes_stay_stable_and_do_not_reuse_a_mapped_color(): void
+    {
+        $left = MaterialColor::fromCode('v12.z');
+        $right = MaterialColor::fromCode('v18.k');
+
+        $this->assertSame($left, MaterialColor::fromCode('V12.Z'));
+        $this->assertNotSame($left, $right);
+        $this->assertNotSame('#008856', $left);
+        $this->assertFalse(MaterialColor::hexesMatch($left, MaterialColor::fromCode('v01.d'), 52));
+    }
 }

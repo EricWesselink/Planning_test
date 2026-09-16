@@ -198,6 +198,46 @@ class PlinthLengthCalculatorTest extends TestCase
         $this->assertEqualsWithDelta(16.0, (float) $result['meters'], 0.001);
     }
 
+    public function test_returns_a_reliable_floor_overlay_only_for_a_matching_wall_contour(): void
+    {
+        $pages = [[
+            'page' => 1,
+            'width' => 1000.0,
+            'height' => 1000.0,
+            'geometry_width' => 1000.0,
+            'geometry_height' => 1000.0,
+            'texts' => [
+                ['text' => 'R-12', 'x' => 10.0, 'y' => 985.0, 'page' => 1],
+                ['text' => '12,0', 'x' => 10.0, 'y' => 980.0, 'page' => 1],
+                ['text' => 'm²', 'x' => 18.0, 'y' => 980.0, 'page' => 1],
+            ],
+            'fills' => [],
+            'walls' => [
+                ['x1' => 0.0, 'y1' => 0.0, 'x2' => 0.0, 'y2' => 40.0, 'axis' => 'v'],
+                ['x1' => 20.0, 'y1' => 20.0, 'x2' => 20.0, 'y2' => 40.0, 'axis' => 'v'],
+                ['x1' => 40.0, 'y1' => 0.0, 'x2' => 40.0, 'y2' => 20.0, 'axis' => 'v'],
+                ['x1' => 0.0, 'y1' => 0.0, 'x2' => 40.0, 'y2' => 0.0, 'axis' => 'h'],
+                ['x1' => 20.0, 'y1' => 20.0, 'x2' => 40.0, 'y2' => 20.0, 'axis' => 'h'],
+                ['x1' => 0.0, 'y1' => 40.0, 'x2' => 20.0, 'y2' => 40.0, 'axis' => 'h'],
+            ],
+        ]];
+
+        $overlay = (new PlinthLengthCalculator)->floorOverlay([
+            'room_number' => 'R-12',
+            'square_meters' => 12.0,
+        ], $pages);
+
+        $this->assertNotNull($overlay);
+        $this->assertTrue($overlay['reliable']);
+        $this->assertSame('room_floor', $overlay['role']);
+        $this->assertSame(1, $overlay['page']);
+        $this->assertNotEmpty($overlay['rects']);
+        $this->assertNull((new PlinthLengthCalculator)->floorOverlay([
+            'room_number' => 'R-12',
+            'square_meters' => 12.0,
+        ], []));
+    }
+
     public function test_uses_the_area_label_when_the_room_number_sits_outside_the_walls(): void
     {
         $result = (new PlinthLengthCalculator)->forRoom([

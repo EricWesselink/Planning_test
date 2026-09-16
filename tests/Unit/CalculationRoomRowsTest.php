@@ -69,14 +69,16 @@ class CalculationRoomRowsTest extends TestCase
         $this->assertSame('v01.d', $table['rows'][0]['floor']?->product_code);
     }
 
-    public function test_marks_a_room_for_review_when_the_floor_has_no_code(): void
+    public function test_marks_a_room_without_floor_finish_as_not_applicable(): void
     {
         $table = (new CalculationRoomRows)->table(collect([
             $this->line(1, 'A-00-13', 'TOILET', null, 3.7, WorkUnit::SquareMeter, QuantitySource::Review),
         ]));
 
-        $this->assertSame(CheckStatus::Missing, $table['rows'][0]['status']);
-        $this->assertSame(1, $table['blocking_count']);
+        $this->assertSame(CheckStatus::NotApplicable, $table['rows'][0]['status']);
+        $this->assertSame('Niet van toepassing', $table['rows'][0]['status_label']);
+        $this->assertFalse($table['rows'][0]['needs_review']);
+        $this->assertSame(0, $table['blocking_count']);
         $this->assertSame(0, $table['certain_count']);
     }
 
@@ -93,16 +95,19 @@ class CalculationRoomRowsTest extends TestCase
         $this->assertSame(1, $table['certain_count']);
     }
 
-    public function test_keeps_gietvloer_without_plinth_meters_as_missing(): void
+    public function test_keeps_gietvloer_without_plinth_as_a_specific_review(): void
     {
         $table = (new CalculationRoomRows)->table(collect([
             $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer'),
         ]));
 
-        $this->assertSame(CheckStatus::Missing, $table['rows'][0]['status']);
+        $this->assertSame(CheckStatus::Review, $table['rows'][0]['status']);
+        $this->assertSame('Plintcode ontbreekt', $table['rows'][0]['status_label']);
+        $this->assertNotSame('Ontbreekt', $table['rows'][0]['status_label']);
         $this->assertSame(1, $table['floor_linked_count']);
         $this->assertSame(0, $table['plinth_linked_count']);
         $this->assertFalse($table['ready_for_excel']);
+        $this->assertEqualsWithDelta(3.7, $table['square_meters'], 0.001);
     }
 
     public function test_marks_a_generous_plinth_as_calculated_wide_and_ready(): void
@@ -214,6 +219,42 @@ class CalculationRoomRowsTest extends TestCase
 
         $this->assertSame(CheckStatus::Review, $table['rows'][0]['status']);
         $this->assertTrue($table['rows'][0]['can_confirm']);
+        $this->assertFalse($table['ready_for_excel']);
+    }
+
+    public function test_flags_only_the_missing_v01_variant_on_an_otherwise_complete_room(): void
+    {
+        $floor = $this->line(1, 'A-00-04', 'WK', 'v01', 4.0, WorkUnit::SquareMeter, QuantitySource::FromDrawing, null);
+        $plinth = $this->line(2, 'A-00-04', 'WK', 'pl01', 8.86, WorkUnit::LinearMeter, QuantitySource::Calculated, 'Aluminium plakplint');
+
+        $table = (new CalculationRoomRows)->table(collect([$floor, $plinth]));
+
+        $this->assertSame(CheckStatus::Review, $table['rows'][0]['status']);
+        $this->assertSame('Exacte v01-variant ontbreekt', $table['rows'][0]['status_label']);
+        $this->assertNotSame('Ontbreekt', $table['rows'][0]['status_label']);
+        $this->assertTrue($table['rows'][0]['needs_review']);
+        $this->assertFalse($table['rows'][0]['can_confirm']);
+        $this->assertSame('v01', $table['rows'][0]['floor']?->product_code);
+        $this->assertSame('pl01', $table['rows'][0]['plinth']?->product_code);
+        $this->assertEqualsWithDelta(4.0, $table['square_meters'], 0.001);
+    }
+
+    public function test_keeps_rooms_without_floor_work_out_of_review(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-02-01', 'INST prefab', null, 281.2, WorkUnit::SquareMeter, QuantitySource::FromDrawing, null),
+            $this->line(2, 'A-00-20', 'SCHACHT', null, 5.0, WorkUnit::SquareMeter, QuantitySource::FromDrawing, null),
+            $this->line(3, 'K-00-08', 'MK', null, 1.2, WorkUnit::SquareMeter, QuantitySource::FromDrawing, null),
+        ]));
+
+        $this->assertSame(3, $table['room_count']);
+        $this->assertSame(0, $table['blocking_count']);
+        foreach ($table['rows'] as $row) {
+            $this->assertSame(CheckStatus::NotApplicable, $row['status']);
+            $this->assertFalse($row['needs_review']);
+            $this->assertSame('Niet van toepassing', $row['status_label']);
+        }
+        $this->assertSame(0.0, $table['square_meters']);
         $this->assertFalse($table['ready_for_excel']);
     }
 
