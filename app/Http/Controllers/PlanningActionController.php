@@ -564,7 +564,7 @@ class PlanningActionController extends Controller
             $data['end_time'] ?? $times['end_time'],
             isset($data['assignment_id']) ? (int) $data['assignment_id'] : null,
             ...$this->weekendInclusion($request),
-        ));
+        ))->header('Cache-Control', 'no-store');
     }
 
     public function destroyAssignment(WorkerAssignment $assignment): JsonResponse

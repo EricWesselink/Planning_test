@@ -131,6 +131,58 @@ class PlanningCandidatesTest extends TestCase
             ]);
     }
 
+    public function test_a_team_busy_wednesday_to_friday_is_available_on_monday(): void
+    {
+        $user = User::factory()->create();
+        $wespro = $this->makeWorker('Wespro', 'Linoleum');
+        $item = $this->makeWorkItem('Linoleum');
+        $assignment = new WorkerAssignment([
+            'worker_id' => $wespro->id,
+            'project_id' => $item->project_id,
+            'work_item_id' => $item->id,
+            'people_count' => 1,
+        ]);
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-16'),
+            Carbon::parse('2026-09-18'),
+            '08:00:00',
+            '16:00:00',
+        );
+        $assignment->save();
+
+        $this->actingAs($user)
+            ->getJson(route('planning.candidates', [
+                'work_item_id' => $item->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-14',
+                'start_time' => '08:00',
+                'end_time' => '16:00',
+            ]))
+            ->assertOk()
+            ->assertJsonFragment([
+                'name' => 'Wespro',
+                'selectable' => true,
+                'status_label' => 'Beschikbaar',
+            ]);
+    }
+
+    public function test_candidates_response_is_not_stored_by_the_browser(): void
+    {
+        $user = User::factory()->create();
+        $item = $this->makeWorkItem('Linoleum');
+
+        $this->actingAs($user)
+            ->getJson(route('planning.candidates', [
+                'work_item_id' => $item->id,
+                'start_date' => '2026-09-14',
+                'end_date' => '2026-09-14',
+                'start_time' => '08:00',
+                'end_time' => '16:00',
+            ]))
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private');
+    }
+
     public function test_candidates_mark_an_overlapping_person_as_busy(): void
     {
         $user = User::factory()->create();

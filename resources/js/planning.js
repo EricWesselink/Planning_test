@@ -17,7 +17,13 @@ import { bindLaborFold } from './planning-labor-fold';
 import { bindPlanningScrollRestore, reloadPlanningBoard } from './planning-scroll';
 import { bindPlanningDatePickers, workdaysForIsoWeek } from './planning-datepicker.js';
 import { isoWeekFromDate } from './planning-weeks.js';
-import { whoOptionList } from './planning-who-options.js';
+import {
+    candidatesFetchInit,
+    datesForExactMode,
+    isLatestCandidatesRequest,
+    whoLoadingOptionList,
+    whoOptionList,
+} from './planning-who-options.js';
 
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 const board = document.getElementById('plan-board');
@@ -65,6 +71,7 @@ if (board) {
     const dates = [...board.querySelectorAll('.plan-line--head [data-date]')].map((el) => el.dataset.date);
     let lastCandidates = [];
     let candidatesAbort = null;
+    let candidatesRequestId = 0;
     let saving = false;
     const submitBtn = form.querySelector('button[type="submit"]');
     const dayCount = dates.length;
@@ -274,9 +281,8 @@ if (board) {
         return candidate.crew.find((row) => Number(row.id) === Number(personId)) || null;
     }
 
-    function renderWhoOptions(preserveValue) {
-        const current = preserveValue || whoSelect.value;
-        whoSelect.innerHTML = whoOptionList(lastCandidates, current).map((item) => {
+    function paintWhoOptions(options) {
+        whoSelect.innerHTML = options.map((item) => {
             const extra = item.value
                 ? ` data-men="${item.peopleCount}" data-selectable="${item.selectable ? '1' : '0'}"`
                 : '';
@@ -285,13 +291,36 @@ if (board) {
 
             return `<option value="${escapeHtml(item.value)}"${extra}${disabled}${selected}>${escapeHtml(item.label)}</option>`;
         }).join('');
+    }
+
+    function renderWhoOptions(preserveValue) {
+        const current = preserveValue || whoSelect.value;
+        paintWhoOptions(whoOptionList(lastCandidates, current));
         const stillValid = current
             && whoSelect.querySelector(`option[value="${CSS.escape(current)}"]:not(:disabled)`);
         whoSelect.value = stillValid ? current : '';
     }
 
+    function invalidateWhoCandidates() {
+        candidatesRequestId += 1;
+        if (candidatesAbort) {
+            candidatesAbort.abort();
+            candidatesAbort = null;
+        }
+        lastCandidates = [];
+    }
+
     async function refreshCandidates() {
-        if (weekMode() || !candidatesUrl || !workSelect.value || !startInput.value || !endInput.value) {
+        const preserveValue = whoSelect.value;
+        const requestId = ++candidatesRequestId;
+        lastCandidates = [];
+        paintWhoOptions(whoLoadingOptionList());
+        whoSelect.value = '';
+
+        if (weekMode()) {
+            syncDatesFromWeeks();
+        }
+        if (!candidatesUrl || !workSelect.value || !startInput.value || !endInput.value) {
             return;
         }
         const times = selectedTimes();
@@ -314,16 +343,19 @@ if (board) {
         }
         candidatesAbort = new AbortController();
         try {
-            const response = await fetch(`${candidatesUrl}?${params}`, {
-                headers: { Accept: 'application/json' },
-                signal: candidatesAbort.signal,
-            });
+            const response = await fetch(`${candidatesUrl}?${params}`, candidatesFetchInit(candidatesAbort.signal));
+            if (!isLatestCandidatesRequest(requestId, candidatesRequestId)) {
+                return;
+            }
             const json = await response.json().catch(() => ({}));
+            if (!isLatestCandidatesRequest(requestId, candidatesRequestId)) {
+                return;
+            }
             if (!response.ok) {
                 return;
             }
-            lastCandidates = json.workers || [];
-            renderWhoOptions(whoSelect.value);
+            lastCandidates = Array.isArray(json.workers) ? json.workers.slice() : [];
+            renderWhoOptions(preserveValue);
             const workerId = (whoSelect.value || '').split(':')[1];
             if (workerId && workerCrew(workerId).length >= 2) {
                 renderCrew(workerId, selectedCrewIds(), selectedCrewHours());
@@ -444,7 +476,7 @@ if (board) {
         }
     }
 
-    function setWhenMode(mode) {
+    function setWhenMode(mode, applyWeekRange = false) {
         const weeks = mode === 'weeks';
         if (whenDatesInput) {
             whenDatesInput.checked = !weeks;
@@ -472,16 +504,26 @@ if (board) {
                     weekYearInput.value = String(defaultWeekYear());
                 }
             }
-            if (!startWeekInput?.value || !endWeekInput?.value) {
+            if (startInput.value && endInput.value) {
                 syncWeeksFromDates();
             } else {
                 syncDatesFromWeeks();
             }
+            refreshCandidates();
             return;
         }
-        if (startWeekInput?.value && endWeekInput?.value) {
-            syncDatesFromWeeks();
-        }
+        const year = Number(weekYearInput?.value || defaultWeekYear());
+        const fromWeek = workdaysForIsoWeek(year, Number(startWeekInput?.value));
+        const toWeek = workdaysForIsoWeek(year, Number(endWeekInput?.value || startWeekInput?.value));
+        const bounds = datesForExactMode({
+            startDate: startInput.value,
+            endDate: endInput.value,
+            applyWeekRange,
+            weekStartDate: fromWeek?.start || '',
+            weekEndDate: toWeek?.end || '',
+        });
+        startInput.value = bounds.startDate;
+        endInput.value = bounds.endDate;
         syncHoursSummary();
         refreshCandidates();
     }
@@ -612,6 +654,7 @@ if (board) {
     }
 
     function openAdd(projectId, workItemId, date, startTime = '08:00', hours = WORKDAY_HOURS) {
+        invalidateWhoCandidates();
         form.dataset.assignmentId = '';
         titleEl.textContent = 'Iemand inplannen';
         deleteBtn.classList.add('hidden');
@@ -644,17 +687,18 @@ if (board) {
         crewList.innerHTML = '';
         menWrap.classList.remove('hidden');
         setHoursUi(hours, startTime);
-        setWhenMode('dates');
         if (weekYearInput) {
             weekYearInput.value = String(defaultWeekYear());
         }
         syncWeeksFromDates();
+        setWhenMode('dates');
         dialog.showModal();
         whoSelect.focus();
         refreshCandidates();
     }
 
     function openEdit(bar) {
+        invalidateWhoCandidates();
         form.dataset.assignmentId = bar.dataset.shiftId;
         titleEl.textContent = 'Inzet aanpassen';
         deleteBtn.classList.remove('hidden');
@@ -1029,7 +1073,7 @@ if (board) {
     });
     whenDatesInput?.addEventListener('change', () => {
         if (whenDatesInput.checked) {
-            setWhenMode('dates');
+            setWhenMode('dates', true);
         }
     });
     whenWeeksInput?.addEventListener('change', () => {
@@ -1038,16 +1082,14 @@ if (board) {
         }
     });
     [startWeekInput, endWeekInput, weekYearInput].forEach((input) => {
-        input?.addEventListener('change', () => {
+        const syncWeekRange = () => {
             if (weekMode()) {
                 syncDatesFromWeeks();
+                refreshCandidates();
             }
-        });
-        input?.addEventListener('input', () => {
-            if (weekMode()) {
-                syncDatesFromWeeks();
-            }
-        });
+        };
+        input?.addEventListener('change', syncWeekRange);
+        input?.addEventListener('input', syncWeekRange);
     });
     bindPlanningDatePickers(startInput, endInput, {
         onChange: () => {
@@ -1180,6 +1222,7 @@ if (board) {
     });
 
     document.getElementById('plan-cancel').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => invalidateWhoCandidates());
 
     deleteBtn.addEventListener('click', async () => {
         const assignmentId = form.dataset.assignmentId;

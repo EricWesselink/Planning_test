@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { whoOptionList } from '../../resources/js/planning-who-options.js';
+import {
+    WHO_LOADING_LABEL,
+    candidatesFetchInit,
+    datesForExactMode,
+    isLatestCandidatesRequest,
+    shouldOverwriteDatesFromWeeks,
+    whoLoadingOptionList,
+    whoOptionList,
+} from '../../resources/js/planning-who-options.js';
 
 const candidates = [
     { id: 1, name: 'H.D. Verwoert', people_count: 4, selectable: false, status_label: '0/4 geschikt en beschikbaar' },
@@ -53,4 +61,63 @@ test('keeps a previously chosen weaker-fit vakman selected', () => {
     assert.equal(chosen?.selected, true);
     assert.equal(chosen?.disabled, false);
     assert.equal(options.filter((option) => option.selected).length, 1);
+});
+
+test('replaces stale who-options with a loading row', () => {
+    const options = whoLoadingOptionList();
+
+    assert.deepEqual(options, [{
+        value: '',
+        label: WHO_LOADING_LABEL,
+        peopleCount: 0,
+        selectable: false,
+        disabled: false,
+        selected: true,
+    }]);
+    assert.equal(options.some((option) => option.label.includes('Wespro')), false);
+});
+
+test('does not copy leftover week numbers onto a clicked monday', () => {
+    assert.equal(shouldOverwriteDatesFromWeeks(false, '38', '38'), false);
+    assert.equal(shouldOverwriteDatesFromWeeks(true, '38', '38'), true);
+    assert.equal(shouldOverwriteDatesFromWeeks(true, '', '38'), false);
+});
+
+test('reopening the same monday keeps that day even with leftover week bounds', () => {
+    const leftoverWeek = { weekStartDate: '2026-09-14', weekEndDate: '2026-09-18' };
+
+    for (let opening = 0; opening < 10; opening++) {
+        const bounds = datesForExactMode({
+            startDate: '2026-09-14',
+            endDate: '2026-09-14',
+            applyWeekRange: false,
+            ...leftoverWeek,
+        });
+
+        assert.deepEqual(bounds, { startDate: '2026-09-14', endDate: '2026-09-14' });
+    }
+});
+
+test('applies the week range only after switching from week numbers to exact dates', () => {
+    const bounds = datesForExactMode({
+        startDate: '2026-09-14',
+        endDate: '2026-09-14',
+        applyWeekRange: true,
+        weekStartDate: '2026-09-14',
+        weekEndDate: '2026-09-18',
+    });
+
+    assert.deepEqual(bounds, { startDate: '2026-09-14', endDate: '2026-09-18' });
+});
+
+test('ignores an older candidates response after a newer request started', () => {
+    assert.equal(isLatestCandidatesRequest(1, 2), false);
+    assert.equal(isLatestCandidatesRequest(2, 2), true);
+});
+
+test('asks the browser not to reuse a previous candidates response', () => {
+    const init = candidatesFetchInit();
+
+    assert.equal(init.cache, 'no-store');
+    assert.equal(init.headers.Accept, 'application/json');
 });
