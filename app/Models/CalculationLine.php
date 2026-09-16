@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'room_number', 'room_name', 'product_code', 'product', 'original_product_code', 'original_product',
     'quantity', 'original_quantity', 'excel_quantity', 'excel_product_code', 'excel_product',
     'unit', 'finish_role', 'room_area', 'source', 'found_source', 'note', 'unit_price', 'confirmed_manually',
-    'confirmed_at', 'calculation_trace',
+    'confirmed_at', 'plinth_not_applicable', 'calculation_trace',
 ])]
 class CalculationLine extends Model
 {
@@ -26,6 +26,7 @@ class CalculationLine extends Model
         'unit' => 'm2',
         'source' => 'review',
         'confirmed_manually' => false,
+        'plinth_not_applicable' => false,
     ];
 
     protected function casts(): array
@@ -43,6 +44,7 @@ class CalculationLine extends Model
             'sort_order' => 'integer',
             'confirmed_manually' => 'boolean',
             'confirmed_at' => 'datetime',
+            'plinth_not_applicable' => 'boolean',
         ];
     }
 

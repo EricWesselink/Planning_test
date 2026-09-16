@@ -91,6 +91,7 @@ class CalculationRoomRowsTest extends TestCase
 
         $this->assertSame(CheckStatus::Certain, $table['rows'][0]['status']);
         $this->assertFalse($table['rows'][0]['can_confirm']);
+        $this->assertFalse($table['rows'][0]['can_skip_plinth']);
         $this->assertTrue($table['ready_for_excel']);
         $this->assertSame(1, $table['certain_count']);
     }
@@ -104,9 +105,30 @@ class CalculationRoomRowsTest extends TestCase
         $this->assertSame(CheckStatus::Review, $table['rows'][0]['status']);
         $this->assertSame('Plintcode ontbreekt', $table['rows'][0]['status_label']);
         $this->assertNotSame('Ontbreekt', $table['rows'][0]['status_label']);
+        $this->assertTrue($table['rows'][0]['can_skip_plinth']);
+        $this->assertFalse($table['rows'][0]['plinth_not_applicable']);
         $this->assertSame(1, $table['floor_linked_count']);
         $this->assertSame(0, $table['plinth_linked_count']);
         $this->assertFalse($table['ready_for_excel']);
+        $this->assertEqualsWithDelta(3.7, $table['square_meters'], 0.001);
+    }
+
+    public function test_marks_gietvloer_as_certain_when_no_plinth_is_applicable(): void
+    {
+        $floor = $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer');
+        $floor->plinth_not_applicable = true;
+
+        $table = (new CalculationRoomRows)->table(collect([$floor]));
+
+        $this->assertSame(CheckStatus::Certain, $table['rows'][0]['status']);
+        $this->assertSame('Zeker · Geen plint van toepassing', $table['rows'][0]['status_label']);
+        $this->assertFalse($table['rows'][0]['needs_review']);
+        $this->assertTrue($table['rows'][0]['plinth_not_applicable']);
+        $this->assertTrue($table['rows'][0]['can_skip_plinth']);
+        $this->assertSame(0, $table['blocking_count']);
+        $this->assertSame(0, $table['plinth_linked_count']);
+        $this->assertSame(0, $table['plinth_meters_count']);
+        $this->assertTrue($table['ready_for_excel']);
         $this->assertEqualsWithDelta(3.7, $table['square_meters'], 0.001);
     }
 
@@ -234,6 +256,7 @@ class CalculationRoomRowsTest extends TestCase
         $this->assertNotSame('Ontbreekt', $table['rows'][0]['status_label']);
         $this->assertTrue($table['rows'][0]['needs_review']);
         $this->assertFalse($table['rows'][0]['can_confirm']);
+        $this->assertFalse($table['rows'][0]['can_skip_plinth']);
         $this->assertSame('v01', $table['rows'][0]['floor']?->product_code);
         $this->assertSame('pl01', $table['rows'][0]['plinth']?->product_code);
         $this->assertSame([], $table['rows'][0]['floor_variants']);

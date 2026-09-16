@@ -195,6 +195,16 @@ class CalculationStoreService
         }
 
         DB::transaction(function () use ($drawing, $parsed): void {
+            $skipPlinthRooms = $drawing->lines()
+                ->where('unit', WorkUnit::SquareMeter)
+                ->where('plinth_not_applicable', true)
+                ->pluck('room_number')
+                ->map(fn (mixed $number): string => mb_strtolower(trim((string) $number)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
             $drawing->lines()->delete();
             $drawing->update([
                 'parse_engine' => $parsed['engine'] ?? null,
@@ -232,6 +242,28 @@ class CalculationStoreService
                     'note' => $line['note'] ?? null,
                     'calculation_trace' => $line['calculation_trace'] ?? null,
                 ]);
+            }
+
+            if ($skipPlinthRooms !== []) {
+                $drawing->lines()
+                    ->where('unit', WorkUnit::SquareMeter)
+                    ->get()
+                    ->each(function (CalculationLine $line) use ($skipPlinthRooms): void {
+                        $number = mb_strtolower(trim((string) $line->room_number));
+                        if ($number !== '' && in_array($number, $skipPlinthRooms, true)) {
+                            $line->update(['plinth_not_applicable' => true]);
+                        }
+                    });
+
+                $drawing->lines()
+                    ->where('unit', WorkUnit::LinearMeter)
+                    ->get()
+                    ->each(function (CalculationLine $line) use ($skipPlinthRooms): void {
+                        $number = mb_strtolower(trim((string) $line->room_number));
+                        if ($number !== '' && in_array($number, $skipPlinthRooms, true)) {
+                            $line->delete();
+                        }
+                    });
             }
         });
     }
@@ -415,6 +447,9 @@ class CalculationStoreService
                     $next['confirmed_manually'] = false;
                 }
                 $next['source'] = $source?->value ?? QuantitySource::Manual->value;
+                if (array_key_exists('plinth_not_applicable', $payload)) {
+                    $next['plinth_not_applicable'] = (bool) $payload['plinth_not_applicable'];
+                }
                 $line->update($next);
             }
 

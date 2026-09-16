@@ -119,12 +119,13 @@ class WorkbookMergeService
             $changed++;
         }
 
+        $skipPlinth = $floor instanceof CalculationLine && $floor->plinth_not_applicable;
         $needsPlinth = filled($room['plinth_code'] ?? null)
             || mb_strtolower((string) ($room['floor_code'] ?? '')) === FinishPairingRules::GIETVLOER;
         $plinthQuantity = $this->excelQuantity($room, WorkUnit::LinearMeter);
-        if ($plinth instanceof CalculationLine && $plinthQuantity !== null) {
+        if (! $skipPlinth && $plinth instanceof CalculationLine && $plinthQuantity !== null) {
             $changed += $this->overlayExcel($plinth, $workbook, $room, WorkUnit::LinearMeter, $warnings);
-        } elseif ($needsPlinth && $plinth === null && $plinthQuantity !== null) {
+        } elseif (! $skipPlinth && $needsPlinth && $plinth === null && $plinthQuantity !== null) {
             $sort++;
             $plinths[$key] = $this->createLine($calculation, $workbook, $room, WorkUnit::LinearMeter, $sort);
             $changed++;

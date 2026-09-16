@@ -280,6 +280,8 @@
                                     <input name="lines[{{ $plinthIndex }}][product_code]" value="{{ $plinthOld['product_code'] ?? $plinth->product_code }}" class="w-14 border border-nicon-line px-1 py-0.5">
                                 @elseif ($plinth)
                                     <input name="lines[{{ $plinthIndex }}][product_code]" value="{{ $plinthOld['product_code'] ?? $plinth->product_code }}" class="w-14 border border-nicon-line px-1 py-0.5">
+                                @elseif ($floor && ($row['can_skip_plinth'] ?? false))
+                                    <span class="text-[10px] text-nicon-muted">{{ ($row['plinth_not_applicable'] ?? false) ? 'n.v.t.' : '' }}</span>
                                 @endif
                             </td>
                             <td class="px-1.5 py-1">
@@ -288,7 +290,19 @@
                                 @endif
                             </td>
                             <td class="px-1.5 py-1">
-                                @if ($plinth)
+                                @if ($floor && ($row['can_skip_plinth'] ?? false))
+                                    @php
+                                        $skipPlinth = filter_var(
+                                            $floorOld['plinth_not_applicable'] ?? $row['plinth_not_applicable'],
+                                            FILTER_VALIDATE_BOOLEAN,
+                                        );
+                                    @endphp
+                                    <input type="hidden" name="lines[{{ $floorIndex }}][plinth_not_applicable]" value="0">
+                                    <label class="flex items-start gap-1 text-[10px] leading-tight text-nicon-muted">
+                                        <input type="checkbox" name="lines[{{ $floorIndex }}][plinth_not_applicable]" value="1" class="mt-0.5 size-3.5 border-nicon-line" @checked($skipPlinth)>
+                                        <span>Geen plint van toepassing</span>
+                                    </label>
+                                @elseif ($plinth)
                                     <input name="lines[{{ $plinthIndex }}][quantity]" value="{{ \App\Support\Format::qtyInput($plinthOld['quantity'] ?? $plinth->quantity) }}" inputmode="decimal" class="w-16 border border-nicon-line px-1 py-0.5 text-right tabular-nums" title="{{ $row['trace'] }}">
                                 @endif
                             </td>

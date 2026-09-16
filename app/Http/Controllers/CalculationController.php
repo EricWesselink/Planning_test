@@ -259,6 +259,12 @@ class CalculationController extends Controller
                 if ($incoming[$index]['quantity'] === '') {
                     $incoming[$index]['quantity'] = null;
                 }
+                if (array_key_exists('plinth_not_applicable', $line)) {
+                    $incoming[$index]['plinth_not_applicable'] = filter_var(
+                        $line['plinth_not_applicable'],
+                        FILTER_VALIDATE_BOOLEAN,
+                    );
+                }
             }
             $request->merge(['lines' => $incoming]);
         }
@@ -279,6 +285,7 @@ class CalculationController extends Controller
             'lines.*.unit' => ['required', Rule::enum(WorkUnit::class)],
             'lines.*.source' => ['required', Rule::enum(QuantitySource::class)],
             'lines.*.note' => ['nullable', 'string', 'max:1000'],
+            'lines.*.plinth_not_applicable' => ['sometimes', 'boolean'],
         ]);
 
         $store->update($calculation, [

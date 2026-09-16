@@ -94,6 +94,8 @@ class CalculationRoomRows
             $statusLabel = $issues === [] ? $status->label() : implode(' · ', $issues);
             if ($status === CheckStatus::NotApplicable) {
                 $statusLabel = $status->label();
+            } elseif ($this->plinthNotApplicable($floors, $plinth) && $status !== CheckStatus::Review) {
+                $statusLabel = $status->label().' · Geen plint van toepassing';
             }
             $roomArea = $this->roomArea($floors, $floor);
             if ($roomArea !== null && $status !== CheckStatus::NotApplicable) {
@@ -126,6 +128,8 @@ class CalculationRoomRows
                 'excel_product_code' => $floor?->excel_product_code,
                 'excel_code_conflict' => $this->anyExcelCodeConflict($floors),
                 'floor_variants' => $this->floorVariants($floor, $variants),
+                'plinth_not_applicable' => $this->plinthNotApplicable($floors, $plinth),
+                'can_skip_plinth' => $this->canSkipPlinth($floors, $plinth),
                 'search' => mb_strtolower(trim(implode(' ', array_filter([
                     ...$searchBits,
                     $plinth?->product_code,
@@ -149,7 +153,7 @@ class CalculationRoomRows
         $plinthMissingMeters = 0;
         foreach ($rows as $row) {
             $plinth = $row['plinth'] ?? null;
-            if (! $plinth instanceof CalculationLine) {
+            if (! $plinth instanceof CalculationLine || ($row['plinth_not_applicable'] ?? false)) {
                 continue;
             }
             if ($plinth->quantity === null) {
@@ -357,7 +361,41 @@ class CalculationRoomRows
 
     private function plinthRequired(CalculationLine $floor, ?CalculationLine $plinth): bool
     {
+        if ($this->plinthNotApplicable([$floor], $plinth)) {
+            return false;
+        }
+
         return mb_strtolower((string) $floor->product_code) === FinishPairingRules::GIETVLOER;
+    }
+
+    /**
+     * @param  list<CalculationLine>  $floors
+     */
+    private function plinthNotApplicable(array $floors, ?CalculationLine $plinth): bool
+    {
+        foreach ($floors as $floor) {
+            if ($floor->plinth_not_applicable) {
+                return true;
+            }
+        }
+
+        return $plinth instanceof CalculationLine && $plinth->plinth_not_applicable;
+    }
+
+    /**
+     * @param  list<CalculationLine>  $floors
+     */
+    private function canSkipPlinth(array $floors, ?CalculationLine $plinth): bool
+    {
+        $floor = $this->mainFloor($floors);
+        if (! $floor instanceof CalculationLine) {
+            return false;
+        }
+        if (mb_strtolower((string) $floor->product_code) !== FinishPairingRules::GIETVLOER) {
+            return false;
+        }
+
+        return ! ($plinth instanceof CalculationLine && filled($plinth->product_code));
     }
 
     private function isEstimated(?CalculationLine $plinth): bool

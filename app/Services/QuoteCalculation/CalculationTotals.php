@@ -14,8 +14,25 @@ class CalculationTotals
      */
     public function grouped(Collection $lines): array
     {
+        $skipPlinthRooms = [];
+        foreach ($lines as $line) {
+            if (! $this->boolean($line, 'plinth_not_applicable') || $this->unit($line) !== WorkUnit::SquareMeter->value) {
+                continue;
+            }
+            $number = mb_strtolower(trim((string) $this->value($line, 'room_number')));
+            if ($number !== '') {
+                $skipPlinthRooms[$number] = true;
+            }
+        }
+
         $groups = [];
         foreach ($lines as $line) {
+            if ($this->unit($line) === WorkUnit::LinearMeter->value) {
+                $number = mb_strtolower(trim((string) $this->value($line, 'room_number')));
+                if ($number !== '' && isset($skipPlinthRooms[$number])) {
+                    continue;
+                }
+            }
             $code = trim((string) $this->value($line, 'product_code'));
             $product = trim((string) $this->value($line, 'product'));
             $unit = $this->unit($line);
@@ -67,6 +84,11 @@ class CalculationTotals
         }
 
         return is_string($unit) && $unit !== '' ? $unit : WorkUnit::SquareMeter->value;
+    }
+
+    private function boolean(CalculationLine|array $line, string $key): bool
+    {
+        return (bool) $this->value($line, $key);
     }
 
     private function quantity(CalculationLine|array $line): ?float
