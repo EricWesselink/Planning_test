@@ -70,6 +70,7 @@ class CalculationBoardTest extends TestCase
         $this->assertStringContainsString('keepView: true', $js);
         $this->assertStringContainsString('Alle materialen', $js);
         $this->assertStringNotContainsString("className = 'room-name-overlay'", $js);
+        $this->assertStringContainsString("style.fill = 'transparent'", $js);
         $this->assertStringContainsString('.calc-code-chip', $css);
     }
 
