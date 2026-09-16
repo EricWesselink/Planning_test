@@ -2,6 +2,7 @@
 
 namespace App\Services\Meetstaat;
 
+use App\Support\PdftotextBinary;
 use Smalot\PdfParser\Element\ElementArray;
 use Smalot\PdfParser\Element\ElementXRef;
 use Smalot\PdfParser\Page;
@@ -219,14 +220,13 @@ class PdfPageGeometry
      */
     private function textsFromBBox(string $path): array
     {
-        $binary = $this->pdftotextBinary();
+        $binary = PdftotextBinary::path();
         if ($binary === null) {
             return ['texts' => [], 'sizes' => []];
         }
 
         $output = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-bbox-'.bin2hex(random_bytes(8)).'.html';
-        $stderr = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
-        $command = escapeshellarg($binary).' -bbox '.escapeshellarg($path).' '.escapeshellarg($output).' '.$stderr;
+        $command = escapeshellarg($binary).' -bbox '.escapeshellarg($path).' '.escapeshellarg($output).' '.PdftotextBinary::stderrRedirect();
         exec($command, $_, $code);
         if ($code !== 0 || ! is_file($output)) {
             return ['texts' => [], 'sizes' => []];
@@ -286,16 +286,6 @@ class PdfPageGeometry
         }
 
         return ['texts' => $pages, 'sizes' => $sizes];
-    }
-
-    private function pdftotextBinary(): ?string
-    {
-        $which = trim((string) shell_exec('where pdftotext 2>NUL'));
-        if ($which === '') {
-            return null;
-        }
-
-        return explode("\n", str_replace("\r", '', $which))[0];
     }
 
     /**

@@ -25,4 +25,10 @@ return [
     */
     'php_parser_memory_limit' => null,
 
+    /*
+    | Optional absolute path to Poppler pdftotext. When empty, the app looks
+    | for /usr/bin/pdftotext, then PATH (`command -v` on Linux, `where` on Windows).
+    */
+    'pdftotext_binary' => env('PDFTOTEXT_BINARY'),
+
 ];

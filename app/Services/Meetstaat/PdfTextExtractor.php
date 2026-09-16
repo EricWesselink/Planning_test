@@ -2,6 +2,7 @@
 
 namespace App\Services\Meetstaat;
 
+use App\Support\PdftotextBinary;
 use Smalot\PdfParser\Parser;
 
 class PdfTextExtractor
@@ -75,13 +76,13 @@ class PdfTextExtractor
 
     private function viaPdftotext(string $path): string
     {
-        $binary = $this->pdftotextBinary();
+        $binary = PdftotextBinary::path();
         if ($binary === null) {
             return '';
         }
 
         $output = $path.'.txt';
-        $command = escapeshellarg($binary).' -layout '.escapeshellarg($path).' '.escapeshellarg($output).' 2>NUL';
+        $command = escapeshellarg($binary).' -layout '.escapeshellarg($path).' '.escapeshellarg($output).' '.PdftotextBinary::stderrRedirect();
         exec($command, $_, $code);
         if ($code !== 0 || ! is_file($output)) {
             return '';
@@ -91,16 +92,6 @@ class PdfTextExtractor
         @unlink($output);
 
         return $text;
-    }
-
-    private function pdftotextBinary(): ?string
-    {
-        $which = trim((string) shell_exec('where pdftotext 2>NUL'));
-        if ($which !== '') {
-            return explode("\n", str_replace("\r", '', $which))[0];
-        }
-
-        return null;
     }
 
     private function tooWeak(string $text, string $mode = 'meetstaat'): bool

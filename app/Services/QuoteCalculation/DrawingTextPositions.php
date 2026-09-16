@@ -3,6 +3,7 @@
 namespace App\Services\QuoteCalculation;
 
 use App\Services\Meetstaat\PdfMemoryGuard;
+use App\Support\PdftotextBinary;
 use Smalot\PdfParser\Page;
 use Smalot\PdfParser\Parser;
 
@@ -25,14 +26,13 @@ class DrawingTextPositions
 
     public function layoutText(string $path): string
     {
-        $binary = $this->pdftotextBinary();
+        $binary = PdftotextBinary::path();
         if ($binary === null || ! is_file($path)) {
             return '';
         }
 
         $output = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-layout-'.bin2hex(random_bytes(8)).'.txt';
-        $stderr = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
-        $command = escapeshellarg($binary).' -layout '.escapeshellarg($path).' '.escapeshellarg($output).' '.$stderr;
+        $command = escapeshellarg($binary).' -layout '.escapeshellarg($path).' '.escapeshellarg($output).' '.PdftotextBinary::stderrRedirect();
         exec($command, $_, $code);
         if ($code !== 0 || ! is_file($output)) {
             return '';
@@ -49,14 +49,13 @@ class DrawingTextPositions
      */
     private function viaPdftotextBbox(string $path): array
     {
-        $binary = $this->pdftotextBinary();
+        $binary = PdftotextBinary::path();
         if ($binary === null || ! is_file($path)) {
             return [];
         }
 
         $output = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-bbox-'.bin2hex(random_bytes(8)).'.html';
-        $stderr = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
-        $command = escapeshellarg($binary).' -bbox '.escapeshellarg($path).' '.escapeshellarg($output).' '.$stderr;
+        $command = escapeshellarg($binary).' -bbox '.escapeshellarg($path).' '.escapeshellarg($output).' '.PdftotextBinary::stderrRedirect();
         exec($command, $_, $code);
         if ($code !== 0 || ! is_file($output)) {
             return [];
@@ -192,15 +191,5 @@ class DrawingTextPositions
             'height' => $height,
             'texts' => $items,
         ];
-    }
-
-    private function pdftotextBinary(): ?string
-    {
-        $which = trim((string) shell_exec('where pdftotext 2>NUL'));
-        if ($which === '') {
-            return null;
-        }
-
-        return explode("\n", str_replace("\r", '', $which))[0];
     }
 }
