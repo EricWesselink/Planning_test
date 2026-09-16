@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\FinishRole;
 use App\Enums\QuantitySource;
 use App\Enums\WorkUnit;
 use App\Services\QuoteCalculation\DrawingTakeoffParser;

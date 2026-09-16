@@ -299,7 +299,12 @@ class DrawingTakeoffParser
             }
 
             $result = $this->plinthLengths->forRoom($room, $pages);
-            if ($result['meters'] !== null) {
+            $hasTextMeters = is_numeric($room['plinth_meters'] ?? null)
+                && in_array((string) ($room['plinth_source'] ?? ''), [
+                    QuantitySource::FromDrawing->value,
+                    QuantitySource::Calculated->value,
+                ], true);
+            if ($result['meters'] !== null && ! ($pages === [] && $hasTextMeters)) {
                 $rooms[$index] = $this->applyPlinthResult($room, $result);
 
                 continue;
