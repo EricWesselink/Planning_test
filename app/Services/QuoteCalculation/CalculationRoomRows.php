@@ -13,6 +13,7 @@ class CalculationRoomRows
 {
     /**
      * @param  Collection<int, CalculationLine>  $lines
+     * @param  list<array{code?: string, product?: string}>  $legend
      * @return array{
      *     rows: list<array<string, mixed>>,
      *     room_count: int,
@@ -36,7 +37,7 @@ class CalculationRoomRows
      *     ready_for_excel: bool
      * }
      */
-    public function table(Collection $lines): array
+    public function table(Collection $lines, array $legend = []): array
     {
         $groups = [];
         foreach ($lines as $line) {
@@ -80,6 +81,7 @@ class CalculationRoomRows
 
         $rows = [];
         $squareMeters = 0.0;
+        $variants = FinishPairingRules::variantsFromLegend($legend);
         foreach ($groups as $group) {
             if ($this->isEmptyGroup($group)) {
                 continue;
@@ -123,6 +125,7 @@ class CalculationRoomRows
                 'excel_area_mismatch' => $this->anyExcelAreaMismatch($floors),
                 'excel_product_code' => $floor?->excel_product_code,
                 'excel_code_conflict' => $this->anyExcelCodeConflict($floors),
+                'floor_variants' => $this->floorVariants($floor, $variants),
                 'search' => mb_strtolower(trim(implode(' ', array_filter([
                     ...$searchBits,
                     $plinth?->product_code,
@@ -305,6 +308,20 @@ class CalculationRoomRows
         }
 
         return ! filled($finish->product) || $this->productLooksLikeCode($finish);
+    }
+
+    /**
+     * @param  array<string, list<array{code: string, product: string}>>  $variants
+     * @return list<array{code: string, product: string}>
+     */
+    private function floorVariants(?CalculationLine $floor, array $variants): array
+    {
+        if (! $floor instanceof CalculationLine || ! $this->missingFloorVariant($floor)) {
+            return [];
+        }
+        $family = FinishPairingRules::family((string) $floor->product_code);
+
+        return $variants[$family] ?? [];
     }
 
     /**

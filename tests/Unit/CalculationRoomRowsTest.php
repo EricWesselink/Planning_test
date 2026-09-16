@@ -236,7 +236,40 @@ class CalculationRoomRowsTest extends TestCase
         $this->assertFalse($table['rows'][0]['can_confirm']);
         $this->assertSame('v01', $table['rows'][0]['floor']?->product_code);
         $this->assertSame('pl01', $table['rows'][0]['plinth']?->product_code);
+        $this->assertSame([], $table['rows'][0]['floor_variants']);
         $this->assertEqualsWithDelta(4.0, $table['square_meters'], 0.001);
+    }
+
+    public function test_offers_sorted_v01_legend_options_when_the_exact_variant_is_missing(): void
+    {
+        $floor = $this->line(1, 'A-00-04', 'WK', 'v01', 4.0, WorkUnit::SquareMeter, QuantitySource::FromDrawing, null);
+        $floor->note = 'Exacte v01-variant ontbreekt.';
+        $plinth = $this->line(2, 'A-00-04', 'WK', 'pl01', 8.86, WorkUnit::LinearMeter, QuantitySource::Calculated, 'Aluminium plakplint');
+
+        $table = (new CalculationRoomRows)->table(collect([$floor, $plinth]), [
+            ['code' => 'v01.b', 'product' => 'Marmoleum - Forbo 3753'],
+            ['code' => 'v01.a', 'product' => 'Marmoleum - Forbo 3732-3725'],
+            ['code' => 'v04', 'product' => 'Gietvloer v.z.v. matte coating'],
+            ['code' => 'pl01', 'product' => 'Aluminium plakplint'],
+        ]);
+
+        $this->assertSame(['v01.a', 'v01.b'], array_column($table['rows'][0]['floor_variants'], 'code'));
+        $this->assertSame('Marmoleum - Forbo 3732-3725', $table['rows'][0]['floor_variants'][0]['product']);
+        $this->assertSame('Exacte v01-variant ontbreekt', $table['rows'][0]['status_label']);
+        $this->assertFalse($table['rows'][0]['can_confirm']);
+    }
+
+    public function test_does_not_offer_variant_options_for_a_resolved_v01_floor(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-01', 'RECREATIE', 'v01.d', 78.9, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Marmoleum - Forbo 3430'),
+        ]), [
+            ['code' => 'v01.a', 'product' => 'Marmoleum - Forbo 3732-3725'],
+            ['code' => 'v01.d', 'product' => 'Marmoleum - Forbo 3430'],
+        ]);
+
+        $this->assertSame([], $table['rows'][0]['floor_variants']);
+        $this->assertSame(CheckStatus::Certain, $table['rows'][0]['status']);
     }
 
     public function test_keeps_rooms_without_floor_work_out_of_review(): void

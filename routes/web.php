@@ -109,6 +109,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/calculaties', [CalculationController::class, 'index'])->name('calculations.index');
     Route::get('/calculaties/nieuw', [CalculationController::class, 'create'])->name('calculations.create');
     Route::post('/calculaties', [CalculationController::class, 'store'])->name('calculations.store');
+    Route::get('/calculaties/{calculation}/verwerken', [CalculationController::class, 'processing'])->name('calculations.processing');
+    Route::get('/calculaties/{calculation}/verwerken/status', [CalculationController::class, 'importStatus'])->name('calculations.import-status');
     Route::get('/calculaties/{calculation}', [CalculationController::class, 'show'])->name('calculations.show');
     Route::get('/calculaties/{calculation}/bord', [CalculationController::class, 'board'])->name('calculations.board');
     Route::get('/calculaties/{calculation}/totalen', [CalculationController::class, 'totals'])->name('calculations.totals');

@@ -14,6 +14,7 @@ export default defineConfig({
                 "resources/js/winkel-preferred-worker.js",
                 "resources/js/project-upload.js",
                 "resources/js/calculation-create.js",
+                "resources/js/calculation-import-progress.js",
                 "resources/js/calculation-board.js",
                 "resources/js/calculation-print.js",
                 "resources/js/snag-pdf.js",

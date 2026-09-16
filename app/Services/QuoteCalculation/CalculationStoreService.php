@@ -4,8 +4,11 @@ namespace App\Services\QuoteCalculation;
 
 use App\Enums\CalculationStatus;
 use App\Enums\FinishRole;
+use App\Enums\ImportStatus;
 use App\Enums\QuantitySource;
 use App\Enums\WorkUnit;
+use App\Jobs\ProcessCalculationDrawingJob;
+use App\Jobs\ProcessCalculationWorkbookJob;
 use App\Models\Calculation;
 use App\Models\CalculationDrawing;
 use App\Models\CalculationLine;
@@ -14,6 +17,7 @@ use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class CalculationStoreService
 {
@@ -35,75 +39,345 @@ class CalculationStoreService
      */
     public function create(array $attributes, array $files, User $user, array $workbooks = []): Calculation
     {
-        return DB::transaction(function () use ($attributes, $files, $user, $workbooks): Calculation {
+        $calculation = DB::transaction(function () use ($attributes, $files, $user, $workbooks): Calculation {
             $calculation = Calculation::query()->create([
                 'name' => $attributes['name'],
                 'client_name' => $attributes['client_name'] ?? null,
                 'project_name' => $attributes['project_name'] ?? null,
                 'dated_on' => $attributes['dated_on'],
                 'status' => CalculationStatus::Concept,
+                'import_status' => ImportStatus::Pending,
                 'created_by' => $user->id,
                 'warnings' => [],
             ]);
 
-            $warnings = [];
-            $sort = 0;
             foreach ($files as $file) {
-                $drawing = $this->storeDrawing($calculation, $file);
-                try {
-                    $parsed = $this->parser->parseFile(Storage::disk('local')->path($drawing->file_path));
-                } catch (\InvalidArgumentException $e) {
-                    $parsed = [
-                        'engine' => null,
-                        'handler' => null,
-                        'lines' => [],
-                        'legend' => [],
-                        'warnings' => [$e->getMessage()],
-                    ];
-                }
-
-                $drawing->update([
-                    'parse_engine' => $parsed['engine'] ?? null,
-                    'format_handler' => $parsed['handler'] ?? null,
-                    'legend' => $parsed['legend'] ?? [],
-                    'warnings' => $parsed['warnings'] ?? [],
-                ]);
-
-                foreach ($parsed['warnings'] ?? [] as $warning) {
-                    $warnings[] = $drawing->original_filename.': '.$warning;
-                }
-
-                foreach ($parsed['lines'] ?? [] as $line) {
-                    $sort++;
-                    CalculationLine::query()->create([
-                        'calculation_id' => $calculation->id,
-                        'calculation_drawing_id' => $drawing->id,
-                        'sort_order' => $sort,
-                        'room_number' => $line['room_number'] ?? null,
-                        'room_name' => $line['room_name'] ?? null,
-                        'product_code' => $line['product_code'] ?? null,
-                        'product' => $line['product'] ?? null,
-                        'original_product_code' => $line['original_product_code'] ?? $line['product_code'] ?? null,
-                        'original_product' => $line['original_product'] ?? $line['product'] ?? null,
-                        'quantity' => $line['quantity'] ?? null,
-                        'original_quantity' => $line['original_quantity'] ?? $line['quantity'] ?? null,
-                        'unit' => $line['unit'] instanceof WorkUnit ? $line['unit']->value : ($line['unit'] ?? WorkUnit::SquareMeter->value),
-                        'finish_role' => $line['finish_role'] ?? null,
-                        'room_area' => $line['room_area'] ?? null,
-                        'source' => $line['source'] instanceof QuantitySource ? $line['source']->value : ($line['source'] ?? QuantitySource::Review->value),
-                        'found_source' => $line['found_source'] ?? (is_object($line['source'] ?? null) ? $line['source']->value : ($line['source'] ?? QuantitySource::Review->value)),
-                        'note' => $line['note'] ?? null,
-                        'calculation_trace' => $line['calculation_trace'] ?? null,
-                    ]);
-                }
+                $this->storeDrawing($calculation, $file);
+            }
+            foreach ($workbooks as $file) {
+                $this->storeWorkbook($calculation, $file);
             }
 
-            $calculation->update(['warnings' => array_values(array_unique($warnings))]);
-            $this->applySharedLegend($calculation);
-            $this->attachWorkbooks($calculation, $workbooks);
-
-            return $calculation->fresh(['lines', 'drawings', 'workbooks']) ?? $calculation;
+            return $calculation;
         });
+
+        $this->dispatchImport($calculation);
+
+        return $calculation->fresh(['lines', 'drawings', 'workbooks']) ?? $calculation;
+    }
+
+    public function dispatchImport(Calculation $calculation): void
+    {
+        $claimed = Calculation::query()
+            ->whereKey($calculation->id)
+            ->where('import_status', ImportStatus::Pending)
+            ->update(['import_status' => ImportStatus::Processing]);
+
+        if ($claimed === 0) {
+            return;
+        }
+
+        $this->continueImport($calculation->id);
+    }
+
+    public function continueImport(int $calculationId): void
+    {
+        $drawingJobs = [];
+        $workbookJobs = [];
+        $finalize = false;
+
+        DB::transaction(function () use ($calculationId, &$drawingJobs, &$workbookJobs, &$finalize): void {
+            $calculation = Calculation::query()->whereKey($calculationId)->lockForUpdate()->first();
+            if (! $calculation instanceof Calculation) {
+                return;
+            }
+
+            $calculation->load(['drawings', 'workbooks']);
+
+            $pendingDrawings = $calculation->drawings->filter(
+                fn (CalculationDrawing $drawing): bool => $drawing->import_status === ImportStatus::Pending,
+            );
+            if ($pendingDrawings->isNotEmpty()) {
+                foreach ($pendingDrawings as $drawing) {
+                    $drawing->update(['import_status' => ImportStatus::Processing]);
+                    $drawingJobs[] = new ProcessCalculationDrawingJob($drawing->id);
+                }
+
+                return;
+            }
+            if ($calculation->drawings->contains(
+                fn (CalculationDrawing $drawing): bool => $drawing->import_status === ImportStatus::Processing,
+            )) {
+                return;
+            }
+
+            $pendingWorkbooks = $calculation->workbooks->filter(
+                fn (CalculationWorkbook $workbook): bool => $workbook->import_status === ImportStatus::Pending,
+            );
+            if ($pendingWorkbooks->isNotEmpty()) {
+                foreach ($pendingWorkbooks as $workbook) {
+                    $workbook->update(['import_status' => ImportStatus::Processing]);
+                    $workbookJobs[] = new ProcessCalculationWorkbookJob($workbook->id);
+                }
+
+                return;
+            }
+            if ($calculation->workbooks->contains(
+                fn (CalculationWorkbook $workbook): bool => $workbook->import_status === ImportStatus::Processing,
+            )) {
+                return;
+            }
+
+            $finalize = true;
+        });
+
+        if ($drawingJobs !== []) {
+            foreach ($drawingJobs as $job) {
+                dispatch($job);
+            }
+
+            return;
+        }
+
+        if ($workbookJobs !== []) {
+            foreach ($workbookJobs as $job) {
+                dispatch($job);
+            }
+
+            return;
+        }
+
+        if ($finalize) {
+            $calculation = Calculation::query()->find($calculationId);
+            if ($calculation instanceof Calculation) {
+                $this->finalizeImport($calculation);
+            }
+        }
+    }
+
+    public function processDrawing(CalculationDrawing $drawing): void
+    {
+        if ($drawing->import_status === ImportStatus::Ready) {
+            return;
+        }
+
+        $drawing->update([
+            'import_status' => ImportStatus::Processing,
+            'import_error' => null,
+        ]);
+
+        if ($drawing->file_path === '' || ! Storage::disk('local')->exists($drawing->file_path)) {
+            $drawing->update([
+                'import_status' => ImportStatus::Failed,
+                'import_error' => 'Bestand ontbreekt op de server.',
+            ]);
+
+            return;
+        }
+
+        try {
+            $parsed = $this->parser->parseFile(Storage::disk('local')->path($drawing->file_path));
+        } catch (\InvalidArgumentException $e) {
+            $parsed = [
+                'engine' => null,
+                'handler' => null,
+                'lines' => [],
+                'legend' => [],
+                'warnings' => [$e->getMessage()],
+            ];
+        } catch (Throwable $e) {
+            $drawing->update([
+                'import_status' => ImportStatus::Failed,
+                'import_error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        DB::transaction(function () use ($drawing, $parsed): void {
+            $drawing->lines()->delete();
+            $drawing->update([
+                'parse_engine' => $parsed['engine'] ?? null,
+                'format_handler' => $parsed['handler'] ?? null,
+                'legend' => $parsed['legend'] ?? [],
+                'warnings' => $parsed['warnings'] ?? [],
+                'import_status' => ImportStatus::Ready,
+                'import_error' => null,
+            ]);
+
+            $sort = (int) CalculationLine::query()
+                ->where('calculation_id', $drawing->calculation_id)
+                ->lockForUpdate()
+                ->max('sort_order');
+
+            foreach ($parsed['lines'] ?? [] as $line) {
+                $sort++;
+                CalculationLine::query()->create([
+                    'calculation_id' => $drawing->calculation_id,
+                    'calculation_drawing_id' => $drawing->id,
+                    'sort_order' => $sort,
+                    'room_number' => $line['room_number'] ?? null,
+                    'room_name' => $line['room_name'] ?? null,
+                    'product_code' => $line['product_code'] ?? null,
+                    'product' => $line['product'] ?? null,
+                    'original_product_code' => $line['original_product_code'] ?? $line['product_code'] ?? null,
+                    'original_product' => $line['original_product'] ?? $line['product'] ?? null,
+                    'quantity' => $line['quantity'] ?? null,
+                    'original_quantity' => $line['original_quantity'] ?? $line['quantity'] ?? null,
+                    'unit' => $line['unit'] instanceof WorkUnit ? $line['unit']->value : ($line['unit'] ?? WorkUnit::SquareMeter->value),
+                    'finish_role' => $line['finish_role'] ?? null,
+                    'room_area' => $line['room_area'] ?? null,
+                    'source' => $line['source'] instanceof QuantitySource ? $line['source']->value : ($line['source'] ?? QuantitySource::Review->value),
+                    'found_source' => $line['found_source'] ?? (is_object($line['source'] ?? null) ? $line['source']->value : ($line['source'] ?? QuantitySource::Review->value)),
+                    'note' => $line['note'] ?? null,
+                    'calculation_trace' => $line['calculation_trace'] ?? null,
+                ]);
+            }
+        });
+    }
+
+    public function processWorkbook(CalculationWorkbook $workbook): void
+    {
+        if ($workbook->import_status === ImportStatus::Ready) {
+            return;
+        }
+
+        $workbook->update([
+            'import_status' => ImportStatus::Processing,
+            'import_error' => null,
+        ]);
+
+        if ($workbook->file_path === '' || ! Storage::disk('local')->exists($workbook->file_path)) {
+            $workbook->update([
+                'import_status' => ImportStatus::Failed,
+                'import_error' => 'Bestand ontbreekt op de server.',
+            ]);
+
+            return;
+        }
+
+        try {
+            $analysis = $this->workbookAnalyzer->analyze(
+                Storage::disk('local')->path($workbook->file_path),
+                $workbook->original_filename,
+            );
+        } catch (\RuntimeException $e) {
+            $analysis = [
+                'filename' => $workbook->original_filename,
+                'sheets' => [],
+                'skippable' => true,
+                'skip_reason' => $e->getMessage(),
+                'labels' => [],
+            ];
+        } catch (Throwable $e) {
+            $workbook->update([
+                'import_status' => ImportStatus::Failed,
+                'import_error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        $workbook->update([
+            'analysis' => $analysis,
+            'warnings' => array_values(array_filter([
+                $analysis['skip_reason'] ?? null,
+            ])),
+            'import_status' => ImportStatus::Ready,
+            'import_error' => null,
+        ]);
+    }
+
+    public function finalizeImport(Calculation $calculation): void
+    {
+        $calculation->refresh()->load(['drawings', 'workbooks', 'lines']);
+        if ($calculation->isImportingFiles()) {
+            return;
+        }
+
+        $warnings = [];
+        foreach ($calculation->drawings as $drawing) {
+            foreach ($drawing->warnings ?? [] as $warning) {
+                $warnings[] = $drawing->original_filename.': '.$warning;
+            }
+            if ($drawing->import_status === ImportStatus::Failed) {
+                $warnings[] = $drawing->original_filename.': '.($drawing->import_error ?: 'Tekening kon niet worden uitgelezen.');
+            }
+        }
+        foreach ($calculation->workbooks as $workbook) {
+            if ($workbook->import_status === ImportStatus::Failed) {
+                $warnings[] = $workbook->original_filename.': '.($workbook->import_error ?: 'Excelbestand kon niet worden uitgelezen.');
+            }
+        }
+
+        $calculation->update([
+            'warnings' => array_values(array_unique(array_filter($warnings))),
+            'import_status' => ImportStatus::Ready,
+        ]);
+        $this->applySharedLegend($calculation);
+        $this->autoApply->applyPending($calculation);
+    }
+
+    /**
+     * @return array{
+     *     status: string,
+     *     finished: bool,
+     *     percent: int,
+     *     label: string,
+     *     redirect: ?string,
+     *     files: list<array{name: string, kind: string, status: string, label: string, error: ?string}>
+     * }
+     */
+    public function importProgress(Calculation $calculation): array
+    {
+        $calculation->load(['drawings', 'workbooks']);
+        $files = [];
+        foreach ($calculation->drawings as $drawing) {
+            $status = $drawing->import_status ?? ImportStatus::Ready;
+            $files[] = [
+                'name' => $drawing->original_filename,
+                'kind' => 'drawing',
+                'status' => $status->value,
+                'label' => $status->label(),
+                'error' => $drawing->import_error,
+            ];
+        }
+        foreach ($calculation->workbooks as $workbook) {
+            $status = $workbook->import_status ?? ImportStatus::Ready;
+            $files[] = [
+                'name' => $workbook->original_filename,
+                'kind' => 'workbook',
+                'status' => $status->value,
+                'label' => $status->label(),
+                'error' => $workbook->import_error,
+            ];
+        }
+
+        $total = max(1, count($files));
+        $done = count(array_filter(
+            $files,
+            fn (array $file): bool => in_array($file['status'], [ImportStatus::Ready->value, ImportStatus::Failed->value], true),
+        ));
+        $finished = $calculation->importIsFinished();
+        $percent = $finished ? 100 : min(99, max(4, (int) floor(100 * $done / $total)));
+        $failed = $calculation->drawings->contains(fn (CalculationDrawing $drawing): bool => $drawing->import_status === ImportStatus::Failed)
+            || $calculation->workbooks->contains(fn (CalculationWorkbook $workbook): bool => $workbook->import_status === ImportStatus::Failed);
+
+        $label = match (true) {
+            $finished && $failed => 'Uitlezen klaar, met fouten',
+            $finished => 'Bestanden uitgelezen',
+            $done === 0 => 'Bestanden verwerken…',
+            default => 'Bestanden verwerken… '.$done.' van '.$total,
+        };
+
+        return [
+            'status' => ($calculation->import_status ?? ImportStatus::Ready)->value,
+            'finished' => $finished,
+            'percent' => $percent,
+            'label' => $label,
+            'redirect' => $finished ? route('calculations.imported', $calculation) : null,
+            'files' => $files,
+        ];
     }
 
     /**
@@ -116,6 +390,7 @@ class CalculationStoreService
             $calculation->update($attributes);
 
             $existing = $calculation->lines()->get()->keyBy('id');
+            $legend = $this->legendProductMap($calculation);
             foreach ($lines as $payload) {
                 $id = (int) ($payload['id'] ?? 0);
                 $line = $existing->get($id);
@@ -132,6 +407,7 @@ class CalculationStoreService
                     'unit' => $payload['unit'] ?? $line->unit?->value,
                     'note' => $payload['note'] ?? null,
                 ];
+                $next = $this->applyChosenFloorVariant($line, $next, $legend);
                 $source = QuantitySource::tryFrom((string) ($payload['source'] ?? $line->source?->value));
                 if ($this->changed($line, $next)) {
                     $source = QuantitySource::Manual;
@@ -482,39 +758,26 @@ class CalculationStoreService
     public function attachWorkbooks(Calculation $calculation, array $files): void
     {
         foreach ($files as $file) {
-            $directory = 'calculations/'.$calculation->id.'/excel';
-            $path = $file->store($directory, 'local');
-            $stored = CalculationWorkbook::query()->create([
-                'calculation_id' => $calculation->id,
-                'original_filename' => $file->getClientOriginalName(),
-                'file_path' => $path,
-                'mime_type' => $file->getMimeType() ?: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'file_size' => $file->getSize(),
-                'status' => 'pending',
-            ]);
-            try {
-                $analysis = $this->workbookAnalyzer->analyze(
-                    Storage::disk('local')->path($stored->file_path),
-                    $stored->original_filename,
-                );
-            } catch (\RuntimeException $e) {
-                $analysis = [
-                    'filename' => $stored->original_filename,
-                    'sheets' => [],
-                    'skippable' => true,
-                    'skip_reason' => $e->getMessage(),
-                    'labels' => [],
-                ];
-            }
-            $stored->update([
-                'analysis' => $analysis,
-                'warnings' => array_values(array_filter([
-                    $analysis['skip_reason'] ?? null,
-                ])),
-            ]);
+            $this->processWorkbook($this->storeWorkbook($calculation, $file));
         }
 
         $this->autoApply->applyPending($calculation);
+    }
+
+    private function storeWorkbook(Calculation $calculation, UploadedFile $file): CalculationWorkbook
+    {
+        $directory = 'calculations/'.$calculation->id.'/excel';
+        $path = $file->store($directory, 'local');
+
+        return CalculationWorkbook::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => $file->getClientOriginalName(),
+            'file_path' => $path,
+            'mime_type' => $file->getMimeType() ?: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'file_size' => $file->getSize(),
+            'status' => 'pending',
+            'import_status' => ImportStatus::Pending,
+        ]);
     }
 
     private function applySharedLegend(Calculation $calculation): void
@@ -567,6 +830,7 @@ class CalculationStoreService
             'file_path' => $path,
             'mime_type' => $file->getMimeType() ?: 'application/pdf',
             'file_size' => $file->getSize(),
+            'import_status' => ImportStatus::Pending,
         ]);
     }
 
@@ -621,5 +885,66 @@ class CalculationStoreService
         $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
 
         return trim($value);
+    }
+
+    /**
+     * @param  array<string, mixed>  $next
+     * @param  array<string, string>  $legend
+     * @return array<string, mixed>
+     */
+    private function applyChosenFloorVariant(CalculationLine $line, array $next, array $legend): array
+    {
+        if ($line->unit !== WorkUnit::SquareMeter) {
+            return $next;
+        }
+        $code = mb_strtolower(trim((string) ($next['product_code'] ?? '')));
+        if ($code === '' || ! FinishPairingRules::isSpecific($code) || ! isset($legend[$code])) {
+            return $next;
+        }
+        $previous = mb_strtolower(trim((string) $line->product_code));
+        $product = trim((string) ($next['product'] ?? ''));
+        if ($product === '' || $this->productLooksLikeCode($product, $previous) || $this->productLooksLikeCode($product, $code)) {
+            $next['product'] = $legend[$code];
+        }
+        if ($previous !== '' && FinishPairingRules::compatible($previous, $code)) {
+            $next['note'] = $this->stripVariantMissingNote($next['note'] ?? $line->note);
+        }
+
+        return $next;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function legendProductMap(Calculation $calculation): array
+    {
+        $legend = [];
+        foreach ($calculation->drawings()->get() as $drawing) {
+            foreach ($drawing->legend ?? [] as $entry) {
+                $code = mb_strtolower(trim((string) ($entry['code'] ?? '')));
+                $product = trim((string) ($entry['product'] ?? ''));
+                if ($code === '' || $product === '' || isset($legend[$code])) {
+                    continue;
+                }
+                $legend[$code] = $product;
+            }
+        }
+
+        return $legend;
+    }
+
+    private function stripVariantMissingNote(mixed $note): ?string
+    {
+        if (! is_string($note) || $note === '') {
+            return is_string($note) ? $note : null;
+        }
+        $cleaned = trim((string) preg_replace('/Exacte\s+\S*variant ontbreekt\.?/iu', '', $note));
+
+        return $cleaned === '' ? null : $cleaned;
+    }
+
+    private function productLooksLikeCode(string $product, string $code): bool
+    {
+        return $code !== '' && mb_strtolower($product) === $code;
     }
 }

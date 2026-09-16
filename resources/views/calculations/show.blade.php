@@ -242,14 +242,30 @@
                             </td>
                             <td class="px-1.5 py-1">
                                 @if ($floor)
-                                    <input name="lines[{{ $floorIndex }}][product_code]" value="{{ $floorOld['product_code'] ?? $floor->product_code }}" class="w-14 border border-nicon-line px-1 py-0.5">
+                                    <input name="lines[{{ $floorIndex }}][product_code]" @if (($row['floor_variants'] ?? []) !== []) data-floor-code @endif value="{{ $floorOld['product_code'] ?? $floor->product_code }}" class="w-14 border border-nicon-line px-1 py-0.5">
                                     @if (filled($row['excel_product_code']))
                                         <div class="text-[10px] {{ $row['excel_code_conflict'] ? 'text-nicon-warn' : 'text-nicon-muted' }}">Excel {{ $row['excel_product_code'] }}</div>
                                     @endif
                                 @endif
                             </td>
                             <td class="px-1.5 py-1">
-                                @if ($floor)
+                                @if ($floor && ($row['floor_variants'] ?? []) !== [])
+                                    @php
+                                        $chosenCode = mb_strtolower(trim((string) ($floorOld['product_code'] ?? $floor->product_code)));
+                                        $chosenProduct = (string) ($floorOld['product'] ?? $floor->product);
+                                    @endphp
+                                    <input type="hidden" name="lines[{{ $floorIndex }}][product]" data-floor-product value="{{ $chosenProduct }}">
+                                    <select data-floor-variant="1" class="w-44 max-w-[12rem] border border-nicon-line bg-white px-1 py-0.5" title="{{ $floor->product_code }} gevonden op tekening – kies vloerproduct">
+                                        <option value="">{{ $floor->product_code }} gevonden op tekening – kies vloerproduct</option>
+                                        @foreach ($row['floor_variants'] as $variant)
+                                            <option
+                                                value="{{ $variant['code'] }}"
+                                                data-product="{{ $variant['product'] }}"
+                                                @selected($chosenCode === $variant['code'])
+                                            >{{ $variant['code'] }} · {{ $variant['product'] }}</option>
+                                        @endforeach
+                                    </select>
+                                @elseif ($floor)
                                     <input name="lines[{{ $floorIndex }}][product]" value="{{ $floorOld['product'] ?? $floor->product }}" class="w-44 border border-nicon-line px-1 py-0.5">
                                 @endif
                             </td>
@@ -397,6 +413,26 @@
                             target.value = input.value;
                         });
                     });
+                });
+            });
+            root.querySelectorAll('[data-floor-variant]').forEach((select) => {
+                select.addEventListener('change', () => {
+                    const option = select.selectedOptions[0];
+                    const row = select.closest('[data-calc-room]');
+                    const code = option?.value || '';
+                    const product = option?.dataset.product || '';
+                    const codeInput = row?.querySelector('[data-floor-code]');
+                    const productInput = row?.querySelector('[data-floor-product]');
+                    const noteInput = row?.querySelector('input[name*="[note]"]');
+                    if (codeInput) {
+                        codeInput.value = code;
+                    }
+                    if (productInput) {
+                        productInput.value = product;
+                    }
+                    if (noteInput && /variant ontbreekt/i.test(noteInput.value)) {
+                        noteInput.value = noteInput.value.replace(/Exacte\s+\S*variant ontbreekt\.?\s*/gi, '').trim();
+                    }
                 });
             });
         });

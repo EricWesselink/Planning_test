@@ -6,6 +6,7 @@ use App\Enums\QuantitySource;
 use App\Enums\UserRole;
 use App\Enums\WorkUnit;
 use App\Models\Calculation;
+use App\Models\CalculationDrawing;
 use App\Models\CalculationLine;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -494,6 +495,180 @@ TXT, 'bg.pdf')],
             ->assertForbidden();
 
         $this->assertSame(0, Calculation::query()->count());
+    }
+
+    public function test_review_page_lets_a_user_pick_a_v01_variant_for_one_room(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'COA Oisterwijk',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        $drawing = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => 'plattegrond.pdf',
+            'file_path' => 'calculations/1/plattegrond.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 12,
+            'legend' => [
+                ['code' => 'v01.b', 'product' => 'Marmoleum - Forbo 3753', 'kind' => 'floor'],
+                ['code' => 'v01.a', 'product' => 'Marmoleum - Forbo 3732-3725', 'kind' => 'floor'],
+                ['code' => 'v01.c', 'product' => "Marmoleum <script>alert('xss')</script>", 'kind' => 'floor'],
+                ['code' => 'v04', 'product' => 'Gietvloer v.z.v. matte coating', 'kind' => 'floor'],
+                ['code' => 'pl01', 'product' => 'Aluminium plakplint', 'kind' => 'plinth'],
+            ],
+        ]);
+        $resolved = CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => 1,
+            'room_number' => 'A-00-01',
+            'room_name' => 'RECREATIE',
+            'product_code' => 'v01.d',
+            'product' => 'Marmoleum - Forbo 3430',
+            'quantity' => 78.9,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::FromDrawing,
+        ]);
+        $reviewFloor = CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => 2,
+            'room_number' => 'A-00-04',
+            'room_name' => 'WK',
+            'product_code' => 'v01',
+            'product' => null,
+            'quantity' => 4.0,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::Review,
+            'note' => 'Exacte v01-variant ontbreekt.',
+        ]);
+        $reviewPlinth = CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => 3,
+            'room_number' => 'A-00-04',
+            'room_name' => 'WK',
+            'product_code' => 'pl01',
+            'product' => 'Aluminium plakplint',
+            'quantity' => 8.855,
+            'unit' => WorkUnit::LinearMeter,
+            'source' => QuantitySource::Calculated,
+            'note' => '8,86 m¹ – contour niet volledig herkenbaar; ruime calculatieschatting.',
+            'calculation_trace' => '8,86 m¹ – contour niet volledig herkenbaar; ruime calculatieschatting.',
+        ]);
+        $otherFloor = CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => 4,
+            'room_number' => 'K-00-20',
+            'room_name' => 'OPSLAG',
+            'product_code' => 'v01',
+            'product' => null,
+            'quantity' => 1.0,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::Review,
+            'note' => 'Exacte v01-variant ontbreekt.',
+        ]);
+
+        $html = $this->actingAs($user)
+            ->get(route('calculations.show', $calculation))
+            ->assertOk()
+            ->assertSee('v01 gevonden op tekening – kies vloerproduct', false)
+            ->assertSee('v01.a · Marmoleum - Forbo 3732-3725', false)
+            ->assertSee('v01.b · Marmoleum - Forbo 3753', false)
+            ->assertSee('Exacte v01-variant ontbreekt')
+            ->assertSee('contour niet volledig herkenbaar')
+            ->getContent();
+
+        $this->assertSame(2, substr_count($html, 'data-floor-variant="1"'));
+        $this->assertDoesNotMatchRegularExpression('/data-floor-variant="1"[^>]*>[\s\S]*value="v04"/', $html);
+        $first = strpos($html, 'value="v01.a"');
+        $second = strpos($html, 'value="v01.b"');
+        $this->assertNotFalse($first);
+        $this->assertNotFalse($second);
+        $this->assertLessThan($second, $first);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringNotContainsString("<script>alert('xss')</script>", $html);
+
+        $this->actingAs($user)->patch(route('calculations.update', $calculation), [
+            'name' => 'COA Oisterwijk',
+            'dated_on' => '2026-03-06',
+            'status' => 'concept',
+            'lines' => [
+                [
+                    'id' => $resolved->id,
+                    'room_number' => 'A-00-01',
+                    'room_name' => 'RECREATIE',
+                    'product_code' => 'v01.d',
+                    'product' => 'Marmoleum - Forbo 3430',
+                    'quantity' => '78,90',
+                    'unit' => WorkUnit::SquareMeter->value,
+                    'source' => QuantitySource::FromDrawing->value,
+                    'note' => null,
+                ],
+                [
+                    'id' => $reviewFloor->id,
+                    'room_number' => 'A-00-04',
+                    'room_name' => 'WK',
+                    'product_code' => 'v01.a',
+                    'product' => '',
+                    'quantity' => '4,00',
+                    'unit' => WorkUnit::SquareMeter->value,
+                    'source' => QuantitySource::Review->value,
+                    'note' => 'Exacte v01-variant ontbreekt.',
+                ],
+                [
+                    'id' => $reviewPlinth->id,
+                    'room_number' => 'A-00-04',
+                    'room_name' => 'WK',
+                    'product_code' => 'pl01',
+                    'product' => 'Aluminium plakplint',
+                    'quantity' => '8,855',
+                    'unit' => WorkUnit::LinearMeter->value,
+                    'source' => QuantitySource::Calculated->value,
+                    'note' => '8,86 m¹ – contour niet volledig herkenbaar; ruime calculatieschatting.',
+                ],
+                [
+                    'id' => $otherFloor->id,
+                    'room_number' => 'K-00-20',
+                    'room_name' => 'OPSLAG',
+                    'product_code' => 'v01',
+                    'product' => null,
+                    'quantity' => '1,00',
+                    'unit' => WorkUnit::SquareMeter->value,
+                    'source' => QuantitySource::Review->value,
+                    'note' => 'Exacte v01-variant ontbreekt.',
+                ],
+            ],
+        ])->assertRedirect(route('calculations.show', $calculation));
+
+        $reviewFloor->refresh();
+        $resolved->refresh();
+        $otherFloor->refresh();
+        $reviewPlinth->refresh();
+
+        $this->assertSame('v01.a', $reviewFloor->product_code);
+        $this->assertSame('Marmoleum - Forbo 3732-3725', $reviewFloor->product);
+        $this->assertNull($reviewFloor->note);
+        $this->assertSame('v01.d', $resolved->product_code);
+        $this->assertSame('Marmoleum - Forbo 3430', $resolved->product);
+        $this->assertSame('v01', $otherFloor->product_code);
+        $this->assertNull($otherFloor->product);
+        $this->assertSame('Exacte v01-variant ontbreekt.', $otherFloor->note);
+        $this->assertSame('8,86 m¹ – contour niet volledig herkenbaar; ruime calculatieschatting.', $reviewPlinth->note);
+
+        $after = $this->actingAs($user)
+            ->get(route('calculations.show', $calculation))
+            ->assertOk()
+            ->assertSee('A-00-04')
+            ->assertSee('Marmoleum - Forbo 3732-3725')
+            ->assertSee('contour niet volledig herkenbaar')
+            ->assertSee('Exacte v01-variant ontbreekt')
+            ->getContent();
+
+        $this->assertSame(1, substr_count($after, 'data-floor-variant="1"'));
     }
 
     private function pdf(string $text, string $name): UploadedFile

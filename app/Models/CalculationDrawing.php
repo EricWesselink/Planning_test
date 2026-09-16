@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ImportStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
     'calculation_id', 'original_filename', 'file_path', 'mime_type', 'file_size',
-    'parse_engine', 'format_handler', 'legend', 'warnings',
+    'parse_engine', 'format_handler', 'legend', 'warnings', 'import_status', 'import_error',
 ])]
 class CalculationDrawing extends Model
 {
@@ -19,6 +20,7 @@ class CalculationDrawing extends Model
         return [
             'legend' => 'array',
             'warnings' => 'array',
+            'import_status' => ImportStatus::class,
             'file_size' => 'integer',
         ];
     }

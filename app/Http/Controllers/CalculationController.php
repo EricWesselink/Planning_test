@@ -14,6 +14,7 @@ use App\Services\QuoteCalculation\CalculationRoomRows;
 use App\Services\QuoteCalculation\CalculationStoreService;
 use App\Services\QuoteCalculation\CalculationTotals;
 use App\Support\Format;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -91,17 +92,24 @@ class CalculationController extends Controller
 
         $calculation = $store->create($validated, $files, $user, $workbooks);
 
-        return redirect()
-            ->route('calculations.imported', $calculation)
-            ->with('status', 'Bestanden uitgelezen.');
+        if ($calculation->importIsFinished()) {
+            return redirect()
+                ->route('calculations.imported', $calculation)
+                ->with('status', 'Bestanden uitgelezen.');
+        }
+
+        return redirect()->route('calculations.processing', $calculation);
     }
 
-    public function show(Calculation $calculation, CalculationTotals $totals, CalculationRoomRows $rooms): View
+    public function show(Calculation $calculation, CalculationTotals $totals, CalculationRoomRows $rooms): View|RedirectResponse
     {
         Gate::authorize('view', $calculation);
+        if ($calculation->isImporting()) {
+            return redirect()->route('calculations.processing', $calculation);
+        }
 
         $calculation->load(['lines', 'drawings', 'workbooks']);
-        $table = $rooms->table($calculation->lines);
+        $table = $rooms->table($calculation->lines, $this->drawingLegend($calculation));
 
         return view('calculations.show', [
             'calculation' => $calculation,
@@ -125,9 +133,12 @@ class CalculationController extends Controller
         ]);
     }
 
-    public function board(Request $request, Calculation $calculation, CalculationBoardService $board): View
+    public function board(Request $request, Calculation $calculation, CalculationBoardService $board): View|RedirectResponse
     {
         Gate::authorize('view', $calculation);
+        if ($calculation->isImporting()) {
+            return redirect()->route('calculations.processing', $calculation);
+        }
 
         $selected = trim((string) $request->query('room', ''));
 
@@ -141,9 +152,12 @@ class CalculationController extends Controller
         ]);
     }
 
-    public function totals(Calculation $calculation, CalculationTotals $totals, CalculationRoomRows $rooms): View
+    public function totals(Calculation $calculation, CalculationTotals $totals, CalculationRoomRows $rooms): View|RedirectResponse
     {
         Gate::authorize('view', $calculation);
+        if ($calculation->isImporting()) {
+            return redirect()->route('calculations.processing', $calculation);
+        }
 
         $calculation->load('lines');
         $table = $rooms->table($calculation->lines);
@@ -158,9 +172,12 @@ class CalculationController extends Controller
         ]);
     }
 
-    public function files(Calculation $calculation): View
+    public function files(Calculation $calculation): View|RedirectResponse
     {
         Gate::authorize('view', $calculation);
+        if ($calculation->isImporting()) {
+            return redirect()->route('calculations.processing', $calculation);
+        }
 
         $calculation->load(['drawings', 'workbooks']);
 
@@ -169,9 +186,12 @@ class CalculationController extends Controller
         ]);
     }
 
-    public function imported(Calculation $calculation, CalculationRoomRows $rooms): View
+    public function imported(Calculation $calculation, CalculationRoomRows $rooms): View|RedirectResponse
     {
         Gate::authorize('view', $calculation);
+        if ($calculation->isImporting()) {
+            return redirect()->route('calculations.processing', $calculation);
+        }
 
         $calculation->load(['drawings', 'workbooks', 'lines']);
         $table = $rooms->table($calculation->lines);
@@ -202,6 +222,27 @@ class CalculationController extends Controller
             )),
             'needsMapping' => $calculation->workbooks->contains(fn ($workbook) => $workbook->status === 'pending'),
         ]);
+    }
+
+    public function processing(Calculation $calculation, CalculationStoreService $store): View|RedirectResponse
+    {
+        Gate::authorize('view', $calculation);
+        if ($calculation->importIsFinished()) {
+            return redirect()->route('calculations.imported', $calculation);
+        }
+
+        return view('calculations.processing', [
+            'calculation' => $calculation,
+            'progress' => $store->importProgress($calculation),
+        ]);
+    }
+
+    public function importStatus(Calculation $calculation, CalculationStoreService $store): JsonResponse
+    {
+        Gate::authorize('view', $calculation);
+
+        return response()->json($store->importProgress($calculation))
+            ->header('Cache-Control', 'no-store');
     }
 
     public function update(Request $request, Calculation $calculation, CalculationStoreService $store): RedirectResponse
@@ -289,5 +330,16 @@ class CalculationController extends Controller
             $drawing->original_filename,
             ['Content-Type' => $drawing->mime_type ?: 'application/pdf'],
         );
+    }
+
+    /**
+     * @return list<array{code?: string, product?: string}>
+     */
+    private function drawingLegend(Calculation $calculation): array
+    {
+        return $calculation->drawings
+            ->flatMap(fn (CalculationDrawing $drawing): array => is_array($drawing->legend) ? $drawing->legend : [])
+            ->values()
+            ->all();
     }
 }
