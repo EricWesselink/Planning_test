@@ -1,0 +1,20 @@
+86.9 m2 SPEELLOKAAL A-00-12
+78.9 m2
+RECREATIE A-00-01
+97.2 m2
+VERKEER, SPEEL, BEWEGING A-00-06
+Totaal verdieping 450 m2
+v01.a= Marmoleum - Forbo 3732-3725
+v01.g= Marmoleum - Forbo 3752
+v02= Marmoleum - sportvloer
+v04= Gietvloer v.z.v. matte coating
+pl01
+= Aluminium plakplint
+pl02
+= Holplint
+RENVOOI AFWERKINGEN
+RENVOOI RUIMTEAANDUIDING
+A-0-01 verdieping
+KANTOOR
+15,4 m2
+ruimte oppervlakte

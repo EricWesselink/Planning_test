@@ -1,0 +1,243 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Enums\CheckStatus;
+use App\Enums\FinishRole;
+use App\Enums\QuantitySource;
+use App\Enums\WorkUnit;
+use App\Models\CalculationLine;
+use App\Services\QuoteCalculation\CalculationRoomRows;
+use App\Services\QuoteCalculation\PlinthLengthCalculator;
+use Tests\TestCase;
+
+class CalculationRoomRowsTest extends TestCase
+{
+    public function test_puts_floor_and_plinth_of_the_same_room_on_one_row(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-01', 'RECREATIE', 'v01.d', 78.9, WorkUnit::SquareMeter, QuantitySource::FromDrawing),
+            $this->line(2, 'A-00-01', 'RECREATIE', 'pl01', null, WorkUnit::LinearMeter, QuantitySource::Review),
+        ]));
+
+        $this->assertSame(1, $table['room_count']);
+        $this->assertSame(CheckStatus::Certain, $table['rows'][0]['status']);
+        $this->assertFalse($table['rows'][0]['needs_review']);
+        $this->assertFalse($table['rows'][0]['can_confirm']);
+        $this->assertTrue($table['ready_for_excel']);
+        $this->assertSame(1, $table['floor_linked_count']);
+        $this->assertSame(1, $table['plinth_linked_count']);
+        $this->assertSame('v01.d', $table['rows'][0]['floor']?->product_code);
+        $this->assertSame('pl01', $table['rows'][0]['plinth']?->product_code);
+    }
+
+    public function test_keeps_a_complete_room_ready_when_a_local_patch_has_no_area_yet(): void
+    {
+        $local = $this->line(3, 'A-00-01', 'RECREATIE', 'v09', null, WorkUnit::SquareMeter, QuantitySource::Review, 'Schoonloopmat');
+        $local->finish_role = FinishRole::Local;
+
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-01', 'RECREATIE', 'v01.d', 78.9, WorkUnit::SquareMeter, QuantitySource::FromDrawing),
+            $this->line(2, 'A-00-01', 'RECREATIE', 'pl01', 26.4, WorkUnit::LinearMeter, QuantitySource::Calculated, 'Aluminium plakplint'),
+            $local,
+        ]));
+
+        $this->assertSame(1, $table['room_count']);
+        $this->assertSame(CheckStatus::Certain, $table['rows'][0]['status']);
+        $this->assertSame('v01.d', $table['rows'][0]['floor']?->product_code);
+        $this->assertCount(2, $table['rows'][0]['floors']);
+        $this->assertTrue($table['ready_for_excel']);
+    }
+
+    public function test_keeps_two_floor_finishes_of_the_same_room_on_one_row(): void
+    {
+        $main = $this->line(1, 'A-00-01', 'RECREATIE', 'v01.d', 74.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing);
+        $main->finish_role = FinishRole::Main;
+        $main->room_area = 78.9;
+        $local = $this->line(3, 'A-00-01', 'RECREATIE', 'v09', 4.2, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Schoonloopmat');
+        $local->finish_role = FinishRole::Local;
+        $local->room_area = 78.9;
+        $table = (new CalculationRoomRows)->table(collect([
+            $main,
+            $local,
+            $this->line(2, 'A-00-01', 'RECREATIE', 'pl01', null, WorkUnit::LinearMeter, QuantitySource::Review),
+        ]));
+
+        $this->assertSame(1, $table['room_count']);
+        $this->assertCount(2, $table['rows'][0]['floors']);
+        $this->assertEqualsWithDelta(78.9, (float) $table['square_meters'], 0.001);
+        $this->assertSame('v01.d', $table['rows'][0]['floor']?->product_code);
+    }
+
+    public function test_marks_a_room_for_review_when_the_floor_has_no_code(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-13', 'TOILET', null, 3.7, WorkUnit::SquareMeter, QuantitySource::Review),
+        ]));
+
+        $this->assertSame(CheckStatus::Missing, $table['rows'][0]['status']);
+        $this->assertSame(1, $table['blocking_count']);
+        $this->assertSame(0, $table['certain_count']);
+    }
+
+    public function test_treats_a_complete_drawing_combo_as_certain_and_ready_for_excel(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer'),
+            $this->line(2, 'A-00-13', 'MIVA T', 'pl02', 7.72, WorkUnit::LinearMeter, QuantitySource::Calculated, 'Holplint'),
+        ]));
+
+        $this->assertSame(CheckStatus::Certain, $table['rows'][0]['status']);
+        $this->assertFalse($table['rows'][0]['can_confirm']);
+        $this->assertTrue($table['ready_for_excel']);
+        $this->assertSame(1, $table['certain_count']);
+    }
+
+    public function test_keeps_gietvloer_without_plinth_meters_as_missing(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer'),
+        ]));
+
+        $this->assertSame(CheckStatus::Missing, $table['rows'][0]['status']);
+        $this->assertSame(1, $table['floor_linked_count']);
+        $this->assertSame(0, $table['plinth_linked_count']);
+        $this->assertFalse($table['ready_for_excel']);
+    }
+
+    public function test_marks_a_generous_plinth_as_calculated_wide_and_ready(): void
+    {
+        $plinth = $this->line(2, 'A-00-13', 'MIVA T', 'pl02', 12.84, WorkUnit::LinearMeter, QuantitySource::Calculated, 'Holplint');
+        $plinth->note = '12,84 m¹ – volledige omtrek; deuropening niet afgetrokken.';
+        $plinth->calculation_trace = json_encode([
+            'meters' => 12.84,
+            'source' => QuantitySource::Calculated->value,
+            'trace' => '12,84 m¹ – volledige omtrek; deuropening niet afgetrokken.',
+            'status' => PlinthLengthCalculator::STATUS_GENEROUS,
+            'gross' => 12.84,
+            'doors' => [],
+            'net' => 12.84,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer'),
+            $plinth,
+        ]));
+
+        $this->assertSame(CheckStatus::Generous, $table['rows'][0]['status']);
+        $this->assertFalse($table['rows'][0]['needs_review']);
+        $this->assertTrue($table['ready_for_excel']);
+        $this->assertSame(0, $table['certain_count']);
+        $this->assertSame(1, $table['generous_count']);
+        $this->assertStringContainsString('volledige omtrek', (string) $table['rows'][0]['trace']);
+        $this->assertSame(1, $table['plinth_meters_count']);
+        $this->assertSame(1, $table['plinth_generous_count']);
+        $this->assertSame(0, $table['plinth_estimated_count']);
+        $this->assertSame(0, $table['plinth_missing_meters_count']);
+    }
+
+    public function test_marks_an_estimated_plinth_as_geschat_ruim_and_ready(): void
+    {
+        $plinth = $this->line(2, 'A-00-01', 'RECREATIE', 'pl01', 26.4, WorkUnit::LinearMeter, QuantitySource::Calculated, 'Aluminium plakplint');
+        $plinth->calculation_trace = json_encode([
+            'meters' => 26.4,
+            'source' => QuantitySource::Calculated->value,
+            'trace' => '26,40 m¹ – contour niet volledig herkenbaar; ruime calculatieschatting.',
+            'status' => PlinthLengthCalculator::STATUS_ESTIMATED,
+            'gross' => 26.4,
+            'doors' => [],
+            'net' => 26.4,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-01', 'RECREATIE', 'v01.d', 78.9, WorkUnit::SquareMeter, QuantitySource::FromDrawing),
+            $plinth,
+        ]));
+
+        $this->assertSame(CheckStatus::Estimated, $table['rows'][0]['status']);
+        $this->assertSame('Geschat ruim', $table['rows'][0]['status_label']);
+        $this->assertFalse($table['rows'][0]['needs_review']);
+        $this->assertTrue($table['ready_for_excel']);
+        $this->assertSame(1, $table['estimated_count']);
+        $this->assertSame(1, $table['plinth_estimated_count']);
+        $this->assertSame(0, $table['plinth_missing_meters_count']);
+    }
+
+    public function test_counts_excel_confirmation_when_the_code_matches(): void
+    {
+        $floor = $this->line(1, 'A-00-01', 'RECREATIE', 'v01.d', 78.9, WorkUnit::SquareMeter, QuantitySource::FromDrawing);
+        $floor->excel_product_code = 'v01.d';
+        $floor->excel_quantity = 78.9;
+
+        $table = (new CalculationRoomRows)->table(collect([$floor]));
+
+        $this->assertSame(1, $table['excel_confirmed_count']);
+        $this->assertFalse($table['rows'][0]['excel_conflict']);
+        $this->assertFalse($table['rows'][0]['excel_area_mismatch']);
+        $this->assertFalse($table['rows'][0]['excel_code_conflict']);
+    }
+
+    public function test_flags_an_excel_quantity_that_differs_from_the_drawing(): void
+    {
+        $floor = $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer');
+        $floor->excel_product_code = 'v04';
+        $floor->excel_quantity = 5.0;
+
+        $table = (new CalculationRoomRows)->table(collect([$floor]));
+
+        $this->assertTrue($table['rows'][0]['excel_conflict']);
+        $this->assertFalse($table['rows'][0]['excel_area_mismatch']);
+        $this->assertEqualsWithDelta(5.0, (float) $table['rows'][0]['excel_quantity'], 0.001);
+        $this->assertSame(1, $table['excel_confirmed_count']);
+    }
+
+    public function test_flags_a_tenfold_excel_area_as_a_possible_wrong_room(): void
+    {
+        $floor = $this->line(1, 'M-00-04', 'Magazijn', 'v07', 250.0, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Coating');
+        $floor->excel_product_code = 'v07';
+        $floor->excel_quantity = 25.0;
+
+        $table = (new CalculationRoomRows)->table(collect([$floor]));
+
+        $this->assertTrue($table['rows'][0]['excel_conflict']);
+        $this->assertTrue($table['rows'][0]['excel_area_mismatch']);
+        $this->assertSame(CheckStatus::Certain, $table['rows'][0]['status']);
+        $this->assertSame(1, $table['excel_confirmed_count']);
+    }
+
+    public function test_allows_confirm_when_a_complete_combo_still_needs_review(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer'),
+            $this->line(2, 'A-00-13', 'MIVA T', 'pl02', 7.72, WorkUnit::LinearMeter, QuantitySource::Manual, 'Holplint'),
+        ]));
+
+        $this->assertSame(CheckStatus::Review, $table['rows'][0]['status']);
+        $this->assertTrue($table['rows'][0]['can_confirm']);
+        $this->assertFalse($table['ready_for_excel']);
+    }
+
+    private function line(
+        int $id,
+        string $number,
+        string $name,
+        ?string $code,
+        ?float $quantity,
+        WorkUnit $unit,
+        QuantitySource $source,
+        ?string $product = 'Marmoleum',
+    ): CalculationLine {
+        $line = new CalculationLine;
+        $line->id = $id;
+        $line->calculation_drawing_id = 1;
+        $line->room_number = $number;
+        $line->room_name = $name;
+        $line->product_code = $code;
+        $line->product = $code === null ? null : $product;
+        $line->quantity = $quantity;
+        $line->unit = $unit;
+        $line->source = $source;
+
+        return $line;
+    }
+}

@@ -166,7 +166,7 @@ class CalculationExcelParser
             ? ($totalCost ?? (($hours !== null && $hourlyRate !== null) ? round($hours * $hourlyRate, 2) : null))
             : null;
 
-        return [
+        $mapped = [
             'row_number' => $rowNumber,
             'source_filename' => $filename,
             'km' => $this->cell($row, $columns['km'] ?? null) ?: null,
@@ -189,6 +189,13 @@ class CalculationExcelParser
             'naca_code' => $this->cell($row, $columns['naca_code'] ?? null) ?: null,
             'raw' => $this->rawRow($row, $columns),
         ];
+
+        if ($mapped['unit'] === null && $this->impliesFloorSquareMeters($mapped)) {
+            $mapped['unit'] = 'm2';
+            $mapped['quantity_unit'] = 'm2';
+        }
+
+        return $mapped;
     }
 
     private function isLaborRow(string $mu, string $unit): bool
@@ -582,8 +589,44 @@ class CalculationExcelParser
     private function articleLabel(array $line): string
     {
         $article = trim((string) ($line['article_description'] ?? ''));
+        $production = trim((string) ($line['production_description'] ?? ''));
+        if ($article !== '' && ! $this->identity->isPurchasePlaceholder($article)) {
+            return $article;
+        }
 
-        return $article !== '' ? $article : trim((string) ($line['production_description'] ?? ''));
+        return $production !== '' ? $production : $article;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function impliesFloorSquareMeters(array $line): bool
+    {
+        if ($line['is_labor'] ?? false) {
+            return false;
+        }
+        $role = mb_strtoupper(trim((string) (($line['mu'] ?? '').($line['km'] ?? ''))));
+        if (! str_contains($role, 'O')) {
+            return false;
+        }
+        $quantity = $line['quantity'] ?? null;
+        if ($quantity === null || (float) $quantity <= 1.0001) {
+            return false;
+        }
+
+        $text = mb_strtolower(trim(
+            (string) ($line['production_description'] ?? '').' '.(string) ($line['article_description'] ?? '')
+        ));
+        if ($text === '' || str_contains($text, 'plint')) {
+            return false;
+        }
+        if (preg_match('/\b(toeslag|termijn|extra laag)\b/u', $text) === 1) {
+            return false;
+        }
+
+        $type = WorkType::knownType($text);
+
+        return in_array($type, ['Gietvloer', 'Coating', 'Linoleum', 'Tapijt', 'Entreemat', 'PVC', 'Vinyl'], true);
     }
 
     private function floorUnit(string $unit): ?string

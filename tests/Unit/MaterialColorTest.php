@@ -42,4 +42,14 @@ class MaterialColorTest extends TestCase
         $this->assertTrue(MaterialColor::hexesMatch('#db4ddf', '#d94cdc'));
         $this->assertFalse(MaterialColor::hexesMatch('#db4ddf', '#c4a484'));
     }
+
+    public function test_from_code_is_stable_and_differs_per_code(): void
+    {
+        $this->assertSame(MaterialColor::fromCode('v04'), MaterialColor::fromCode('V04'));
+        $this->assertSame(MaterialColor::fromCode('v01.e'), MaterialColor::fromCode('v01.e'));
+        $this->assertNotSame(MaterialColor::fromCode('v04'), MaterialColor::fromCode('v09'));
+        $this->assertNotSame(MaterialColor::fromCode('v02'), MaterialColor::fromCode('v04'));
+        $this->assertSame(MaterialColor::UNKNOWN, MaterialColor::fromCode(null, null));
+        $this->assertSame('#d4d6c2', MaterialColor::fromCode(null, 'Gietvloer'));
+    }
 }

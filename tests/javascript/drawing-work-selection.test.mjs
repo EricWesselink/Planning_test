@@ -200,6 +200,11 @@ test('keeps coating and gietvloer in separate material families', () => {
         label: 'vloercoating op CD vloer, Coating',
         color_key: 'coating',
     }), 'Coating');
+    assert.equal(workFamily({
+        key: 'vloer|tapijt|m2',
+        label: '43.20.02 Coral Brush 5730, vulcan black,, Tapijttegels',
+        color_key: 'tapijt',
+    }), 'Entreemat');
 });
 
 test('prepares an outsource payload without creating a job yet', () => {

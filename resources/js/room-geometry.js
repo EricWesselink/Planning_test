@@ -1,4 +1,4 @@
-export const ROOM_NUMBER_RE = /(?<![0-9a-z])((?:[a-z]\.\s*)?\d+\.\d+[a-z]?)(?![0-9a-z])/giu;
+export const ROOM_NUMBER_RE = /(?<![0-9a-z])([a-z]-\d{2}-\d{2}|(?:[a-z]\.\s*)?\d+\.\d+[a-z]?)(?![0-9a-z])/giu;
 
 export function clamp(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
@@ -209,7 +209,10 @@ export function findExactRoomHits(items, knownNumbers) {
     const seen = new Set();
     const hits = [];
     (items || []).forEach((item) => {
-        const number = pickBestKnownRoomNumber(roomNumbersIn(item.text), known);
+        const exact = normalizeRoomNumber(item.text);
+        const number = (exact && known.has(exact))
+            ? exact
+            : pickBestKnownRoomNumber(roomNumbersIn(item.text), known);
         if (!number) {
             return;
         }

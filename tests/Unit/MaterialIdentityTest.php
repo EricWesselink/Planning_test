@@ -189,5 +189,13 @@ class MaterialIdentityTest extends TestCase
         $this->assertFalse($identity->sharesIdentity($coral, $gietvloer));
         $this->assertFalse($identity->sharesIdentity($tarkett, $gietvloer));
         $this->assertFalse($identity->sharesProductVariant($coral, $tarkett));
+        $this->assertFalse($identity->sharesIdentity(
+            'Gietvloeren, holplint, vloercoating en antislip',
+            '43.20.03a Epoxy gietvloer (sp) S 3500-N, donkergrijs, Coating'
+        ));
+        $this->assertFalse($identity->sharesIdentity(
+            '43.20.02 Coral Brush 5730, vulcan black,, Tapijttegels',
+            '43.20.04 Desso Airmaster 9520, warmgrijs, Tapijttegels'
+        ));
     }
 }

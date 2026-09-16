@@ -155,6 +155,48 @@ class CalculationExcelParserTest extends TestCase
         $this->assertSame(80.0, $parsed['labor'][0]['hours']);
     }
 
+    public function test_counts_unitless_subcontract_floor_rows_as_square_meters(): void
+    {
+        $parsed = $this->parser()->parse([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs', 'Kostprijs Tot.'],
+            ['O', '100', 'O', '43.20.03a aanbrengen epoxy gietvloer in S3500-N', 'inkoop Amipox', '1513', '', '9', '13617'],
+            ['O', '100', 'O', '43.20.05a aanbrengen vloercoating vloeistofdicht (transparant)', 'inkoop Amipox', '1245', '', '9', '11205'],
+            ['O', '100', 'O', '43.20.05a Toeslag extra laag antislip EP coating t.p.v. de parkeergarage', 'inkoop Amipox', '645', '', '9', '5805'],
+            ['O', '100', 'O', 'Holplint 60 mm hoog', 'inkoop Amipox', '476', '', '6.45', '3070.2'],
+            ['O', '100', 'O', '', 'Gietvloeren, holplint, vloercoating en antislip', '1', '', '1000', '1000'],
+        ], 'calc.xlsx');
+
+        $gietvloer = collect($parsed['lines'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'epoxy gietvloer')
+        );
+        $coating = collect($parsed['lines'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'vloercoating vloeistofdicht')
+            && ! str_contains((string) $line['production_description'], 'Toeslag')
+        );
+        $toeslag = collect($parsed['lines'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'Toeslag extra laag')
+        );
+        $plint = collect($parsed['lines'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'Holplint')
+        );
+
+        $this->assertNotNull($gietvloer);
+        $this->assertSame('m2', $gietvloer['unit']);
+        $this->assertSame(1513.0, $gietvloer['quantity']);
+        $this->assertSame('43.20.03a aanbrengen epoxy gietvloer in S3500-N', $gietvloer['production_description']);
+
+        $this->assertNotNull($coating);
+        $this->assertSame('m2', $coating['unit']);
+        $this->assertSame(1245.0, $coating['quantity']);
+
+        $this->assertNotNull($toeslag);
+        $this->assertNull($toeslag['unit']);
+        $this->assertSame(645.0, $toeslag['quantity']);
+
+        $this->assertNotNull($plint);
+        $this->assertNull($plint['unit']);
+    }
+
     private function parser(): CalculationExcelParser
     {
         return app(CalculationExcelParser::class);

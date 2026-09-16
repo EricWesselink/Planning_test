@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\SpreadsheetReader;
+use Tests\Support\SimpleXlsx;
 use Tests\TestCase;
 
 class SpreadsheetReaderTest extends TestCase
@@ -38,6 +39,27 @@ class SpreadsheetReaderTest extends TestCase
 
         $this->assertSame('BNR 11 Screen H: 1574 mm B: 770 mm', $rows[1][0]);
         $this->assertSame('2', $rows[1][1]);
+    }
+
+    public function test_reads_every_worksheet_instead_of_only_the_first(): void
+    {
+        $xlsx = SimpleXlsx::path([
+            'wandafwerking' => [
+                ['Wandafwerking'],
+                ['A-00-01', 'Sauswerk'],
+            ],
+            'vloerafwerking' => [
+                ['Ruimte nr.', 'Vloer'],
+                ['A-00-13', 'v04'],
+            ],
+        ]);
+
+        $sheets = (new SpreadsheetReader)->sheets($xlsx, 'staat.xlsx');
+
+        $this->assertSame(['wandafwerking', 'vloerafwerking'], array_column($sheets, 'name'));
+        $this->assertSame('Sauswerk', $sheets[0]['rows'][1][1]);
+        $this->assertSame('v04', $sheets[1]['rows'][1][1]);
+        $this->assertSame('Wandafwerking', (new SpreadsheetReader)->rows($xlsx, 'staat.xlsx')[0][0]);
     }
 
     /** @param list<list<string>> $rows */

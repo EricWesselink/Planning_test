@@ -6,6 +6,7 @@
     <a href="{{ route('users.index') }}" class="text-sm text-nicon-muted">← Gebruikers</a>
     <h1 class="mt-2 text-2xl font-semibold">{{ $user->name }}</h1>
     <p class="text-sm text-nicon-muted">{{ $user->email }} · {{ $user->role?->label() }}</p>
+    <p class="text-sm text-nicon-muted">Laatst ingelogd: {{ $user->last_login_at?->format('d-m-Y H:i') ?? 'Nog niet' }}</p>
 
     @if (session('status'))
         <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>

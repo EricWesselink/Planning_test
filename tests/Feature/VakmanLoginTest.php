@@ -39,6 +39,7 @@ class VakmanLoginTest extends TestCase
             ->assertRedirect(route('vakman.planning'));
 
         $this->assertAuthenticatedAs($user);
+        $this->assertNotNull($user->fresh()->last_login_at);
     }
 
     #[DataProvider('mobileLogins')]

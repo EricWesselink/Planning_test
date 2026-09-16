@@ -241,5 +241,53 @@ TXT);
         $this->assertTrue($identity->isGenericCoveringLabel('Zachte vloerbedekking'));
         $this->assertFalse($identity->isGenericCoveringLabel('Marmoleum Real 3120 rosato'));
         $this->assertFalse($identity->isGenericCoveringLabel('PVC'));
+        $this->assertTrue($identity->isPurchasePlaceholder('inkoop Amipox'));
+        $this->assertFalse($identity->isPurchasePlaceholder('Marmoleum Real 3120 rosato'));
+    }
+
+    public function test_counts_unitless_amipox_inkoop_as_excel_floor_m2_without_extra_laag(): void
+    {
+        $excel = app(CalculationExcelParser::class)->parse([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs', 'Kostprijs Tot.'],
+            ['O', '100', 'O', '43.20.03a aanbrengen epoxy gietvloer in S3500-N', 'inkoop Amipox', '1513', '', '9', '13617'],
+            ['O', '100', 'O', '43.20.05a aanbrengen vloercoating vloeistofdicht (transparant)', 'inkoop Amipox', '1245', '', '9', '11205'],
+            ['O', '100', 'O', '43.20.05a Toeslag extra laag antislip EP coating t.p.v. de parkeergarage', 'inkoop Amipox', '645', '', '9', '5805'],
+        ], '11-ericwesselink1.xlsx');
+
+        $result = app(CalculationSourceReconciler::class)->reconcile($excel['lines'], [
+            'header' => ['project_number' => '2505000'],
+            'works' => [],
+            'closure_baselines' => [
+                'meetstaat_works' => [
+                    ['name' => '43.20.03a Epoxy gietvloer (sp) S 3500-N, donkergrijs, Coating', 'unit' => 'm2', 'declared_total' => 2371.0],
+                    ['name' => '43.20.05a Vloercoating vloeistofdicht, (sp), Coating', 'unit' => 'm2', 'declared_total' => 1145.16],
+                ],
+                'material_works' => [],
+            ],
+        ]);
+
+        $gietvloer = collect($result['products'])->first(
+            fn (array $row): bool => str_contains((string) $row['name'], '43.20.03a aanbrengen epoxy gietvloer')
+        );
+        $coating = collect($result['products'])->first(
+            fn (array $row): bool => str_contains((string) $row['name'], 'Vloercoating vloeistofdicht')
+        );
+        $meetstaatGietvloer = collect($result['products'])->first(
+            fn (array $row): bool => str_contains((string) $row['name'], 'Epoxy gietvloer (sp)')
+        );
+
+        $this->assertNotNull($gietvloer);
+        $this->assertEqualsWithDelta(1513.0, (float) $gietvloer['excel_quantity'], 0.01);
+        $this->assertNotNull($coating);
+        $this->assertEqualsWithDelta(1245.0, (float) $coating['excel_quantity'], 0.01);
+        $this->assertNotNull($meetstaatGietvloer);
+        $this->assertTrue($meetstaatGietvloer['meetstaat_is_leading']);
+        $this->assertEqualsWithDelta(2371.0, (float) $meetstaatGietvloer['leading_quantity'], 0.01);
+        $this->assertFalse(collect($result['products'])->contains(
+            fn (array $row): bool => str_contains(mb_strtolower((string) $row['name']), 'toeslag')
+        ));
+        $this->assertFalse(collect($result['products'])->contains(
+            fn (array $row): bool => ($row['name'] ?? '') === 'inkoop Amipox'
+        ));
     }
 }

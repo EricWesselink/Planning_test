@@ -13,6 +13,8 @@ export default defineConfig({
                 'resources/js/planning-weeks.js',
                 'resources/js/winkel-preferred-worker.js',
                 'resources/js/project-upload.js',
+                'resources/js/calculation-create.js',
+                'resources/js/calculation-board.js',
                 'resources/js/snag-pdf.js',
             ],
             refresh: true,

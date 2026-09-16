@@ -33,11 +33,18 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
             'password' => 'hashed',
             'active' => 'boolean',
             'can_access_all_projects' => 'boolean',
             'role' => UserRole::class,
         ];
+    }
+
+    public function recordSuccessfulLogin(): void
+    {
+        $this->last_login_at = now();
+        $this->save();
     }
 
     public function worker(): BelongsTo

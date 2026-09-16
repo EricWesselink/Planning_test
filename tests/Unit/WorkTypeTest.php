@@ -31,6 +31,11 @@ class WorkTypeTest extends TestCase
             WorkType::labelFromName('PU gietvloer, Ral 7039 met vlok, Coating'),
             WorkType::labelFromName('vloercoating op CD vloer, Coating')
         );
+        $this->assertSame('Entreemat', WorkType::labelFromName('43.20.02 Coral Brush 5730, vulcan black,, Tapijttegels'));
+        $this->assertSame('Entreemat', WorkType::labelFromName('43.20.02 leveren en leggen Forbo Coral Brush 5730 vulcan black'));
+        $this->assertSame('Entreemat', WorkType::labelFromName('43.20.01a: Emco Diplomaat Original 522R, tapijt inlage (3,00 x 3,00 m)'));
+        $this->assertSame('Linoleum', WorkType::labelFromName('NovaFloor Real 1100 coral, Linoleum'));
+        $this->assertSame('Tapijt', WorkType::labelFromName('43.20.04 Desso Airmaster 9520, warmgrijs, Tapijttegels'));
     }
 
     public function test_requires_priming_leveling_follows_category_defaults(): void

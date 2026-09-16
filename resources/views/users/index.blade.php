@@ -24,6 +24,7 @@
                     <th class="px-3 py-2">Rol</th>
                     <th class="px-3 py-2">Projecten</th>
                     <th class="px-3 py-2">Status</th>
+                    <th class="px-3 py-2">Laatst ingelogd</th>
                     <th class="px-3 py-2"></th>
                 </tr>
             </thead>
@@ -50,6 +51,7 @@
                         @endif
                     </td>
                     <td class="px-3 py-2">{{ $user->active ? 'Actief' : 'Uitgeschakeld' }}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">{{ $user->last_login_at?->format('d-m-Y H:i') ?? 'Nog niet' }}</td>
                     <td class="px-3 py-2 text-right whitespace-nowrap">
                         @can('delete', $user)
                             <form method="POST" action="{{ route('users.destroy', $user) }}" class="inline" onsubmit="return confirm('{{ $user->name }} verwijderen? Het team in de planning blijft bestaan.')">

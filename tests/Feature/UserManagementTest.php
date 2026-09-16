@@ -39,7 +39,9 @@ class UserManagementTest extends TestCase
             ->get(route('users.index'))
             ->assertOk()
             ->assertSee('Gebruikersbeheer')
-            ->assertSee('Eric');
+            ->assertSee('Eric')
+            ->assertSee('Laatst ingelogd')
+            ->assertSee('Nog niet');
 
         $this->actingAs($admin)
             ->get(route('dashboard'))
@@ -240,6 +242,55 @@ class UserManagementTest extends TestCase
         ])->assertRedirect(route('login'))->assertSessionHasErrors('email');
 
         $this->assertGuest();
+        $this->assertNull(User::query()->where('email', 'uit@niconvloeren.nl')->value('last_login_at'));
+    }
+
+    public function test_admin_sees_when_a_user_last_logged_in(): void
+    {
+        $this->freezeTime();
+        $admin = User::factory()->admin()->create(['name' => 'Eric']);
+        User::factory()->create([
+            'name' => 'Harm',
+            'last_login_at' => now()->subDays(2),
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('users.index'))
+            ->assertOk()
+            ->assertSee('Laatst ingelogd')
+            ->assertSee(now()->subDays(2)->format('d-m-Y H:i'))
+            ->assertSee('Nog niet');
+    }
+
+    public function test_successful_login_records_last_login_at(): void
+    {
+        $this->freezeTime();
+        $user = User::factory()->create([
+            'email' => 'planner@example.test',
+            'last_login_at' => null,
+        ]);
+
+        $this->from(route('login'))->post('/login', [
+            'email' => 'planner@example.test',
+            'password' => 'password',
+        ])->assertRedirect(route('dashboard'));
+
+        $this->assertTrue($user->fresh()->last_login_at?->isSameSecond(now()));
+    }
+
+    public function test_failed_login_does_not_record_last_login_at(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'planner@example.test',
+            'last_login_at' => null,
+        ]);
+
+        $this->from(route('login'))->post('/login', [
+            'email' => 'planner@example.test',
+            'password' => 'wrong-password',
+        ])->assertRedirect(route('login'));
+
+        $this->assertNull($user->fresh()->last_login_at);
     }
 
     /** @return array<string, array{0: UserRole}> */

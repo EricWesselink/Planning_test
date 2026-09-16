@@ -33,6 +33,105 @@ class RealDrawingFixtures
         return null;
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function coaOisterwijkDrawingPaths(): array
+    {
+        $hits = [];
+        foreach (self::localSearchRoots() as $root) {
+            if (! is_dir($root)) {
+                continue;
+            }
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($iterator as $file) {
+                $path = $file->getPathname();
+                if (! str_ends_with(mb_strtolower($path), '.pdf')) {
+                    continue;
+                }
+                if (! str_contains($path, '2401531_TEK_BK5')) {
+                    continue;
+                }
+                $real = realpath($path) ?: $path;
+                $hits[$real] = $real;
+            }
+        }
+        $paths = array_values($hits);
+        sort($paths);
+
+        return $paths;
+    }
+
+    public static function coaOisterwijkWorkbookPath(): ?string
+    {
+        foreach (self::localSearchRoots() as $root) {
+            if (! is_dir($root)) {
+                continue;
+            }
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($iterator as $file) {
+                $path = $file->getPathname();
+                if (! str_ends_with(mb_strtolower($path), '.xlsx')) {
+                    continue;
+                }
+                if (str_contains(mb_strtolower($path), 'wand en vloerafwerking coa oisterwijk')) {
+                    return $path;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function localSearchRoots(): array
+    {
+        $home = getenv('USERPROFILE') ?: getenv('HOME') ?: '';
+
+        $roots = [];
+        foreach ([$home !== '' ? $home.DIRECTORY_SEPARATOR.'Downloads' : null, 'C:/Users/Administrator/Downloads'] as $root) {
+            if ($root === null || ! is_dir($root)) {
+                continue;
+            }
+            $real = realpath($root) ?: $root;
+            $roots[$real] = $real;
+        }
+
+        return array_values($roots);
+    }
+
+    public static function oisterwijkDrawingPath(): ?string
+    {
+        $fixed = base_path('tests/fixtures/oisterwijk-plattegrond.pdf');
+        if (is_file($fixed) && filesize($fixed) > 100_000) {
+            return $fixed;
+        }
+
+        $attachment = self::attachmentNamed('2401531_TEK_BK5_1_A_00_-_Plattegrond_begane_grond_DEF_06-03-2026.pdf');
+        if ($attachment !== null) {
+            return $attachment;
+        }
+
+        $download = 'C:/Users/Administrator/Downloads/plattegrond.pdf';
+        if (is_file($download) && filesize($download) > 100_000) {
+            return $download;
+        }
+
+        foreach (self::coaOisterwijkDrawingPaths() as $path) {
+            if (str_contains($path, 'A_00') && is_file($path)) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
     public static function laakseTuinenMeetstaatPath(): string
     {
         return base_path('tests/fixtures/nicon-meetbon-laakse-tuinen.pdf');

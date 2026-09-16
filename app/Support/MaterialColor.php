@@ -7,6 +7,28 @@ class MaterialColor
     public const UNKNOWN = '#9ca3af';
 
     /**
+     * @var list<string>
+     */
+    private const CODE_PALETTE = [
+        '#2563eb',
+        '#dc2626',
+        '#16a34a',
+        '#d97706',
+        '#7c3aed',
+        '#0891b2',
+        '#db2777',
+        '#65a30d',
+        '#ea580c',
+        '#4f46e5',
+        '#0f766e',
+        '#9333ea',
+        '#b45309',
+        '#0284c7',
+        '#be123c',
+        '#365314',
+    ];
+
+    /**
      * Centrale materiaalkleur: opgeslagen hex uit legenda/import, anders
      * deterministische productnaam-mapping, anders neutraal grijs.
      */
@@ -23,6 +45,21 @@ class MaterialColor
         }
 
         return self::UNKNOWN;
+    }
+
+    /**
+     * Vaste kleur per vloer-/materiaalcode, gelijk op alle tekeningen.
+     */
+    public static function fromCode(?string $code, ?string $productName = null): string
+    {
+        $normalized = mb_strtolower(trim((string) $code));
+        if ($normalized === '') {
+            return self::resolve(null, $productName);
+        }
+
+        $index = (int) (hexdec(hash('crc32b', $normalized)) % count(self::CODE_PALETTE));
+
+        return self::CODE_PALETTE[$index];
     }
 
     public static function normalizeHex(?string $hex): ?string

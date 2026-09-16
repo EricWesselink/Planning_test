@@ -12,6 +12,32 @@ class Format
     }
 
     /**
+     * Dutch quantity for inputs and labels. Rounds display only; does not change stored values.
+     */
+    public static function qtyInput(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value === '') {
+                return '';
+            }
+            if (str_contains($value, ',') && ! str_contains($value, '.')) {
+                $value = str_replace(',', '.', $value);
+            }
+        }
+
+        if (! is_numeric($value)) {
+            return '';
+        }
+
+        return number_format((float) $value, 2, ',', '.');
+    }
+
+    /**
      * Toon een hoeveelheid, of "Onbekend" wanneer de waarde niet uit de bron gelezen is.
      */
     public static function qtyOrUnknown(float|int|string|null $value, int $decimals = 0, bool $known = true): string

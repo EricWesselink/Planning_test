@@ -34,6 +34,9 @@
                             ['href' => route('projects.index'), 'label' => 'Projecten', 'active' => request()->routeIs('projects.*') && ! request()->routeIs('projects.archived')],
                         ];
                     if (! $user?->isVakman()) {
+                        if ($user?->can('viewAny', \App\Models\Calculation::class)) {
+                            $links[] = ['href' => route('calculations.index'), 'label' => 'Calculatie', 'active' => request()->routeIs('calculations.*')];
+                        }
                         $links[] = ['href' => route('projects.archived'), 'label' => 'Archief', 'active' => request()->routeIs('projects.archived')];
                         $links[] = ['href' => route('workers.index'), 'label' => 'Vakmensen / ZZP', 'active' => request()->routeIs('workers.*')];
                     }

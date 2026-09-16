@@ -123,7 +123,7 @@ class CalculationSourceReconciler
             if ($quantity === null || (float) $quantity <= 0.0001) {
                 continue;
             }
-            $name = trim((string) (($line['article_description'] ?? '') ?: ($line['production_description'] ?? '')));
+            $name = $this->excelProductName($line);
             if ($name === '' || $this->identity->isGenericCoveringLabel($name)) {
                 continue;
             }
@@ -136,6 +136,20 @@ class CalculationSourceReconciler
         }
 
         return $products;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function excelProductName(array $line): string
+    {
+        $article = trim((string) ($line['article_description'] ?? ''));
+        $production = trim((string) ($line['production_description'] ?? ''));
+        if ($article !== '' && ! $this->identity->isPurchasePlaceholder($article)) {
+            return $article;
+        }
+
+        return $production !== '' ? $production : $article;
     }
 
     /**

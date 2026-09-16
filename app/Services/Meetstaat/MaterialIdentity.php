@@ -128,6 +128,11 @@ class MaterialIdentity
         );
     }
 
+    public function isPurchasePlaceholder(string $name): bool
+    {
+        return (bool) preg_match('/^inkoop\b/iu', trim($name));
+    }
+
     public function looksLikeProductTypeContinuation(string $line): bool
     {
         $flat = trim($line);
@@ -296,7 +301,12 @@ class MaterialIdentity
     private function coveringKind(string $name): ?string
     {
         $flat = mb_strtolower($name);
-        if (str_contains($flat, 'gietvloer')) {
+        $hasGietvloer = str_contains($flat, 'gietvloer');
+        $hasVloercoating = str_contains($flat, 'vloercoating');
+        if ($hasGietvloer && $hasVloercoating) {
+            return 'mixed';
+        }
+        if ($hasGietvloer) {
             return 'gietvloer';
         }
         if (str_contains($flat, 'coating')) {

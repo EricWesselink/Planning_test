@@ -290,6 +290,20 @@ test('missing room position is not treated as reliable', () => {
     assert.equal(roomFocusBox({ page: 1, x: 0.2, y: 0.3, width: 0.08, height: 0.04 }).w, 0.08);
 });
 
+test('finds building-style room numbers like A-00-06', () => {
+    const items = [
+        { page: 1, text: 'A-00-06', x: 0.41, y: 0.33, w: 0.04, h: 0.01, source: 'text' },
+        { page: 1, text: 'VERKEER, SPEEL, BEWEGING A-00-06', x: 0.41, y: 0.36, w: 0.12, h: 0.01, source: 'text' },
+        { page: 1, text: 'A-00-13', x: 0.62, y: 0.33, w: 0.04, h: 0.01, source: 'text' },
+    ];
+    const hits = findExactRoomHits(items, ['A-00-06', 'A-00-13']);
+
+    assert.equal(roomNumbersIn('A-00-06').join(','), 'a-00-06');
+    assert.equal(pickBestKnownRoomNumber(roomNumbersIn('VERKEER, SPEEL, BEWEGING A-00-06'), ['a-00-06', 'a-00-13']), 'a-00-06');
+    assert.deepEqual(hits.map((hit) => hit.number).sort(), ['a-00-06', 'a-00-06', 'a-00-13']);
+    assert.equal(exactRoomHitForArea({ number: 'A-00-13' }, hits).x, 0.62);
+});
+
 test('P.0.17 matches only that exact room number', () => {
     const items = [
         { page: 1, text: 'P.0.17 theorielokaal', x: 0.22, y: 0.31, w: 0.12, h: 0.02, source: 'text' },

@@ -84,20 +84,115 @@ class SpreadsheetReader
     /** @return list<list<string>> */
     public function fromXlsx(string $path): array
     {
+        $sheets = $this->sheetsFromXlsx($path);
+
+        return $sheets[0]['rows'] ?? [];
+    }
+
+    /**
+     * @return list<array{name: string, rows: list<list<string>>}>
+     */
+    public function sheets(string $path, ?string $originalFilename = null): array
+    {
+        $extension = $this->resolveExtension($path, $originalFilename);
+        if (! in_array($extension, ['xlsx', 'xlsm'], true) && ! $this->isZipContainer($path)) {
+            return [[
+                'name' => $originalFilename ?: basename($path),
+                'rows' => $this->fromCsv($path),
+            ]];
+        }
+
+        $sheets = $this->sheetsFromXlsx($path);
+
+        return $sheets !== [] ? $sheets : [['name' => 'Blad1', 'rows' => []]];
+    }
+
+    /**
+     * @return list<array{name: string, rows: list<list<string>>}>
+     */
+    private function sheetsFromXlsx(string $path): array
+    {
         $zip = new \ZipArchive;
         if ($zip->open($path) !== true) {
             throw new \RuntimeException('Excel-bestand kon niet worden geopend.');
         }
 
         $shared = $this->sharedStrings($zip);
-        $sheetName = $this->firstSheetPath($zip);
-        $xml = $zip->getFromName($sheetName);
+        $targets = $this->worksheetTargets($zip);
+        $sheets = [];
+        foreach ($targets as $name => $target) {
+            $xml = $zip->getFromName('xl/'.ltrim(str_replace('\\', '/', $target), '/'));
+            if (! is_string($xml) || $xml === '') {
+                $xml = $zip->getFromName($target);
+            }
+            $sheets[] = [
+                'name' => $name,
+                'rows' => is_string($xml) && $xml !== '' ? $this->rowsFromSheetXml($xml, $shared) : [],
+            ];
+        }
         $zip->close();
 
-        if (! is_string($xml) || $xml === '') {
-            return [];
+        return $sheets;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function worksheetTargets(\ZipArchive $zip): array
+    {
+        $relsXml = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        $bookXml = $zip->getFromName('xl/workbook.xml');
+        $relById = [];
+        if (is_string($relsXml) && $relsXml !== '') {
+            $rels = @simplexml_load_string($relsXml);
+            if ($rels !== false) {
+                foreach ($rels->xpath('//*[local-name()="Relationship"]') ?: [] as $rel) {
+                    $type = (string) $rel['Type'];
+                    if (! str_contains($type, 'worksheet')) {
+                        continue;
+                    }
+                    $relById[(string) $rel['Id']] = (string) $rel['Target'];
+                }
+            }
         }
 
+        $targets = [];
+        if (is_string($bookXml) && $bookXml !== '') {
+            $book = @simplexml_load_string($bookXml);
+            if ($book !== false) {
+                foreach ($book->xpath('//*[local-name()="sheet"]') ?: [] as $sheet) {
+                    $name = (string) $sheet['name'];
+                    $rId = (string) ($sheet->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id'] ?? '');
+                    if ($rId === '') {
+                        foreach ($sheet->attributes() as $attrName => $attribute) {
+                            if (str_ends_with(strtolower((string) $attrName), 'id')) {
+                                $rId = (string) $attribute;
+                            }
+                        }
+                    }
+                    $target = $relById[$rId] ?? null;
+                    if ($name !== '' && is_string($target) && $target !== '') {
+                        $targets[$name] = $target;
+                    }
+                }
+            }
+        }
+
+        if ($targets !== []) {
+            return $targets;
+        }
+
+        $fallback = $this->firstSheetPath($zip);
+
+        return ['Blad1' => str_replace('xl/', '', $fallback)];
+    }
+
+    /**
+     * @param  list<string>  $shared
+     * @return list<list<string>>
+     */
+    private function rowsFromSheetXml(string $xml, array $shared): array
+    {
         $sheet = @simplexml_load_string($xml);
         if ($sheet === false) {
             return [];

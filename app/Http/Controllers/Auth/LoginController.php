@@ -44,6 +44,7 @@ class LoginController extends Controller
         }
 
         $request->session()->regenerate();
+        $user->recordSuccessfulLogin();
 
         $home = $user->isVakman()
             ? route('vakman.planning')

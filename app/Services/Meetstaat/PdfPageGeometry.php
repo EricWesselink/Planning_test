@@ -70,6 +70,57 @@ class PdfPageGeometry
     }
 
     /**
+     * Wall segments only: no text, fills, XObjects or bbox. Safe to call during quote takeoff.
+     *
+     * @return list<array{page: int, width: float, height: float, walls: list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>}>
+     */
+    public function extractWalls(string $path): array
+    {
+        if (! is_file($path) || ! is_readable($path) || filesize($path) < 1) {
+            return [];
+        }
+
+        try {
+            $this->memory->ensureCanParse($path);
+        } catch (\InvalidArgumentException) {
+            return [];
+        }
+
+        $deadline = hrtime(true) + 8_000_000_000;
+        $document = null;
+        try {
+            $document = (new Parser)->parseFile($path);
+            $pages = [];
+            foreach (array_values($document->getPages()) as $index => $page) {
+                if (hrtime(true) > $deadline) {
+                    break;
+                }
+                $box = $this->mediaBox($page);
+                $width = max(1.0, (float) ($box[2] ?? 595) - (float) ($box[0] ?? 0));
+                $height = max(1.0, (float) ($box[3] ?? 842) - (float) ($box[1] ?? 0));
+                $content = $this->contentsOnly($page);
+                $walls = $this->streamWalls($content, $deadline);
+                if (count($walls) < 80 && hrtime(true) < $deadline) {
+                    $walls = array_merge($walls, $this->streamWalls($this->smallFormStreams($page), $deadline));
+                }
+                $pages[] = [
+                    'page' => $index + 1,
+                    'width' => $width,
+                    'height' => $height,
+                    'walls' => $this->mergeAxisWalls($walls, 36),
+                ];
+            }
+
+            return $pages;
+        } catch (\Throwable) {
+            return [];
+        } finally {
+            unset($document);
+            $this->memory->release();
+        }
+    }
+
+    /**
      * @param  list<array{text: string, x: float, y: float, page: int}>  $tm
      * @param  list<array{text: string, x: float, y: float, page: int}>  $bbox
      */
@@ -388,7 +439,7 @@ class PdfPageGeometry
      * @param  array{x: float, y: float, width: float, height: float}|null  $rect
      * @param  array{points?: list<array{0: float, 1: float}>}|null  $path
      */
-    private function appendWalls(array &$walls, ?array $rect, ?array $path): void
+    private function appendWalls(array &$walls, ?array $rect, ?array $path, float $axisTolerance = 1.5): void
     {
         $segments = [];
         if (is_array($rect)) {
@@ -410,7 +461,7 @@ class PdfPageGeometry
         }
 
         foreach ($segments as $segment) {
-            $wall = $this->axisWall($segment[0], $segment[1], $segment[2], $segment[3]);
+            $wall = $this->axisWall($segment[0], $segment[1], $segment[2], $segment[3], $axisTolerance);
             if ($wall !== null) {
                 $walls[] = $wall;
             }
@@ -420,14 +471,14 @@ class PdfPageGeometry
     /**
      * @return array{x1: float, y1: float, x2: float, y2: float, axis: string}|null
      */
-    private function axisWall(float $x1, float $y1, float $x2, float $y2): ?array
+    private function axisWall(float $x1, float $y1, float $x2, float $y2, float $tolerance = 1.5): ?array
     {
         $dx = abs($x2 - $x1);
         $dy = abs($y2 - $y1);
-        if ($dx < 1.5 && $dy >= 8) {
+        if ($dx < $tolerance && $dy >= 8) {
             return ['x1' => $x1, 'y1' => min($y1, $y2), 'x2' => $x1, 'y2' => max($y1, $y2), 'axis' => 'v'];
         }
-        if ($dy < 1.5 && $dx >= 8) {
+        if ($dy < $tolerance && $dx >= 8) {
             return ['x1' => min($x1, $x2), 'y1' => $y1, 'x2' => max($x1, $x2), 'y2' => $y1, 'axis' => 'h'];
         }
 
@@ -438,7 +489,7 @@ class PdfPageGeometry
      * @param  list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>  $walls
      * @return list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>
      */
-    private function mergeAxisWalls(array $walls): array
+    private function mergeAxisWalls(array $walls, int $joinGap = 10): array
     {
         $vertical = [];
         $horizontal = [];
@@ -460,7 +511,7 @@ class PdfPageGeometry
 
                     continue;
                 }
-                if ($wall['y1'] <= $current['y2'] + 10) {
+                if ($wall['y1'] <= $current['y2'] + $joinGap) {
                     $current['y2'] = max($current['y2'], $wall['y2']);
 
                     continue;
@@ -481,7 +532,7 @@ class PdfPageGeometry
 
                     continue;
                 }
-                if ($wall['x1'] <= $current['x2'] + 10) {
+                if ($wall['x1'] <= $current['x2'] + $joinGap) {
                     $current['x2'] = max($current['x2'], $wall['x2']);
 
                     continue;
@@ -549,6 +600,164 @@ class PdfPageGeometry
             'width' => max($xs) - $minX,
             'height' => max($ys) - $minY,
         ];
+    }
+
+    /**
+     * @return list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>
+     */
+    private function streamWalls(string $content, int $deadline): array
+    {
+        if ($content === '' || strlen($content) > 6_000_000) {
+            return [];
+        }
+
+        $walls = [];
+        $inText = false;
+        $rect = null;
+        $path = null;
+        $numbers = [];
+        $ctm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        $stack = [];
+        $length = strlen($content);
+        $index = 0;
+        $ops = 0;
+        while ($index < $length && $ops < 300_000) {
+            if (($ops % 8000) === 0 && hrtime(true) > $deadline) {
+                break;
+            }
+            $char = $content[$index];
+            if (ctype_space($char)) {
+                $index++;
+
+                continue;
+            }
+            if ($char === '%') {
+                $newline = strpos($content, "\n", $index);
+                $index = $newline === false ? $length : $newline + 1;
+
+                continue;
+            }
+            if ($char === '(') {
+                $index = $this->skipString($content, $index);
+
+                continue;
+            }
+            if ($char === '[') {
+                $end = strpos($content, ']', $index);
+                $index = $end === false ? $length : $end + 1;
+
+                continue;
+            }
+            $next = $index;
+            while ($next < $length && ! ctype_space($content[$next]) && ! in_array($content[$next], ['(', '[', '%'], true)) {
+                $next++;
+            }
+            $token = substr($content, $index, $next - $index);
+            $index = $next;
+            $ops++;
+
+            if ($token === 'BT') {
+                $inText = true;
+                $numbers = [];
+
+                continue;
+            }
+            if ($token === 'ET') {
+                $inText = false;
+                $numbers = [];
+
+                continue;
+            }
+            if ($inText) {
+                $numbers = [];
+
+                continue;
+            }
+            if (is_numeric($token)) {
+                $numbers[] = (float) $token;
+
+                continue;
+            }
+
+            if ($token === 'q') {
+                $stack[] = $ctm;
+            } elseif ($token === 'Q') {
+                $ctm = array_pop($stack) ?: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+                $rect = null;
+                $path = null;
+            } elseif ($token === 'cm' && count($numbers) >= 6) {
+                $ctm = $this->multiplyCtm($ctm, array_slice($numbers, -6));
+            } elseif ($token === 're' && count($numbers) >= 4) {
+                $slice = array_slice($numbers, -4);
+                $rect = $this->transformedRect($ctm, $slice[0], $slice[1], $slice[2], $slice[3]);
+                $path = null;
+            } elseif ($token === 'm' && count($numbers) >= 2) {
+                $path = ['points' => [$this->applyCtm($ctm, $numbers[count($numbers) - 2], $numbers[count($numbers) - 1])]];
+                $rect = null;
+            } elseif (in_array($token, ['l', 'c', 'v', 'y'], true) && is_array($path) && count($numbers) >= 2) {
+                $path['points'][] = $this->applyCtm($ctm, $numbers[count($numbers) - 2], $numbers[count($numbers) - 1]);
+            } elseif ($token === 'h' && is_array($path) && ($path['points'] ?? []) !== []) {
+                $path['points'][] = $path['points'][0];
+            } elseif (in_array($token, ['W', 'W*', 'n'], true)) {
+                $rect = null;
+                $path = null;
+            } elseif (in_array($token, ['S', 's', 'B', 'B*', 'b', 'b*'], true)) {
+                $this->appendWalls($walls, $rect, $path, 3.5);
+                $rect = null;
+                $path = null;
+            } elseif (in_array($token, ['f', 'F', 'f*'], true)) {
+                if (is_array($rect) && $rect['width'] >= 12 && $rect['height'] >= 12) {
+                    $this->appendWalls($walls, $rect, null, 3.5);
+                }
+                $rect = null;
+                $path = null;
+            }
+
+            $numbers = [];
+        }
+
+        return $walls;
+    }
+
+    private function contentsOnly(Page $page): string
+    {
+        $parts = $this->contentsFrom($page->get('Contents'));
+        $direct = $page->getContent();
+        if (is_string($direct) && $direct !== '') {
+            $parts[] = $direct;
+        }
+
+        return implode("\n", array_filter($parts, fn (string $part) => $part !== ''));
+    }
+
+    private function smallFormStreams(Page $page): string
+    {
+        $parts = [];
+        $bytes = 0;
+        try {
+            foreach ($page->getXObjects() as $object) {
+                if (count($parts) >= 8) {
+                    break;
+                }
+                if (! ($object instanceof Form || $object instanceof PDFObject)) {
+                    continue;
+                }
+                $stream = $object->getContent();
+                if (! is_string($stream) || $stream === '') {
+                    continue;
+                }
+                $size = strlen($stream);
+                if ($size < 400 || $size > 250_000 || ($bytes + $size) > 1_200_000) {
+                    continue;
+                }
+                $parts[] = $stream;
+                $bytes += $size;
+            }
+        } catch (\Throwable) {
+            return implode("\n", $parts);
+        }
+
+        return implode("\n", $parts);
     }
 
     private function pageContent(Page $page): string

@@ -66,4 +66,33 @@ class DutchNumber
 
         return $negative ? -$number : $number;
     }
+
+    /**
+     * Spreadsheet cells use a machine decimal point. "1.105" is 1.105 m, not 1.105 as Dutch thousands.
+     */
+    public static function fromMachine(mixed $value): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+        if (str_contains($raw, ',')) {
+            return self::parse($raw);
+        }
+
+        $raw = str_replace(["\xc2\xa0", ' '], '', $raw);
+        $raw = str_ireplace(['m²', 'm2', 'm¹', 'm1', 'lm'], '', $raw);
+        if ($raw === '' || ! is_numeric($raw)) {
+            return self::parse($value);
+        }
+
+        return (float) $raw;
+    }
 }

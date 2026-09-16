@@ -72,6 +72,7 @@ class SetupController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
+        $user->recordSuccessfulLogin();
 
         return redirect()->intended(route('dashboard'));
     }

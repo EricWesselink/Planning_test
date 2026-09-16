@@ -39,6 +39,7 @@ class FirstRunSetupTest extends TestCase
         $this->assertSame('Eric Beheerder', $user->name);
         $this->assertTrue(Hash::check('wachtwoord123', $user->password));
         $this->assertAuthenticatedAs($user);
+        $this->assertNotNull($user->last_login_at);
         $this->assertSame(1, User::query()->count());
     }
 

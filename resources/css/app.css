@@ -2488,6 +2488,30 @@ button.plan-labor-toggle:hover {
     border-color: transparent;
 }
 
+.room-overlay-number,
+.room-overlay-name {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.room-overlay-number {
+    font-weight: 700;
+}
+
+.room-overlay-name {
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.calc-board .room-name-overlay {
+    flex-direction: column;
+    align-items: flex-start;
+    white-space: normal;
+}
+
 .room-num {
     font-weight: 500;
     white-space: nowrap;
@@ -3918,6 +3942,103 @@ button.plan-labor-toggle:hover {
 }
 .source-status-removed {
     color: var(--color-nicon-danger);
+}
+
+.calc-board .calc-room-row {
+    grid-template-columns: 4.4rem minmax(0, 1fr) 3.6rem 2.8rem;
+}
+
+.calc-board .room-code {
+    font-size: 11px;
+    color: var(--color-nicon-muted);
+    text-align: right;
+}
+
+.calc-board .calc-room-row.is-review {
+    box-shadow: inset 3px 0 0 var(--color-nicon-warn);
+    background: #fffbeb;
+}
+
+.calc-board .calc-room-row.is-review.is-on {
+    box-shadow: inset 3px 0 0 var(--color-nicon-warn), inset 0 0 0 1px color-mix(in srgb, var(--material-color, var(--color-nicon-warn)) 35%, transparent);
+}
+
+.calc-legend {
+    border-top: 1px solid var(--color-nicon-line);
+    padding: 0.5rem 0.75rem 0.75rem;
+    max-height: 11rem;
+    overflow: auto;
+    background: white;
+}
+
+.calc-legend-row {
+    display: grid;
+    grid-template-columns: 0.7rem 2.6rem minmax(0, 1fr) auto;
+    gap: 0.4rem;
+    align-items: center;
+    font-size: 11px;
+    padding: 0.12rem 0;
+}
+
+.calc-legend-row i,
+.calc-swatch {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 1px solid rgba(28, 25, 23, 0.2);
+}
+
+.calc-legend-code {
+    font-weight: 600;
+}
+
+.calc-legend-product {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-nicon-muted);
+}
+
+.calc-legend-m2 {
+    tabular-nums: true;
+    font-variant-numeric: tabular-nums;
+}
+
+.calc-board .draw-work-option {
+    gap: 0.4rem;
+}
+
+#draw-hit .calc-fill {
+    pointer-events: fill;
+    cursor: pointer;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+#draw-hit .calc-fill.is-review,
+#draw-hit .calc-fill.is-on {
+    fill: transparent;
+    stroke: none;
+}
+
+.calc-code-chip {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.04rem 0.22rem;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.15;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 8;
+    border: 1px solid rgba(28, 25, 23, 0.22);
+    transform-origin: center center;
+}
+
+.calc-code-chip.is-on {
+    box-shadow: 0 0 0 1px #fff, 0 0 0 3px #1c1917;
 }
 
 @media print {

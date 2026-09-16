@@ -58,8 +58,12 @@ class WorkType
 
     public static function knownType(string $value): ?string
     {
-        if (str_contains(mb_strtolower($value), 'gietvloer')) {
+        $flat = mb_strtolower($value);
+        if (str_contains($flat, 'gietvloer')) {
             return 'Gietvloer';
+        }
+        if (self::looksLikeEntranceMat($flat)) {
+            return 'Entreemat';
         }
 
         $parts = array_values(array_filter(array_map('trim', explode(',', $value)), fn ($part) => $part !== ''));
@@ -133,6 +137,14 @@ class WorkType
         ];
     }
 
+    private static function looksLikeEntranceMat(string $flat): bool
+    {
+        return str_contains($flat, 'entreemat')
+            || str_contains($flat, 'schoonloop')
+            || str_contains($flat, 'emco')
+            || (bool) preg_match('/\b(forbo\s+)?coral\s+(brush|welcome|click)\b/u', $flat);
+    }
+
     private static function matchType(string $value): ?string
     {
         $flat = mb_strtolower($value);
@@ -145,7 +157,7 @@ class WorkType
             str_contains($flat, 'zonwer') => 'Zonwering',
             str_contains($flat, 'linoleum') || str_contains($flat, 'marmoleum') => 'Linoleum',
             str_contains($flat, 'pvc') => 'PVC',
-            str_contains($flat, 'entreemat') || str_contains($flat, 'coral') || str_contains($flat, 'schoonloop') => 'Entreemat',
+            self::looksLikeEntranceMat($flat) || str_contains($flat, 'coral') => 'Entreemat',
             str_contains($flat, 'gietvloer') => 'Gietvloer',
             str_contains($flat, 'coating') => 'Coating',
             str_contains($flat, 'tapijt') => 'Tapijt',
