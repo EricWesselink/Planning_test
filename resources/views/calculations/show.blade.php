@@ -248,23 +248,26 @@
                                     @endif
                                 @endif
                             </td>
-                            <td class="px-1.5 py-1">
+                            <td class="relative overflow-visible px-1.5 py-1">
                                 @if ($floor && ($row['floor_variants'] ?? []) !== [])
                                     @php
                                         $chosenCode = mb_strtolower(trim((string) ($floorOld['product_code'] ?? $floor->product_code)));
                                         $chosenProduct = (string) ($floorOld['product'] ?? $floor->product);
                                     @endphp
                                     <input type="hidden" name="lines[{{ $floorIndex }}][product]" data-floor-product value="{{ $chosenProduct }}">
-                                    <select data-floor-variant="1" class="w-44 max-w-[12rem] border border-nicon-line bg-white px-1 py-0.5" title="{{ $floor->product_code }} gevonden op tekening – kies vloerproduct">
-                                        <option value="">{{ $floor->product_code }} gevonden op tekening – kies vloerproduct</option>
-                                        @foreach ($row['floor_variants'] as $variant)
-                                            <option
-                                                value="{{ $variant['code'] }}"
-                                                data-product="{{ $variant['product'] }}"
-                                                @selected($chosenCode === $variant['code'])
-                                            >{{ $variant['code'] }} · {{ $variant['product'] }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div class="min-w-[18rem] max-w-[24rem]">
+                                        <div class="text-[10px] leading-tight text-nicon-muted">{{ $floor->product_code }} gevonden op tekening</div>
+                                        <select data-floor-variant="1" class="mt-0.5 w-full border border-nicon-line bg-white px-1 py-0.5" aria-label="Kies vloerproduct">
+                                            <option value="" disabled @selected($chosenCode === '' || $chosenCode === mb_strtolower(trim((string) $floor->product_code)))>Kies vloerproduct</option>
+                                            @foreach ($row['floor_variants'] as $variant)
+                                                <option
+                                                    value="{{ $variant['code'] }}"
+                                                    data-product="{{ $variant['product'] }}"
+                                                    @selected($chosenCode === $variant['code'])
+                                                >{{ $variant['code'] }} – {{ $variant['product'] }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                 @elseif ($floor)
                                     <input name="lines[{{ $floorIndex }}][product]" value="{{ $floorOld['product'] ?? $floor->product }}" class="w-44 border border-nicon-line px-1 py-0.5">
                                 @endif
@@ -419,8 +422,12 @@
                 select.addEventListener('change', () => {
                     const option = select.selectedOptions[0];
                     const row = select.closest('[data-calc-room]');
+                    const form = select.closest('form');
                     const code = option?.value || '';
                     const product = option?.dataset.product || '';
+                    if (code === '') {
+                        return;
+                    }
                     const codeInput = row?.querySelector('[data-floor-code]');
                     const productInput = row?.querySelector('[data-floor-product]');
                     const noteInput = row?.querySelector('input[name*="[note]"]');
@@ -433,6 +440,7 @@
                     if (noteInput && /variant ontbreekt/i.test(noteInput.value)) {
                         noteInput.value = noteInput.value.replace(/Exacte\s+\S*variant ontbreekt\.?\s*/gi, '').trim();
                     }
+                    form?.submit();
                 });
             });
         });

@@ -18,10 +18,10 @@ test('progress bar starts moving and stays below 100 while waiting', () => {
 
 test('status names the current wait and shows a percentage', () => {
     assert.equal(statusLabel({ elapsedMs: 400, drawings: 7, workbooks: 1, percent: 8 }), 'Bestanden uploaden… 8%');
-    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 7, workbooks: 1, percent: 31 }), 'Tekeningen en Excel uitlezen… 31%');
-    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 7, workbooks: 0, percent: 40 }), 'Tekeningen uitlezen (7)… 40%');
-    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 1, workbooks: 0, percent: 22 }), 'Tekening uitlezen… 22%');
-    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 0, workbooks: 1, percent: 18 }), 'Excel uitlezen… 18%');
+    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 7, workbooks: 1, percent: 31 }), 'Bestanden uploaden… 31%');
+    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 7, workbooks: 0, percent: 40 }), 'Bestanden uploaden… 40%');
+    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 1, workbooks: 0, percent: 22 }), 'Bestanden uploaden… 22%');
+    assert.equal(statusLabel({ elapsedMs: 4000, drawings: 0, workbooks: 1, percent: 18 }), 'Bestanden uploaden… 18%');
 });
 
 test('submit reveals the overlay and disables the button', () => {

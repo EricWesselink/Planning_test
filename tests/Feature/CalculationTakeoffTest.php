@@ -58,7 +58,7 @@ class CalculationTakeoffTest extends TestCase
             ->get(route('calculations.create'))
             ->assertOk()
             ->assertSee('Bestanden verwerken')
-            ->assertSee('Tekeningen en Excel uitlezen. Dit kan een paar minuten duren.')
+            ->assertSee('Bestanden worden geüpload. Daarna volgt de voortgang per bestand.')
             ->assertSee('data-calculation-progress', false);
     }
 
@@ -575,9 +575,10 @@ TXT, 'bg.pdf')],
         $html = $this->actingAs($user)
             ->get(route('calculations.show', $calculation))
             ->assertOk()
-            ->assertSee('v01 gevonden op tekening – kies vloerproduct', false)
-            ->assertSee('v01.a · Marmoleum - Forbo 3732-3725', false)
-            ->assertSee('v01.b · Marmoleum - Forbo 3753', false)
+            ->assertSee('v01 gevonden op tekening', false)
+            ->assertSee('Kies vloerproduct', false)
+            ->assertSee('v01.a – Marmoleum - Forbo 3732-3725', false)
+            ->assertSee('v01.b – Marmoleum - Forbo 3753', false)
             ->assertSee('Exacte v01-variant ontbreekt')
             ->assertSee('contour niet volledig herkenbaar')
             ->getContent();

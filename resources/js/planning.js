@@ -17,6 +17,7 @@ import { bindLaborFold } from './planning-labor-fold';
 import { bindPlanningScrollRestore, reloadPlanningBoard } from './planning-scroll';
 import { bindPlanningDatePickers, workdaysForIsoWeek } from './planning-datepicker.js';
 import { isoWeekFromDate } from './planning-weeks.js';
+import { whoOptionList } from './planning-who-options.js';
 
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 const board = document.getElementById('plan-board');
@@ -275,14 +276,15 @@ if (board) {
 
     function renderWhoOptions(preserveValue) {
         const current = preserveValue || whoSelect.value;
-        const options = lastCandidates.map((candidate) => {
-            const value = `worker:${candidate.id}`;
-            const disabled = candidate.selectable ? '' : ' disabled';
-            const selected = value === current && candidate.selectable ? ' selected' : '';
+        whoSelect.innerHTML = whoOptionList(lastCandidates, current).map((item) => {
+            const extra = item.value
+                ? ` data-men="${item.peopleCount}" data-selectable="${item.selectable ? '1' : '0'}"`
+                : '';
+            const disabled = item.disabled ? ' disabled' : '';
+            const selected = item.selected ? ' selected' : '';
 
-            return `<option value="${value}" data-men="${candidate.people_count}" data-selectable="${candidate.selectable ? '1' : '0'}"${disabled}${selected}>${escapeHtml(`${candidate.name} — ${candidate.status_label}`)}</option>`;
+            return `<option value="${escapeHtml(item.value)}"${extra}${disabled}${selected}>${escapeHtml(item.label)}</option>`;
         }).join('');
-        whoSelect.innerHTML = `<option value="">Kies vakman of team</option>${options}`;
         const stillValid = current
             && whoSelect.querySelector(`option[value="${CSS.escape(current)}"]:not(:disabled)`);
         whoSelect.value = stillValid ? current : '';

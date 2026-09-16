@@ -43,13 +43,15 @@ test('poll updates percent and redirects when the import is finished', async () 
         fetch() {
             return Promise.resolve({
                 ok: true,
-                json: async () => ({
-                    percent: 100,
-                    label: 'Bestanden uitgelezen',
-                    finished: true,
-                    redirect: '/calculaties/4/klaar',
-                    files: [{ name: 'bg.pdf', status: 'ready', label: 'gereed', error: null }],
-                }),
+                json() {
+                    return {
+                        percent: 100,
+                        label: 'Bestanden uitgelezen',
+                        finished: true,
+                        redirect: '/calculaties/4/klaar',
+                        files: [{ name: 'bg.pdf', status: 'ready', label: 'gereed', error: null }],
+                    };
+                },
             });
         },
         setInterval(fn) {

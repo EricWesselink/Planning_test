@@ -36,22 +36,8 @@ export function overallPercent({ elapsedMs = 0, drawings = 0, workbooks = 0 } = 
     return Math.min(92, Math.round(4 + 88 * eased));
 }
 
-export function statusLabel({ elapsedMs = 0, drawings = 0, workbooks = 0, percent = 0 } = {}) {
-    let phase = 'Bestanden verwerken…';
-
-    if (elapsedMs < 2500) {
-        phase = 'Bestanden uploaden…';
-    } else if (drawings > 0 && workbooks > 0) {
-        phase = 'Tekeningen en Excel uitlezen…';
-    } else if (drawings > 1) {
-        phase = `Tekeningen uitlezen (${drawings})…`;
-    } else if (drawings === 1) {
-        phase = 'Tekening uitlezen…';
-    } else if (workbooks > 0) {
-        phase = 'Excel uitlezen…';
-    }
-
-    return `${phase} ${percent}%`;
+export function statusLabel({ percent = 0 } = {}) {
+    return `Bestanden uploaden… ${percent}%`;
 }
 
 export function bindCalculationCreate(form, overlay, clock = globalThis) {

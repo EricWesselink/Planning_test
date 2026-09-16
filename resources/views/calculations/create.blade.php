@@ -53,7 +53,7 @@
             <div data-progress-bar class="mt-4 h-2 bg-nicon-sand" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Voortgang">
                 <div data-progress-fill class="h-2 w-[8%] bg-nicon-orange transition-[width] duration-200"></div>
             </div>
-            <p data-progress-detail class="mt-3 text-xs text-nicon-muted">Tekeningen en Excel uitlezen. Dit kan een paar minuten duren.</p>
+            <p data-progress-detail class="mt-3 text-xs text-nicon-muted">Bestanden worden geüpload. Daarna volgt de voortgang per bestand.</p>
         </div>
     </div>
 @endsection
