@@ -129,6 +129,25 @@ class ShopProjectController extends Controller
         return back()->with('status', 'Bijlage verwijderd.');
     }
 
+    public function measurementPdf(Project $project, MeasurementFormService $measurements): Response
+    {
+        Gate::authorize('view', $project);
+        abort_unless($project->isWinkel(), 404);
+        $project->load(['customer', 'measurementForm.meter', 'measurementForm.rows']);
+        $data = $measurements->pdfData($project);
+        abort_if($data === null, 404);
+
+        $pdf = Pdf::loadView('measurement-forms.pdf', $data)
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['documentTitle'],
+            'Author' => $data['companyName'],
+        ]);
+
+        return $pdf->download($data['filename']);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -136,6 +155,7 @@ class ShopProjectController extends Controller
     {
         $this->normalizeDecimalMaps($request, ['activity_quantities', 'activity_hours']);
         $this->normalizeHourlyRate($request);
+        $this->normalizeMeasurement($request);
         $maxKb = (int) config('filesystems.project_file_max_kilobytes');
         $allowedIds = $this->allowedActivityIds($project);
         $shopUnits = array_map(fn (WorkUnit $unit): string => $unit->value, WorkUnit::shopCases());
@@ -161,6 +181,7 @@ class ShopProjectController extends Controller
             'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,pdf', 'extensions:jpg,jpeg,png,webp,gif,pdf'],
             'basis_uurtarief' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
             'worker_id' => ['nullable', 'integer', Rule::exists('workers', 'id')->where('active', true)],
+            ...$this->measurementRules(),
             ...PlanningWeek::rules(),
         ], $this->messages());
         $validator->after(function ($weekValidator) use ($request, $project, $fit): void {
@@ -223,6 +244,55 @@ class ShopProjectController extends Controller
         ]);
     }
 
+    private function normalizeMeasurement(Request $request): void
+    {
+        $measurement = $request->input('measurement');
+        if (! is_array($measurement)) {
+            return;
+        }
+
+        $rows = $measurement['rows'] ?? [];
+        if (is_array($rows)) {
+            foreach ($rows as $index => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $rows[$index]['quantity'] = Format::decimalInput($row['quantity'] ?? null);
+            }
+            $measurement['rows'] = $rows;
+        }
+
+        $request->merge(['measurement' => $measurement]);
+    }
+
+    /**
+     * @return array<string, list<mixed>>
+     */
+    private function measurementRules(): array
+    {
+        $units = MeasurementFormService::unitValues();
+
+        return [
+            'measurement' => ['nullable', 'array'],
+            'measurement.meter_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
+            'measurement.ordered_at' => ['nullable', 'date'],
+            'measurement.installation_at' => ['nullable', 'date'],
+            'measurement.rows' => ['nullable', 'array', 'max:200'],
+            'measurement.rows.*.room' => ['nullable', 'string', 'max:120'],
+            'measurement.rows.*.product' => ['nullable', 'string', 'max:120'],
+            'measurement.rows.*.brand' => ['nullable', 'string', 'max:80'],
+            'measurement.rows.*.type' => ['nullable', 'string', 'max:80'],
+            'measurement.rows.*.color_number' => ['nullable', 'string', 'max:40'],
+            'measurement.rows.*.quantity' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'measurement.rows.*.unit' => ['nullable', Rule::in($units)],
+            'measurement.rows.*.underlay' => ['nullable', 'string', 'max:80'],
+            'measurement.rows.*.skirting' => ['nullable', 'string', 'max:80'],
+            'measurement.rows.*.steps' => ['nullable', 'string', 'max:80'],
+            'measurement.rows.*.profile' => ['nullable', 'string', 'max:80'],
+            'measurement.rows.*.available_on_site' => ['nullable', 'boolean'],
+        ];
+    }
+
     /**
      * @return array<string, list<string>>
      */
@@ -254,6 +324,12 @@ class ShopProjectController extends Controller
             'basis_uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
             'basis_uurtarief.numeric' => 'Vul een geldig uurtarief in.',
             'worker_id.exists' => 'Deze vakman is niet beschikbaar.',
+            'measurement.meter_user_id.exists' => 'Deze inmeter is niet beschikbaar.',
+            'measurement.ordered_at.date' => 'Vul een geldige besteldatum in.',
+            'measurement.installation_at.date' => 'Vul een geldige montagedatum in.',
+            'measurement.rows.max' => 'Er zijn te veel inmeetregels.',
+            'measurement.rows.*.quantity.numeric' => 'Vul een geldig aantal in bij M1/M2.',
+            'measurement.rows.*.unit.in' => 'Kies m¹ of m².',
             'attachments.required' => 'Kies minstens één bestand.',
             'attachments.*.mimes' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',

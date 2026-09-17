@@ -23,6 +23,7 @@ use App\Services\RoomWorkSetup;
 use App\Services\SourceDocumentService;
 use App\Services\SourceUpdateService;
 use App\Services\WorkTicketService;
+use App\Services\MeasurementFormService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -226,14 +227,14 @@ class ProjectController extends Controller
             ->with('warnings', $result['warnings']);
     }
 
-    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets, PlanningFitService $fit, SourceDocumentService $sourceDocuments): View
+    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets, PlanningFitService $fit, SourceDocumentService $sourceDocuments, MeasurementFormService $measurements): View
     {
         Gate::authorize('view', $project);
 
         $ticketModeRequested = $request->integer('bon') > 0;
 
         if ($project->isWinkel() && ! $ticketModeRequested) {
-            $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']);
+            $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker', 'measurementForm.rows', 'measurementForm.meter']);
             $assignedIds = $project->assignments
                 ->pluck('worker_id')
                 ->map(fn (mixed $id): int => (int) $id)
@@ -256,6 +257,7 @@ class ProjectController extends Controller
                 ),
                 'selectedWorkerId' => old('worker_id', $multipleWorkers ? null : $assignedIds->first()),
                 'multiplePreferredWorkers' => $multipleWorkers,
+                ...$measurements->viewData($project, $request->user()),
             ]);
         }
 

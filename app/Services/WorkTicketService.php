@@ -56,6 +56,7 @@ class WorkTicketService
             'project.workItems.workActivity',
             'project.workOrders',
             'project.documents',
+            'project.measurementForm.rows',
             'workTickets',
             'workItem',
         ]);
@@ -113,6 +114,8 @@ class WorkTicketService
             'work_items' => $draft['workItems'],
             'extra_works' => $this->extraWorkOptions($project),
             'shop_works' => $this->shopWorkOptions($project, $assignment),
+            'has_measurement_form' => $project->measurementForm?->isFilled() ?? false,
+            'include_measurement_form' => $project->measurementForm?->isFilled() ?? false,
             'existing' => $draft['existing']
                 ->map(fn (WorkTicket $ticket): array => [
                     'id' => (int) $ticket->id,
@@ -138,6 +141,7 @@ class WorkTicketService
             'project.documents',
             'project.workOrders',
             'project.customer',
+            'project.measurementForm.rows',
         ]);
 
         $project = $assignment->project;
@@ -188,6 +192,7 @@ class WorkTicketService
                     ? round((float) Format::decimalInput($input['fixed_price'] ?? null), 2)
                     : null,
                 'notes' => filled($input['notes'] ?? null) ? trim((string) $input['notes']) : null,
+                'include_measurement_form' => $this->includeMeasurementForm($project, $input),
                 'start_date' => $assignment->start_date->toDateString(),
                 'end_date' => $assignment->end_date->toDateString(),
             ]);
