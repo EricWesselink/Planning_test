@@ -828,24 +828,24 @@ class WorkerProfileTest extends TestCase
             'customer_id' => $customer->id,
             'name' => 'TMZ Meubelenbelt Fase 2',
             'status' => 'in_uitvoering',
-            'planned_start_date' => '2026-09-08',
-            'planned_end_date' => '2026-09-12',
+            'planned_start_date' => '2026-09-07',
+            'planned_end_date' => '2026-09-11',
         ]);
         $item = WorkItem::query()->create([
             'project_id' => $project->id,
             'name' => 'Egaliseren',
             'unit' => 'm2',
             'ordered_quantity' => 100,
-            'planned_start_date' => '2026-09-08',
-            'planned_end_date' => '2026-09-12',
+            'planned_start_date' => '2026-09-07',
+            'planned_end_date' => '2026-09-11',
             'status' => 'in_uitvoering',
         ]);
         WorkerAssignment::query()->create([
             'worker_id' => $worker->id,
             'project_id' => $project->id,
             'work_item_id' => $item->id,
-            'start_date' => '2026-09-08',
-            'end_date' => '2026-09-12',
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-11',
             'hours_per_day' => 8,
             'people_count' => 1,
         ]);

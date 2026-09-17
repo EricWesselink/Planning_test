@@ -53,6 +53,9 @@
                     <td class="px-3 py-2">{{ $calculation->isImporting() ? 'Uitlezen' : $calculation->status->label() }}</td>
                     <td class="px-3 py-2 text-right">
                         <a href="{{ $calculation->isImporting() ? route('calculations.processing', $calculation) : route('calculations.board', $calculation) }}" class="text-sm text-nicon-orange-dark">{{ $calculation->isImporting() ? 'Voortgang' : 'Openen' }}</a>
+                        @unless ($calculation->isImporting())
+                            <button type="button" class="ml-3 text-sm text-nicon-orange-dark" data-print-open data-print-options-url="{{ route('calculations.print.options', $calculation) }}">Print / PDF</button>
+                        @endunless
                         @can('delete', $calculation)
                             <form method="POST" action="{{ route('calculations.destroy', $calculation) }}" class="inline" onsubmit="return confirm({{ json_encode($calculation->name.' wordt verwijderd. Tekeningen en regels verdwijnen.') }})">
                                 @csrf
@@ -70,4 +73,9 @@
             </tbody>
         </table>
     </div>
+    @include('calculations.partials.print-dialog')
 @endsection
+
+@push('scripts')
+    @vite(['resources/js/calculation-print-dialog.js'])
+@endpush

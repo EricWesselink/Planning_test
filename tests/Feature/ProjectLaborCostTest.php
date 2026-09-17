@@ -280,7 +280,7 @@ class ProjectLaborCostTest extends TestCase
         $this->assertStringContainsString('--plan-col-m2-budget: 58px', $css);
         $this->assertStringContainsString('--plan-col-m2-forecast: 62px', $css);
         $this->assertStringContainsString('--plan-col-m2-delta: 68px', $css);
-        $this->assertStringContainsString('transition: width 0.28s ease', $css);
+        $this->assertStringContainsString('transition: grid-template-columns 0.28s ease', $css);
         $this->assertStringContainsString('.plan-labor-block', $css);
         $this->assertStringContainsString('.plan-cell--labor-head', $css);
         $this->assertStringContainsString('.sticky-head .plan-cell--labor-head', $css);

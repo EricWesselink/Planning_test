@@ -20,6 +20,7 @@ class WorkbookMergeService
         private SpreadsheetReader $reader = new SpreadsheetReader,
         private WorkbookRowParser $parser = new WorkbookRowParser,
         private FinishPairingRules $pairing = new FinishPairingRules,
+        private RoomNumberRange $roomNumbers = new RoomNumberRange,
     ) {}
 
     /**
@@ -95,6 +96,24 @@ class WorkbookMergeService
         $key = $this->roomKey((string) ($room['room_number'] ?? ''));
         if ($key === '') {
             return 0;
+        }
+
+        $expanded = $this->roomNumbers->expand($room['room_number'] ?? '');
+        if (count($expanded) > 1) {
+            $matched = 0;
+            foreach ($expanded as $number) {
+                $childKey = $this->roomKey($number);
+                if ($childKey === '' || ! $this->hasExistingRoom($floors, $byCode, $plinths, $childKey)) {
+                    continue;
+                }
+                $child = $room;
+                $child['room_number'] = $number;
+                unset($child['quantity']);
+                $matched += $this->mergeRoom($calculation, $workbook, $child, $sort, $warnings, $floors, $byCode, $plinths);
+            }
+            if ($matched > 0) {
+                return $matched;
+            }
         }
 
         $changed = 0;
@@ -285,6 +304,26 @@ class WorkbookMergeService
         }
 
         return [$floors, $byCode, $plinths];
+    }
+
+    /**
+     * @param  array<string, CalculationLine>  $floors
+     * @param  array<string, CalculationLine>  $byCode
+     * @param  array<string, CalculationLine>  $plinths
+     */
+    private function hasExistingRoom(array $floors, array $byCode, array $plinths, string $key): bool
+    {
+        if (isset($floors[$key]) || isset($plinths[$key])) {
+            return true;
+        }
+
+        foreach (array_keys($byCode) as $codeKey) {
+            if (str_starts_with($codeKey, $key.'|')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

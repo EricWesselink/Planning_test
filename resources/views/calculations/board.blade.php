@@ -4,7 +4,7 @@
 @section('main_class', 'p-0 min-h-0 overflow-hidden')
 
 @push('scripts')
-    @vite(['resources/js/calculation-board.js'])
+    @vite(['resources/js/calculation-board.js', 'resources/js/calculation-print-dialog.js'])
 @endpush
 
 @section('content')
@@ -133,6 +133,7 @@
                     <button type="button" id="draw-zoom-in" class="tool-btn">+</button>
                 </div>
                 <div class="ml-auto flex items-center gap-2">
+                    <button type="button" class="board-panel-toggle" data-print-open data-print-current-drawing data-print-options-url="{{ route('calculations.print.options', $calculation) }}">Print / PDF</button>
                     <button type="button" id="toggle-rooms" class="board-panel-toggle">Ruimtes</button>
                     <button type="button" id="toggle-tasks" class="board-panel-toggle">Controle</button>
                 </div>
@@ -215,4 +216,5 @@
     </div>
 
     <script type="application/json" id="board-data">{!! json_encode($board, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) !!}</script>
+    @include('calculations.partials.print-dialog')
 @endsection

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CheckStatus;
 use App\Enums\QuantitySource;
 use App\Enums\WorkUnit;
 use App\Models\Calculation;
@@ -230,6 +231,31 @@ class CalculationWorkbookImportTest extends TestCase
         $this->assertSame(QuantitySource::FromDrawing, $calculation->lines()->where('unit', 'm2')->first()?->source);
     }
 
+    public function test_excel_range_overlays_existing_drawing_rooms_instead_of_a_combined_row(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('calculations.store'), [
+            'name' => 'Toilettenreeks',
+            'dated_on' => '2026-03-06',
+            'drawings' => [$this->pdf(
+                "A-00-14 Toilet 4,80 m2 v04\nA-00-15 Toilet 4,90 m2 v04\nA-00-16 Toilet 5,10 m2 v04\nA-00-17 Toilet 5,00 m2 v04\nv04 = PU gietvloer",
+                'bg.pdf'
+            )],
+            'workbooks' => [$this->csv('vloer.csv', implode("\n", [
+                'Ruimte nr.;Naam;Vloer;Hoeveelheid;Eenheid',
+                'A-00-14-17;Toiletten;v04;19,80;m2',
+            ]))],
+        ])->assertRedirect();
+
+        $calculation = Calculation::query()->first();
+        $this->assertNotNull($calculation);
+        $this->assertNull($calculation->lines()->where('room_number', 'A-00-14-17')->first());
+        $this->assertSame(4, $calculation->lines()->where('unit', WorkUnit::SquareMeter)->count());
+        $this->assertNotNull($calculation->lines()->where('room_number', 'A-00-14')->where('unit', 'm2')->first());
+    }
+
     public function test_remembers_a_confirmed_header_for_later_imports(): void
     {
         Storage::fake('local');
@@ -334,7 +360,11 @@ class CalculationWorkbookImportTest extends TestCase
             }
         }
         $this->assertLessThan(40, $table['blocking_count']);
-        $this->assertLessThan(5, $table['review_count']);
+        $reviewRooms = collect($table['rows'])
+            ->filter(fn (array $row) => $row['status'] === CheckStatus::Review)
+            ->map(fn (array $row) => trim(($row['room_number'] ?? '?').' '.($row['room_name'] ?? '').' ['.implode(', ', $row['issues'] ?? []).']'))
+            ->implode('; ');
+        $this->assertLessThan(5, $table['review_count'], $reviewRooms);
         $this->assertGreaterThanOrEqual(20, $table['excel_confirmed_count']);
         $this->assertFalse(collect($calculation->warnings ?? [])->contains(
             fn (string $warning) => str_contains($warning, 'Geen betrouwbare ruimtes gekoppeld')

@@ -16,6 +16,7 @@ export default defineConfig({
                 "resources/js/calculation-create.js",
                 "resources/js/calculation-import-progress.js",
                 "resources/js/calculation-board.js",
+                "resources/js/calculation-print-dialog.js",
                 "resources/js/calculation-print.js",
                 "resources/js/snag-pdf.js",
             ],

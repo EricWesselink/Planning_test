@@ -10,6 +10,7 @@ use App\Models\CalculationDrawing;
 use App\Models\User;
 use App\Services\QuoteCalculation\CalculationBoardService;
 use App\Services\QuoteCalculation\CalculationExcelExporter;
+use App\Services\QuoteCalculation\CalculationPrintService;
 use App\Services\QuoteCalculation\CalculationRoomRows;
 use App\Services\QuoteCalculation\CalculationStoreService;
 use App\Services\QuoteCalculation\CalculationTotals;
@@ -328,6 +329,51 @@ class CalculationController extends Controller
         }
 
         return $exporter->download($calculation);
+    }
+
+    public function printOptions(Calculation $calculation, CalculationPrintService $print): JsonResponse
+    {
+        Gate::authorize('view', $calculation);
+
+        return response()->json($print->options($calculation));
+    }
+
+    public function print(Request $request, Calculation $calculation, CalculationPrintService $print): View|RedirectResponse
+    {
+        Gate::authorize('view', $calculation);
+
+        $drawingIds = $calculation->drawings()->pluck('id')->all();
+        $wantsDrawing = collect($request->input('include', []))
+            ->intersect(CalculationPrintService::DRAWING_INCLUDES)
+            ->isNotEmpty();
+
+        $validated = $request->validate([
+            'include' => ['required', 'array', 'min:1'],
+            'include.*' => ['string', Rule::in(CalculationPrintService::INCLUDES)],
+            'drawing_ids' => [$wantsDrawing ? 'required' : 'nullable', 'array', $wantsDrawing ? 'min:1' : 'nullable'],
+            'drawing_ids.*' => ['integer', Rule::in($drawingIds)],
+            'material_mode' => ['nullable', 'string', Rule::in(['all', 'selected'])],
+            'material_keys' => ['nullable', 'array'],
+            'material_keys.*' => ['string', 'max:50'],
+            'output' => ['nullable', 'string', Rule::in(['pdf', 'print'])],
+        ]);
+
+        $materialKeys = ($validated['material_mode'] ?? 'all') === 'selected'
+            ? array_values($validated['material_keys'] ?? [])
+            : [];
+
+        $document = $print->document($calculation, [
+            'include' => $validated['include'],
+            'drawing_ids' => array_map('intval', $validated['drawing_ids'] ?? []),
+            'material_keys' => $materialKeys,
+            'output' => $validated['output'] ?? 'pdf',
+        ]);
+
+        return view('calculations.print', [
+            'calculation' => $calculation,
+            'document' => $document,
+            'output' => $document['output'],
+        ]);
     }
 
     public function drawing(Calculation $calculation, CalculationDrawing $drawing): StreamedResponse

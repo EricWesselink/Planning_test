@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\ImportDecision;
 use App\Services\Meetstaat\DrawingStyleAssessor;
 use App\Services\Meetstaat\FloorPlanParser;
 use App\Services\Meetstaat\PdfTextExtractor;
@@ -128,8 +129,9 @@ class DrawingStyleRegressionTest extends TestCase
 
         $report = $preview['import_report'];
         $this->record('Type C (nummer+naam)', $report, $drawing['drawing_style']['strategy']);
-        $this->assertTrue($report['incomplete_recognition']);
-        $this->assertSame('Onvolledige herkenning – controleren', $report['quality_label']);
+        $this->assertSame(ImportDecision::ReadyWithWarnings->value, $preview['import_closure']['decision']);
+        $this->assertFalse($report['incomplete_recognition']);
+        $this->assertSame(ImportDecision::ReadyWithWarnings->label(), $report['quality_label']);
     }
 
     public function test_one_physical_room_keeps_multiple_material_tasks(): void
@@ -215,8 +217,9 @@ class DrawingStyleRegressionTest extends TestCase
         ]);
 
         $report = $preview['import_report'];
-        $this->assertTrue($report['incomplete_recognition']);
-        $this->assertSame('Onvolledige herkenning – controleren', $report['quality_label']);
+        $this->assertSame(ImportDecision::ReadyWithWarnings->value, $preview['import_closure']['decision']);
+        $this->assertFalse($report['incomplete_recognition']);
+        $this->assertSame(ImportDecision::ReadyWithWarnings->label(), $report['quality_label']);
         $this->assertEqualsWithDelta(90.2, $report['physical_meters'], 0.01);
         $this->assertEqualsWithDelta(90.2, $report['task_meters'], 0.01);
         $legend = collect($preview['legend'])->first(fn (array $row) => ($row['material'] ?? '') === 'Dark Sand');

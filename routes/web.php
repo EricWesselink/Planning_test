@@ -113,6 +113,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/calculaties/{calculation}/verwerken/status', [CalculationController::class, 'importStatus'])->name('calculations.import-status');
     Route::get('/calculaties/{calculation}', [CalculationController::class, 'show'])->name('calculations.show');
     Route::get('/calculaties/{calculation}/bord', [CalculationController::class, 'board'])->name('calculations.board');
+    Route::get('/calculaties/{calculation}/print-opties', [CalculationController::class, 'printOptions'])->name('calculations.print.options');
+    Route::get('/calculaties/{calculation}/print', [CalculationController::class, 'print'])->name('calculations.print');
     Route::get('/calculaties/{calculation}/totalen', [CalculationController::class, 'totals'])->name('calculations.totals');
     Route::get('/calculaties/{calculation}/bronnen', [CalculationController::class, 'files'])->name('calculations.files');
     Route::patch('/calculaties/{calculation}/bord/ruimtes/{line}', [CalculationLineController::class, 'updateBoardRoom'])->name('calculations.board.rooms.update')->scopeBindings();

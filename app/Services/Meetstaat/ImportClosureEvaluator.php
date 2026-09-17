@@ -364,14 +364,14 @@ class ImportClosureEvaluator
 
         $expected = null;
         $meetstaatTaskTotal = $report['task_source_meters_parsed'] ?? $report['meetstaat_task_meters'] ?? null;
-        if ($meetstaatTaskTotal !== null) {
-            $expected = round((float) $meetstaatTaskTotal, 2);
+        if (($report['task_meters_expected'] ?? null) !== null) {
+            $expected = round((float) $report['task_meters_expected'], 2);
         } elseif (($preview['expected_task_totals']['project_total'] ?? null) !== null) {
             $expected = round((float) $preview['expected_task_totals']['project_total'], 2);
         } elseif (($report['expected_task_totals']['project_total'] ?? null) !== null) {
             $expected = round((float) $report['expected_task_totals']['project_total'], 2);
-        } elseif (($report['task_meters_expected'] ?? null) !== null) {
-            $expected = round((float) $report['task_meters_expected'], 2);
+        } elseif ($meetstaatTaskTotal !== null) {
+            $expected = round((float) $meetstaatTaskTotal, 2);
         } else {
             $materialDeclaredSum = 0.0;
             $materialDeclaredKnown = false;

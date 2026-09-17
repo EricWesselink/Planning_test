@@ -2569,7 +2569,7 @@ class RoomImportAssembler
         $tasksExpected = $taskExpectedKnown ? round($taskExpected, 2) : null;
         $tasksDifference = $tasksExpected !== null ? round($tasksFound - $tasksExpected, 2) : null;
         $meetstaatTasks = round($meetstaatTaskMeters, 2);
-        if ($meetstaatAreas !== []) {
+        if ($meetstaatAreas !== [] && $tasksExpected === null) {
             $taskExpectedKnown = true;
             $tasksExpected = $meetstaatTasks;
             $tasksDifference = round($tasksFound - $meetstaatTasks, 2);
