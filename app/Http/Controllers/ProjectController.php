@@ -230,7 +230,9 @@ class ProjectController extends Controller
     {
         Gate::authorize('view', $project);
 
-        if ($project->isWinkel()) {
+        $ticketModeRequested = $request->integer('bon') > 0;
+
+        if ($project->isWinkel() && ! $ticketModeRequested) {
             $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']);
             $assignedIds = $project->assignments
                 ->pluck('worker_id')
@@ -257,7 +259,7 @@ class ProjectController extends Controller
             ]);
         }
 
-        if ($project->isSmallWork()) {
+        if ($project->isSmallWork() && ! $ticketModeRequested) {
             $project->load(['customer', 'workItems', 'assignments.worker']);
 
             return view('projects.small', [

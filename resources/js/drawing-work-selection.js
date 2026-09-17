@@ -69,6 +69,9 @@ export function workFamily(filter) {
     const key = String(filter?.color_key || '');
     const workKey = String(filter?.key || '');
     const label = String(filter?.label || '').toLowerCase();
+    if (workKey.startsWith('winkel:') || key === 'winkel') {
+        return 'Winkelwerk';
+    }
     if (workKey === 'ondergrond' || key === 'ondergrond' || (/primen|primer/.test(label) && /egal/.test(label))) {
         return '';
     }
@@ -97,8 +100,8 @@ export function workFamily(filter) {
     return 'Overig';
 }
 
-const FAMILY_ORDER = ['', 'Marmoleum', 'PVC', 'Tapijt', 'Entreemat', 'PU gietvloer', 'Coating', 'Plinten', 'Overig'];
-const ALWAYS_GROUP = new Set(['', 'Marmoleum', 'PVC']);
+const FAMILY_ORDER = ['', 'Marmoleum', 'PVC', 'Tapijt', 'Entreemat', 'PU gietvloer', 'Coating', 'Plinten', 'Winkelwerk', 'Overig'];
+const ALWAYS_GROUP = new Set(['', 'Marmoleum', 'PVC', 'Winkelwerk']);
 
 export function groupedWorkFilters(filters) {
     const buckets = new Map();
@@ -128,12 +131,25 @@ export function groupedWorkFilters(filters) {
 }
 
 export function areaMatchesWorkKeys(area, keys, rowKeys = null) {
-    if (!keys.length) {
+    const roomKeys = roomWorkKeys(keys);
+    if (!roomKeys.length) {
         return true;
     }
     const have = rowKeys ?? (area?.works || []).map((work) => work.key);
 
-    return keys.some((key) => have.includes(key));
+    return roomKeys.some((key) => have.includes(key));
+}
+
+export function roomWorkKeys(keys = []) {
+    return (keys || []).filter((key) => !String(key).startsWith('winkel:'));
+}
+
+export function shopWorkActivityIds(keys = []) {
+    return (keys || [])
+        .map((key) => String(key))
+        .filter((key) => key.startsWith('winkel:'))
+        .map((key) => Number(key.slice(7)))
+        .filter((id) => Number.isFinite(id) && id > 0);
 }
 
 function workQuantity(area, work, keys) {
@@ -622,9 +638,12 @@ export function buildTicketChunk({
 }
 
 export function ticketStorePayload(chunks, extras = {}) {
-    const extraIds = (extras.extra_work_item_ids || [])
+    const extraIds = [...new Set((extras.extra_work_item_ids || [])
         .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id) && id > 0);
+        .filter((id) => Number.isFinite(id) && id > 0))];
+    const shopActivityIds = [...new Set((extras.shop_work_activity_ids || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0))];
     const selections = (chunks || []).map((chunk) => ({
         floor_id: chunk.floor_id,
         entire: chunk.entire ? 1 : 0,
@@ -633,12 +652,16 @@ export function ticketStorePayload(chunks, extras = {}) {
     }));
     const payload = { ...extras };
     delete payload.extra_work_item_ids;
+    delete payload.shop_work_activity_ids;
     delete payload.general_work;
     if (selections.length) {
         payload.selections = selections;
     }
     if (extraIds.length) {
         payload.extra_work_item_ids = extraIds;
+    }
+    if (shopActivityIds.length) {
+        payload.shop_work_activity_ids = shopActivityIds;
     }
     if (extras.general_work) {
         payload.general_work = 1;
@@ -647,8 +670,8 @@ export function ticketStorePayload(chunks, extras = {}) {
     return payload;
 }
 
-export function ticketHasGeneralWork({ extraIds = [], general = false } = {}) {
-    return extraIds.length > 0 || Boolean(general);
+export function ticketHasGeneralWork({ extraIds = [], general = false, shopActivityIds = [] } = {}) {
+    return extraIds.length > 0 || Boolean(general) || shopActivityIds.length > 0;
 }
 
 export function workKeysOnRooms(rooms) {

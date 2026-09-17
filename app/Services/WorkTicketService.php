@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\SmallWorkType;
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
@@ -11,6 +12,7 @@ use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
 use App\Models\ProjectFloor;
 use App\Models\User;
+use App\Models\WorkActivity;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
@@ -51,7 +53,7 @@ class WorkTicketService
             'project.customer',
             'project.floors.areas.tasks.workItem',
             'project.areas.tasks.workItem',
-            'project.workItems',
+            'project.workItems.workActivity',
             'project.workOrders',
             'project.documents',
             'workTickets',
@@ -110,6 +112,7 @@ class WorkTicketService
             'document_id' => $project->plattegrond()?->id,
             'work_items' => $draft['workItems'],
             'extra_works' => $this->extraWorkOptions($project),
+            'shop_works' => $this->shopWorkOptions($project, $assignment),
             'existing' => $draft['existing']
                 ->map(fn (WorkTicket $ticket): array => [
                     'id' => (int) $ticket->id,
@@ -131,7 +134,7 @@ class WorkTicketService
             'worker.rates',
             'project.floors.areas.tasks.workItem',
             'project.areas.tasks.workItem',
-            'project.workItems',
+            'project.workItems.workActivity',
             'project.documents',
             'project.workOrders',
             'project.customer',
@@ -163,7 +166,7 @@ class WorkTicketService
         if ($lines === []) {
             throw ValidationException::withMessages([
                 $this->hasGeneralWork($input) ? 'extra_work_item_ids' : ($this->hasSelections($input) ? 'selections' : 'work_item_ids') => $this->hasGeneralWork($input)
-                    ? 'Vink algemeen werk aan of kies ruimtes en werkzaamheden.'
+                    ? 'Kies ruimtes, algemeen werk of winkelwerk.'
                     : 'Geen Meetstaat-hoeveelheid voor de geselecteerde ruimtes en werkzaamheden.',
             ]);
         }
@@ -315,8 +318,11 @@ class WorkTicketService
      */
     public function resolveSelection(Project $project, array $input, ?WorkerAssignment $assignment = null): array
     {
-        $project->loadMissing(['floors.areas.tasks.workItem', 'areas.tasks.workItem', 'workItems', 'documents']);
-        $extraIds = $this->extraWorkItemIds($project, $input, $assignment);
+        $project->loadMissing(['floors.areas.tasks.workItem', 'areas.tasks.workItem', 'workItems.workActivity', 'documents']);
+        $extraIds = array_values(array_unique(array_merge(
+            $this->extraWorkItemIds($project, $input, $assignment),
+            $this->resolveShopWorkItemIds($project, $input, $assignment),
+        )));
 
         if ($this->hasSelections($input)) {
             return $this->mergeExtraWork($project, $this->resolveSelections($project, $input), $extraIds, $assignment);
@@ -334,7 +340,7 @@ class WorkTicketService
         if (! $hasFloorChoice) {
             if ($extraIds === []) {
                 throw ValidationException::withMessages([
-                    'extra_work_item_ids' => 'Kies ruimtes, of vink algemeen werk aan.',
+                    'extra_work_item_ids' => 'Kies ruimtes, algemeen werk of winkelwerk.',
                 ]);
             }
 
@@ -427,6 +433,7 @@ class WorkTicketService
     private function hasGeneralWork(array $input): bool
     {
         return $this->extraWorkItemIdsFromInput($input) !== []
+            || $this->shopWorkActivityIdsFromInput($input) !== []
             || filter_var($input['general_work'] ?? false, FILTER_VALIDATE_BOOLEAN);
     }
 
@@ -449,10 +456,25 @@ class WorkTicketService
      * @param  array<string, mixed>  $input
      * @return list<int>
      */
+    private function shopWorkActivityIdsFromInput(array $input): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(
+                static fn (mixed $id): int => (int) $id,
+                is_array($input['shop_work_activity_ids'] ?? null) ? $input['shop_work_activity_ids'] : [],
+            ),
+            static fn (int $id): bool => $id > 0,
+        )));
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return list<int>
+     */
     private function extraWorkItemIds(Project $project, array $input, ?WorkerAssignment $assignment): array
     {
         $extraIds = $project->workItems
-            ->filter(fn (WorkItem $item): bool => $item->isExtraWork())
+            ->filter(fn (WorkItem $item): bool => $item->isExtraWork() || (int) $item->work_activity_id > 0)
             ->pluck('id')
             ->map(fn (mixed $id): int => (int) $id)
             ->all();
@@ -526,6 +548,25 @@ class WorkTicketService
      */
     private function extraWorkTotal(WorkItem $item, float $fallbackHours): array
     {
+        if ($item->isExtraWork() || $item->unit === WorkUnit::Hours) {
+            $hours = $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren;
+
+            return [
+                'name' => $item->name,
+                'quantity' => $hours > 0.0001 ? $hours : $fallbackHours,
+                'unit' => WorkUnit::Hours,
+            ];
+        }
+
+        $quantity = (float) ($item->ordered_quantity ?: $item->begrote_hoeveelheid ?: 0);
+        if ($quantity > 0.0001) {
+            return [
+                'name' => $item->name,
+                'quantity' => $quantity,
+                'unit' => $item->unit,
+            ];
+        }
+
         $hours = $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren;
 
         return [
@@ -533,6 +574,18 @@ class WorkTicketService
             'quantity' => $hours > 0.0001 ? $hours : $fallbackHours,
             'unit' => WorkUnit::Hours,
         ];
+    }
+
+    /**
+     * @param  array{name: string, quantity: float, unit: WorkUnit}  $total
+     */
+    private function extraWorkQtyLabel(array $total): string
+    {
+        if ($total['unit'] === WorkUnit::Hours) {
+            return PlanningHours::hoursLabel($total['quantity']).' · nacalculatie';
+        }
+
+        return Format::qty($total['quantity'], 2).' '.$total['unit']->label();
     }
 
     /**
@@ -549,11 +602,132 @@ class WorkTicketService
                 return [
                     'id' => (int) $item->id,
                     'name' => $item->name,
-                    'qty_label' => PlanningHours::hoursLabel($total['quantity']).' · nacalculatie',
+                    'qty_label' => $this->extraWorkQtyLabel($total),
                 ];
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<array{activity_id: int, key: string, label: string, name: string, qty_label: string, work_item_id: int|null}>
+     */
+    private function shopWorkOptions(Project $project, WorkerAssignment $assignment): array
+    {
+        $fallbackHours = max(1.0, $assignment->plannedHoursValue());
+        $byActivity = $project->workItems
+            ->filter(fn (WorkItem $item): bool => (int) $item->work_activity_id > 0)
+            ->keyBy(fn (WorkItem $item): int => (int) $item->work_activity_id);
+
+        if ($project->isWinkel()) {
+            return $project->workItems
+                ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
+                ->sortBy('sort_order')
+                ->map(function (WorkItem $item) use ($fallbackHours): ?array {
+                    $activityId = (int) $item->work_activity_id;
+                    if ($activityId <= 0) {
+                        return null;
+                    }
+
+                    return $this->shopWorkOption(
+                        $activityId,
+                        $item->name,
+                        $this->extraWorkTotal($item, $fallbackHours),
+                        (int) $item->id,
+                    );
+                })
+                ->filter()
+                ->values()
+                ->all();
+        }
+
+        return WorkActivity::query()
+            ->active()
+            ->ordered()
+            ->with('category')
+            ->get()
+            ->map(function (WorkActivity $activity) use ($byActivity, $fallbackHours): array {
+                $item = $byActivity->get($activity->id);
+                $total = $item !== null
+                    ? $this->extraWorkTotal($item, $fallbackHours)
+                    : ['name' => $activity->name, 'quantity' => $fallbackHours, 'unit' => WorkUnit::Hours];
+
+                return $this->shopWorkOption(
+                    (int) $activity->id,
+                    $activity->name,
+                    $total,
+                    $item !== null ? (int) $item->id : null,
+                );
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{name: string, quantity: float, unit: WorkUnit}  $total
+     * @return array{activity_id: int, key: string, label: string, name: string, qty_label: string, work_item_id: int|null}
+     */
+    private function shopWorkOption(int $activityId, string $name, array $total, ?int $workItemId): array
+    {
+        return [
+            'activity_id' => $activityId,
+            'key' => 'winkel:'.$activityId,
+            'label' => $name,
+            'name' => $name,
+            'qty_label' => $this->extraWorkQtyLabel($total),
+            'work_item_id' => $workItemId,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return list<int>
+     */
+    private function resolveShopWorkItemIds(Project $project, array $input, ?WorkerAssignment $assignment): array
+    {
+        $activityIds = $this->shopWorkActivityIdsFromInput($input);
+        if ($activityIds === [] || $assignment === null) {
+            return [];
+        }
+
+        $activities = WorkActivity::query()->whereIn('id', $activityIds)->get()->keyBy('id');
+        $ids = [];
+        foreach ($activityIds as $activityId) {
+            $activity = $activities->get($activityId);
+            if ($activity === null) {
+                continue;
+            }
+            $ids[] = (int) $this->ensureShopWorkItem($project, $activity, $assignment)->id;
+        }
+
+        $project->unsetRelation('workItems');
+        $project->load('workItems');
+
+        return array_values(array_unique($ids));
+    }
+
+    private function ensureShopWorkItem(Project $project, WorkActivity $activity, WorkerAssignment $assignment): WorkItem
+    {
+        $existing = $project->workItems->firstWhere('work_activity_id', $activity->id);
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $hours = max(1.0, $assignment->plannedHoursValue());
+
+        return $project->workItems()->create([
+            'name' => $activity->name,
+            'unit' => WorkUnit::Hours,
+            'ordered_quantity' => $hours,
+            'begrote_uren' => $hours,
+            'status' => 'gepland',
+            'sort_order' => (int) $project->workItems->max('sort_order') + 1,
+            'work_activity_id' => $activity->id,
+            'is_extra_work' => true,
+            'small_work_type' => SmallWorkType::Extra,
+            'planned_start_date' => $assignment->start_date,
+            'planned_end_date' => $assignment->end_date,
+        ]);
     }
 
     /**

@@ -15,12 +15,14 @@ use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
 use App\Models\ProjectFloor;
 use App\Models\User;
+use App\Models\WorkActivity;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkerRate;
 use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use App\Notifications\WorkTicketHoursSubmittedNotification;
+use App\Services\ShopWorkService;
 use App\Services\WorkTicketPdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -152,6 +154,9 @@ class WorkTicketTest extends TestCase
             ->assertSee('Hele werk voor alle verdiepingen')
             ->assertSee('Algemeen werk')
             ->assertSee('Algemeen werk zonder ruimtes (nacalculatie)')
+            ->assertSee('Winkelwerk')
+            ->assertSee('Screens')
+            ->assertSee('data-ticket-shop-activity', false)
             ->assertDontSee('Werkzaamheden bijwerken')
             ->assertDontSee('id="complete-form"', false);
     }
@@ -641,6 +646,143 @@ class WorkTicketTest extends TestCase
             ->assertSee('vloer herstel')
             ->assertSee('4,00 uren')
             ->assertSee('Vloeren aanhelen waar het nodig is');
+    }
+
+    public function test_opdrachtbon_saves_winkelwerk_without_rooms(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $screens = WorkActivity::query()->where('slug', 'screens')->firstOrFail();
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'shop_work_activity_ids' => [$screens->id],
+                'notes' => 'Screens vanaf de winkel meenemen',
+                'billing_method' => 'hourly',
+                'hourly_rate' => '42.50',
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(WorkTicketKind::Opdrachtbon, $ticket->kind);
+        $this->assertSame(0, $ticket->areas()->count());
+        $this->assertSame(1, $ticket->lines()->count());
+        $line = $ticket->lines->first();
+        $this->assertSame('Screens', $line->workItem?->name);
+        $this->assertSame($screens->id, (int) $line->workItem?->work_activity_id);
+        $this->assertTrue((bool) $line->workItem?->is_extra_work);
+        $this->assertSame(WorkUnit::Hours, $line->unit);
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('Screens')
+            ->assertSee('Screens vanaf de winkel meenemen');
+    }
+
+    public function test_winkel_ticket_mode_lists_shop_activities(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = WorkActivity::query()->where('slug', 'pvc')->firstOrFail();
+        $project = app(ShopWorkService::class)->create([
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '12.5'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-18',
+        ], $user);
+        $worker = Worker::query()->create([
+            'name' => 'Het Vloerenhuis',
+            'employment_type' => 'zzp',
+            'company' => 'Het Vloerenhuis',
+            'active' => true,
+        ]);
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $project->workItems()->first()?->id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $project,
+                'bon' => $assignment->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Opdrachtbon maken')
+            ->assertSee('Winkelwerk')
+            ->assertSee('PVC')
+            ->assertSee('12,50 m²')
+            ->assertSee('data-ticket-shop-activity', false)
+            ->assertDontSee('Winkelwerk opslaan');
+    }
+
+    public function test_winkel_opdrachtbon_saves_the_selected_shop_activity(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = WorkActivity::query()->where('slug', 'pvc')->firstOrFail();
+        $project = app(ShopWorkService::class)->create([
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '12.5'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-18',
+        ], $user);
+        $worker = Worker::query()->create([
+            'name' => 'Het Vloerenhuis',
+            'employment_type' => 'zzp',
+            'company' => 'Het Vloerenhuis',
+            'active' => true,
+        ]);
+        WorkerRate::query()->create([
+            'worker_id' => $worker->id,
+            'specialty' => WorkerRate::HOURLY_SPECIALTY,
+            'unit' => WorkUnit::Hours,
+            'unit_price' => 50,
+        ]);
+        $item = $project->workItems()->first();
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item?->id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $assignment), [
+                'shop_work_activity_ids' => [$pvc->id],
+                'billing_method' => 'hourly',
+                'hourly_rate' => '48.00',
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(WorkTicketKind::Opdrachtbon, $ticket->kind);
+        $this->assertSame(1, $ticket->lines()->count());
+        $line = $ticket->lines->first();
+        $this->assertSame((int) $item->id, (int) $line->work_item_id);
+        $this->assertSame(12.5, (float) $line->quantity);
+        $this->assertSame(WorkUnit::SquareMeter, $line->unit);
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('Kloppenburg Interieur')
+            ->assertSee('PVC')
+            ->assertSee('12,50 m²');
     }
 
     public function test_opdrachtbon_combines_extra_work_with_a_room_selection(): void

@@ -24,6 +24,8 @@ import {
     ticketHasGeneralWork,
     ticketRoomsToPick,
     workKeysOnRooms,
+    shopWorkActivityIds,
+    roomWorkKeys,
 } from '../../resources/js/drawing-work-selection.js';
 
 const filters = [
@@ -584,6 +586,33 @@ test('posts general work without extra item ids', () => {
     assert.equal(ticketHasGeneralWork({ extraIds: [12] }), true);
     assert.equal(ticketHasGeneralWork({ general: true }), true);
     assert.equal(ticketHasGeneralWork({ extraIds: [], general: false }), false);
+    assert.equal(ticketHasGeneralWork({ shopActivityIds: [4] }), true);
+});
+
+test('winkelwerk stays in its own material family and does not hide rooms', () => {
+    assert.equal(workFamily({ key: 'winkel:12', label: 'Screens', color_key: 'winkel' }), 'Winkelwerk');
+    assert.equal(workFamily({ key: 'winkel:3', label: 'PVC', color_key: 'winkel' }), 'Winkelwerk');
+    assert.deepEqual(shopWorkActivityIds(['vloer|1', 'winkel:12', 'winkel:3']), [12, 3]);
+    assert.deepEqual(roomWorkKeys(['vloer|1', 'winkel:12']), ['vloer|1']);
+    assert.equal(areaMatchesWorkKeys(rooms[0], ['winkel:12']), true);
+    assert.equal(areaMatchesWorkKeys(rooms[0], ['vloer|1', 'winkel:12']), true);
+    assert.equal(areaMatchesWorkKeys(rooms[1], ['vloer|1', 'winkel:12']), false);
+
+    const groups = groupedWorkFilters([
+        { key: 'vloer|1', label: 'Marmoleum Real, Linoleum', color_key: 'linoleum' },
+        { key: 'winkel:12', label: 'Screens', color_key: 'winkel' },
+    ]);
+    assert.ok(groups.some((group) => group.name === 'Winkelwerk'));
+});
+
+test('posts winkelwerk activity ids without a room selection', () => {
+    const payload = ticketStorePayload([], {
+        shop_work_activity_ids: ['12', 0, 12],
+        notes: 'screens',
+    });
+
+    assert.deepEqual(payload.shop_work_activity_ids, [12]);
+    assert.equal('selections' in payload, false);
 });
 
 test('hele werk for a bon picks matching rooms on every floor', () => {

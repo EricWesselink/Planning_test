@@ -12,12 +12,15 @@ use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Services\PlanningFitService;
 use App\Services\ShopWorkService;
+use App\Services\MeasurementFormService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -26,7 +29,7 @@ use Illuminate\View\View;
 
 class ShopProjectController extends Controller
 {
-    public function create(Request $request, PlanningFitService $fit): View
+    public function create(Request $request, PlanningFitService $fit, MeasurementFormService $measurements): View
     {
         Gate::authorize('create', Project::class);
 
@@ -41,6 +44,7 @@ class ShopProjectController extends Controller
             'hourlyRate' => old('basis_uurtarief', SmallWorkType::HOURLY_RATE),
             'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
             ...$this->preferredWorkerView($request, $fit),
+            ...$measurements->viewData(null, $request->user()),
         ]);
     }
 

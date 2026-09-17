@@ -240,6 +240,15 @@
                                     <span class="draw-work-option-qty"></span>
                                 </label>
                             @endforeach
+                            @if ($ticketMode)
+                                @foreach (($ticketMode['shop_works'] ?? []) as $work)
+                                    <label class="draw-work-option">
+                                        <input type="checkbox" data-work-key="{{ $work['key'] }}">
+                                        <span class="draw-work-option-name">{{ $work['label'] }}</span>
+                                        <span class="draw-work-option-qty">{{ $work['qty_label'] }}</span>
+                                    </label>
+                                @endforeach
+                            @endif
                         </div>
                         <div class="draw-work-panel-foot">
                             <div id="draw-work-panel-total" class="draw-work-panel-total">Geselecteerd: 0,00 m²</div>
@@ -430,7 +439,7 @@
                         </div>
                     @endif
                     <div id="ticket-chunks" class="ticket-chunks">
-                        <p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>
+                        <p class="ticket-empty">Kies materialen of winkelwerk, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>
                     </div>
                     <div id="ticket-preview-body" class="ticket-preview hidden" hidden></div>
                     <div class="ticket-extra">
@@ -446,6 +455,15 @@
                                 Algemeen werk zonder ruimtes (nacalculatie)
                             </label>
                         @endforelse
+                        @if (! empty($ticketMode['shop_works']))
+                            <div class="ticket-billing-label" style="margin-top:10px">Winkelwerk</div>
+                            @foreach ($ticketMode['shop_works'] as $shopWork)
+                                <label>
+                                    <input type="checkbox" data-ticket-shop-activity value="{{ $shopWork['activity_id'] }}">
+                                    {{ $shopWork['name'] }} · {{ $shopWork['qty_label'] }}
+                                </label>
+                            @endforeach
+                        @endif
                         <p class="ticket-extra-hint">Zonder ruimtes te selecteren. Omschrijf het werk in de opmerking.</p>
                     </div>
                     <label class="ticket-notes-label" for="ticket-notes">Opmerking toevoegen</label>

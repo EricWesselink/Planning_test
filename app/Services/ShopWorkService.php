@@ -27,6 +27,7 @@ class ShopWorkService
     public function __construct(
         private ProjectIntakeService $intake,
         private PlanningFitService $fit,
+        private MeasurementFormService $measurements,
     ) {}
 
     /**
@@ -82,8 +83,9 @@ class ShopWorkService
             );
             $this->assignPreferredWorker($project->fresh(['workItems', 'assignments']) ?? $project, $this->preferredWorkerId($data));
             $this->storeFiles($project, $files, $user);
+            $this->syncMeasurement($project, $data);
 
-            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']) ?? $project;
+            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker', 'measurementForm.rows', 'measurementForm.meter']) ?? $project;
         });
     }
 
@@ -144,8 +146,9 @@ class ShopWorkService
             );
             $this->assignPreferredWorker($project->fresh(['workItems', 'assignments']) ?? $project, $this->preferredWorkerId($data));
             $this->storeFiles($project, $files, $user);
+            $this->syncMeasurement($project, $data);
 
-            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker']) ?? $project;
+            return $project->fresh(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker', 'measurementForm.rows', 'measurementForm.meter']) ?? $project;
         });
     }
 
@@ -226,6 +229,18 @@ class ShopWorkService
         $workerId = (int) ($data['worker_id'] ?? 0);
 
         return $workerId > 0 ? $workerId : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function syncMeasurement(Project $project, array $data): void
+    {
+        if (! array_key_exists('measurement', $data) || ! is_array($data['measurement'])) {
+            return;
+        }
+
+        $this->measurements->sync($project, $data['measurement']);
     }
 
     /**

@@ -56,6 +56,7 @@ import {
     workFilterSummaryLabel,
     workKeysOnRooms,
     ticketRoomsToPick,
+    shopWorkActivityIds,
 } from './drawing-work-selection';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -2506,9 +2507,7 @@ function boot() {
     }
 
     function draftMeasure() {
-        const filters = data.work_filters || [];
-
-        return measureSelectedWorks(floorAreas(), draftWorkKeys, filters);
+        return measureSelectedWorks(floorAreas(), draftWorkKeys, workPanelFilters());
     }
 
     function refreshPanelTotal() {
@@ -2518,17 +2517,31 @@ function boot() {
         workFilterTotal.textContent = `Geselecteerd: ${draftMeasure().label}`;
     }
 
+    function workPanelFilters() {
+        const filters = [...(data.work_filters || [])];
+        (ticketMode?.shop_works || []).forEach((work) => {
+            filters.push({
+                key: work.key,
+                label: work.label,
+                color_key: 'winkel',
+                qty_label: work.qty_label,
+            });
+        });
+
+        return filters;
+    }
+
     function renderWorkPanelList() {
         if (!workFilterList) {
             return;
         }
-        const filters = data.work_filters || [];
+        const filters = workPanelFilters();
         const quantities = measureSelectedWorks(floorAreas(), filters.map((item) => item.key), filters);
         const qtyByKey = Object.fromEntries(quantities.lines.map((line) => [line.key, line]));
         workFilterList.innerHTML = groupedWorkFilters(filters).map((group) => {
             const head = group.name ? `<div class="draw-work-group">${escapeHtml(group.name)}</div>` : '';
             const items = group.items.map((filter) => {
-                const line = qtyByKey[filter.key] || { qty_label: `0,00 m²` };
+                const line = qtyByKey[filter.key] || { qty_label: filter.qty_label || '0,00 m²' };
                 const checked = draftWorkKeys.includes(filter.key) ? ' checked' : '';
 
                 return `<label class="draw-work-option"><input type="checkbox" data-work-key="${escapeHtml(filter.key)}"${checked}><span class="draw-work-option-name">${escapeHtml(shortWorkLabel(filter.label))}</span><span class="draw-work-option-qty">${escapeHtml(line.qty_label)}</span></label>`;
@@ -4681,7 +4694,7 @@ function boot() {
             return;
         }
         if (ticketChunks.length === 0) {
-            list.innerHTML = '<p class="ticket-empty">Kies materialen, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>';
+            list.innerHTML = '<p class="ticket-empty">Kies materialen of winkelwerk, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>';
         } else {
             list.innerHTML = ticketChunks.map((chunk, index) => {
                 const lines = (chunk.lines || [])
@@ -4718,9 +4731,19 @@ function boot() {
         const extraIds = [...document.querySelectorAll('[data-ticket-extra]:checked')]
             .map((input) => Number(input.value))
             .filter((id) => Number.isFinite(id) && id > 0);
+        const shopActivityIds = [
+            ...document.querySelectorAll('[data-ticket-shop-activity]:checked'),
+        ]
+            .map((input) => Number(input.value))
+            .filter((id) => Number.isFinite(id) && id > 0);
+        const fromFilter = shopWorkActivityIds(workFilterKeys);
         const general = Boolean(document.getElementById('ticket-general-work')?.checked);
 
-        return { extraIds, general };
+        return {
+            extraIds,
+            shopActivityIds: [...new Set([...shopActivityIds, ...fromFilter])],
+            general,
+        };
     }
 
     function addTicketSelection() {
@@ -4795,6 +4818,7 @@ function boot() {
             notes: document.getElementById('ticket-notes')?.value || '',
             document_ids: ticketMode.document_id ? [ticketMode.document_id] : [],
             extra_work_item_ids: general.extraIds,
+            shop_work_activity_ids: general.shopActivityIds,
             general_work: general.general,
         });
         const form = document.createElement('form');
@@ -4813,6 +4837,9 @@ function boot() {
         });
         (payload.extra_work_item_ids || []).forEach((id) => {
             appendTicketField(form, 'extra_work_item_ids[]', id);
+        });
+        (payload.shop_work_activity_ids || []).forEach((id) => {
+            appendTicketField(form, 'shop_work_activity_ids[]', id);
         });
         if (payload.general_work) {
             appendTicketField(form, 'general_work', '1');
