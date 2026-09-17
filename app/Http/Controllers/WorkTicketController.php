@@ -56,7 +56,7 @@ class WorkTicketController extends Controller
         $showPrices = Gate::allows('viewPrices', $workTicket);
 
         return view('work-tickets.show', [
-            ...$pdfs->build($workTicket, $showPrices),
+            ...$pdfs->build($workTicket, $showPrices, embedDrawings: false),
             'canRecordHours' => Gate::allows('recordHours', $workTicket),
             'canEdit' => Gate::allows('update', $workTicket),
         ]);

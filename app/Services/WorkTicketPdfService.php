@@ -48,13 +48,14 @@ class WorkTicketPdfService
      *     drawingIsPdf: bool,
      *     drawingIsImage: bool,
      *     drawingName: ?string,
+     *     number: string,
      *     drawingRender: string,
      *     floorLayers: list<array{name: string, rooms: string, page: int, image: ?string, pins: list<array{x: float, y: float, label: string}>}>,
      *     colleagues: list<string>,
      *     showPrices: bool
      * }
      */
-    public function build(WorkTicket $ticket, bool $showPrices): array
+    public function build(WorkTicket $ticket, bool $showPrices, bool $embedDrawings = true): array
     {
         $ticket->loadMissing([
             'worker',
@@ -77,7 +78,7 @@ class WorkTicketPdfService
                 'url' => $project !== null
                     ? route('projects.documents.show', [$project, $document])
                     : null,
-                'path' => $this->storedImagePath($document),
+                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
                 'is_image' => $document->isImage(),
             ])
             ->values()
@@ -88,6 +89,7 @@ class WorkTicketPdfService
             'filename' => $this->filename($ticket),
             'documentTitle' => mb_strtoupper($ticket->kind->label()),
             'kindLabel' => $ticket->kind->label(),
+            'number' => $ticket->number,
             'issuedOn' => ($ticket->created_at ?? $ticket->start_date)->format('d-m-Y'),
             'logo' => $this->publicImagePath($logoRelative),
             'logoUrl' => asset($logoRelative),
@@ -119,7 +121,7 @@ class WorkTicketPdfService
             'drawingIsPdf' => (bool) $drawing?->isPdf(),
             'drawingIsImage' => (bool) $drawing?->isImage(),
             'drawingName' => $drawing !== null ? (string) $drawing->original_filename : null,
-            'floorLayers' => $floorLayers = $this->floorLayers($ticket, $drawing),
+            'floorLayers' => $floorLayers = $this->floorLayers($ticket, $drawing, $embedDrawings),
             'drawingRender' => $this->drawingRender($floorLayers, (bool) $drawing?->isPdf()),
             'colleagues' => $this->colleagueNames($ticket),
             'showPrices' => $showPrices && $ticket->kind === WorkTicketKind::Opdrachtbon,
