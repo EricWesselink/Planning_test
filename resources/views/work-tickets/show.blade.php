@@ -19,9 +19,18 @@
     @endphp
     <p class="toolbar no-print">
         <a href="{{ $backUrl }}">← {{ $backLabel }}</a>
-        <a class="primary" href="{{ route('work-tickets.pdf', $ticket) }}">Download PDF</a>
+        <a class="primary" href="{{ route('work-tickets.pdf', $ticket) }}" id="ticket-pdf-link">Download PDF</a>
         <button type="button" onclick="niconPrintTicket()">Afdrukken</button>
     </p>
+    @if ($hasMeasurementForm ?? false)
+        <p class="no-print measurement-note">
+            Inmeetformulier beschikbaar
+            <label>
+                <input type="checkbox" id="ticket-include-measurement" value="1" @checked($includeMeasurementForm ?? false)>
+                Inmeetformulier toevoegen aan PDF
+            </label>
+        </p>
+    @endif
     @if (session('status'))
         <p class="no-print status">{{ session('status') }}</p>
     @endif
@@ -50,6 +59,24 @@
                 <p style="margin:10px 0 0">Totaal {{ \App\Support\Format::money($ticket->totalAmount()) }}</p>
             @endif
         </form>
+    @endif
+    @if ($hasMeasurementForm ?? false)
+        <script>
+            (() => {
+                const checkbox = document.getElementById('ticket-include-measurement');
+                const link = document.getElementById('ticket-pdf-link');
+                if (! checkbox || ! link) {
+                    return;
+                }
+                const sync = () => {
+                    const url = new URL(link.href, window.location.origin);
+                    url.searchParams.set('inmeetformulier', checkbox.checked ? '1' : '0');
+                    link.href = url.pathname + url.search;
+                };
+                checkbox.addEventListener('change', sync);
+                sync();
+            })();
+        </script>
     @endif
 </body>
 </html>

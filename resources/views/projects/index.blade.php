@@ -34,13 +34,26 @@
                 @if ($week !== null && $weekYear !== null)
                     <input type="hidden" name="year" value="{{ $weekYear }}">
                 @endif
+                <label class="sr-only" for="project-kind">Soort werk</label>
+                <select
+                    id="project-kind"
+                    name="kind"
+                    onchange="this.form.submit()"
+                    aria-label="Soort werk"
+                    class="w-[9.5rem] shrink-0 border border-nicon-line bg-white px-2 py-2 text-sm"
+                >
+                    <option value="" @selected($kind === '')>Alle werken</option>
+                    <option value="{{ \App\Enums\ProjectKind::Project->value }}" @selected($kind === \App\Enums\ProjectKind::Project->value)>Projecten</option>
+                    <option value="{{ \App\Enums\ProjectKind::Winkel->value }}" @selected($kind === \App\Enums\ProjectKind::Winkel->value)>Winkelwerk</option>
+                    <option value="{{ \App\Enums\ProjectKind::KLEINE_FILTER }}" @selected($kind === \App\Enums\ProjectKind::KLEINE_FILTER)>Kleine werken</option>
+                </select>
                 <button type="submit" class="border border-nicon-line bg-white px-4 py-2 text-sm">Zoeken</button>
-                @if ($search !== '' || $week !== null)
+                @if ($search !== '' || $week !== null || $kind !== '')
                     <a href="{{ route('projects.index') }}" class="whitespace-nowrap text-sm text-nicon-muted">Wis</a>
                 @endif
             </form>
             <a
-                href="{{ route('projects.pdf', array_filter(['q' => $search !== '' ? $search : null, 'week' => $week, 'year' => $week !== null ? $weekYear : null])) }}"
+                href="{{ route('projects.pdf', array_filter(['q' => $search !== '' ? $search : null, 'week' => $week, 'year' => $week !== null ? $weekYear : null, 'kind' => $kind !== '' ? $kind : null])) }}"
                 class="border border-nicon-line bg-white px-4 py-2 text-sm"
             >PDF projectenoverzicht</a>
             @unless (auth()->user()?->isVakman())
@@ -237,7 +250,7 @@
             @empty
                 <tr>
                     <td colspan="9" class="px-3 py-6 text-sm text-nicon-muted">
-                        @if ($search !== '' || $week !== null)
+                        @if ($search !== '' || $week !== null || $kind !== '')
                             Geen projecten voor deze selectie.
                         @else
                             Geen actieve projecten.

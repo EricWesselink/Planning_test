@@ -478,7 +478,17 @@
                             <input id="ticket-fixed-price" class="ticket-rate" inputmode="decimal" placeholder="Vaste prijs" value="{{ old('fixed_price') }}">
                         </div>
                     @endif
+                    @endif
                     <p id="ticket-error" class="ticket-errors hidden" hidden></p>
+                    @if (! empty($ticketMode['has_measurement_form']))
+                        <div class="ticket-extra">
+                            <div class="ticket-billing-label">Inmeetformulier beschikbaar</div>
+                            <label>
+                                <input type="checkbox" id="ticket-include-measurement" value="1" @checked($ticketMode['include_measurement_form'] ?? true)>
+                                Inmeetformulier toevoegen aan PDF
+                            </label>
+                        </div>
+                    @endif
                     <div class="ticket-actions">
                         <button type="button" id="ticket-add" class="ticket-btn">Selectie toevoegen</button>
                         <button type="button" id="ticket-preview" class="ticket-btn is-light">Bon bekijken</button>

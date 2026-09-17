@@ -444,6 +444,23 @@ class WorkTicketService
 
     /**
      * @param  array<string, mixed>  $input
+     */
+    private function includeMeasurementForm(Project $project, array $input): bool
+    {
+        $filled = $project->measurementForm?->isFilled() ?? false;
+        if (! $filled) {
+            return false;
+        }
+
+        if (! array_key_exists('include_measurement_form', $input)) {
+            return true;
+        }
+
+        return filter_var($input['include_measurement_form'], FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
      * @return list<int>
      */
     private function extraWorkItemIdsFromInput(array $input): array

@@ -4850,6 +4850,16 @@ function boot() {
         payload.document_ids.forEach((id) => {
             appendTicketField(form, 'document_ids[]', id);
         });
+        (payload.shop_work_activity_ids || []).forEach((id) => {
+            appendTicketField(form, 'shop_work_activity_ids[]', id);
+        });
+        if (ticketMode.has_measurement_form) {
+            appendTicketField(
+                form,
+                'include_measurement_form',
+                document.getElementById('ticket-include-measurement')?.checked ? '1' : '0',
+            );
+        }
         if (ticketMode.is_external) {
             const billing = ticketBillingMethod();
             appendTicketField(form, 'billing_method', billing);

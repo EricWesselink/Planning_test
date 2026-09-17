@@ -14,10 +14,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'number', 'kind', 'worker_assignment_id', 'project_id', 'worker_id', 'team_id',
     'created_by', 'billing_method', 'hourly_rate', 'fixed_price', 'worked_hours',
-    'notes', 'start_date', 'end_date',
+    'notes', 'include_measurement_form', 'start_date', 'end_date',
 ])]
 class WorkTicket extends Model
 {
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'include_measurement_form' => true,
+    ];
+
     protected function casts(): array
     {
         return [
@@ -26,6 +33,7 @@ class WorkTicket extends Model
             'hourly_rate' => 'decimal:2',
             'fixed_price' => 'decimal:2',
             'worked_hours' => 'decimal:2',
+            'include_measurement_form' => 'boolean',
             'start_date' => 'date',
             'end_date' => 'date',
         ];

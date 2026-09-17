@@ -78,10 +78,12 @@
             'hourlyRate' => $hourlyRate,
         ])
 
+        @include('projects.partials.measurement-form')
+
         <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Winkelwerk aanmaken</button>
     </form>
 @endsection
 
 @push('scripts')
-    @vite(['resources/js/winkel-preferred-worker.js'])
+    @vite(['resources/js/winkel-preferred-worker.js', 'resources/js/measurement-form.js'])
 @endpush

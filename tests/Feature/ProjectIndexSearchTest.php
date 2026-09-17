@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
@@ -107,7 +108,124 @@ class ProjectIndexSearchTest extends TestCase
             ->assertDontSee('Griftland college');
     }
 
-    private function makeProject(string $name, string $number, ?string $notes = null, ?string $start = null): Project
+    public function test_kind_filter_is_shown_on_the_project_page(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertOk()
+            ->assertSee('name="kind"', false)
+            ->assertSee('>Alle werken</option>', false)
+            ->assertSee('>Projecten</option>', false)
+            ->assertSee('>Winkelwerk</option>', false)
+            ->assertSee('>Kleine werken</option>', false);
+    }
+
+    public function test_winkelwerk_filter_hides_projects_and_small_works(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('11P251047 Griftland college', '251000077');
+        $this->makeWinkel('Jansen', 'Hengelo');
+        $this->makeProject('Lekkage keuken', 'K26090001', null, null, ProjectKind::Klein);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['kind' => ProjectKind::Winkel->value]))
+            ->assertOk()
+            ->assertSee('Jansen - Hengelo')
+            ->assertDontSee('Griftland college')
+            ->assertDontSee('Lekkage keuken');
+    }
+
+    public function test_projecten_filter_hides_winkelwerk_and_small_works(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('11P251047 Griftland college', '251000077');
+        $this->makeWinkel('Jansen', 'Hengelo');
+        $this->makeProject('Lekkage keuken', 'K26090001', null, null, ProjectKind::Klein);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['kind' => ProjectKind::Project->value]))
+            ->assertOk()
+            ->assertSee('Griftland college')
+            ->assertDontSee('Jansen - Hengelo')
+            ->assertDontSee('Lekkage keuken');
+    }
+
+    public function test_kleine_werken_filter_shows_klein_and_service(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('11P251047 Griftland college', '251000077');
+        $this->makeWinkel('Jansen', 'Hengelo');
+        $this->makeProject('Lekkage keuken', 'K26090001', null, null, ProjectKind::Klein);
+        $this->makeProject('Storingsdienst kantoor', 'S26090001', null, null, ProjectKind::Service);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['kind' => ProjectKind::KLEINE_FILTER]))
+            ->assertOk()
+            ->assertSee('Lekkage keuken')
+            ->assertSee('Storingsdienst kantoor')
+            ->assertDontSee('Griftland college')
+            ->assertDontSee('Jansen - Hengelo');
+    }
+
+    public function test_unknown_kind_shows_all_active_projects(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('11P251047 Griftland college', '251000077');
+        $this->makeWinkel('Jansen', 'Hengelo');
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['kind' => 'hack;drop']))
+            ->assertOk()
+            ->assertSee('Griftland college')
+            ->assertSee('Jansen - Hengelo');
+    }
+
+    public function test_kind_filter_does_not_reveal_inaccessible_winkelwerk(): void
+    {
+        $visible = $this->makeProject('11P251047 Griftland college', '251000077');
+        $this->makeWinkel('Jansen', 'Hengelo');
+        $user = User::factory()->limitedAccess()->create();
+        $user->projects()->attach($visible);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['kind' => ProjectKind::Winkel->value]))
+            ->assertOk()
+            ->assertDontSee('Jansen - Hengelo')
+            ->assertSee('Geen projecten voor deze selectie.');
+    }
+
+    public function test_kind_filter_does_not_change_projects(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject('11P251047 Griftland college', '251000077');
+        $winkel = $this->makeWinkel('Jansen', 'Hengelo');
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['kind' => ProjectKind::Winkel->value]))
+            ->assertOk();
+
+        $this->assertSame(2, Project::query()->count());
+        $this->assertDatabaseHas('projects', ['id' => $project->id, 'kind' => ProjectKind::Project->value]);
+        $this->assertDatabaseHas('projects', ['id' => $winkel->id, 'kind' => ProjectKind::Winkel->value]);
+    }
+
+    private function makeWinkel(string $customerName, string $city): Project
+    {
+        $customer = Customer::query()->create(['name' => $customerName]);
+
+        return Project::query()->create([
+            'project_number' => 'W26090001',
+            'customer_id' => $customer->id,
+            'name' => $customerName.' '.$city,
+            'city' => $city,
+            'status' => 'gepland',
+            'kind' => ProjectKind::Winkel,
+        ]);
+    }
+
+    private function makeProject(string $name, string $number, ?string $notes = null, ?string $start = null, ProjectKind $kind = ProjectKind::Project): Project
     {
         $customer = Customer::query()->first() ?? Customer::query()->create(['name' => 'Nicon vloeren']);
 
@@ -117,6 +235,7 @@ class ProjectIndexSearchTest extends TestCase
             'name' => $name,
             'city' => 'Amersfoort',
             'status' => 'gepland',
+            'kind' => $kind,
             'notes' => $notes,
             'planned_start_date' => $start,
         ]);

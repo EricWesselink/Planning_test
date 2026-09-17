@@ -92,6 +92,24 @@ class Project extends Model
             ->whereDate('planned_start_date', '<=', $monday->copy()->addDays(6)->toDateString());
     }
 
+    public function scopeMatchingKind(Builder $query, string $kind): void
+    {
+        if ($kind === '') {
+            return;
+        }
+
+        if ($kind === ProjectKind::KLEINE_FILTER) {
+            $query->whereIn('kind', ProjectKind::smallWorkCases());
+
+            return;
+        }
+
+        $value = ProjectKind::tryFrom($kind);
+        if ($value !== null) {
+            $query->where('kind', $value);
+        }
+    }
+
     public function isArchived(): bool
     {
         return $this->archived_at !== null;

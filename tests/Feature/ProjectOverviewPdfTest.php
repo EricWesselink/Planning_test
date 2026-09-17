@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
@@ -37,6 +38,21 @@ class ProjectOverviewPdfTest extends TestCase
             ->assertOk()
             ->assertSee('PDF projectenoverzicht')
             ->assertSee('href="'.e(route('projects.pdf', ['q' => 'Griftland', 'week' => 41, 'year' => 2026])).'"', false);
+    }
+
+    public function test_project_page_links_to_pdf_with_the_kind_filter(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('Jansen Hengelo screens', 'W26090001', [
+            'kind' => ProjectKind::Winkel,
+            'customer_id' => Customer::query()->create(['name' => 'Jansen'])->id,
+            'city' => 'Hengelo',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['kind' => ProjectKind::Winkel->value]))
+            ->assertOk()
+            ->assertSee('href="'.e(route('projects.pdf', ['kind' => ProjectKind::Winkel->value])).'"', false);
     }
 
     public function test_pdf_lists_active_projects_in_nicon_letterhead_without_page_actions(): void
@@ -107,6 +123,24 @@ class ProjectOverviewPdfTest extends TestCase
         $this->assertStringContainsString('05-10-2026', $text);
         $this->assertStringNotContainsString('Griftland college', $text);
         $this->assertStringNotContainsString('Zonder start', $text);
+    }
+
+    public function test_pdf_keeps_only_winkelwerk_when_kind_is_winkel(): void
+    {
+        $user = User::factory()->create();
+        $this->seedOverviewProjects();
+        $this->makeProject('Jansen Hengelo screens', 'W26090001', [
+            'kind' => ProjectKind::Winkel,
+            'customer_id' => Customer::query()->create(['name' => 'Jansen'])->id,
+            'city' => 'Hengelo',
+        ]);
+
+        $text = $this->pdfText($this->actingAs($user)->get(route('projects.pdf', ['kind' => ProjectKind::Winkel->value])));
+
+        $this->assertStringContainsString('Jansen - Hengelo', $text);
+        $this->assertStringContainsString('winkelwerk', $text);
+        $this->assertStringNotContainsString('Griftland college', $text);
+        $this->assertStringNotContainsString('Laakse Tuinen', $text);
     }
 
     public function test_pdf_does_not_reveal_inaccessible_projects(): void

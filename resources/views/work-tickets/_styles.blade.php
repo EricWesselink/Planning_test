@@ -16,6 +16,16 @@
         page-break-before: always;
         break-before: page;
     }
+    .measurement-page {
+        max-width: 210mm;
+        margin: 0 auto;
+        page-break-before: always;
+        break-before: page;
+    }
+    .measurement-page:first-child {
+        page-break-before: auto;
+        break-before: auto;
+    }
     table { width: 100%; border-collapse: collapse; }
     td, th { vertical-align: top; }
     a { color: #163a5f; }
@@ -84,6 +94,14 @@
         border-bottom: 0.6pt solid #163a5f;
     }
     .lines td { padding: 6px; border-bottom: 0.4pt solid #e7e0d4; }
+    .measurement-lines { font-size: 7.5pt; table-layout: fixed; }
+    .measurement-lines th, .measurement-lines td {
+        padding: 4px 3px;
+        word-wrap: break-word;
+        overflow-wrap: anywhere;
+        page-break-inside: avoid;
+    }
+    .measurement-lines tr { page-break-inside: avoid; }
     .num { text-align: right; white-space: nowrap; }
     .total td {
         font-weight: 700;
@@ -172,6 +190,8 @@
     .hours-form input { width: 7rem; padding: 6px 8px; border: 1px solid #d5dde5; }
     .status { color: #3f6212; font-size: 13px; margin: 0 0 12px; }
     .error { color: #b91c1c; font-size: 13px; margin: 0 0 12px; }
+    .measurement-note { font-size: 13px; margin: 0 0 12px; color: #163a5f; }
+    .measurement-note label { margin-left: 12px; color: #1a1a1a; }
     @media screen {
         body { margin: 24px; font-size: 13px; }
         .ticket-page { margin: 0 auto; }

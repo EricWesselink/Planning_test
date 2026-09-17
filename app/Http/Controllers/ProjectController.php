@@ -12,6 +12,7 @@ use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Models\WorkTicket;
 use App\Services\CalculationImportService;
+use App\Services\MeasurementFormService;
 use App\Services\Meetstaat\ImportDocumentClassifier;
 use App\Services\Meetstaat\ImportPreviewBuilder;
 use App\Services\PlanningFitService;
@@ -23,7 +24,6 @@ use App\Services\RoomWorkSetup;
 use App\Services\SourceDocumentService;
 use App\Services\SourceUpdateService;
 use App\Services\WorkTicketService;
-use App\Services\MeasurementFormService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -48,6 +48,7 @@ class ProjectController extends Controller
             'search' => $filters['search'],
             'week' => $filters['week'],
             'weekYear' => $filters['weekYear'],
+            'kind' => $filters['kind'],
         ]);
     }
 
@@ -257,7 +258,7 @@ class ProjectController extends Controller
                 ),
                 'selectedWorkerId' => old('worker_id', $multipleWorkers ? null : $assignedIds->first()),
                 'multiplePreferredWorkers' => $multipleWorkers,
-                ...$measurements->viewData($project, $request->user()),
+                ...$measurements->viewData($project),
             ]);
         }
 

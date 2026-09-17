@@ -126,6 +126,10 @@
                 'hourlyRate' => $hourlyRate,
             ])
 
+            @include('projects.partials.measurement-form', [
+                'canEdit' => auth()->user()?->can('update', $project) ?? false,
+            ])
+
             @can('update', $project)
                 <button class="bg-nicon-ink text-white px-5 py-3 font-medium">Winkelwerk opslaan</button>
             @endcan
@@ -233,5 +237,5 @@
 @endsection
 
 @push('scripts')
-    @vite(['resources/js/winkel-preferred-worker.js'])
+    @vite(['resources/js/winkel-preferred-worker.js', 'resources/js/measurement-form.js'])
 @endpush

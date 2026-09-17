@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ProjectKind;
 use App\Enums\WorkUnit;
 use App\Models\Project;
 use App\Models\WorkerAssignment;
@@ -14,7 +15,7 @@ use Illuminate\Support\Collection;
 class ProjectOverviewPdfService
 {
     /**
-     * @return array{search: string, week: ?int, weekYear: ?int}
+     * @return array{search: string, week: ?int, weekYear: ?int, kind: string}
      */
     public function filters(Request $request): array
     {
@@ -28,6 +29,7 @@ class ProjectOverviewPdfService
             'search' => mb_substr(trim($request->string('q')->toString()), 0, 80),
             'week' => $week,
             'weekYear' => $week !== null ? ($year ?? (int) now()->isoWeekYear()) : $year,
+            'kind' => $this->kindFilter($request->input('kind')),
         ];
     }
 
@@ -42,6 +44,7 @@ class ProjectOverviewPdfService
             ->accessibleBy($request->user())
             ->active()
             ->matchingSearch($filters['search'])
+            ->matchingKind($filters['kind'])
             ->startingInIsoWeek($filters['week'], $filters['weekYear'])
             ->with(['customer', 'workActivities.category', 'workItems.progressEntries', 'assignments.worker', 'assignments.crewMembers'])
             ->orderByRaw('planned_start_date is null')
@@ -96,7 +99,7 @@ class ProjectOverviewPdfService
     }
 
     /**
-     * @param  array{search: string, week: ?int, weekYear: ?int}  $filters
+     * @param  array{search: string, week: ?int, weekYear: ?int, kind: string}  $filters
      */
     public function filename(array $filters, ?string $generatedOn = null): string
     {
@@ -240,7 +243,7 @@ class ProjectOverviewPdfService
     }
 
     /**
-     * @param  array{search: string, week: ?int, weekYear: ?int}  $filters
+     * @param  array{search: string, week: ?int, weekYear: ?int, kind: string}  $filters
      */
     private function filterLabel(array $filters): ?string
     {
@@ -252,12 +255,31 @@ class ProjectOverviewPdfService
             $year = $filters['weekYear'] !== null ? ' · '.$filters['weekYear'] : '';
             $parts[] = 'week '.$filters['week'].$year;
         }
+        $kindLabel = match ($filters['kind']) {
+            ProjectKind::Project->value => 'projecten',
+            ProjectKind::Winkel->value => 'winkelwerk',
+            ProjectKind::KLEINE_FILTER => 'kleine werken',
+            default => null,
+        };
+        if ($kindLabel !== null) {
+            $parts[] = $kindLabel;
+        }
 
         if ($parts === []) {
             return null;
         }
 
         return 'Selectie: '.implode(' · ', $parts);
+    }
+
+    private function kindFilter(mixed $value): string
+    {
+        $kind = is_string($value) ? $value : '';
+        if ($kind === ProjectKind::KLEINE_FILTER) {
+            return $kind;
+        }
+
+        return ProjectKind::tryFrom($kind)?->value ?? '';
     }
 
     private function weekNumber(mixed $value): ?int

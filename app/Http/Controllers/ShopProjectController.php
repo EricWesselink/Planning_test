@@ -10,9 +10,9 @@ use App\Models\ProjectDocument;
 use App\Models\WorkActivity;
 use App\Models\WorkActivityCategory;
 use App\Models\Worker;
+use App\Services\MeasurementFormService;
 use App\Services\PlanningFitService;
 use App\Services\ShopWorkService;
-use App\Services\MeasurementFormService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -44,7 +44,7 @@ class ShopProjectController extends Controller
             'hourlyRate' => old('basis_uurtarief', SmallWorkType::HOURLY_RATE),
             'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
             ...$this->preferredWorkerView($request, $fit),
-            ...$measurements->viewData(null, $request->user()),
+            ...$measurements->viewData(),
         ]);
     }
 

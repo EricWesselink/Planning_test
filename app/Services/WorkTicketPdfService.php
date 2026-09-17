@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\WorkTicketKind;
 use App\Models\AreaDrawingMarker;
+use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
 use App\Models\WorkerAssignment;
@@ -16,6 +17,10 @@ class WorkTicketPdfService
      * @var array<string, ?string>
      */
     private array $layerImages = [];
+
+    public function __construct(
+        private MeasurementFormService $measurements,
+    ) {}
 
     /**
      * @return array{
@@ -55,12 +60,14 @@ class WorkTicketPdfService
      *     showPrices: bool
      * }
      */
-    public function build(WorkTicket $ticket, bool $showPrices, bool $embedDrawings = true): array
+    public function build(WorkTicket $ticket, bool $showPrices, bool $embedDrawings = true, bool $includeMeasurementForm = false): array
     {
         $ticket->loadMissing([
             'worker',
             'project.customer',
             'project.documents',
+            'project.measurementForm.meter',
+            'project.measurementForm.rows',
             'lines.workItem',
             'areas.floor',
             'areas.markers',
@@ -125,6 +132,10 @@ class WorkTicketPdfService
             'drawingRender' => $this->drawingRender($floorLayers, (bool) $drawing?->isPdf()),
             'colleagues' => $this->colleagueNames($ticket),
             'showPrices' => $showPrices && $ticket->kind === WorkTicketKind::Opdrachtbon,
+            'includeMeasurementForm' => $includeMeasurementForm && $this->measurements->isFilled($ticket->project?->measurementForm),
+            'measurementForm' => ($includeMeasurementForm && $ticket->project instanceof Project)
+                ? $this->measurements->pdfData($ticket->project)
+                : null,
         ];
     }
 

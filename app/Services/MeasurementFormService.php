@@ -223,20 +223,18 @@ class MeasurementFormService
      *     measurementOpen: bool
      * }
      */
-    public function viewData(?Project $project = null, ?User $currentUser = null): array
+    public function viewData(?Project $project = null): array
     {
         $form = $project?->measurementForm;
         $old = old('measurement');
         $oldRows = is_array($old['rows'] ?? null) ? $old['rows'] : [];
-        $installationDefault = $form?->installation_at?->toDateString()
-            ?? $project?->planned_start_date?->toDateString();
 
         return [
             'meterUsers' => $this->meterUsers($form?->meter_user_id),
             'measurementRows' => $this->formRows($form, $oldRows),
-            'measurementMeterUserId' => old('measurement.meter_user_id', $form?->meter_user_id ?? $currentUser?->id),
+            'measurementMeterUserId' => old('measurement.meter_user_id', $form?->meter_user_id),
             'measurementOrderedAt' => old('measurement.ordered_at', $form?->ordered_at?->toDateString()),
-            'measurementInstallationAt' => old('measurement.installation_at', $installationDefault),
+            'measurementInstallationAt' => old('measurement.installation_at', $form?->installation_at?->toDateString()),
             'measurementFilled' => $this->isFilled($form),
             'measurementOpen' => is_array($old),
         ];

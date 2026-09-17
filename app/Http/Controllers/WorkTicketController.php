@@ -6,6 +6,7 @@ use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Models\WorkerAssignment;
 use App\Models\WorkTicket;
+use App\Services\MeasurementFormService;
 use App\Services\WorkTicketHoursNotifier;
 use App\Services\WorkTicketPdfService;
 use App\Services\WorkTicketService;
@@ -48,27 +49,31 @@ class WorkTicketController extends Controller
             ->with('status', $ticket->kind->label().' '.$ticket->number.' is klaar.');
     }
 
-    public function show(WorkTicket $workTicket, WorkTicketPdfService $pdfs): View
+    public function show(Request $request, WorkTicket $workTicket, WorkTicketPdfService $pdfs, MeasurementFormService $measurements): View
     {
         $this->loadTicket($workTicket);
         Gate::authorize('view', $workTicket);
 
         $showPrices = Gate::allows('viewPrices', $workTicket);
+        $includeMeasurement = $this->shouldIncludeMeasurement($workTicket, $request, $measurements);
 
         return view('work-tickets.show', [
-            ...$pdfs->build($workTicket, $showPrices, embedDrawings: false),
+            ...$pdfs->build($workTicket, $showPrices, embedDrawings: false, includeMeasurementForm: $includeMeasurement),
             'canRecordHours' => Gate::allows('recordHours', $workTicket),
             'canEdit' => Gate::allows('update', $workTicket),
+            'hasMeasurementForm' => $measurements->isFilled($workTicket->project?->measurementForm),
+            'includeMeasurementForm' => $includeMeasurement,
         ]);
     }
 
-    public function pdf(WorkTicket $workTicket, WorkTicketPdfService $pdfs): Response|View
+    public function pdf(Request $request, WorkTicket $workTicket, WorkTicketPdfService $pdfs, MeasurementFormService $measurements): Response|View
     {
         $this->loadTicket($workTicket);
         Gate::authorize('view', $workTicket);
 
         $showPrices = Gate::allows('viewPrices', $workTicket);
-        $data = $pdfs->build($workTicket, $showPrices);
+        $includeMeasurement = $this->shouldIncludeMeasurement($workTicket, $request, $measurements);
+        $data = $pdfs->build($workTicket, $showPrices, includeMeasurementForm: $includeMeasurement);
         if (($data['drawingRender'] ?? 'image') === 'browser') {
             return view('work-tickets.print', $data);
         }
@@ -135,6 +140,8 @@ class WorkTicketController extends Controller
         $ticket->load([
             'worker',
             'project.customer',
+            'project.measurementForm.meter',
+            'project.measurementForm.rows',
             'lines.workItem',
             'areas.floor',
             'areas.markers',
@@ -143,6 +150,20 @@ class WorkTicketController extends Controller
             'project.documents',
             'assignment.crewMembers',
         ]);
+    }
+
+    private function shouldIncludeMeasurement(WorkTicket $ticket, Request $request, MeasurementFormService $measurements): bool
+    {
+        $filled = $measurements->isFilled($ticket->project?->measurementForm);
+        if (! $filled) {
+            return false;
+        }
+
+        if ($request->has('inmeetformulier')) {
+            return $request->boolean('inmeetformulier');
+        }
+
+        return (bool) $ticket->include_measurement_form;
     }
 
     /**
@@ -176,6 +197,7 @@ class WorkTicketController extends Controller
             'general_work' => ['nullable', 'boolean'],
             'document_ids' => ['nullable', 'array'],
             'document_ids.*' => ['integer'],
+            'include_measurement_form' => ['nullable', 'boolean'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'billing_method' => $billing,
             'hourly_rate' => [

@@ -279,3 +279,6 @@
         </div>
     @endforeach
 @endif
+@if ($isPdf && ($includeMeasurementForm ?? false) && is_array($measurementForm ?? null))
+    @include('measurement-forms._document', $measurementForm)
+@endif
