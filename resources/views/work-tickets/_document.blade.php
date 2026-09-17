@@ -18,6 +18,8 @@
     $colleagues = $colleagues ?? [];
     $number = $number ?? '';
     $drawingRender = $drawingRender ?? 'image';
+    $companyPlace = trim(implode(' ', array_filter([$companyPostalCode ?? null, $companyCity ?? null])));
+    $companyAddressLine = $companyAddressLine ?? trim(implode(', ', array_filter([$companyAddress ?? null, $companyPlace])));
     $pdfDrawingLayers = [];
     if ($isPdf) {
         foreach ($floorLayers as $layer) {
@@ -57,8 +59,9 @@
             </td>
             <td class="brand-side">
                 <strong>{{ $companyName }}</strong><br>
-                {{ $companyAddress }}<br>
-                {{ $companyPostalCode }} {{ $companyCity }}<br>
+                @if ($companyAddressLine !== '')
+                    {{ $companyAddressLine }}<br>
+                @endif
                 {{ $companyEmail }} · {{ $companyPhone }}
             </td>
         </tr>
@@ -76,7 +79,7 @@
                     <p>Werknummer {{ $workNumber }}</p>
                 @endif
                 @if ($address)
-                    <p>{{ $address }}</p>
+                    <p>Werkadres {{ $address }}</p>
                 @endif
             </td>
             <td>

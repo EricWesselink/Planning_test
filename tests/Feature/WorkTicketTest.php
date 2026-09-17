@@ -254,6 +254,8 @@ class WorkTicketTest extends TestCase
             ->assertSee('fase 1 verdieping 1 (4/5).pdf')
             ->assertSee('starten in oefenruimte')
             ->assertSee('Kees Jansen')
+            ->assertSee('Manenbergring 9, 8271 RX IJsselmuiden')
+            ->assertSee('Werkadres Nieuweweg 1, 1251 AA Laren')
             ->getContent();
 
         $this->assertStringNotContainsString('€', $html);
@@ -1049,6 +1051,7 @@ class WorkTicketTest extends TestCase
             'customer_id' => $customer->id,
             'name' => 'Gezondheidscentrum Laren',
             'address' => 'Nieuweweg 1',
+            'postal_code' => '1251 AA',
             'city' => 'Laren',
             'status' => 'in_uitvoering',
         ]);
