@@ -53,6 +53,19 @@ class CalculationBoardService
     }
 
     /**
+     * @return array{room: ?array<string, mixed>, materials: list<array<string, mixed>>}
+     */
+    public function roomUpdateResponse(Calculation $calculation, CalculationLine $line, bool $canUpdate = true): array
+    {
+        $payload = $this->payload($calculation, null, $canUpdate);
+
+        return [
+            'room' => $this->roomInPayload($payload['rooms'], $line),
+            'materials' => $payload['materials'],
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
@@ -187,6 +200,31 @@ class CalculationBoardService
             $ids[] = $row['plinth'] instanceof CalculationLine ? (int) $row['plinth']->id : null;
             if (in_array((int) $line->id, array_values(array_filter($ids)), true)) {
                 return $this->roomFromRow($calculation, $row);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rooms
+     * @return array<string, mixed>|null
+     */
+    private function roomInPayload(array $rooms, CalculationLine $line): ?array
+    {
+        $id = (int) $line->id;
+        foreach ($rooms as $room) {
+            if (
+                (int) ($room['id'] ?? 0) === $id
+                || (int) ($room['floor_id'] ?? 0) === $id
+                || (int) ($room['plinth_id'] ?? 0) === $id
+            ) {
+                return $room;
+            }
+            foreach ($room['floors'] ?? [] as $finish) {
+                if ((int) ($finish['id'] ?? 0) === $id) {
+                    return $room;
+                }
             }
         }
 

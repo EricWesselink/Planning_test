@@ -113,6 +113,37 @@ class CalculationRoomRowsTest extends TestCase
         $this->assertEqualsWithDelta(3.7, $table['square_meters'], 0.001);
     }
 
+    public function test_offers_plinth_products_from_the_legend_when_gietvloer_has_no_plinth(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'A-00-14', 'T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer v04'),
+        ]), [
+            ['code' => 'v04', 'product' => 'Gietvloer v04'],
+            ['code' => 'pl01', 'product' => 'Aluminium plakplint'],
+            ['code' => 'pl02', 'product' => 'Holplint'],
+        ]);
+
+        $this->assertSame(['pl01', 'pl02'], array_column($table['rows'][0]['plinth_options'], 'code'));
+        $this->assertTrue($table['rows'][0]['can_skip_plinth']);
+    }
+
+    public function test_flags_a_found_plinth_code_without_product_as_review(): void
+    {
+        $plinth = $this->line(2, 'K-00-20', 'OPSLAG', 'pl01', 8.86, WorkUnit::LinearMeter, QuantitySource::FromDrawing, null);
+
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'K-00-20', 'OPSLAG', 'v01.g', 12.0, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Marmoleum'),
+            $plinth,
+        ]), [
+            ['code' => 'pl01', 'product' => 'Aluminium plakplint'],
+        ]);
+
+        $this->assertSame(CheckStatus::Review, $table['rows'][0]['status']);
+        $this->assertSame('Plintproduct ontbreekt', $table['rows'][0]['status_label']);
+        $this->assertFalse($table['rows'][0]['can_skip_plinth']);
+        $this->assertSame(['pl01'], array_column($table['rows'][0]['plinth_options'], 'code'));
+    }
+
     public function test_marks_gietvloer_as_certain_when_no_plinth_is_applicable(): void
     {
         $floor = $this->line(1, 'A-00-13', 'MIVA T', 'v04', 3.7, WorkUnit::SquareMeter, QuantitySource::FromDrawing, 'Gietvloer');

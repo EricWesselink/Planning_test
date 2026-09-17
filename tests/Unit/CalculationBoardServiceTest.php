@@ -239,6 +239,37 @@ class CalculationBoardServiceTest extends TestCase
         $this->assertNull($room['floors'][0]['material_color']);
     }
 
+    public function test_room_update_response_matches_payload_room_and_materials(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'Offerte',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        $line = CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'sort_order' => 1,
+            'room_number' => '1.10',
+            'room_name' => 'hal',
+            'product_code' => 'v02',
+            'product' => 'Marmoleum',
+            'quantity' => 10,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::FromDrawing,
+        ]);
+
+        $fresh = $calculation->fresh(['lines.drawing', 'lines.workbook', 'drawings', 'workbooks']);
+        $board = app(CalculationBoardService::class);
+        $updated = $board->roomUpdateResponse($fresh, $line);
+        $fromLine = $board->roomByLine($fresh, $line);
+
+        $this->assertSame($fromLine['number'], $updated['room']['number']);
+        $this->assertSame($fromLine['floor_code'], $updated['room']['floor_code']);
+        $this->assertSame('v02', $updated['materials'][0]['key']);
+        $this->assertEqualsWithDelta(10.0, (float) $updated['materials'][0]['m2'], 0.001);
+    }
+
     private function floor(
         Calculation $calculation,
         CalculationDrawing $drawing,

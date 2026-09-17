@@ -15,6 +15,7 @@ use App\Models\CalculationLine;
 use App\Models\CalculationWorkbook;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -204,6 +205,23 @@ class CalculationStoreService
                 ->unique()
                 ->values()
                 ->all();
+            $chosenPlinths = [];
+            foreach ($drawing->lines()->where('unit', WorkUnit::LinearMeter)->get() as $line) {
+                if ($line->source !== QuantitySource::Manual || ! filled($line->product_code)) {
+                    continue;
+                }
+                $number = mb_strtolower(trim((string) $line->room_number));
+                if ($number === '' || in_array($number, $skipPlinthRooms, true)) {
+                    continue;
+                }
+                $chosenPlinths[$number] = [
+                    'product_code' => $line->product_code,
+                    'product' => $line->product,
+                    'quantity' => $line->quantity,
+                    'note' => $line->note,
+                    'calculation_trace' => $line->calculation_trace,
+                ];
+            }
 
             $drawing->lines()->delete();
             $drawing->update([
@@ -264,6 +282,10 @@ class CalculationStoreService
                             $line->delete();
                         }
                     });
+            }
+
+            foreach ($chosenPlinths as $number => $chosen) {
+                $this->restoreChosenPlinth($drawing, $number, $chosen);
             }
         });
     }
@@ -415,10 +437,11 @@ class CalculationStoreService
     /**
      * @param  array<string, mixed>  $attributes
      * @param  array<int, array<string, mixed>>  $lines
+     * @param  array<int, array{not_applicable?: bool, product_code?: string, product?: string}>  $plinthDecisions
      */
-    public function update(Calculation $calculation, array $attributes, array $lines): Calculation
+    public function update(Calculation $calculation, array $attributes, array $lines, array $plinthDecisions = []): Calculation
     {
-        return DB::transaction(function () use ($calculation, $attributes, $lines): Calculation {
+        return DB::transaction(function () use ($calculation, $attributes, $lines, $plinthDecisions): Calculation {
             $calculation->update($attributes);
 
             $existing = $calculation->lines()->get()->keyBy('id');
@@ -430,15 +453,17 @@ class CalculationStoreService
                     continue;
                 }
 
-                $next = [
-                    'room_number' => $payload['room_number'] ?? null,
-                    'room_name' => $payload['room_name'] ?? null,
-                    'product_code' => $payload['product_code'] ?? null,
-                    'product' => $payload['product'] ?? null,
-                    'quantity' => $payload['quantity'] ?? null,
-                    'unit' => $payload['unit'] ?? $line->unit?->value,
-                    'note' => $payload['note'] ?? null,
-                ];
+                $next = [];
+                foreach (['room_number', 'room_name', 'product_code', 'product', 'quantity', 'unit', 'note'] as $field) {
+                    if (array_key_exists($field, $payload)) {
+                        $next[$field] = $payload[$field];
+                    }
+                }
+                $hasPlinthPayload = array_key_exists('plinth_not_applicable', $payload) || array_key_exists('plinth_choice', $payload);
+                if ($next === [] && ! $hasPlinthPayload) {
+                    continue;
+                }
+                $next = $this->overlayCurrent($line, $next);
                 $next = $this->applyChosenFloorVariant($line, $next, $legend);
                 $source = QuantitySource::tryFrom((string) ($payload['source'] ?? $line->source?->value));
                 if ($this->changed($line, $next)) {
@@ -446,11 +471,22 @@ class CalculationStoreService
                     $next['confirmed_at'] = null;
                     $next['confirmed_manually'] = false;
                 }
-                $next['source'] = $source?->value ?? QuantitySource::Manual->value;
+                $next['source'] = $source?->value ?? $line->source?->value ?? QuantitySource::Manual->value;
                 if (array_key_exists('plinth_not_applicable', $payload)) {
                     $next['plinth_not_applicable'] = (bool) $payload['plinth_not_applicable'];
                 }
                 $line->update($next);
+                $line->refresh();
+                $existing[$line->id] = $line;
+                $this->applyPlinthChoiceFromPayload($calculation, $line, $payload, $legend, $existing);
+            }
+
+            foreach ($plinthDecisions as $lineId => $decision) {
+                $line = $existing->get((int) $lineId);
+                if (! $line instanceof CalculationLine) {
+                    continue;
+                }
+                $this->applyPlinthDecision($calculation, $line, $decision, $legend, $existing);
             }
 
             return $calculation->fresh(['lines', 'drawings']) ?? $calculation;
@@ -462,7 +498,8 @@ class CalculationStoreService
      */
     public function updateBoardRoom(Calculation $calculation, CalculationLine $anchor, array $fields, CalculationRoomRows $rows): Calculation
     {
-        $table = $rows->table($calculation->lines()->get());
+        $calculation->loadMissing('lines');
+        $table = $rows->table($calculation->lines);
         $match = null;
         foreach ($table['rows'] as $row) {
             $ids = $this->rowLineIds($row);
@@ -543,7 +580,8 @@ class CalculationStoreService
 
     public function confirmRoom(Calculation $calculation, CalculationLine $line, CalculationRoomRows $rows): bool
     {
-        $table = $rows->table($calculation->lines()->get());
+        $calculation->loadMissing('lines');
+        $table = $rows->table($calculation->lines);
         $match = null;
         foreach ($table['rows'] as $row) {
             $ids = $this->rowLineIds($row);
@@ -575,7 +613,8 @@ class CalculationStoreService
 
     public function confirmCompleteRooms(Calculation $calculation, CalculationRoomRows $rows): int
     {
-        $table = $rows->table($calculation->lines()->get());
+        $calculation->load('lines');
+        $table = $rows->table($calculation->lines);
         $count = 0;
         foreach ($table['rows'] as $row) {
             if (! $row['can_confirm']) {
@@ -889,6 +928,223 @@ class CalculationStoreService
         }
 
         return array_values(array_unique($ids));
+    }
+
+    /**
+     * @param  array<string, mixed>  $next
+     * @return array<string, mixed>
+     */
+    private function overlayCurrent(CalculationLine $line, array $next): array
+    {
+        foreach (['room_number', 'room_name', 'product_code', 'product', 'quantity', 'note'] as $field) {
+            if (! array_key_exists($field, $next)) {
+                $next[$field] = $line->{$field};
+            }
+        }
+        if (! array_key_exists('unit', $next)) {
+            $next['unit'] = $line->unit instanceof WorkUnit ? $line->unit->value : $line->unit;
+        }
+
+        return $next;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, string>  $legend
+     * @param  Collection<int, CalculationLine>  $existing
+     */
+    private function applyPlinthChoiceFromPayload(
+        Calculation $calculation,
+        CalculationLine $line,
+        array $payload,
+        array $legend,
+        $existing,
+    ): void {
+        $decision = [];
+        if (array_key_exists('plinth_not_applicable', $payload)) {
+            $decision['not_applicable'] = (bool) $payload['plinth_not_applicable'];
+        }
+        $choice = mb_strtolower(trim((string) ($payload['plinth_choice'] ?? '')));
+        if ($choice !== '') {
+            $decision['product_code'] = $choice;
+        }
+        if ($decision === []) {
+            return;
+        }
+        $this->applyPlinthDecision($calculation, $line, $decision, $legend, $existing);
+    }
+
+    /**
+     * @param  array{not_applicable?: bool, product_code?: string, product?: string}  $decision
+     * @param  array<string, string>  $legend
+     * @param  Collection<int, CalculationLine>  $existing
+     */
+    private function applyPlinthDecision(
+        Calculation $calculation,
+        CalculationLine $floor,
+        array $decision,
+        array $legend,
+        $existing,
+    ): void {
+        if ($floor->unit !== WorkUnit::SquareMeter) {
+            return;
+        }
+        if (($decision['not_applicable'] ?? false) === true) {
+            $floor->update(['plinth_not_applicable' => true]);
+            $this->removeEmptyPlinthForRoom($floor, $existing);
+
+            return;
+        }
+        $code = mb_strtolower(trim((string) ($decision['product_code'] ?? '')));
+        if ($code === '') {
+            return;
+        }
+        $product = trim((string) ($decision['product'] ?? ''));
+        if ($product === '') {
+            $product = $legend[$code] ?? $this->productFromExistingPlinths($existing, $code) ?? $product;
+        }
+        if ($product === '' && $code === FinishPairingRules::HOLPLINT) {
+            $product = 'Holplint';
+        }
+        if ($product === '' && $code === FinishPairingRules::PLAKPLINT) {
+            $product = 'Aluminium plakplint';
+        }
+        $floor->update(['plinth_not_applicable' => false]);
+        $plinth = $this->plinthLineForFloor($floor, $existing);
+        if ($plinth instanceof CalculationLine) {
+            $plinth->update([
+                'product_code' => $code,
+                'product' => $product !== '' ? $product : $plinth->product,
+                'source' => QuantitySource::Manual->value,
+                'confirmed_at' => null,
+                'confirmed_manually' => false,
+            ]);
+            $existing[$plinth->id] = $plinth->fresh() ?? $plinth;
+
+            return;
+        }
+
+        $sort = (int) $calculation->lines()->lockForUpdate()->max('sort_order') + 1;
+        $created = CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $floor->calculation_drawing_id,
+            'sort_order' => $sort,
+            'room_number' => $floor->room_number,
+            'room_name' => $floor->room_name,
+            'product_code' => $code,
+            'product' => $product !== '' ? $product : null,
+            'quantity' => null,
+            'unit' => WorkUnit::LinearMeter->value,
+            'source' => QuantitySource::Manual->value,
+            'found_source' => QuantitySource::Manual->value,
+        ]);
+        $existing[$created->id] = $created;
+    }
+
+    /**
+     * @param  Collection<int, CalculationLine>  $existing
+     */
+    private function plinthLineForFloor(CalculationLine $floor, $existing): ?CalculationLine
+    {
+        $number = mb_strtolower(trim((string) $floor->room_number));
+        if ($number === '') {
+            return null;
+        }
+
+        $match = $existing->first(function (CalculationLine $line) use ($floor, $number): bool {
+            if ($line->unit !== WorkUnit::LinearMeter) {
+                return false;
+            }
+            if (mb_strtolower(trim((string) $line->room_number)) !== $number) {
+                return false;
+            }
+
+            return (int) $line->calculation_drawing_id === (int) $floor->calculation_drawing_id
+                || $line->calculation_drawing_id === null
+                || $floor->calculation_drawing_id === null;
+        });
+
+        return $match instanceof CalculationLine ? $match : null;
+    }
+
+    /**
+     * @param  Collection<int, CalculationLine>  $existing
+     */
+    private function removeEmptyPlinthForRoom(CalculationLine $floor, $existing): void
+    {
+        $plinth = $this->plinthLineForFloor($floor, $existing);
+        if (! $plinth instanceof CalculationLine) {
+            return;
+        }
+        if (filled($plinth->product_code)) {
+            return;
+        }
+        $plinth->delete();
+        $existing->forget($plinth->id);
+    }
+
+    /**
+     * @param  Collection<int, CalculationLine>  $existing
+     */
+    private function productFromExistingPlinths($existing, string $code): ?string
+    {
+        foreach ($existing as $line) {
+            if ($line->unit !== WorkUnit::LinearMeter) {
+                continue;
+            }
+            if (mb_strtolower(trim((string) $line->product_code)) !== $code) {
+                continue;
+            }
+            if (filled($line->product)) {
+                return (string) $line->product;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{product_code: mixed, product: mixed, quantity: mixed, note: mixed, calculation_trace: mixed}  $chosen
+     */
+    private function restoreChosenPlinth(CalculationDrawing $drawing, string $number, array $chosen): void
+    {
+        $plinth = $drawing->lines()
+            ->where('unit', WorkUnit::LinearMeter)
+            ->get()
+            ->first(fn (CalculationLine $line): bool => mb_strtolower(trim((string) $line->room_number)) === $number);
+        if ($plinth instanceof CalculationLine) {
+            $plinth->update([
+                'product_code' => $chosen['product_code'],
+                'product' => $chosen['product'],
+                'source' => QuantitySource::Manual->value,
+            ]);
+
+            return;
+        }
+
+        $floor = $drawing->lines()
+            ->where('unit', WorkUnit::SquareMeter)
+            ->get()
+            ->first(fn (CalculationLine $line): bool => mb_strtolower(trim((string) $line->room_number)) === $number);
+        $sort = (int) CalculationLine::query()
+            ->where('calculation_id', $drawing->calculation_id)
+            ->max('sort_order') + 1;
+        CalculationLine::query()->create([
+            'calculation_id' => $drawing->calculation_id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => $sort,
+            'room_number' => $floor?->room_number ?? $number,
+            'room_name' => $floor?->room_name,
+            'product_code' => $chosen['product_code'],
+            'product' => $chosen['product'],
+            'quantity' => $chosen['quantity'],
+            'original_quantity' => $chosen['quantity'],
+            'unit' => WorkUnit::LinearMeter->value,
+            'source' => QuantitySource::Manual->value,
+            'found_source' => QuantitySource::Manual->value,
+            'note' => $chosen['note'],
+            'calculation_trace' => $chosen['calculation_trace'],
+        ]);
     }
 
     /**

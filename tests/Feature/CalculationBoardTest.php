@@ -133,6 +133,9 @@ class CalculationBoardTest extends TestCase
         $this->assertSame('v09', $response->json('room.material_key'));
         $this->assertNotSame($response->json('room.material_color'), null);
         $this->assertNotSame('#9ca3af', $response->json('room.material_color'));
+        $this->assertTrue(collect($response->json('materials'))->contains(
+            fn (array $material): bool => ($material['key'] ?? null) === 'v09'
+        ));
     }
 
     public function test_board_room_confirm_rejects_incomplete_rooms(): void

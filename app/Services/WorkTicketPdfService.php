@@ -415,28 +415,32 @@ class WorkTicketPdfService
             return null;
         }
 
-        $prefix = $dir.DIRECTORY_SEPARATOR.'page';
-        $command = escapeshellarg($binary)
-            .' -png -r 120 -f '.$page.' -l '.$page.' '
-            .escapeshellarg($pdfPath).' '
-            .escapeshellarg($prefix);
-        if (PHP_OS_FAMILY === 'Windows') {
-            $command .= ' 2>NUL';
-        } else {
-            $command .= ' 2>/dev/null';
-        }
-        exec($command, $_, $code);
-        if ($code !== 0) {
-            return null;
-        }
+        try {
+            $prefix = $dir.DIRECTORY_SEPARATOR.'page';
+            $command = escapeshellarg($binary)
+                .' -png -r 120 -f '.$page.' -l '.$page.' '
+                .escapeshellarg($pdfPath).' '
+                .escapeshellarg($prefix);
+            if (PHP_OS_FAMILY === 'Windows') {
+                $command .= ' 2>NUL';
+            } else {
+                $command .= ' 2>/dev/null';
+            }
+            exec($command, $_, $code);
+            if ($code !== 0) {
+                return null;
+            }
 
-        $files = glob($prefix.'-*.png') ?: [];
-        $file = $files[0] ?? null;
-        if ($file === null || ! is_file($file)) {
-            return null;
-        }
+            $files = glob($prefix.'-*.png') ?: [];
+            $file = $files[0] ?? null;
+            if ($file === null || ! is_file($file)) {
+                return null;
+            }
 
-        return $this->embedImage($file);
+            return $this->embedImage($file);
+        } finally {
+            $this->cleanupTempDirectory($dir);
+        }
     }
 
     private function embedImage(string $absolute): ?string
@@ -492,5 +496,13 @@ class WorkTicketPdfService
         $first = trim($first);
 
         return $first !== '' && is_file($first) ? $first : null;
+    }
+
+    private function cleanupTempDirectory(string $dir): void
+    {
+        foreach (glob($dir.DIRECTORY_SEPARATOR.'*') ?: [] as $file) {
+            @unlink($file);
+        }
+        @rmdir($dir);
     }
 }

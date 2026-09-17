@@ -12,6 +12,7 @@ use App\Models\WorkItem;
 use App\Services\PlanningBoardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -502,6 +503,38 @@ class PlanningProjectPeriodTest extends TestCase
         $this->assertTrue(collect($titles)->contains(
             fn (mixed $title): bool => is_string($title) && str_contains($title, 'Nacalculatie plinten')
         ));
+    }
+
+    public function test_missing_craftsman_does_not_query_assignments_once_per_project(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+        $this->makePeriodProject('250200001', 'Project A');
+        $this->makePeriodProject('250200002', 'Project B');
+        $this->makePeriodProject('250200003', 'Project C');
+
+        $lazyAssignmentQueries = 0;
+        DB::listen(function ($query) use (&$lazyAssignmentQueries): void {
+            if (
+                str_contains($query->sql, 'worker_assignments')
+                && preg_match('/project_id[`"\']?\s*=\s*\?/i', $query->sql)
+            ) {
+                $lazyAssignmentQueries++;
+            }
+        });
+
+        $request = Request::create('/planning', 'GET', [
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+        ]);
+        $request->setUserResolver(fn () => $user);
+
+        $board = app(PlanningBoardService::class)->build($request);
+        $projects = collect($board['rows'])->where('type', 'project');
+
+        $this->assertSame(3, $projects->count());
+        $this->assertTrue($projects->every(fn (array $row): bool => $row['missing_craftsman'] === true));
+        $this->assertSame(0, $lazyAssignmentQueries);
     }
 
     /** @return array<string, array{0: int}> */

@@ -79,9 +79,10 @@
             <button class="border border-nicon-line bg-white px-3 py-1 text-xs">Toevoegen</button>
         </form>
 
-        <form method="POST" action="{{ route('calculations.update', $calculation) }}" class="mt-4">
+        <form method="POST" action="{{ route('calculations.update', $calculation) }}" class="mt-4" data-calculation-review-form>
             @csrf
             @method('PATCH')
+            <input type="hidden" name="plinth_decisions" value="" data-plinth-decisions>
             <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                 <div>
                     <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="name">Naam</label>
@@ -211,7 +212,7 @@
                         >
                             <td class="px-1.5 py-1">
                                 @if ($floor)
-                                    @include('calculations.partials.line-hidden', ['line' => $floor, 'oldLine' => $floorOld, 'index' => $floorIndex, 'unit' => \App\Enums\WorkUnit::SquareMeter])
+                                    @include('calculations.partials.line-hidden', ['line' => $floor, 'oldLine' => $floorOld, 'index' => $floorIndex, 'unit' => \App\Enums\WorkUnit::SquareMeter, 'skipPlinth' => $row['can_skip_plinth'] ?? false, 'plinthNotApplicable' => $row['plinth_not_applicable'] ?? false])
                                     <input name="lines[{{ $floorIndex }}][room_number]" data-mirror="room_number" value="{{ $floorOld['room_number'] ?? $floor->room_number }}" class="w-[4.5rem] border border-nicon-line px-1 py-0.5">
                                 @elseif ($plinth)
                                     @include('calculations.partials.line-hidden', ['line' => $plinth, 'oldLine' => $plinthOld, 'index' => $plinthIndex, 'unit' => \App\Enums\WorkUnit::LinearMeter])
@@ -285,7 +286,21 @@
                                 @endif
                             </td>
                             <td class="px-1.5 py-1">
-                                @if ($plinth)
+                                @if (($row['plinth_options'] ?? []) !== [] && $floor)
+                                    @php
+                                        $chosenPlinthCode = mb_strtolower(trim((string) ($plinthOld['product_code'] ?? $plinth?->product_code)));
+                                    @endphp
+                                    <select name="lines[{{ $floorIndex }}][plinth_choice]" data-plinth-choice data-line-id="{{ $floor->id }}" class="w-36 border border-nicon-line bg-white px-1 py-0.5" aria-label="Kies plintproduct">
+                                        <option value="" @selected($chosenPlinthCode === '')>Kies plintproduct</option>
+                                        @foreach ($row['plinth_options'] as $option)
+                                            <option
+                                                value="{{ $option['code'] }}"
+                                                data-product="{{ $option['product'] }}"
+                                                @selected($chosenPlinthCode === $option['code'] && filled($plinth?->product) && ! ($row['plinth_not_applicable'] ?? false))
+                                            >{{ $option['code'] }} – {{ $option['product'] }}</option>
+                                        @endforeach
+                                    </select>
+                                @elseif ($plinth)
                                     <input name="lines[{{ $plinthIndex }}][product]" value="{{ $plinthOld['product'] ?? $plinth->product }}" class="w-36 border border-nicon-line px-1 py-0.5">
                                 @endif
                             </td>
@@ -297,9 +312,8 @@
                                             FILTER_VALIDATE_BOOLEAN,
                                         );
                                     @endphp
-                                    <input type="hidden" name="lines[{{ $floorIndex }}][plinth_not_applicable]" value="0">
-                                    <label class="flex items-start gap-1 text-[10px] leading-tight text-nicon-muted">
-                                        <input type="checkbox" name="lines[{{ $floorIndex }}][plinth_not_applicable]" value="1" class="mt-0.5 size-3.5 border-nicon-line" @checked($skipPlinth)>
+                                    <label for="skip-plinth-{{ $floor->id }}" class="flex items-start gap-1 text-[10px] leading-tight text-nicon-muted">
+                                        <input type="checkbox" data-skip-plinth data-line-id="{{ $floor->id }}" class="mt-0.5 size-3.5 border-nicon-line" @checked($skipPlinth)>
                                         <span>Geen plint van toepassing</span>
                                     </label>
                                 @elseif ($plinth)
@@ -456,6 +470,57 @@
                     }
                     form?.submit();
                 });
+            });
+            const reviewForm = root.querySelector('[data-calculation-review-form]');
+            const syncSkip = (lineId, checked) => {
+                root.querySelectorAll(`[data-skip-plinth][data-line-id="${lineId}"], [data-skip-plinth-early][data-line-id="${lineId}"]`).forEach((box) => {
+                    box.checked = checked;
+                });
+                if (checked) {
+                    const choice = root.querySelector(`[data-plinth-choice][data-line-id="${lineId}"]`);
+                    if (choice) {
+                        choice.value = '';
+                    }
+                }
+            };
+            root.querySelectorAll('[data-skip-plinth], [data-skip-plinth-early]').forEach((box) => {
+                box.addEventListener('change', () => {
+                    syncSkip(box.dataset.lineId, box.checked);
+                });
+            });
+            root.querySelectorAll('[data-plinth-choice]').forEach((select) => {
+                select.addEventListener('change', () => {
+                    if (select.value) {
+                        syncSkip(select.dataset.lineId, false);
+                    }
+                });
+            });
+            reviewForm?.addEventListener('submit', () => {
+                const decisions = {};
+                root.querySelectorAll('[data-skip-plinth-early]').forEach((box) => {
+                    const id = box.dataset.lineId;
+                    if (! id) {
+                        return;
+                    }
+                    decisions[id] = decisions[id] || {};
+                    decisions[id].not_applicable = box.checked;
+                });
+                root.querySelectorAll('[data-plinth-choice]').forEach((select) => {
+                    const id = select.dataset.lineId;
+                    if (! id || ! select.value) {
+                        return;
+                    }
+                    decisions[id] = decisions[id] || {};
+                    if (decisions[id].not_applicable) {
+                        return;
+                    }
+                    decisions[id].product_code = select.value;
+                    decisions[id].product = select.selectedOptions[0]?.dataset.product || '';
+                });
+                const jsonInput = reviewForm.querySelector('[data-plinth-decisions]');
+                if (jsonInput) {
+                    jsonInput.value = JSON.stringify(decisions);
+                }
             });
         });
     </script>

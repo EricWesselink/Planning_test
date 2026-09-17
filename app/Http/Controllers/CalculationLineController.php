@@ -121,15 +121,8 @@ class CalculationLineController extends Controller
         }
 
         $store->updateBoardRoom($calculation, $line, $validated, $rows);
-        $fresh = $calculation->fresh(['lines.drawing', 'lines.workbook', 'drawings', 'workbooks']) ?? $calculation;
-        $anchor = $fresh->lines()->find($line->id) ?? $line;
-        $room = $board->roomByLine($fresh, $anchor);
 
-        return response()->json([
-            'ok' => true,
-            'room' => $room,
-            'materials' => $board->payload($fresh, null, true)['materials'],
-        ]);
+        return $this->boardRoomJson($calculation, $line, $board);
     }
 
     public function confirmBoardRoom(
@@ -149,14 +142,22 @@ class CalculationLineController extends Controller
             ], 422);
         }
 
+        return $this->boardRoomJson($calculation, $line, $board);
+    }
+
+    private function boardRoomJson(
+        Calculation $calculation,
+        CalculationLine $line,
+        CalculationBoardService $board,
+    ): JsonResponse {
         $fresh = $calculation->fresh(['lines.drawing', 'lines.workbook', 'drawings', 'workbooks']) ?? $calculation;
-        $anchor = $fresh->lines()->find($line->id) ?? $line;
-        $room = $board->roomByLine($fresh, $anchor);
+        $anchor = $fresh->lines->firstWhere('id', $line->id) ?? $line;
+        $updated = $board->roomUpdateResponse($fresh, $anchor);
 
         return response()->json([
             'ok' => true,
-            'room' => $room,
-            'materials' => $board->payload($fresh, null, true)['materials'],
+            'room' => $updated['room'],
+            'materials' => $updated['materials'],
         ]);
     }
 }

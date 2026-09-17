@@ -129,7 +129,6 @@ class MeetstaatImportController extends Controller
     public function import(Request $request, string $token, ProjectIntakeService $intake, RoomImportAssembler $assembler, CalculationImportService $calculationImport, SourceUpdateService $updates, SourceUpdateController $sourceUpdates): RedirectResponse
     {
         Gate::authorize('create', Project::class);
-        logger()->info('import.submit: route bereikt', ['token' => $token]);
         $payload = Cache::get('meetstaat.'.$token);
         abort_unless($payload, 404);
 
@@ -225,12 +224,6 @@ class MeetstaatImportController extends Controller
         }
 
         $closure = is_array($preview['import_closure'] ?? null) ? $preview['import_closure'] : [];
-        if ($calculationImport->hasOpenMatches($preview)) {
-            logger()->info('import.submit: excel-arbeidsregels ongeblokkeerd als waarschuwing', [
-                'token' => $token,
-                'open_matches' => (int) ($preview['calculation']['open_matches'] ?? 0),
-            ]);
-        }
 
         if (! ($closure['ready'] ?? false)) {
             // Nooit een lossy/incomplete review terug in de cache zetten wanneer de eerdere preview al klaar was.
@@ -263,8 +256,6 @@ class MeetstaatImportController extends Controller
         $plattegrondName = $drawing['original'] ?? $payload['plattegrond_original'] ?? null;
         $meetstaatPath = $this->absoluteStoredPath($payload['file'] ?? null);
 
-        logger()->info('import.submit: importservice gestart', ['token' => $token]);
-
         try {
             $project = $intake->importPreview(
                 $preview,
@@ -296,12 +287,6 @@ class MeetstaatImportController extends Controller
 
         $rooms = count($preview['areas'] ?? []);
         $works = count($preview['works'] ?? []);
-        logger()->info('import.submit: import succesvol', [
-            'token' => $token,
-            'project_id' => $project->id,
-            'rooms' => $rooms,
-            'works' => $works,
-        ]);
 
         return redirect()
             ->route('projects.show', $project)

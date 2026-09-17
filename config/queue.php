@@ -40,6 +40,7 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
+            // Drawing jobs timeout at 270s; worker --timeout is 300. retry_after must stay higher.
             'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 330),
             'after_commit' => false,
         ],

@@ -96,6 +96,8 @@ class PlanningBoardService
         if ($canViewLabor) {
             $relations[] = 'assignments.worker';
             $relations[] = 'assignments.crewMembers';
+        } else {
+            $relations[] = 'assignments';
         }
 
         $projectQuery = Project::query()

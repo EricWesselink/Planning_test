@@ -255,9 +255,11 @@ class CalculationController extends Controller
                 if (! is_array($line)) {
                     continue;
                 }
-                $incoming[$index]['quantity'] = Format::decimalInput($line['quantity'] ?? null);
-                if ($incoming[$index]['quantity'] === '') {
-                    $incoming[$index]['quantity'] = null;
+                if (array_key_exists('quantity', $line)) {
+                    $incoming[$index]['quantity'] = Format::decimalInput($line['quantity']);
+                    if ($incoming[$index]['quantity'] === '') {
+                        $incoming[$index]['quantity'] = null;
+                    }
                 }
                 if (array_key_exists('plinth_not_applicable', $line)) {
                     $incoming[$index]['plinth_not_applicable'] = filter_var(
@@ -286,6 +288,8 @@ class CalculationController extends Controller
             'lines.*.source' => ['required', Rule::enum(QuantitySource::class)],
             'lines.*.note' => ['nullable', 'string', 'max:1000'],
             'lines.*.plinth_not_applicable' => ['sometimes', 'boolean'],
+            'lines.*.plinth_choice' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'plinth_decisions' => ['sometimes', 'nullable', 'string'],
         ]);
 
         $store->update($calculation, [
@@ -294,7 +298,7 @@ class CalculationController extends Controller
             'project_name' => $validated['project_name'] ?? null,
             'dated_on' => $validated['dated_on'],
             'status' => $validated['status'],
-        ], $validated['lines'] ?? []);
+        ], $validated['lines'] ?? [], $this->plinthDecisions($request->input('plinth_decisions')));
 
         return redirect()
             ->route('calculations.show', $calculation)
@@ -337,6 +341,48 @@ class CalculationController extends Controller
             $drawing->original_filename,
             ['Content-Type' => $drawing->mime_type ?: 'application/pdf'],
         );
+    }
+
+    /**
+     * @return array<int, array{not_applicable?: bool, product_code?: string, product?: string}>
+     */
+    private function plinthDecisions(mixed $raw): array
+    {
+        if (! is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $decisions = [];
+        foreach ($decoded as $id => $decision) {
+            if (! is_array($decision)) {
+                continue;
+            }
+            $lineId = (int) $id;
+            if ($lineId < 1) {
+                continue;
+            }
+            $row = [];
+            if (array_key_exists('not_applicable', $decision)) {
+                $row['not_applicable'] = filter_var($decision['not_applicable'], FILTER_VALIDATE_BOOLEAN);
+            }
+            $code = mb_strtolower(trim((string) ($decision['product_code'] ?? '')));
+            if ($code !== '') {
+                $row['product_code'] = $code;
+                $product = trim((string) ($decision['product'] ?? ''));
+                if ($product !== '') {
+                    $row['product'] = $product;
+                }
+            }
+            if ($row !== []) {
+                $decisions[$lineId] = $row;
+            }
+        }
+
+        return $decisions;
     }
 
     /**

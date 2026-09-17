@@ -82,6 +82,7 @@ class CalculationRoomRows
         $rows = [];
         $squareMeters = 0.0;
         $variants = FinishPairingRules::variantsFromLegend($legend);
+        $plinthCatalog = $this->plinthCatalog($lines, $legend);
         foreach ($groups as $group) {
             if ($this->isEmptyGroup($group)) {
                 continue;
@@ -130,6 +131,7 @@ class CalculationRoomRows
                 'floor_variants' => $this->floorVariants($floor, $variants),
                 'plinth_not_applicable' => $this->plinthNotApplicable($floors, $plinth),
                 'can_skip_plinth' => $this->canSkipPlinth($floors, $plinth),
+                'plinth_options' => $this->plinthOptions($floors, $plinth, $plinthCatalog),
                 'search' => mb_strtolower(trim(implode(' ', array_filter([
                     ...$searchBits,
                     $plinth?->product_code,
@@ -293,9 +295,13 @@ class CalculationRoomRows
         if ($floor instanceof CalculationLine && $this->plinthRequired($floor, $plinth)) {
             if (! $plinth instanceof CalculationLine || ! filled($plinth->product_code)) {
                 $issues[] = 'Plintcode ontbreekt';
+            } elseif ($this->missingPlinthProduct($plinth)) {
+                $issues[] = 'Plintproduct ontbreekt';
             } elseif ($plinth->quantity === null) {
                 $issues[] = 'Plint m¹ ontbreekt';
             }
+        } elseif ($plinth instanceof CalculationLine && filled($plinth->product_code) && $this->missingPlinthProduct($plinth)) {
+            $issues[] = 'Plintproduct ontbreekt';
         }
 
         return array_values(array_unique($issues));
@@ -396,6 +402,85 @@ class CalculationRoomRows
         }
 
         return ! ($plinth instanceof CalculationLine && filled($plinth->product_code));
+    }
+
+    private function missingPlinthProduct(?CalculationLine $plinth): bool
+    {
+        if (! $plinth instanceof CalculationLine || ! filled($plinth->product_code)) {
+            return false;
+        }
+        if (! filled($plinth->product)) {
+            return true;
+        }
+
+        return mb_strtolower(trim((string) $plinth->product)) === mb_strtolower(trim((string) $plinth->product_code));
+    }
+
+    /**
+     * @param  Collection<int, CalculationLine>  $lines
+     * @param  list<array{code?: string, product?: string}>  $legend
+     * @return list<array{code: string, product: string}>
+     */
+    private function plinthCatalog(Collection $lines, array $legend): array
+    {
+        $options = [];
+        foreach ($legend as $entry) {
+            $code = mb_strtolower(trim((string) ($entry['code'] ?? '')));
+            if ($code === '' || ! str_starts_with($code, 'pl')) {
+                continue;
+            }
+            $product = trim((string) ($entry['product'] ?? ''));
+            $options[$code] = [
+                'code' => $code,
+                'product' => $product,
+            ];
+        }
+        foreach ($lines as $line) {
+            if ($line->unit !== WorkUnit::LinearMeter || ! filled($line->product_code) || ! filled($line->product)) {
+                continue;
+            }
+            $code = mb_strtolower(trim((string) $line->product_code));
+            if ($code === '' || (isset($options[$code]) && $options[$code]['product'] !== '')) {
+                continue;
+            }
+            $options[$code] = [
+                'code' => $code,
+                'product' => (string) $line->product,
+            ];
+        }
+        foreach ([FinishPairingRules::HOLPLINT => 'Holplint', FinishPairingRules::PLAKPLINT => 'Aluminium plakplint'] as $code => $product) {
+            if (! isset($options[$code])) {
+                continue;
+            }
+            if ($options[$code]['product'] === '') {
+                $options[$code]['product'] = $product;
+            }
+        }
+        ksort($options, SORT_NATURAL);
+
+        return array_values($options);
+    }
+
+    /**
+     * @param  list<CalculationLine>  $floors
+     * @param  list<array{code: string, product: string}>  $catalog
+     * @return list<array{code: string, product: string}>
+     */
+    private function plinthOptions(array $floors, ?CalculationLine $plinth, array $catalog): array
+    {
+        if ($this->canSkipPlinth($floors, $plinth)) {
+            return $catalog;
+        }
+        if (! $this->missingPlinthProduct($plinth) || ! $plinth instanceof CalculationLine) {
+            return [];
+        }
+        $code = mb_strtolower(trim((string) $plinth->product_code));
+        $matches = array_values(array_filter(
+            $catalog,
+            fn (array $option): bool => $option['code'] === $code || FinishPairingRules::compatible($code, $option['code']),
+        ));
+
+        return $matches !== [] ? $matches : $catalog;
     }
 
     private function isEstimated(?CalculationLine $plinth): bool

@@ -957,9 +957,6 @@
                 warningsPanel.open = true;
                 warningsPanel.scrollIntoView({ block: 'nearest' });
             });
-            importSubmit?.addEventListener('click', () => {
-                console.info('import.submit: klik ontvangen');
-            });
             reviewForm?.addEventListener('submit', (event) => {
                 const warningCount = Number(importSubmit?.getAttribute('data-warning-count') || '0');
                 if (warningCount > 0 && ! importConfirmed) {
@@ -972,7 +969,6 @@
                     confirmDialog?.showModal();
                     return;
                 }
-                console.info('import.submit: form submit gestart', reviewForm.getAttribute('action'));
                 try {
                     if (reviewForm.getAttribute('data-import-ready') === '1') {
                         reviewForm.querySelectorAll('[name^="areas["]').forEach((input) => {
