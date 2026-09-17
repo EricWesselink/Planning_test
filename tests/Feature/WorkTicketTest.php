@@ -27,6 +27,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Smalot\PdfParser\Parser;
+use Tests\Support\SimplePdf;
 use Tests\TestCase;
 
 class WorkTicketTest extends TestCase
@@ -966,6 +967,38 @@ class WorkTicketTest extends TestCase
             ->assertSee('1e verdieping')
             ->assertSee('data-drawing-url="'.route('projects.documents.show', [$seed['project'], $seed['drawing']], false).'"', false)
             ->assertSee('snag-pdf');
+    }
+
+    public function test_opdrachtbon_with_a_stored_plattegrond_opens(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        Storage::disk('local')->put(
+            $seed['drawing']->file_path,
+            SimplePdf::bytes('1e verdieping'),
+        );
+
+        $this->actingAs($user)->post(route('work-tickets.store', $seed['assignment']), [
+            'floors' => [
+                $seed['floor']->id => [
+                    'included' => '1',
+                    'scope' => 'rooms',
+                    'area_ids' => $seed['areas']->pluck('id')->all(),
+                ],
+            ],
+            'work_item_ids' => [$seed['pvc']->id],
+            'document_ids' => [$seed['drawing']->id],
+            'billing_method' => 'unit',
+            'unit_prices' => [$seed['pvc']->id => '12.50'],
+        ]);
+        $ticket = WorkTicket::query()->first();
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('Opdrachtbon')
+            ->assertSee('OB-2026-0001')
+            ->assertSee('Tekening laden');
     }
 
     private function extraWorkItem(Project $project, string $name = 'vloer herstel', float $hours = 4): WorkItem

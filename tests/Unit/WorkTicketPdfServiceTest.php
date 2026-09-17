@@ -41,6 +41,7 @@ class WorkTicketPdfServiceTest extends TestCase
         $data = app(WorkTicketPdfService::class)->build($ticket, false);
 
         $this->assertSame('OPDRACHTBON', $data['documentTitle']);
+        $this->assertSame('OB-2026-0001', $data['number']);
         $this->assertFalse($data['showPrices']);
         $this->assertSame('Het Vloerenhuis', $data['recipient']);
         $this->assertSame('Gezondheidscentrum Laren', $data['projectTitle']);
@@ -221,6 +222,35 @@ class WorkTicketPdfServiceTest extends TestCase
         $this->assertSame('image', $data['drawingRender']);
         $this->assertNotEmpty($data['floorLayers']);
         $this->assertStringStartsWith('data:image/png;base64,', $data['floorLayers'][0]['image']);
+    }
+
+    public function test_html_build_skips_drawing_embeds(): void
+    {
+        $ticket = $this->makeTicket();
+        $project = $ticket->project;
+        $relative = 'projects/'.$project->id.'/plattegrond/plan.png';
+        Storage::disk('local')->put(
+            $relative,
+            (string) file_get_contents(public_path('images/nicon-vloeren.png')),
+        );
+        $drawing = ProjectDocument::query()->create([
+            'project_id' => $project->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => 'plattegrond.png',
+            'file_path' => $relative,
+            'mime_type' => 'image/png',
+            'file_size' => 800,
+            'parse_status' => 'done',
+        ]);
+        $ticket->documents()->attach($drawing->id);
+
+        $data = app(WorkTicketPdfService::class)->build($ticket->fresh(), false, false);
+
+        $this->assertSame('image', $data['drawingRender']);
+        $this->assertNotEmpty($data['floorLayers']);
+        $this->assertNull($data['floorLayers'][0]['image']);
+        $this->assertNull($data['drawingItems'][0]['path']);
+        $this->assertNotNull($data['drawingUrl']);
     }
 
     private function makeTicket(): WorkTicket

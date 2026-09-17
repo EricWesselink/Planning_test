@@ -190,7 +190,7 @@ class WorkTicketPdfService
     /**
      * @return list<array{name: string, rooms: string, page: int, image: ?string, pins: list<array{x: float, y: float, label: string}>}>
      */
-    private function floorLayers(WorkTicket $ticket, ?ProjectDocument $drawing): array
+    private function floorLayers(WorkTicket $ticket, ?ProjectDocument $drawing, bool $embedDrawings): array
     {
         if ($drawing === null) {
             return [];
@@ -232,7 +232,7 @@ class WorkTicketPdfService
                 'name' => $name !== '' ? $name : 'Plattegrond',
                 'rooms' => $ticket->roomsLabel(),
                 'page' => 1,
-                'image' => $this->layerImage($drawing, 1),
+                'image' => $embedDrawings ? $this->layerImage($drawing, 1) : null,
                 'pins' => [],
             ]];
         }
@@ -240,12 +240,12 @@ class WorkTicketPdfService
         ksort($grouped);
 
         return collect($grouped)
-            ->map(function (array $group, int $page) use ($drawing): array {
+            ->map(function (array $group, int $page) use ($drawing, $embedDrawings): array {
                 return [
                     'name' => implode(', ', array_keys($group['floors'])),
                     'rooms' => implode(', ', array_values(array_unique($group['rooms']))),
                     'page' => $page,
-                    'image' => $this->layerImage($drawing, $page),
+                    'image' => $embedDrawings ? $this->layerImage($drawing, $page) : null,
                     'pins' => $group['pins'],
                 ];
             })
@@ -402,13 +402,21 @@ class WorkTicketPdfService
 
         $absolute = Storage::disk('local')->path($drawing->file_path);
 
-        return $this->layerImages[$key] = $this->rasterizePdfPage($absolute, $page);
+        try {
+            return $this->layerImages[$key] = $this->rasterizePdfPage($absolute, $page);
+        } catch (\Throwable) {
+            return $this->layerImages[$key] = null;
+        }
     }
 
     private function rasterizePdfPage(string $pdfPath, int $page): ?string
     {
+        if ($page < 1 || ! is_file($pdfPath) || ! function_exists('exec')) {
+            return null;
+        }
+
         $binary = $this->pdftoppmBinary();
-        if ($binary === null || $page < 1 || ! is_file($pdfPath)) {
+        if ($binary === null) {
             return null;
         }
 
@@ -440,6 +448,8 @@ class WorkTicketPdfService
             }
 
             return $this->embedImage($file);
+        } catch (\Throwable) {
+            return null;
         } finally {
             $this->cleanupTempDirectory($dir);
         }
@@ -487,9 +497,18 @@ class WorkTicketPdfService
 
     private function whichBinary(string $name): ?string
     {
-        $output = PHP_OS_FAMILY === 'Windows'
-            ? trim((string) shell_exec('where '.escapeshellarg($name).' 2>NUL'))
-            : trim((string) shell_exec('command -v '.escapeshellarg($name).' 2>/dev/null'));
+        if (! function_exists('shell_exec')) {
+            return null;
+        }
+
+        try {
+            $output = PHP_OS_FAMILY === 'Windows'
+                ? trim((string) shell_exec('where '.escapeshellarg($name).' 2>NUL'))
+                : trim((string) shell_exec('command -v '.escapeshellarg($name).' 2>/dev/null'));
+        } catch (\Throwable) {
+            return null;
+        }
+
         if ($output === '') {
             return null;
         }
