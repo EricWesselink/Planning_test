@@ -46,7 +46,8 @@ class ShopWorkService
      *     activity_quantities?: array<int|string, mixed>,
      *     activity_hours?: array<int|string, mixed>,
      *     activity_units?: array<int|string, mixed>,
-     *     worker_id?: ?int
+     *     worker_id?: ?int,
+     *     order_amount?: string|int|float|null
      * }  $data
      * @param  list<UploadedFile>  $files
      */
@@ -71,6 +72,7 @@ class ShopWorkService
                 'kind' => ProjectKind::Winkel,
                 'work_description' => $data['work_description'] ?? null,
                 'basis_uurtarief' => $data['basis_uurtarief'] ?? SmallWorkType::HOURLY_RATE,
+                'order_amount' => $data['order_amount'] ?? null,
             ]);
 
             $this->syncActivities(
@@ -105,7 +107,8 @@ class ShopWorkService
      *     activity_quantities?: array<int|string, mixed>,
      *     activity_hours?: array<int|string, mixed>,
      *     activity_units?: array<int|string, mixed>,
-     *     worker_id?: ?int
+     *     worker_id?: ?int,
+     *     order_amount?: string|int|float|null
      * }  $data
      * @param  list<UploadedFile>  $files
      */
@@ -126,6 +129,9 @@ class ShopWorkService
             ];
             if (array_key_exists('basis_uurtarief', $data)) {
                 $attributes['basis_uurtarief'] = $data['basis_uurtarief'];
+            }
+            if (array_key_exists('order_amount', $data)) {
+                $attributes['order_amount'] = $data['order_amount'];
             }
             $project->update($attributes);
 

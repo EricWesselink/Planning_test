@@ -6,14 +6,13 @@ import {
     normalizeRoomNumber,
     roomVisualContour,
     storedJumpTarget,
-} from './room-geometry';
-import { extractPageTextItems } from './pdf-text-layer';
+} from './room-geometry.js';
 import {
     materialFillBox,
     overlayContrast,
     roomDrawingState,
     roomOverlayContent,
-} from './calculation-board-selection';
+} from './calculation-board-selection.js';
 
 export function roomFinishes(room) {
     if (Array.isArray(room?.floors) && room.floors.length > 0) {
@@ -37,6 +36,7 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
     if (!pdfDoc) {
         return;
     }
+    const { extractPageTextItems } = await import('./pdf-text-layer.js');
     const known = rooms
         .filter((room) => Number(room.drawing_id) === Number(drawingId))
         .map((room) => room.number)
@@ -51,22 +51,166 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
         hits.push(...assessTextLayer(items, known).hits);
         finishItems.push(...items);
     }
+    const usableHits = usableLabelHits(hits);
     rooms
         .filter((room) => Number(room.drawing_id) === Number(drawingId))
         .forEach((room) => {
-            const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
-                || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
+            if (applyRoomGeometry(room)) {
+                return;
+            }
+            const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, usableHits)
+                || usableHits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
             assignHit(room, hit);
         });
     assignFinishHits(rooms, drawingId, finishItems);
 }
 
+export function usableLabelHits(hits) {
+    const items = hits || [];
+
+    return items.filter((hit) => !isTextLegendCluster(items, hit));
+}
+
+export function isTextLegendCluster(hits, hit) {
+    const pageHits = (hits || []).filter((item) => Number(item.page) === Number(hit.page));
+    if (pageHits.length < 8) {
+        return false;
+    }
+    const neighbors = pageHits.filter((item) => Math.abs(Number(item.y) - Number(hit.y)) <= 0.10).length;
+    const tiny = Number(hit.h) < 0.035 && Number(hit.w) < 0.12;
+
+    return tiny && neighbors >= 8;
+}
+
+export function reliableTraceRects(source) {
+    if (!source || source.reliable === false) {
+        return [];
+    }
+
+    return (source.rects || []).filter((rect) => Number(rect?.w) > 0.001 && Number(rect?.h) > 0.001);
+}
+
+export function roomTraceContour(room) {
+    const rects = reliableTraceRects(room?.contour);
+    if (rects.length === 0) {
+        return null;
+    }
+    if (rects.length === 1) {
+        return { type: 'box', box: rects[0], room };
+    }
+
+    return { type: 'rects', rects, room };
+}
+
+export function applyRoomGeometry(room) {
+    const contour = roomTraceContour(room);
+    const box = contourBox(contour);
+    if (!contour || !box) {
+        return false;
+    }
+    const page = Math.max(1, Number(room.contour?.page) || Number(room.marker?.page) || 1);
+    room.marker = {
+        page,
+        x: box.x,
+        y: box.y,
+        width: box.w,
+        height: box.h,
+        source: 'contour',
+    };
+    room.has_position = true;
+    room.jump_target = {
+        page,
+        bbox: { x: box.x, y: box.y, w: box.w, h: box.h },
+        geometry: 'contour',
+    };
+
+    return true;
+}
+
+export function roomContourFor(room) {
+    const trace = roomTraceContour(room);
+    if (trace) {
+        return trace;
+    }
+    const visual = roomVisualContour(room);
+    if (visual) {
+        return { ...visual, room };
+    }
+    const jump = storedJumpTarget(room);
+    if (!jump?.box) {
+        return null;
+    }
+
+    return { type: 'box', box: jump.box, room };
+}
+
+export function roomLabelAnchor(room) {
+    return contourBox(roomContourFor(room)) || storedJumpTarget(room)?.box || null;
+}
+
+export function overlayChipText(room, options = {}) {
+    const content = roomOverlayContent(room);
+    const parts = [];
+    if (options.roomLabels && content.number) {
+        parts.push(content.number);
+    }
+    if (options.materialCodes !== false && content.code) {
+        parts.push(content.code);
+    }
+
+    return parts.join(' · ');
+}
+
 export function overlayRoomsOnPage(rooms, drawingId, page) {
-    return rooms.filter((room) => (
-        Number(room.drawing_id) === Number(drawingId)
-        && Number(room.marker?.page || room.jump_target?.page) === Number(page)
-        && storedJumpTarget(room)
-    ));
+    return rooms.filter((room) => {
+        if (Number(room.drawing_id) !== Number(drawingId)) {
+            return false;
+        }
+        const roomPage = Number(room.contour?.page || room.marker?.page || room.jump_target?.page);
+        if (roomPage !== Number(page)) {
+            return false;
+        }
+
+        return Boolean(roomLabelAnchor(room));
+    });
+}
+
+export function overlayPlan(rooms, drawingId, page, options = {}) {
+    return overlayRoomsOnPage(rooms, drawingId, page).map((room) => ({
+        key: room.key,
+        number: room.number,
+        box: roomLabelAnchor(room),
+        text: overlayChipText(room, options),
+        colored: Boolean(options.colored),
+        source: reliableTraceRects(room.contour).length > 0
+            ? 'contour'
+            : (room.marker?.source || room.jump_target?.geometry || 'label'),
+    }));
+}
+
+export function printDrawingSheets(drawings) {
+    return (drawings || []).flatMap((drawing) => {
+        const pageCount = Math.max(1, Number(drawing.pageCount) || 1);
+
+        return Array.from({ length: pageCount }, (_, index) => ({
+            drawingId: Number(drawing.id),
+            label: drawing.label,
+            page: index + 1,
+            pageCount,
+        }));
+    });
+}
+
+export function printPaper(cssViewport) {
+    const width = Math.max(1, Number(cssViewport?.width) || 1);
+    const height = Math.max(1, Number(cssViewport?.height) || 1);
+    const landscape = width >= height;
+
+    return {
+        landscape,
+        size: landscape ? 'A3 landscape' : 'A3 portrait',
+        ratio: width / height,
+    };
 }
 
 export function paintCalculationOverlays({
@@ -81,6 +225,7 @@ export function paintCalculationOverlays({
     search = '',
     roomLabels = false,
     materialCodes = true,
+    colored = false,
     chipTag = 'button',
     chipTransform = null,
     onRoomPointer = null,
@@ -103,7 +248,7 @@ export function paintCalculationOverlays({
             return;
         }
         const contour = roomContourFor(room);
-        const box = contourBox(contour) || storedJumpTarget(room)?.box;
+        const box = roomLabelAnchor(room);
         if (!contour || !box) {
             return;
         }
@@ -122,12 +267,19 @@ export function paintCalculationOverlays({
             let finishContour = contour;
             if (isLocal && Array.isArray(finish.marker?.polygon) && finish.marker.polygon.length >= 3) {
                 finishContour = { type: 'polygon', points: finish.marker.polygon, room };
-            } else if (isLocal && finish.overlay && Number(finish.overlay.w) > 0 && Number(finish.overlay.h) > 0) {
-                finishContour = { type: 'box', box: finish.overlay, room };
             } else if (isLocal) {
-                return;
+                const localTrace = roomTraceContour({ contour: finish.overlay });
+                if (localTrace) {
+                    finishContour = localTrace;
+                } else if (finish.overlay && Number(finish.overlay.w) > 0 && Number(finish.overlay.h) > 0) {
+                    finishContour = { type: 'box', box: finish.overlay, room };
+                } else {
+                    return;
+                }
             }
-            appendFill(hitEl, { ...room, material_color: finish.material_color || room.material_color }, finishContour, finishState, onRoomPointer);
+            if (colored) {
+                appendFill(hitEl, { ...room, material_color: finish.material_color || room.material_color }, finishContour, finishState, onRoomPointer);
+            }
             if (isLocal) {
                 const localBox = contourBox(finishContour);
                 if (localBox) {
@@ -160,21 +312,8 @@ export function paintCalculationOverlays({
     });
 }
 
-function roomContourFor(room) {
-    const visual = roomVisualContour(room);
-    if (visual) {
-        return { ...visual, room };
-    }
-    const jump = storedJumpTarget(room);
-    if (!jump?.box) {
-        return null;
-    }
-
-    return { type: 'box', box: jump.box, room };
-}
-
 function assignHit(room, hit) {
-    if (!hit) {
+    if (!hit || applyRoomGeometry(room)) {
         return;
     }
     const width = Math.max(0.02, Number(hit.w) || Number(hit.width) || 0.04);
@@ -261,48 +400,56 @@ function appendFill(hitEl, room, contour, state, onRoomPointer) {
     const fillContour = state.highlighted || state.selected
         ? (contour.type === 'box' ? { type: 'box', box: materialFillBox(contour.box) || contour.box } : contour)
         : contour;
-    let shape;
-    if (fillContour.type === 'polygon') {
-        shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        shape.setAttribute('points', fillContour.points.map((point) => `${point.x},${point.y}`).join(' '));
-    } else {
-        shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        shape.setAttribute('x', String(fillContour.box.x));
-        shape.setAttribute('y', String(fillContour.box.y));
-        shape.setAttribute('width', String(fillContour.box.w));
-        shape.setAttribute('height', String(fillContour.box.h));
+    fillShapes(fillContour).forEach((shape) => {
+        const classes = ['calc-fill', 'room-label'];
+        if (state.selected) {
+            classes.push('is-on');
+        }
+        if (state.filteredOut) {
+            classes.push('is-filtered-out');
+        }
+        if (room.needs_review) {
+            classes.push('is-review');
+        }
+        shape.setAttribute('class', classes.join(' '));
+        shape.dataset.roomKey = String(room.key);
+        if (state.highlighted || state.selected) {
+            shape.style.fill = room.material_color || '#e7e5e4';
+            shape.style.fillOpacity = String(state.fillAlpha ?? 0.18);
+        } else {
+            shape.style.fill = 'transparent';
+        }
+        shape.style.stroke = 'transparent';
+        onRoomPointer?.(shape, room);
+        hitEl.append(shape);
+    });
+}
+
+function fillShapes(contour) {
+    if (contour?.type === 'polygon') {
+        const shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        shape.setAttribute('points', contour.points.map((point) => `${point.x},${point.y}`).join(' '));
+
+        return [shape];
     }
-    const classes = ['calc-fill', 'room-label'];
-    if (state.selected) {
-        classes.push('is-on');
-    }
-    if (state.filteredOut) {
-        classes.push('is-filtered-out');
-    }
-    if (room.needs_review) {
-        classes.push('is-review');
-    }
-    shape.setAttribute('class', classes.join(' '));
-    shape.dataset.roomKey = String(room.key);
-    shape.style.fill = 'transparent';
-    shape.style.stroke = 'transparent';
-    onRoomPointer?.(shape, room);
-    hitEl.append(shape);
+    const boxes = contour?.type === 'rects' ? (contour.rects || []) : [contour?.box];
+
+    return boxes.filter((box) => box && Number(box.w) > 0 && Number(box.h) > 0).map((box) => {
+        const shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        shape.setAttribute('x', String(box.x));
+        shape.setAttribute('y', String(box.y));
+        shape.setAttribute('width', String(box.w));
+        shape.setAttribute('height', String(box.h));
+
+        return shape;
+    });
 }
 
 function appendCodeChip(markersEl, room, box, state, options) {
     if (options.showChips === false) {
         return;
     }
-    const content = roomOverlayContent(room);
-    const parts = [];
-    if (options.roomLabels && content.number) {
-        parts.push(content.number);
-    }
-    if (options.materialCodes !== false && content.code) {
-        parts.push(content.code);
-    }
-    const text = parts.join(' · ');
+    const text = overlayChipText(room, options);
     if (!text || (!state.highlighted && !state.selected)) {
         return;
     }
@@ -322,7 +469,7 @@ function appendCodeChip(markersEl, room, box, state, options) {
     chip.style.transform = options.chipTransform?.() || 'translate(-50%, -50%)';
     chip.style.background = contrast.bg;
     chip.style.color = contrast.fg;
-    chip.title = content.title;
+    chip.title = roomOverlayContent(room).title;
     options.onRoomPointer?.(chip, room);
     markersEl.append(chip);
 }

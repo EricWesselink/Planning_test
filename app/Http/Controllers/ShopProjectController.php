@@ -156,6 +156,7 @@ class ShopProjectController extends Controller
     {
         $this->normalizeDecimalMaps($request, ['activity_quantities', 'activity_hours']);
         $this->normalizeHourlyRate($request);
+        $this->normalizeOrderAmount($request);
         $this->normalizeMeasurement($request);
         $maxKb = (int) config('filesystems.project_file_max_kilobytes');
         $allowedIds = $this->allowedActivityIds($project);
@@ -181,6 +182,7 @@ class ShopProjectController extends Controller
             'attachments' => ['nullable', 'array', 'max:20'],
             'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,pdf', 'extensions:jpg,jpeg,png,webp,gif,pdf'],
             'basis_uurtarief' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            'order_amount' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
             'worker_id' => ['nullable', 'integer', Rule::exists('workers', 'id')->where('active', true)],
             ...$this->measurementRules(),
             ...PlanningWeek::rules(),
@@ -243,6 +245,18 @@ class ShopProjectController extends Controller
         $value = Format::decimalInput($request->input('basis_uurtarief'));
         $request->merge([
             'basis_uurtarief' => $value === '' ? null : $value,
+        ]);
+    }
+
+    private function normalizeOrderAmount(Request $request): void
+    {
+        if (! $request->exists('order_amount')) {
+            return;
+        }
+
+        $value = Format::decimalInput($request->input('order_amount'));
+        $request->merge([
+            'order_amount' => $value === '' ? null : $value,
         ]);
     }
 
@@ -326,6 +340,8 @@ class ShopProjectController extends Controller
             'activity_units.*.in' => 'Kies m², m¹ of stuks.',
             'basis_uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
             'basis_uurtarief.numeric' => 'Vul een geldig uurtarief in.',
+            'order_amount.min' => 'Het orderbedrag kan niet lager zijn dan 0.',
+            'order_amount.numeric' => 'Vul een geldig orderbedrag in.',
             'worker_id.exists' => 'Deze vakman is niet beschikbaar.',
             'measurement.meter_user_id.exists' => 'Deze inmeter is niet beschikbaar.',
             'measurement.ordered_at.date' => 'Vul een geldige besteldatum in.',

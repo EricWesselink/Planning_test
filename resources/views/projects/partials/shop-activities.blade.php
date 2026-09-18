@@ -7,88 +7,9 @@
     $hourlyRate = is_numeric($hourlyRate ?? null) ? (float) $hourlyRate : \App\Enums\SmallWorkType::HOURLY_RATE;
 @endphp
 @pushOnce('scripts')
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const rateInput = document.querySelector('#basis_uurtarief');
-            const parseAmount = (value) => {
-                let text = String(value ?? '').trim();
-                if (text.includes(',')) {
-                    text = text.replace(/\./g, '').replace(',', '.');
-                }
-                const number = Number.parseFloat(text);
-
-                return Number.isFinite(number) ? number : 0;
-            };
-            const formatEuro = (value) => {
-                const rounded = Math.round(value * 100) / 100;
-                const decimals = Math.abs(rounded - Math.round(rounded)) < 0.001 ? 0 : 2;
-
-                return new Intl.NumberFormat('nl-NL', {
-                    style: 'currency',
-                    currency: 'EUR',
-                    minimumFractionDigits: decimals,
-                    maximumFractionDigits: decimals,
-                }).format(rounded);
-            };
-            const setOpen = (row, enabled) => {
-                row.querySelectorAll('[data-shop-activity-details]').forEach((el) => {
-                    el.classList.toggle('hidden', !enabled);
-                    el.querySelectorAll('input, select').forEach((input) => {
-                        input.disabled = !enabled;
-                    });
-                });
-            };
-            const updateCosts = () => {
-                const rate = parseAmount(rateInput?.value) || {{ \App\Enums\SmallWorkType::HOURLY_RATE }};
-                document.querySelectorAll('[data-shop-activity]').forEach((row) => {
-                    const checked = row.querySelector('[data-shop-activity-toggle]')?.checked;
-                    const hours = parseAmount(row.querySelector('[data-shop-activity-hours]')?.value);
-                    const quantity = parseAmount(row.querySelector('[data-shop-activity-quantity]')?.value);
-                    const unitSelect = row.querySelector('[data-shop-activity-unit]');
-                    const unit = unitSelect?.value;
-                    const out = row.querySelector('[data-shop-activity-cost]');
-                    if (! out) {
-                        return;
-                    }
-                    if (! checked || hours <= 0.0001) {
-                        out.textContent = '';
-
-                        return;
-                    }
-                    const total = hours * rate;
-                    const parts = [formatEuro(total)];
-                    if ((unit === 'm2' || unit === 'm1') && quantity > 0.0001) {
-                        const unitLabel = unitSelect?.selectedOptions?.[0]?.text ?? (unit === 'm2' ? 'm²' : 'm¹');
-                        parts.push(`${formatEuro(total / quantity)}/${unitLabel}`);
-                    }
-                    out.textContent = parts.join(' · ');
-                });
-            };
-
-            document.querySelectorAll('[data-shop-activity-toggle]').forEach((input) => {
-                const row = input.closest('[data-shop-activity]');
-                if (row) {
-                    setOpen(row, input.checked);
-                }
-                input.addEventListener('change', () => {
-                    if (row) {
-                        setOpen(row, input.checked);
-                    }
-                    updateCosts();
-                });
-            });
-            document.querySelectorAll('[data-shop-activity-hours], [data-shop-activity-quantity]').forEach((input) => {
-                input.addEventListener('input', updateCosts);
-            });
-            document.querySelectorAll('[data-shop-activity-unit]').forEach((input) => {
-                input.addEventListener('change', updateCosts);
-            });
-            rateInput?.addEventListener('input', updateCosts);
-            updateCosts();
-        });
-    </script>
+    @vite(['resources/js/shop-activities.js'])
 @endpushOnce
-<fieldset class="space-y-3">
+<fieldset class="space-y-3" data-shop-activities data-shop-hourly-rate="{{ \App\Enums\SmallWorkType::HOURLY_RATE }}">
     <legend class="text-xs uppercase tracking-wide text-nicon-muted">Werkzaamheden</legend>
     <p class="text-sm text-nicon-muted">Vink aan om aantal, uren en een korte omschrijving in te vullen.</p>
     @error('work_activity_ids')
@@ -133,7 +54,13 @@
                                 }
                             }
                         @endphp
-                        <div class="flex flex-col gap-1" data-shop-activity @if ($category->slug === 'vloeren' && $activity->isMeasurementProduct($category)) data-shop-floor-product data-activity-name="{{ $activity->name }}" @endif>
+                        <div
+                            class="flex flex-col gap-1"
+                            data-shop-activity
+                            @if ($activity->isFloorCovering($category)) data-shop-floor-covering @endif
+                            @if ($category->slug === 'vloeren' && $activity->isMeasurementProduct($category)) data-shop-floor-product data-activity-name="{{ $activity->name }}" @endif
+                            @if (in_array($activity->slug, ['primen', 'egaliseren'], true)) data-shop-prep="{{ $activity->slug }}" @endif
+                        >
                             <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                                 <label class="flex items-center gap-1.5">
                                     <input
@@ -192,6 +119,16 @@
                                     </div>
                                 </div>
                             </div>
+                            @if ($activity->isFloorCovering($category))
+                                <div class="hidden" data-shop-leveling-prompt>
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-nicon-muted">Egaliseren?</span>
+                                        <button type="button" class="border border-nicon-line bg-white px-2 py-0.5" data-shop-leveling-yes>Ja</button>
+                                        <button type="button" class="border border-nicon-line bg-white px-2 py-0.5" data-shop-leveling-no>Nee</button>
+                                        <span class="text-nicon-muted">incl. primen</span>
+                                    </div>
+                                </div>
+                            @endif
                             <div
                                 id="activity-note-row-{{ $activity->id }}"
                                 @class(['hidden' => ! $checked])

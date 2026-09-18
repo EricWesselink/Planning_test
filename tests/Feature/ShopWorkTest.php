@@ -61,6 +61,7 @@ class ShopWorkTest extends TestCase
             ->assertSee('Aantal')
             ->assertSee('Uren')
             ->assertSee('Standaard €48/u')
+            ->assertSee('Orderbedrag excl. btw')
             ->assertSee('value="48"', false)
             ->assertSee('lg:grid-cols-2', false)
             ->assertSee('lg:grid-cols-4', false)
@@ -86,6 +87,31 @@ class ShopWorkTest extends TestCase
         );
 
         $this->assertTrue($horren->is_active);
+    }
+
+    public function test_create_form_asks_egaliseren_for_floor_coverings_but_not_plinten(): void
+    {
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('projects.winkel.create'))
+            ->assertOk()
+            ->assertSee('Egaliseren?')
+            ->assertSee('incl. primen')
+            ->assertSee('data-shop-leveling-yes', false)
+            ->assertSee('data-shop-leveling-no', false)
+            ->assertSee('data-shop-prep="primen"', false)
+            ->assertSee('data-shop-prep="egaliseren"', false)
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/data-shop-floor-covering\s+data-shop-floor-product\s+data-activity-name="PVC banen"/',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/data-shop-floor-covering\s+data-shop-floor-product\s+data-activity-name="Plinten"/',
+            $html
+        );
     }
 
     public function test_planner_creates_winkelwerk_with_multiple_activities_notes_and_attachments(): void
@@ -451,32 +477,94 @@ class ShopWorkTest extends TestCase
             ->get(route('projects.show', $project))
             ->assertOk()
             ->assertSee('sm:grid-cols-4', false)
-            ->assertSee('>Begroot</div>', false)
-            ->assertSee('>Ingepland</div>', false)
-            ->assertSee('>Gemaakt</div>', false)
-            ->assertSee('>Verschil</div>', false)
-            ->assertSee('>8u</div>', false)
-            ->assertSee('>40u</div>', false)
-            ->assertSee('>0u</div>', false)
-            ->assertSee('>+32u</div>', false)
-            ->assertSee('⚠ 32 uur meer ingepland dan begroot')
+            ->assertSee('>Order</div>', false)
+            ->assertSee('>Begrote kosten</div>', false)
+            ->assertSee('>Werkelijke kosten</div>', false)
+            ->assertSee('>Resultaat</div>', false)
+            ->assertSee('Order —')
+            ->assertSee('Begroot 8u · Ingepland ', false)
+            ->assertSee('Gemaakt 0u')
+            ->assertSee('Prognose 32u / 400% boven urenbudget')
             ->assertSee('Tarief €48/u')
-            ->assertSee('Arbeid €1.920')
+            ->assertSee('Arbeid €0')
+            ->assertDontSee('Arbeid €1.920')
             ->assertSee('Gereed 0 m²')
             ->assertSee('Begroot €3,84/m²')
             ->assertSee('Werkelijk €/m² —')
-            ->assertSee('Begroot 8u · Ingepland ', false)
+            ->assertSee('font-medium text-nicon-warn', false)
             ->assertSee('font-medium text-nicon-danger', false)
-            ->assertSee('Gemaakt 0u')
             ->assertSee('40 / 8 uur')
             ->assertDontSee('⚠ Project:')
             ->assertDontSee('Budget over')
             ->assertDontSee('Planningverschil')
             ->assertDontSee('Begroot 8u | Ingepland 40u')
+            ->assertDontSee('⚠ 32 uur meer ingepland dan begroot')
             ->getContent();
 
-        $this->assertSame(1, substr_count($html, 'meer ingepland dan begroot'));
-        $this->assertSame(1, substr_count($html, '⚠ 32 uur meer ingepland dan begroot'));
+        $this->assertSame(1, substr_count($html, 'Prognose 32u / 400% boven urenbudget'));
+    }
+
+    public function test_planner_saves_and_updates_the_winkelwerk_order_amount(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Eric Wesselink',
+            'city' => 'Keijenborg',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '100'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'activity_hours' => [$pvc->id => '8'],
+            'basis_uurtarief' => '48',
+            'order_amount' => '10.000,00',
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('10000.00', $project->order_amount);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Order €10.000')
+            ->assertSee('Kosten €0')
+            ->assertSee('Resultaat +€10.000 (100%)')
+            ->assertSee('name="order_amount"', false)
+            ->assertSee('value="10000"', false);
+
+        $this->actingAs($user)->patch(route('projects.winkel.update', $project), [
+            'customer_name' => 'Eric Wesselink',
+            'city' => 'Keijenborg',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '100'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'activity_hours' => [$pvc->id => '8'],
+            'basis_uurtarief' => '48',
+            'order_amount' => '8500',
+        ])->assertRedirect(route('projects.show', $project));
+
+        $this->assertSame('8500.00', $project->fresh()->order_amount);
+    }
+
+    public function test_rejects_a_negative_winkelwerk_order_amount(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), [
+                'customer_name' => 'Jansen',
+                'city' => 'Hengelo',
+                'work_activity_ids' => [$pvc->id],
+                'order_amount' => '-1',
+            ])
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['order_amount' => 'Het orderbedrag kan niet lager zijn dan 0.']);
+
+        $this->assertSame(0, Project::query()->count());
     }
 
     public function test_planner_saves_a_custom_winkelwerk_hourly_rate(): void
@@ -581,6 +669,49 @@ class ShopWorkTest extends TestCase
             'work_item_id' => $screensItem->id,
         ]);
         $this->assertSame(1, WorkerAssignment::query()->count());
+    }
+
+    public function test_planning_shows_primen_and_egaliseren_with_the_floor_square_meters(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+        $primen = $this->activity('primen');
+        $egaliseren = $this->activity('egaliseren');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Eding',
+            'city' => 'Reeve',
+            'work_activity_ids' => [$pvc->id, $primen->id, $egaliseren->id],
+            'activity_quantities' => [
+                $pvc->id => '141,08',
+                $primen->id => '141,08',
+                $egaliseren->id => '141,08',
+            ],
+            'activity_units' => [
+                $pvc->id => WorkUnit::SquareMeter->value,
+                $primen->id => WorkUnit::SquareMeter->value,
+                $egaliseren->id => WorkUnit::SquareMeter->value,
+            ],
+            'start_year' => 2026,
+            'start_week' => 37,
+            'klaar_year' => 2026,
+            'klaar_week' => 37,
+        ])->assertRedirect();
+
+        $project = Project::query()->first();
+        $this->assertNotNull($project);
+        $this->assertSame(141.08, (float) $project->workItems()->where('name', 'Primen')->value('ordered_quantity'));
+        $this->assertSame(141.08, (float) $project->workItems()->where('name', 'Egaliseren')->value('ordered_quantity'));
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('Vloeren · PVC banen + Primen + Egaliseren')
+            ->assertSee('PVC banen')
+            ->assertSee('Primen')
+            ->assertSee('Egaliseren')
+            ->assertSee('141,08 m²');
     }
 
     public function test_winkel_assignment_to_pvc_renders_on_the_pvc_row(): void

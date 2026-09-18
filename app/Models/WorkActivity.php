@@ -76,4 +76,10 @@ class WorkActivity extends Model
 
         return ! in_array($this->slug, ['primen', 'egaliseren', 'reparatie-herstel'], true);
     }
+
+    public function isFloorCovering(?WorkActivityCategory $category = null): bool
+    {
+        return $this->isMeasurementProduct($category)
+            && $this->defaultShopUnit($category) === WorkUnit::SquareMeter;
+    }
 }

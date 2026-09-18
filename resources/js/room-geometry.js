@@ -566,12 +566,39 @@ export function roomVisualContour(area) {
     return { type: 'box', box };
 }
 
+export function unionBoxes(boxes) {
+    const valid = (boxes || []).filter((box) => box && Number(box.w) > 0 && Number(box.h) > 0);
+    if (valid.length === 0) {
+        return null;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    valid.forEach((box) => {
+        const x = Number(box.x) || 0;
+        const y = Number(box.y) || 0;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + (Number(box.w) || 0));
+        maxY = Math.max(maxY, y + (Number(box.h) || 0));
+    });
+    if (!(maxX > minX) || !(maxY > minY)) {
+        return null;
+    }
+
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 export function contourBox(contour) {
     if (!contour) {
         return null;
     }
     if (contour.type === 'box') {
         return contour.box || null;
+    }
+    if (contour.type === 'rects') {
+        return unionBoxes(contour.rects);
     }
     const points = contour.points || [];
     if (points.length < 3) {

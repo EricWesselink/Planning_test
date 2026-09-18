@@ -4431,6 +4431,218 @@ button.plan-labor-toggle:hover {
         0 0 0 3px #1c1917;
 }
 
+.calc-print-dialog {
+    width: min(32rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    padding: 1.25rem;
+}
+
+.calc-print-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    font-size: 0.875rem;
+}
+
+.calc-print-toolbar {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+}
+
+.calc-print-status {
+    padding: 0 1rem 0.75rem;
+    color: var(--color-nicon-muted);
+    font-size: 0.875rem;
+}
+
+.calc-print-status.is-error {
+    color: var(--color-nicon-danger);
+}
+
+.calc-print {
+    background: #e7e0d4;
+}
+
+.calc-print-page {
+    box-sizing: border-box;
+    width: 420mm;
+    min-height: 297mm;
+    max-width: 100%;
+    margin: 0 auto 1rem;
+    padding: 8mm;
+    background: white;
+    break-after: page;
+    page-break-after: always;
+}
+
+.calc-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+}
+
+.calc-print-drawing-page.is-portrait {
+    width: 297mm;
+    min-height: 420mm;
+}
+
+.calc-print-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-end;
+    margin-bottom: 4mm;
+}
+
+.calc-print-kicker {
+    margin: 0;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-nicon-muted);
+}
+
+.calc-print-head h1 {
+    margin: 0.1rem 0 0;
+    font-size: 16px;
+    font-weight: 650;
+}
+
+.calc-print-meta {
+    margin: 0;
+    font-size: 10px;
+    color: var(--color-nicon-muted);
+}
+
+.calc-print-sheet {
+    display: flex;
+    gap: 6mm;
+    height: calc(297mm - 28mm);
+}
+
+.calc-print-drawing-page.is-portrait .calc-print-sheet {
+    height: calc(420mm - 28mm);
+}
+
+.calc-print-sheet.is-full {
+    display: block;
+    height: calc(297mm - 24mm);
+}
+
+.calc-print-drawing-page.is-portrait .calc-print-sheet.is-full {
+    height: calc(420mm - 24mm);
+}
+
+.calc-print-page.has-legend-below .calc-print-sheet {
+    flex-direction: column;
+}
+
+.calc-print-drawing {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    container-type: size;
+}
+
+.calc-print-sheet.is-full .calc-print-drawing {
+    height: 100%;
+}
+
+.calc-print-world {
+    position: relative;
+    aspect-ratio: var(--page-ratio, 1.414);
+    width: min(100%, calc(100cqh * var(--page-ratio, 1.414)));
+    height: min(100%, calc(100cqw / var(--page-ratio, 1.414)));
+}
+
+.calc-print-canvas,
+.calc-print-hit,
+.calc-print-markers {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.calc-print-canvas {
+    z-index: 1;
+}
+
+.calc-print-hit {
+    z-index: 2;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.calc-print-markers {
+    z-index: 3;
+    pointer-events: none;
+}
+
+.calc-print-markers .calc-code-chip {
+    pointer-events: none;
+    cursor: default;
+    white-space: nowrap;
+}
+
+.calc-print-legend {
+    flex: 0 0 68mm;
+    min-width: 58mm;
+    overflow: hidden;
+    font-size: 9px;
+}
+
+.calc-print-page.has-legend-below .calc-print-legend {
+    flex: 0 0 auto;
+    max-height: 48mm;
+}
+
+.calc-print-legend h2 {
+    margin: 0 0 0.35rem;
+    font-size: 11px;
+}
+
+.calc-print-table-page .calc-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.calc-print-table th,
+.calc-print-table td {
+    border-bottom: 1px solid var(--color-nicon-line);
+    padding: 0.28rem 0.35rem;
+    text-align: left;
+}
+
+.calc-print-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+@page {
+    size: A3 landscape;
+    margin: 8mm;
+}
+
+@page portrait-a3 {
+    size: A3 portrait;
+}
+
+.calc-print-drawing-page.is-portrait {
+    page: portrait-a3;
+}
+
 @media print {
     .nicon-topbar,
     .no-print {
@@ -4449,7 +4661,24 @@ button.plan-labor-toggle:hover {
         overflow: visible;
     }
 
-    body {
+    body,
+    .calc-print {
         background: white;
+    }
+
+    .calc-print-page {
+        width: auto;
+        min-height: 0;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+    }
+
+    .calc-print-sheet,
+    .calc-print-sheet.is-full,
+    .calc-print-drawing-page.is-portrait .calc-print-sheet,
+    .calc-print-drawing-page.is-portrait .calc-print-sheet.is-full {
+        height: calc(100% - 12mm);
     }
 }

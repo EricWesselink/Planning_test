@@ -21,6 +21,7 @@ use App\Services\ProjectIntakeService;
 use App\Services\ProjectLaborCalculator;
 use App\Services\ProjectOverviewPdfService;
 use App\Services\RoomWorkSetup;
+use App\Services\ShopOrderFinance;
 use App\Services\SourceDocumentService;
 use App\Services\SourceUpdateService;
 use App\Services\WorkTicketService;
@@ -228,7 +229,7 @@ class ProjectController extends Controller
             ->with('warnings', $result['warnings']);
     }
 
-    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, WorkTicketService $tickets, PlanningFitService $fit, SourceDocumentService $sourceDocuments, MeasurementFormService $measurements): View
+    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, ShopOrderFinance $orderFinance, WorkTicketService $tickets, PlanningFitService $fit, SourceDocumentService $sourceDocuments, MeasurementFormService $measurements): View
     {
         Gate::authorize('view', $project);
 
@@ -244,9 +245,14 @@ class ProjectController extends Controller
                 ->values();
             $multipleWorkers = $assignedIds->count() > 1;
 
+            $laborSummary = $labor->for($project);
+
             return view('projects.winkel', [
                 'project' => $project,
-                'labor' => $labor->for($project),
+                'labor' => $laborSummary,
+                'orderFinance' => $request->user()?->canViewLaborCosts()
+                    ? $orderFinance->for($project, $laborSummary)
+                    : null,
                 'categories' => WorkActivityCategory::formCatalog(
                     $project->workActivities->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()
                 ),

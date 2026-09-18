@@ -47,6 +47,10 @@
                     <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Uurtarief (€) <span class="font-normal normal-case tracking-normal">Standaard €48/u</span></label>
                     <input id="basis_uurtarief" name="basis_uurtarief" value="{{ old('basis_uurtarief', $hourlyRate) }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="48" title="Aanpasbaar. Begrote uren × dit tarief.">
                 </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="order_amount">Orderbedrag excl. btw (€)</label>
+                    <input id="order_amount" name="order_amount" value="{{ old('order_amount') }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="8.500,00" title="Het totale verkoopbedrag van dit winkelwerk, exclusief btw.">
+                </div>
             </div>
             <div class="flex flex-col gap-2">
                 <div class="flex min-h-0 grow flex-col">

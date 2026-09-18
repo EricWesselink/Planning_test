@@ -2,7 +2,12 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { viewerRenderScale } from './room-geometry';
 import { VIEW_RENDER_SCALE } from './pdf-text-layer';
-import { hydrateRoomMarkers, paintCalculationOverlays } from './calculation-board-overlay';
+import {
+    hydrateRoomMarkers,
+    paintCalculationOverlays,
+    printDrawingSheets,
+    printPaper,
+} from './calculation-board-overlay';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -19,24 +24,28 @@ function niconPrintCalculation() {
     window.print();
 }
 
-window.niconPrintCalculation = niconPrintCalculation;
+if (typeof window !== 'undefined') {
+    window.niconPrintCalculation = niconPrintCalculation;
+}
 
-const dataEl = document.getElementById('calc-print-data');
-if (dataEl) {
-    boot(JSON.parse(dataEl.textContent)).catch((error) => {
-        const status = document.getElementById('calc-print-status');
-        if (status) {
-            status.textContent = 'Tekeningen konden niet worden geladen.';
-            status.classList.add('is-error');
-        }
-        console.error(error);
-    });
+if (typeof document !== 'undefined') {
+    const dataEl = document.getElementById('calc-print-data');
+    if (dataEl) {
+        boot(JSON.parse(dataEl.textContent)).catch((error) => {
+            const status = document.getElementById('calc-print-status');
+            if (status) {
+                status.textContent = 'Tekeningen konden niet worden geladen.';
+                status.classList.add('is-error');
+            }
+            console.error(error);
+        });
+    }
 }
 
 async function boot(documentData) {
     const include = documentData.include || {};
     const rooms = documentData.rooms || [];
-            const materialKeys = documentData.material_keys || [];
+    const materialKeys = documentData.material_keys || [];
     const sheets = document.getElementById('calc-print-sheets');
     if (!sheets || !documentData.show_drawings) {
         finish(documentData);
@@ -46,9 +55,9 @@ async function boot(documentData) {
     for (const drawing of documentData.drawings || []) {
         const pdf = await pdfjsLib.getDocument({ url: drawing.url, withCredentials: true }).promise;
         await hydrateRoomMarkers(pdf, rooms, drawing.id);
-        for (let page = 1; page <= pdf.numPages; page += 1) {
-            const host = createDrawingPage(sheets, documentData, drawing, page, pdf.numPages);
-            await renderDrawingPage(host, pdf, page, {
+        for (const sheet of printDrawingSheets([{ ...drawing, pageCount: pdf.numPages }])) {
+            const host = createDrawingPage(sheets, documentData, drawing, sheet.page, sheet.pageCount);
+            await renderDrawingPage(host, pdf, sheet.page, {
                 rooms,
                 drawingId: drawing.id,
                 materialKeys,
@@ -65,6 +74,8 @@ async function boot(documentData) {
 function createDrawingPage(sheets, documentData, drawing, page, pageCount) {
     const pageEl = document.createElement('section');
     pageEl.className = 'calc-print-page calc-print-drawing-page';
+    pageEl.dataset.drawingId = String(drawing.id);
+    pageEl.dataset.page = String(page);
     const legendBelow = (documentData.materials || []).length > 18;
     if (documentData.include?.legend && legendBelow) {
         pageEl.classList.add('has-legend-below');
@@ -114,12 +125,19 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
     const markersEl = host.querySelector('.calc-print-markers');
     const pdfPage = await pdf.getPage(pageNumber);
     const cssViewport = pdfPage.getViewport({ scale: 1 });
+    const paper = printPaper(cssViewport);
+    host.classList.toggle('is-landscape', paper.landscape);
+    host.classList.toggle('is-portrait', !paper.landscape);
+    const meta = host.querySelector('.calc-print-meta');
+    if (meta) {
+        meta.textContent = paper.landscape ? 'A3 liggend' : 'A3 staand';
+    }
     const renderScale = viewerRenderScale(cssViewport.width, cssViewport.height, PRINT_RENDER_SCALE, 3);
     const renderViewport = pdfPage.getViewport({ scale: renderScale });
     const context = canvas.getContext('2d', { alpha: false });
     canvas.width = Math.max(1, Math.floor(renderViewport.width));
     canvas.height = Math.max(1, Math.floor(renderViewport.height));
-    world.style.setProperty('--page-ratio', String(cssViewport.width / Math.max(cssViewport.height, 1)));
+    world.style.setProperty('--page-ratio', String(paper.ratio));
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, canvas.width, canvas.height);
     try {

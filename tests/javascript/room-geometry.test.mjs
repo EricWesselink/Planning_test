@@ -416,3 +416,18 @@ test('visual selection follows stored geometry instead of the inflated label box
     assert.equal(noPolygon.box.w, 0.04);
     assert.ok(displayBox({ marker: noPolygonMarker }).w > noPolygon.box.w);
 });
+
+test('union of trace rects keeps the full room box', () => {
+    const box = contourBox({
+        type: 'rects',
+        rects: [
+            { x: 0.10, y: 0.20, w: 0.08, h: 0.04 },
+            { x: 0.14, y: 0.24, w: 0.06, h: 0.05 },
+        ],
+    });
+
+    assert.equal(Number(box.x.toFixed(2)), 0.10);
+    assert.equal(Number(box.y.toFixed(2)), 0.20);
+    assert.equal(Number(box.w.toFixed(2)), 0.10);
+    assert.equal(Number(box.h.toFixed(2)), 0.09);
+});

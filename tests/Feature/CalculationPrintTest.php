@@ -98,6 +98,93 @@ class CalculationPrintTest extends TestCase
         $this->assertStringContainsString('"show_drawings":true', $html);
     }
 
+    public function test_print_json_keeps_one_or_seven_drawings_and_room_geometry(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'Offerte Wepro',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        $drawings = [];
+        foreach (range(1, 7) as $index) {
+            $drawings[] = CalculationDrawing::query()->create([
+                'calculation_id' => $calculation->id,
+                'original_filename' => "tekening-{$index}.pdf",
+                'file_path' => "calculations/1/{$index}.pdf",
+                'mime_type' => 'application/pdf',
+                'file_size' => 1,
+            ]);
+        }
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawings[0]->id,
+            'sort_order' => 1,
+            'room_number' => 'K-00-23',
+            'room_name' => 'keuken',
+            'product_code' => 'v04',
+            'product' => 'Gietvloer',
+            'quantity' => 12.7,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::FromDrawing,
+            'calculation_trace' => json_encode([
+                'role' => 'room_floor',
+                'reliable' => true,
+                'page' => 1,
+                'rects' => [
+                    ['x' => 0.41, 'y' => 0.62, 'w' => 0.10, 'h' => 0.08],
+                ],
+            ]),
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawings[0]->id,
+            'sort_order' => 2,
+            'room_number' => 'A-01-99',
+            'room_name' => 'entree',
+            'product_code' => 'v09',
+            'product' => 'Schoonloopmat',
+            'quantity' => 4.2,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::FromDrawing,
+        ]);
+
+        $one = $this->actingAs($user)
+            ->get(route('calculations.print', [
+                'calculation' => $calculation,
+                'include' => ['colored', 'rooms', 'codes', 'legend'],
+                'drawing_ids' => [$drawings[0]->id],
+                'material_mode' => 'all',
+                'output' => 'pdf',
+            ]))
+            ->assertOk()
+            ->getContent();
+        $seven = $this->actingAs($user)
+            ->get(route('calculations.print', [
+                'calculation' => $calculation,
+                'include' => ['codes'],
+                'drawing_ids' => array_map(fn (CalculationDrawing $drawing): int => $drawing->id, $drawings),
+                'output' => 'pdf',
+            ]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('"label":"tekening-1"', $one);
+        $this->assertStringNotContainsString('"label":"tekening-2"', $one);
+        $this->assertStringContainsString('"K-00-23"', $one);
+        $this->assertStringContainsString('"x":0.41', $one);
+        $this->assertStringContainsString('"y":0.62', $one);
+        $this->assertStringContainsString('"A-01-99"', $one);
+        $this->assertStringContainsString('"contour":null', $seven);
+        foreach (range(1, 7) as $index) {
+            $this->assertStringContainsString('"label":"tekening-'.$index.'"', $seven);
+        }
+        $this->assertStringContainsString('"codes":true', $seven);
+        $this->assertStringContainsString('"colored":false', $seven);
+        $this->assertStringContainsString('"rooms":false', $seven);
+        $this->assertStringContainsString('"legend":false', $seven);
+    }
+
     public function test_print_view_can_add_room_lists_and_square_meter_totals(): void
     {
         $user = User::factory()->create();

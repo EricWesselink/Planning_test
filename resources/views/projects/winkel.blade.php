@@ -19,6 +19,10 @@
         if (is_numeric($hourlyRate) && fmod((float) $hourlyRate, 1.0) === 0.0) {
             $hourlyRate = (int) (float) $hourlyRate;
         }
+        $orderAmount = old('order_amount', $project->order_amount);
+        if (is_numeric($orderAmount) && fmod((float) $orderAmount, 1.0) === 0.0) {
+            $orderAmount = (int) (float) $orderAmount;
+        }
     @endphp
     <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-sm text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
     <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -30,7 +34,7 @@
         <p class="mt-1 text-sm text-nicon-muted">{{ $project->shopWorkLine() }}</p>
     @endif
     @if (auth()->user()?->canViewLaborCosts())
-        @include('projects.partials.labor-summary', ['labor' => $labor])
+        @include('projects.partials.labor-summary', ['labor' => $labor, 'orderFinance' => $orderFinance ?? null])
     @endif
     @if (session('status'))
         <p class="mt-3 text-sm text-nicon-ok">{{ session('status') }}</p>
@@ -77,6 +81,10 @@
                         <div>
                             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="basis_uurtarief">Uurtarief (€) <span class="font-normal normal-case tracking-normal">Standaard €48/u</span></label>
                             <input id="basis_uurtarief" name="basis_uurtarief" value="{{ $hourlyRate }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="48" title="Aanpasbaar. Begrote uren × dit tarief." @disabled(! auth()->user()?->can('update', $project))>
+                        </div>
+                        <div>
+                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="order_amount">Orderbedrag excl. btw (€)</label>
+                            <input id="order_amount" name="order_amount" value="{{ $orderAmount }}" inputmode="decimal" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="8.500,00" title="Het totale verkoopbedrag van dit winkelwerk, exclusief btw." @disabled(! auth()->user()?->can('update', $project))>
                         </div>
                     @endif
                 </div>

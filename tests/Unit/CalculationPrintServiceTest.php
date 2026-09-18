@@ -74,6 +74,95 @@ class CalculationPrintServiceTest extends TestCase
         $this->assertTrue($print->roomMatches($room, [8], ['v01.d']));
     }
 
+    public function test_document_keeps_one_drawing_on_its_own_and_seven_drawings_apart(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'Offerte',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        $drawings = [];
+        foreach (range(1, 7) as $index) {
+            $drawings[] = CalculationDrawing::query()->create([
+                'calculation_id' => $calculation->id,
+                'original_filename' => "tekening-{$index}.pdf",
+                'file_path' => "calculations/1/{$index}.pdf",
+                'mime_type' => 'application/pdf',
+                'file_size' => 1,
+            ]);
+        }
+        $this->floor($calculation, $drawings[0], 'A-01-01', 'hal', 'v04', 12.7, 'Gietvloer');
+
+        $print = app(CalculationPrintService::class);
+        $one = $print->document($calculation->fresh(['lines.drawing', 'drawings']), [
+            'include' => ['colored', 'rooms', 'codes', 'legend'],
+            'drawing_ids' => [$drawings[0]->id],
+            'material_keys' => [],
+            'output' => 'pdf',
+        ]);
+        $seven = $print->document($calculation->fresh(['lines.drawing', 'drawings']), [
+            'include' => ['colored', 'rooms', 'codes', 'legend'],
+            'drawing_ids' => array_map(fn (CalculationDrawing $drawing): int => $drawing->id, $drawings),
+            'material_keys' => [],
+            'output' => 'pdf',
+        ]);
+
+        $this->assertCount(1, $one['drawings']);
+        $this->assertSame('tekening-1', $one['drawings'][0]['label']);
+        $this->assertCount(7, $seven['drawings']);
+        $this->assertSame(
+            ['tekening-1', 'tekening-2', 'tekening-3', 'tekening-4', 'tekening-5', 'tekening-6', 'tekening-7'],
+            array_column($seven['drawings'], 'label'),
+        );
+    }
+
+    public function test_document_keeps_room_geometry_and_rooms_without_a_contour(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'Offerte',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        $drawing = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => 'begane grond.pdf',
+            'file_path' => 'calculations/1/a.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1,
+        ]);
+        $this->floor($calculation, $drawing, 'A-01-01', 'hal', 'v04', 12.7, 'Gietvloer');
+        CalculationLine::query()->where('room_number', 'A-01-01')->update([
+            'calculation_trace' => json_encode([
+                'role' => 'room_floor',
+                'reliable' => true,
+                'page' => 1,
+                'rects' => [
+                    ['x' => 0.41, 'y' => 0.62, 'w' => 0.10, 'h' => 0.08],
+                ],
+            ]),
+        ]);
+        $this->floor($calculation, $drawing, 'A-01-99', 'entree', 'v09', 4.2, 'Schoonloopmat');
+
+        $document = app(CalculationPrintService::class)->document($calculation->fresh(['lines.drawing', 'drawings']), [
+            'include' => ['colored', 'codes'],
+            'drawing_ids' => [$drawing->id],
+            'material_keys' => [],
+            'output' => 'pdf',
+        ]);
+        $byNumber = collect($document['rooms'])->keyBy('number');
+
+        $this->assertNotNull($byNumber['A-01-01']['contour']);
+        $this->assertSame(1, $byNumber['A-01-01']['contour']['page']);
+        $this->assertEqualsWithDelta(0.41, (float) $byNumber['A-01-01']['contour']['rects'][0]['x'], 0.0001);
+        $this->assertNull($byNumber['A-01-99']['contour']);
+        $this->assertTrue($document['include']['colored']);
+        $this->assertTrue($document['include']['codes']);
+        $this->assertFalse($document['include']['rooms']);
+        $this->assertFalse($document['include']['legend']);
+    }
+
     private function floor(
         Calculation $calculation,
         CalculationDrawing $drawing,

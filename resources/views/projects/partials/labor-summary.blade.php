@@ -1,5 +1,7 @@
 @php
     /** @var array<string, mixed> $labor */
+    /** @var array<string, mixed>|null $orderFinance */
+    $orderFinance = $orderFinance ?? null;
     $budgetHours = (float) ($labor['budget_hours'] ?? 0);
     $plannedHours = (float) ($labor['planned_hours'] ?? 0);
     $actualHours = (float) ($labor['actual_hours'] ?? 0);
@@ -7,6 +9,7 @@
     $vsBudget = round($plannedHours - $budgetHours, 2);
     $plannedOver = $budgetHours > 0.0001 && $plannedHours > $budgetHours + 0.0001;
     $vsBudgetLabel = ($vsBudget > 0.0001 ? '+' : '').\App\Support\PlanningHours::hoursLabel($vsBudget);
+    $hoursOverPercent = $plannedOver ? (int) round($vsBudget / $budgetHours * 100) : null;
     $unit = $labor['unit'] ?? 'm²';
     $otherWarnings = array_values(array_filter(
         $labor['warnings'] ?? [],
@@ -18,7 +21,43 @@
     ));
 @endphp
 <div class="mt-4 space-y-3" @if ($labor['detail'] ?? null) title="{{ $labor['detail'] }}" @endif>
-    @if ($hasHours)
+    @if (is_array($orderFinance))
+        <p class="text-sm text-nicon-steel">{{ $orderFinance['compact'] }}</p>
+        <div class="grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Order</div>
+                <div class="text-lg font-semibold tabular-nums text-nicon-ink">{{ $orderFinance['order_label'] }}</div>
+            </div>
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Begrote kosten</div>
+                <div class="text-lg font-semibold tabular-nums text-nicon-ink">{{ $orderFinance['budget_cost_label'] }}</div>
+            </div>
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Werkelijke kosten</div>
+                <div class="text-lg font-semibold tabular-nums text-nicon-ink">{{ $orderFinance['actual_cost_label'] }}</div>
+            </div>
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Resultaat</div>
+                <div @class([
+                    'text-lg font-semibold tabular-nums',
+                    'text-nicon-ok' => ($orderFinance['result_tone'] ?? '') === 'ok',
+                    'text-nicon-danger' => ($orderFinance['result_tone'] ?? '') === 'over',
+                    'text-nicon-ink' => ($orderFinance['result_tone'] ?? '') === 'none',
+                ])>{{ $orderFinance['actual_result_label'] }}</div>
+            </div>
+        </div>
+        <p @class([
+            'text-sm',
+            'text-nicon-ok' => ($orderFinance['budget_tone'] ?? '') === 'ok',
+            'text-nicon-danger' => ($orderFinance['budget_tone'] ?? '') === 'over',
+        ])>{{ $orderFinance['overrun_line'] }}</p>
+        @if ($hasHours)
+            <p class="text-xs text-nicon-muted">Begroot {{ \App\Support\PlanningHours::hoursLabel($budgetHours) }} · Ingepland <span @class(['font-medium text-nicon-warn' => $plannedOver])>{{ \App\Support\PlanningHours::hoursLabel($plannedHours) }}</span> · Gemaakt {{ \App\Support\PlanningHours::hoursLabel($actualHours) }}</p>
+        @endif
+        @if ($plannedOver)
+            <p class="text-sm font-medium text-nicon-warn">Prognose {{ \App\Support\PlanningHours::hoursLabel($vsBudget) }} / {{ $hoursOverPercent }}% boven urenbudget</p>
+        @endif
+    @elseif ($hasHours)
         <div class="grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
             <div>
                 <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Begroot</div>
@@ -45,11 +84,11 @@
                 ])>{{ $vsBudgetLabel }}</div>
             </div>
         </div>
+        @if ($plannedOver)
+            <p class="text-sm font-medium text-nicon-danger">⚠ {{ rtrim(\App\Support\PlanningHours::hoursLabel($vsBudget), 'u') }} uur meer ingepland dan begroot</p>
+        @endif
     @endif
 
-    @if ($plannedOver)
-        <p class="text-sm font-medium text-nicon-danger">⚠ {{ rtrim(\App\Support\PlanningHours::hoursLabel($vsBudget), 'u') }} uur meer ingepland dan begroot</p>
-    @endif
     @foreach ($otherWarnings as $warning)
         <p class="text-sm font-medium text-nicon-danger">⚠ {{ $warning }}</p>
     @endforeach
@@ -61,7 +100,7 @@
         <p class="text-xs text-nicon-steel">
             Tarief {{ $labor['hourly_rate'] === null ? '—' : \App\Support\Format::euroWhole($labor['hourly_rate']).'/u' }}
             <span class="text-nicon-muted"> | </span>
-            Arbeid {{ $labor['hourly_rate'] === null ? '—' : \App\Support\Format::euroWhole($labor['labor_cost']) }}
+            Arbeid {{ $labor['hourly_rate'] === null ? '—' : \App\Support\Format::euroWhole(is_array($orderFinance) ? ($labor['actual_labor_cost'] ?? 0) : $labor['labor_cost']) }}
             <span class="text-nicon-muted"> | </span>
             Gereed {{ \App\Support\Format::qty($labor['completed_m2']) }} m²
             <span class="text-nicon-muted"> | </span>
