@@ -17,7 +17,8 @@ class ShopWorkCatalog
                 'name' => 'Vloeren',
                 'slug' => 'vloeren',
                 'activities' => [
-                    ['name' => 'PVC', 'slug' => 'pvc'],
+                    ['name' => 'PVC banen', 'slug' => 'pvc-banen'],
+                    ['name' => 'PVC stroken', 'slug' => 'pvc-stroken'],
                     ['name' => 'Marmoleum', 'slug' => 'marmoleum'],
                     ['name' => 'Tapijt', 'slug' => 'tapijt'],
                     ['name' => 'Tapijttegels', 'slug' => 'tapijttegels'],
@@ -96,6 +97,30 @@ class ShopWorkCatalog
                 ]);
             }
         }
+    }
+
+    public static function replaceLegacyPvc(): void
+    {
+        $now = now();
+        $pvcId = DB::table('work_activities')->where('slug', 'pvc')->value('id');
+        $banenExists = DB::table('work_activities')->where('slug', 'pvc-banen')->exists();
+
+        if ($pvcId === null || $banenExists) {
+            return;
+        }
+
+        DB::table('work_activities')->where('id', $pvcId)->update([
+            'name' => 'PVC banen',
+            'slug' => 'pvc-banen',
+            'updated_at' => $now,
+        ]);
+        DB::table('work_items')
+            ->where('work_activity_id', $pvcId)
+            ->where('name', 'PVC')
+            ->update([
+                'name' => 'PVC banen',
+                'updated_at' => $now,
+            ]);
     }
 
     public static function ensureMissing(): void

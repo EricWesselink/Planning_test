@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MeasurementMaterialLocation;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
 use App\Enums\WorkUnit;
@@ -48,10 +49,10 @@ class ShopProjectController extends Controller
         ]);
     }
 
-    public function store(Request $request, ShopWorkService $shopWork, PlanningFitService $fit): RedirectResponse
+    public function store(Request $request, ShopWorkService $shopWork, PlanningFitService $fit, MeasurementFormService $measurements): RedirectResponse
     {
         Gate::authorize('create', Project::class);
-        $data = $this->validated($request, null, $fit);
+        $data = $this->validated($request, null, $fit, $measurements);
 
         $project = $shopWork->create($data, $request->user(), $request->file('attachments', []) ?: []);
 
@@ -60,11 +61,11 @@ class ShopProjectController extends Controller
             ->with('status', 'Winkelwerk aangemaakt.');
     }
 
-    public function update(Request $request, Project $project, ShopWorkService $shopWork, PlanningFitService $fit): RedirectResponse
+    public function update(Request $request, Project $project, ShopWorkService $shopWork, PlanningFitService $fit, MeasurementFormService $measurements): RedirectResponse
     {
         Gate::authorize('update', $project);
         abort_unless($project->isWinkel(), 404);
-        $data = $this->validated($request, $project, $fit);
+        $data = $this->validated($request, $project, $fit, $measurements);
 
         if ($request->hasAny(['start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'])) {
             $project->applyPlanningWindow($data);
@@ -151,7 +152,7 @@ class ShopProjectController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validated(Request $request, ?Project $project = null, ?PlanningFitService $fit = null): array
+    private function validated(Request $request, ?Project $project = null, ?PlanningFitService $fit = null, ?MeasurementFormService $measurements = null): array
     {
         $this->normalizeDecimalMaps($request, ['activity_quantities', 'activity_hours']);
         $this->normalizeHourlyRate($request);
@@ -184,13 +185,14 @@ class ShopProjectController extends Controller
             ...$this->measurementRules(),
             ...PlanningWeek::rules(),
         ], $this->messages());
-        $validator->after(function ($weekValidator) use ($request, $project, $fit): void {
+        $validator->after(function ($weekValidator) use ($request, $project, $fit, $measurements): void {
             PlanningWeek::validateOrder(
                 $weekValidator,
                 $project?->planned_start_date,
                 $project?->planned_end_date,
             );
             $this->validatePreferredWorker($weekValidator, $request, $project, $fit);
+            $measurements?->validateAgainstShopWork($weekValidator, $request, $project);
         });
         $data = $validator->validate();
         if (($data['basis_uurtarief'] ?? null) === null) {
@@ -290,6 +292,7 @@ class ShopProjectController extends Controller
             'measurement.rows.*.steps' => ['nullable', 'string', 'max:80'],
             'measurement.rows.*.profile' => ['nullable', 'string', 'max:80'],
             'measurement.rows.*.available_on_site' => ['nullable', 'boolean'],
+            'measurement.rows.*.available_location' => ['nullable', 'string', Rule::in(MeasurementMaterialLocation::values())],
         ];
     }
 
@@ -330,6 +333,7 @@ class ShopProjectController extends Controller
             'measurement.rows.max' => 'Er zijn te veel inmeetregels.',
             'measurement.rows.*.quantity.numeric' => 'Vul een geldig aantal in bij M1/M2.',
             'measurement.rows.*.unit.in' => 'Kies m¹ of m².',
+            'measurement.rows.*.available_location.in' => 'Kies Winkel, Nicon of Klant.',
             'attachments.required' => 'Kies minstens één bestand.',
             'attachments.*.mimes' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',

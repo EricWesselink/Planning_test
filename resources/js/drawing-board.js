@@ -1742,11 +1742,7 @@ function boot() {
             ? `${area.progress} · ${area.status_label || ''}`.trim()
             : (area.status_label || '');
         const percent = area.total ? Math.round((area.done / area.total) * 100) : 0;
-        const bar = document.getElementById('room-progress-bar');
-        if (bar) {
-            bar.style.width = `${percent}%`;
-            bar.className = `h-1.5 ${area.tone === 'done' ? 'bg-nicon-ok' : 'bg-nicon-orange'}`;
-        }
+        setRoomProgressBar(percent, area.tone === 'done');
         if (groupsEl) {
             groupsEl.innerHTML = '';
         }
@@ -1839,23 +1835,37 @@ function boot() {
         const openIds = (group.open_task_ids || []).join(',');
         const doneIds = (group.done_task_ids || []).join(',');
         const ids = (group.done ? (group.task_ids || group.done_task_ids || []) : (group.open_task_ids || [])).join(',');
-        const typeBit = group.type_label && !String(group.label || '').includes(group.type_label)
-            ? ` · ${escapeHtml(group.type_label)}`
+        const typeLabel = group.type_label && !String(group.label || '').includes(group.type_label)
+            ? group.type_label
             : '';
-        const roomsBit = pickedIds.size > 1
-            ? ` · ${group.room_count || 1} ${(group.room_count || 1) === 1 ? 'ruimte' : 'ruimtes'}`
+        const roomsLabel = pickedIds.size > 1
+            ? `${group.room_count || 1} ${(group.room_count || 1) === 1 ? 'ruimte' : 'ruimtes'}`
             : '';
+        const progressLabel = group.progress_label || group.quantity_label || group.tasks?.[0]?.progress_label || group.tasks?.[0]?.quantity_label || '';
+        const metaParts = [progressLabel, typeLabel, worker, roomsLabel].filter(Boolean);
+
         return `
             <section class="work-group ${group.done ? 'is-done' : group.partial ? 'is-partial' : ''}${group.provisional ? ' is-provisional' : ''}" data-kind="${escapeHtml(group.color_key || 'overige')}" style="--material-color: ${escapeHtml(group.display_color || '#9ca3af')}; --work-accent: ${escapeHtml(group.display_color || '#9ca3af')}; --work-bg: ${escapeHtml(group.display_color_soft || 'rgba(156, 163, 175, 0.14)')};">
                 <button type="button" class="group-head"${data.canEnterProgress ? '' : ' disabled'} data-group="${escapeHtml(group.key)}" data-label="${escapeHtml(group.label)}" data-task-ids="${escapeHtml(ids)}" data-open-task-ids="${escapeHtml(openIds)}" data-done-task-ids="${escapeHtml(doneIds)}" data-remaining="${group.remaining ?? ''}" data-ordered="${group.ordered ?? ''}" data-unit="${escapeHtml(group.unit || '')}" title="${groupHeadTitle(group)}">
                     <span class="task-check">${group.done ? '✓' : ''}</span>
-                    <span class="min-w-0 text-left">
-                        <span class="block font-medium"><i class="work-swatch" aria-hidden="true"></i>${escapeHtml(group.label)}</span>
-                        <span class="block text-[11px] text-nicon-muted">${escapeHtml(group.progress_label || group.quantity_label || group.tasks?.[0]?.progress_label || group.tasks?.[0]?.quantity_label || '')}${typeBit} · ${escapeHtml(group.status_label)}${worker ? ' · ' + escapeHtml(worker) : ''}${roomsBit}</span>
+                    <span class="work-card-copy">
+                        <span class="work-card-title"><i class="work-swatch" aria-hidden="true"></i>${escapeHtml(group.label)}</span>
+                        <span class="work-card-meta">${escapeHtml(metaParts.join(' · '))}</span>
                     </span>
-                    <span class="group-status text-[11px] ${group.done && !group.provisional ? 'text-nicon-ok' : 'text-nicon-muted'}">${escapeHtml(group.status_label)}</span>
+                    <span class="group-status ${group.done && !group.provisional ? 'text-nicon-ok' : 'text-nicon-muted'}">${escapeHtml(group.status_label)}</span>
                 </button>
             </section>`;
+    }
+
+    function setRoomProgressBar(percent, done) {
+        const bar = document.getElementById('room-progress-bar');
+        if (!bar) {
+            return;
+        }
+        bar.style.width = `${percent}%`;
+        bar.classList.toggle('is-done', Boolean(done));
+        bar.classList.toggle('bg-nicon-ok', Boolean(done));
+        bar.classList.toggle('bg-nicon-orange', !done);
     }
 
     function groupHeadTitle(group) {
@@ -2058,11 +2068,7 @@ function boot() {
         document.getElementById('room-progress-label').textContent = total
             ? `${done}/${total} · ${status}`
             : status;
-        const bar = document.getElementById('room-progress-bar');
-        if (bar) {
-            bar.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
-            bar.className = `h-1.5 ${allDone ? 'bg-nicon-ok' : 'bg-nicon-orange'}`;
-        }
+        setRoomProgressBar(total ? Math.round((done / total) * 100) : 0, allDone);
         const taskName = document.getElementById('complete-task-name');
         if (taskName) {
             taskName.textContent = 'Kies dezelfde handeling';

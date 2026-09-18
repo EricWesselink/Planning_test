@@ -8,8 +8,17 @@
     $measurementInstallationAt = $measurementInstallationAt ?? null;
     $canEdit = $canEdit ?? true;
     $units = \App\Services\MeasurementFormService::units();
+    $locations = \App\Enums\MeasurementMaterialLocation::cases();
+    $selectedIds = collect($selectedIds ?? old('work_activity_ids', isset($project) ? $project->workActivities?->pluck('id') : []))
+        ->map(fn ($id) => (int) $id);
+    $floorProductNames = collect($categories ?? [])
+        ->flatMap(fn ($category) => $category->activities)
+        ->filter(fn ($activity) => $activity->isMeasurementProduct($activity->category) && $selectedIds->contains((int) $activity->id))
+        ->pluck('name')
+        ->values()
+        ->all();
 @endphp
-<section class="border border-nicon-line bg-nicon-paper p-4" data-measurement-form>
+<section class="border border-nicon-line bg-nicon-paper p-4" data-measurement-form data-measurement-editable="{{ $canEdit ? '1' : '0' }}">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
             <h2 class="text-xs uppercase tracking-wide text-nicon-muted">Inmeetformulier vloeren / plint / trap</h2>
@@ -55,7 +64,14 @@
                 </thead>
                 <tbody data-measurement-rows>
                     @foreach ($measurementRows as $index => $row)
-                        @include('projects.partials.measurement-form-row', ['row' => $row, 'units' => $units, 'canEdit' => $canEdit, 'index' => $index])
+                        @include('projects.partials.measurement-form-row', [
+                            'row' => $row,
+                            'units' => $units,
+                            'canEdit' => $canEdit,
+                            'index' => $index,
+                            'floorProductNames' => $floorProductNames,
+                            'locations' => $locations,
+                        ])
                     @endforeach
                 </tbody>
             </table>
@@ -63,6 +79,9 @@
         @if ($canEdit)
             <button type="button" class="border border-nicon-line bg-white px-3 py-2 text-sm" data-measurement-add>+ Regel toevoegen</button>
         @endif
+        <p class="text-xs text-nicon-muted">Producten komen uit de aangevinkte vloerwerkzaamheden. M¹/M² mag per product niet boven het aantal bovenaan uitkomen.</p>
+        <ul class="space-y-0.5 text-xs text-nicon-steel" data-measurement-allocation></ul>
+        <p class="hidden text-sm text-nicon-danger" data-measurement-allocation-error hidden></p>
 
         <div class="grid gap-3 sm:grid-cols-3">
             <div>
@@ -87,11 +106,17 @@
 
     @if ($canEdit)
         <template data-measurement-row-template>
-            @include('projects.partials.measurement-form-row', ['row' => [
-                'room' => '', 'product' => '', 'brand' => '', 'type' => '', 'color_number' => '',
-                'quantity' => '', 'unit' => '', 'underlay' => '', 'skirting' => '', 'steps' => '',
-                'profile' => '', 'available_on_site' => false,
-            ], 'units' => $units, 'canEdit' => true])
+            @include('projects.partials.measurement-form-row', [
+                'row' => [
+                    'room' => '', 'product' => '', 'brand' => '', 'type' => '', 'color_number' => '',
+                    'quantity' => '', 'unit' => '', 'underlay' => '', 'skirting' => '', 'steps' => '',
+                    'profile' => '', 'available_on_site' => false, 'available_location' => '',
+                ],
+                'units' => $units,
+                'canEdit' => true,
+                'floorProductNames' => $floorProductNames,
+                'locations' => $locations,
+            ])
         </template>
     @endif
 </section>

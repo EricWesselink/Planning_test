@@ -43,7 +43,7 @@
         </ul>
     @endif
 
-    <div class="mt-6 space-y-6">
+    <div class="mt-8 space-y-6">
         <form method="POST" action="{{ route('projects.winkel.update', $project) }}" enctype="multipart/form-data" class="space-y-4 border border-nicon-line bg-white p-4">
             @csrf
             @method('PATCH')

@@ -133,7 +133,7 @@
                                 }
                             }
                         @endphp
-                        <div class="flex flex-col gap-1" data-shop-activity>
+                        <div class="flex flex-col gap-1" data-shop-activity @if ($category->slug === 'vloeren' && $activity->isMeasurementProduct($category)) data-shop-floor-product data-activity-name="{{ $activity->name }}" @endif>
                             <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                                 <label class="flex items-center gap-1.5">
                                     <input

@@ -1702,6 +1702,7 @@ button.plan-labor-toggle:hover {
 .board-right {
     border-right: 0;
     border-left: 1px solid var(--color-nicon-line);
+    overflow: hidden;
 }
 
 .ticket-mode-bar {
@@ -3299,15 +3300,52 @@ button.plan-labor-toggle:hover {
 
 .group-head {
     display: grid;
-    grid-template-columns: 1.4rem 1fr auto;
+    grid-template-columns: 1.4rem minmax(0, 1fr) auto;
     gap: 0.5rem;
-    align-items: center;
+    align-items: start;
     width: 100%;
     text-align: left;
     padding: 0.7rem 0.65rem;
     background: transparent;
     border: 0;
     cursor: pointer;
+}
+
+.group-head .task-check {
+    margin-top: 0.12rem;
+}
+
+.work-card-copy {
+    min-width: 0;
+    text-align: left;
+}
+
+.work-card-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    font-weight: 500;
+    line-height: 1.3;
+    overflow-wrap: break-word;
+}
+
+.work-card-meta {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--color-nicon-muted);
+    overflow-wrap: break-word;
+}
+
+.group-status {
+    align-self: start;
+    padding-top: 0.15rem;
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: nowrap;
 }
 
 .group-head:disabled {
@@ -3427,10 +3465,84 @@ button.plan-labor-toggle:hover {
     flex-direction: column;
     min-height: 0;
     flex: 1;
+    overflow: hidden;
 }
 
 #room-panel.hidden {
     display: none;
+}
+
+.room-panel-head {
+    flex: 0 0 auto;
+    padding: 1rem 1rem 0.5rem;
+}
+
+.room-panel-head #room-title {
+    line-height: 1.25;
+}
+
+.room-progress-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.room-progress-track {
+    margin-top: 0.25rem;
+    height: 0.375rem;
+    background: var(--color-nicon-sand);
+}
+
+.room-progress-fill {
+    height: 100%;
+    background: var(--color-nicon-orange);
+}
+
+.room-progress-fill.is-done,
+.room-progress-fill.bg-nicon-ok {
+    background: var(--color-nicon-ok);
+}
+
+.room-groups {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.5rem 1rem;
+}
+
+.complete-form {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 0.375rem;
+    border-top: 1px solid var(--color-nicon-line);
+    padding: 0.5rem 0.75rem;
+    background: white;
+    font-size: 0.875rem;
+}
+
+.complete-form-note {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    color: var(--color-nicon-muted);
+}
+
+.complete-form-who {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.375rem;
+}
+
+.complete-form-submit,
+.complete-form-reopen {
+    min-height: 2.25rem;
+    padding: 0.4rem 0.5rem;
 }
 
 .snag-thumbs {
@@ -3793,6 +3905,98 @@ button.plan-labor-toggle:hover {
     #draw-page {
         min-width: 0;
         max-width: 100%;
+    }
+}
+
+@media (max-height: 900px) {
+    .project-board {
+        min-height: 0;
+    }
+
+    .board-right {
+        overflow-y: auto;
+    }
+
+    .room-panel-head {
+        padding: 0.5rem 0.85rem 0.3rem;
+    }
+
+    .room-panel-head #room-title {
+        font-size: 1.05rem;
+        line-height: 1.2;
+    }
+
+    .room-panel-head #room-m2 {
+        font-size: 0.75rem;
+        line-height: 1.25;
+    }
+
+    .room-progress-row {
+        margin-top: 0.2rem;
+    }
+
+    .room-progress-row #room-progress-label {
+        font-size: 0.75rem;
+        line-height: 1.25;
+    }
+
+    #select-all-tasks {
+        padding: 0.15rem 0.4rem;
+        line-height: 1.2;
+    }
+
+    .room-progress-track {
+        margin-top: 0.15rem;
+        height: 0.2rem;
+    }
+
+    .work-legend {
+        gap: 0.15rem 0.55rem;
+        margin-top: 0.2rem;
+        font-size: 11px;
+        line-height: 1.25;
+    }
+
+    .room-groups {
+        gap: 0.65rem;
+        padding: 0.25rem 0.85rem 0.35rem;
+    }
+
+    .complete-form {
+        gap: 0.25rem;
+        padding: 0.35rem 0.65rem 0.4rem;
+    }
+
+    .complete-form-note {
+        font-size: 0.75rem;
+        line-height: 1.3;
+    }
+
+    .complete-form-who {
+        gap: 0.25rem;
+    }
+
+    #complete-task-name {
+        font-size: 0.875rem;
+        line-height: 1.25;
+    }
+
+    #complete-form input,
+    #complete-form select {
+        min-height: 1.85rem;
+        padding: 0.2rem 0.45rem;
+        font-size: 0.875rem;
+        line-height: 1.2;
+    }
+
+    .complete-form-submit,
+    .complete-form-reopen,
+    #complete-form button {
+        min-height: 2.125rem;
+        height: 2.125rem;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        line-height: 1;
     }
 }
 

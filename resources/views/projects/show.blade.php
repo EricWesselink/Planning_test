@@ -478,7 +478,6 @@
                             <input id="ticket-fixed-price" class="ticket-rate" inputmode="decimal" placeholder="Vaste prijs" value="{{ old('fixed_price') }}">
                         </div>
                     @endif
-                    @endif
                     <p id="ticket-error" class="ticket-errors hidden" hidden></p>
                     @if (! empty($ticketMode['has_measurement_form']))
                         <div class="ticket-extra">
@@ -497,49 +496,51 @@
                 </div>
             @endif
             <div id="room-panel" class="{{ $canEnterProgress ? '' : 'is-readonly' }}{{ $ticketMode ? ' hidden' : '' }}" data-area-id="{{ $first['id'] ?? '' }}">
-            <div class="px-4 pt-4 pb-2">
+            <div class="room-panel-head">
                 <div class="text-xs text-nicon-muted" id="room-floor">{{ $first['floor'] ?? '' }}</div>
                 <h2 class="text-xl font-semibold" id="room-title">{{ $first['number'] ?? '' }} {{ $first['unique_name'] ?? $first['name'] ?? 'Kies een ruimte' }}</h2>
                 <div class="text-sm text-nicon-muted" id="room-m2">{{ $first['m2_label'] ?? '' }}</div>
-                <div class="mt-3 flex items-center justify-between gap-2">
+                <div class="room-progress-row">
                     <div class="text-sm" id="room-progress-label">{{ $first ? $first['progress'].' · '.$first['status_label'] : '' }}</div>
                     @if ($showProgressTools)
                         <button type="button" id="select-all-tasks" class="text-xs border border-nicon-line bg-white px-2 py-1">Alles aanvinken</button>
                     @endif
                 </div>
-                <div class="mt-1 h-1.5 bg-nicon-sand"><div id="room-progress-bar" class="h-1.5 bg-nicon-orange" style="width: {{ $first && $first['total'] ? round(100 * $first['done'] / $first['total']) : 0 }}%"></div></div>
+                <div class="room-progress-track"><div id="room-progress-bar" class="room-progress-fill {{ $first && ($first['tone'] ?? '') === 'done' ? 'bg-nicon-ok is-done' : 'bg-nicon-orange' }}" style="width: {{ $first && $first['total'] ? round(100 * $first['done'] / $first['total']) : 0 }}%"></div></div>
                 <div id="work-legend" class="work-legend">
                     @foreach ($firstDetail['groups'] ?? [] as $legendGroup)
                         <span data-kind="{{ $legendGroup['color_key'] ?? 'overige' }}" style="--work-accent: {{ $legendGroup['display_color'] ?? '#9ca3af' }}"><i></i>{{ $legendGroup['label'] ?? $legendGroup['color_label'] ?? \App\Support\WorkColor::legendLabel($legendGroup['color_key'] ?? 'overige') }}</span>
                     @endforeach
                 </div>
             </div>
-            <div id="room-groups" class="flex-1 overflow-auto px-4 py-2 space-y-3">
+            <div id="room-groups" class="room-groups">
                 @foreach ($firstDetail['groups'] ?? [] as $group)
                     @php
                         $openIds = $group['open_task_ids'] ?? [];
                         $doneIds = $group['done_task_ids'] ?? [];
                         $ids = ! empty($group['done']) ? ($group['task_ids'] ?? $doneIds) : $openIds;
+                        $progressLabel = $group['progress_label'] ?? $group['quantity_label'] ?? ($group['tasks'][0]['progress_label'] ?? $group['tasks'][0]['quantity_label'] ?? '');
+                        $workerLabel = ! empty($group['done']) ? collect($group['tasks'] ?? [])->pluck('worker')->first(fn ($name) => filled($name)) : null;
                     @endphp
                     <section class="work-group {{ ! empty($group['done']) ? 'is-done' : (! empty($group['partial']) ? 'is-partial' : '') }}{{ ! empty($group['provisional']) ? ' is-provisional' : '' }}" data-kind="{{ $group['color_key'] ?? 'overige' }}" style="--material-color: {{ $group['display_color'] ?? '#9ca3af' }}; --work-accent: {{ $group['display_color'] ?? '#9ca3af' }}; --work-bg: {{ $group['display_color_soft'] ?? 'rgba(156, 163, 175, 0.14)' }};">
                         <button type="button" class="group-head" data-group="{{ $group['key'] }}" data-label="{{ $group['label'] }}" data-task-ids="{{ implode(',', $ids) }}" data-open-task-ids="{{ implode(',', $openIds) }}" data-done-task-ids="{{ implode(',', $doneIds) }}" data-remaining="{{ $group['remaining'] ?? '' }}" data-ordered="{{ $group['ordered'] ?? '' }}" data-unit="{{ $group['unit'] ?? '' }}" title="{{ $canEnterProgress && ! empty($group['done']) ? (! empty($group['provisional']) && $canApproveProgress ? 'Klik om akkoord te geven' : 'Klik om gereed uit te zetten') : '' }}" @disabled(! $canEnterProgress)>
                             <span class="task-check">{{ ! empty($group['done']) ? '✓' : '' }}</span>
-                            <span class="min-w-0 text-left">
-                                <span class="block font-medium"><i class="work-swatch" aria-hidden="true"></i>{{ $group['label'] }}</span>
-                        <span class="block text-[11px] text-nicon-muted">{{ $group['progress_label'] ?? $group['quantity_label'] ?? ($group['tasks'][0]['progress_label'] ?? $group['tasks'][0]['quantity_label'] ?? '') }}@if (! empty($group['type_label']) && ! str_contains($group['label'], $group['type_label'])) · {{ $group['type_label'] }}@endif · {{ $group['status_label'] ?? 'Open' }}{{ ! empty($group['done']) && ! empty($group['tasks'][0]['worker']) ? ' · '.$group['tasks'][0]['worker'] : '' }}</span>
+                            <span class="work-card-copy">
+                                <span class="work-card-title"><i class="work-swatch" aria-hidden="true"></i>{{ $group['label'] }}</span>
+                                <span class="work-card-meta">{{ collect([$progressLabel, (! empty($group['type_label']) && ! str_contains((string) $group['label'], (string) $group['type_label'])) ? $group['type_label'] : null, $workerLabel])->filter()->implode(' · ') }}</span>
                             </span>
-                            <span class="group-status text-[11px] {{ ! empty($group['done']) && empty($group['provisional']) ? 'text-nicon-ok' : 'text-nicon-muted' }}">{{ $group['status_label'] ?? 'Open' }}</span>
+                            <span class="group-status {{ ! empty($group['done']) && empty($group['provisional']) ? 'text-nicon-ok' : 'text-nicon-muted' }}">{{ $group['status_label'] ?? 'Open' }}</span>
                         </button>
                     </section>
                 @endforeach
             </div>
             @if ($showProgressTools)
-                <form id="complete-form" class="border-t border-nicon-line px-3 py-2 space-y-1.5 text-sm bg-white">
+                <form id="complete-form" class="complete-form">
                     <div class="text-sm font-medium leading-snug" id="complete-task-name">Kies een of meer werkzaamheden</div>
                     @if ($lockedWorkerId)
-                        <p class="text-sm leading-snug text-nicon-muted">Klaar blijft voorlopig tot de projectleider akkoord geeft.</p>
+                        <p class="complete-form-note">Klaar blijft voorlopig tot de projectleider akkoord geeft.</p>
                     @endif
-                    <div class="grid grid-cols-2 gap-1.5">
+                    <div class="complete-form-who">
                         <select name="worker_id" id="complete-worker" class="border border-nicon-line px-2 py-1.5" @disabled($lockedWorkerId || $progressWorkers->isEmpty())>
                             @forelse ($progressWorkers as $worker)
                                 <option value="{{ $worker->id }}" @selected($lockedWorkerId === $worker->id)>{{ $worker->planName() }}</option>
@@ -551,8 +552,8 @@
                     </div>
                     <input name="quantity" id="complete-qty" type="number" step="0.01" min="0" placeholder="Aantal" class="w-full border border-nicon-line px-2 py-1.5">
                     <input name="note" id="complete-note" placeholder="Opmerking" class="w-full border border-nicon-line px-2 py-1.5">
-                    <button class="w-full bg-nicon-ink text-white py-2" id="complete-submit" disabled>{{ $lockedWorkerId ? 'Klaar melden (voorlopig)' : 'Opslaan en verwerken' }}</button>
-                    <button type="button" class="w-full border border-nicon-line py-2 hidden" id="complete-reopen" hidden>Weer openzetten</button>
+                    <button class="complete-form-submit w-full bg-nicon-ink text-white" id="complete-submit" disabled>{{ $lockedWorkerId ? 'Klaar melden (voorlopig)' : 'Opslaan en verwerken' }}</button>
+                    <button type="button" class="complete-form-reopen w-full border border-nicon-line hidden" id="complete-reopen" hidden>Weer openzetten</button>
                 </form>
             @elseif (! $ticketMode)
                 <div class="border-t border-nicon-line p-3 text-sm bg-white">

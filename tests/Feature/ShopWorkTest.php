@@ -44,12 +44,13 @@ class ShopWorkTest extends TestCase
         $horren = $this->addActivity('Horren', 'overig');
         $this->activity('anders')->update(['is_active' => false]);
 
-        $pvc = $this->activity('pvc');
+        $pvc = $this->activity('pvc-banen');
         $html = $this->actingAs($user)
             ->get(route('projects.winkel.create'))
             ->assertOk()
             ->assertSee('Werkzaamheden')
-            ->assertSee('PVC')
+            ->assertSee('>PVC banen</span>', false)
+            ->assertSee('>PVC stroken</span>', false)
             ->assertSee('>Primen</span>', false)
             ->assertSee('>Egaliseren</span>', false)
             ->assertSee('Screens')
@@ -240,7 +241,7 @@ class ShopWorkTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $pvc = $this->activity('pvc');
+        $pvc = $this->activity('pvc-banen');
         $screens = $this->activity('screens');
 
         $response = $this->actingAs($user)->post(route('projects.winkel.store'), [
@@ -265,14 +266,14 @@ class ShopWorkTest extends TestCase
         $this->assertNotNull($project);
         $response->assertRedirect(route('projects.show', $project));
 
-        $pvcPivot = $project->workActivities()->where('slug', 'pvc')->first()?->pivot;
+        $pvcPivot = $project->workActivities()->where('slug', 'pvc-banen')->first()?->pivot;
         $screensPivot = $project->workActivities()->where('slug', 'screens')->first()?->pivot;
         $this->assertSame(40.5, (float) $pvcPivot?->quantity);
         $this->assertSame(WorkUnit::SquareMeter, $pvcPivot?->unit);
         $this->assertSame(4.0, (float) $screensPivot?->quantity);
         $this->assertSame(WorkUnit::Pieces, $screensPivot?->unit);
 
-        $pvcItem = $project->workItems()->where('name', 'PVC')->first();
+        $pvcItem = $project->workItems()->where('name', 'PVC banen')->first();
         $screensItem = $project->workItems()->where('name', 'Screens')->first();
         $this->assertSame(WorkUnit::SquareMeter, $pvcItem?->unit);
         $this->assertSame(40.5, (float) $pvcItem?->ordered_quantity);
@@ -354,7 +355,7 @@ class ShopWorkTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $pvc = $this->activity('pvc');
+        $pvc = $this->activity('pvc-banen');
         $screens = $this->activity('screens');
 
         $this->actingAs($user)->post(route('projects.winkel.store'), [
@@ -382,7 +383,7 @@ class ShopWorkTest extends TestCase
         $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
         $this->assertNotNull($project);
 
-        $pvcItem = $project->workItems()->where('name', 'PVC')->first();
+        $pvcItem = $project->workItems()->where('name', 'PVC banen')->first();
         $screensItem = $project->workItems()->where('name', 'Screens')->first();
         $this->assertSame(8.5, (float) $pvcItem?->begrote_uren);
         $this->assertSame(4.0, (float) $screensItem?->begrote_uren);
@@ -397,7 +398,8 @@ class ShopWorkTest extends TestCase
             ->assertSee('· 4u')
             ->assertSee('€408')
             ->assertSee('€10,07/m²')
-            ->assertSee('€192');
+            ->assertSee('€192')
+            ->assertDontSee('meer ingepland dan begroot');
 
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
@@ -406,11 +408,82 @@ class ShopWorkTest extends TestCase
             ->assertSee('4u');
     }
 
+    public function test_winkelwerk_shows_hours_against_budget_once_when_planning_overruns(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Eric Wesselink',
+            'city' => 'Keijenborg',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '100'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'activity_hours' => [$pvc->id => '8'],
+            'basis_uurtarief' => '48',
+            'start_year' => 2026,
+            'start_week' => 37,
+            'klaar_year' => 2026,
+            'klaar_week' => 37,
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $item = $project->workItems()->where('name', 'PVC banen')->first();
+        $this->assertNotNull($item);
+
+        $assignment = new WorkerAssignment([
+            'worker_id' => $this->makeShopWorker('Kees Jansen')->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'people_count' => 1,
+        ]);
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-11'),
+            '08:00:00',
+            '16:00:00',
+        );
+        $assignment->save();
+
+        $html = $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('sm:grid-cols-4', false)
+            ->assertSee('>Begroot</div>', false)
+            ->assertSee('>Ingepland</div>', false)
+            ->assertSee('>Gemaakt</div>', false)
+            ->assertSee('>Verschil</div>', false)
+            ->assertSee('>8u</div>', false)
+            ->assertSee('>40u</div>', false)
+            ->assertSee('>0u</div>', false)
+            ->assertSee('>+32u</div>', false)
+            ->assertSee('⚠ 32 uur meer ingepland dan begroot')
+            ->assertSee('Tarief €48/u')
+            ->assertSee('Arbeid €1.920')
+            ->assertSee('Gereed 0 m²')
+            ->assertSee('Begroot €3,84/m²')
+            ->assertSee('Werkelijk €/m² —')
+            ->assertSee('Begroot 8u · Ingepland ', false)
+            ->assertSee('font-medium text-nicon-danger', false)
+            ->assertSee('Gemaakt 0u')
+            ->assertSee('40 / 8 uur')
+            ->assertDontSee('⚠ Project:')
+            ->assertDontSee('Budget over')
+            ->assertDontSee('Planningverschil')
+            ->assertDontSee('Begroot 8u | Ingepland 40u')
+            ->getContent();
+
+        $this->assertSame(1, substr_count($html, 'meer ingepland dan begroot'));
+        $this->assertSame(1, substr_count($html, '⚠ 32 uur meer ingepland dan begroot'));
+    }
+
     public function test_planner_saves_a_custom_winkelwerk_hourly_rate(): void
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $pvc = $this->activity('pvc');
+        $pvc = $this->activity('pvc-banen');
 
         $this->actingAs($user)->post(route('projects.winkel.store'), [
             'customer_name' => 'Jansen',
@@ -461,7 +534,7 @@ class ShopWorkTest extends TestCase
             'specialty' => 'PVC',
             'active' => true,
         ]);
-        $pvc = $this->activity('pvc');
+        $pvc = $this->activity('pvc-banen');
         $egaliseren = $this->activity('egaliseren');
         $plinten = $this->activity('plinten');
 
@@ -477,7 +550,7 @@ class ShopWorkTest extends TestCase
 
         $project = Project::query()->first();
         $this->assertNotNull($project);
-        $screensItem = $project->workItems()->where('name', 'PVC')->first();
+        $screensItem = $project->workItems()->where('name', 'PVC banen')->first();
         $this->assertNotNull($screensItem);
 
         $this->actingAs($user)
@@ -485,8 +558,8 @@ class ShopWorkTest extends TestCase
             ->assertOk()
             ->assertSee('Kloppenburg Interieur')
             ->assertSee('De Vries - Enschede')
-            ->assertSee('Vloeren · PVC + Egaliseren + Plinten')
-            ->assertSee('PVC')
+            ->assertSee('Vloeren · PVC banen + Egaliseren + Plinten')
+            ->assertSee('PVC banen')
             ->assertSee('Egaliseren')
             ->assertSee('Plinten');
 
@@ -520,7 +593,7 @@ class ShopWorkTest extends TestCase
             'specialty' => 'PVC',
             'active' => true,
         ]);
-        $pvc = $this->activity('pvc');
+        $pvc = $this->activity('pvc-banen');
         $marmoleum = $this->activity('marmoleum');
 
         $this->actingAs($user)->post(route('projects.winkel.store'), [
@@ -540,7 +613,7 @@ class ShopWorkTest extends TestCase
 
         $project = Project::query()->first();
         $this->assertNotNull($project);
-        $pvcItem = $project->workItems()->where('name', 'PVC')->first();
+        $pvcItem = $project->workItems()->where('name', 'PVC banen')->first();
         $marmItem = $project->workItems()->where('name', 'Marmoleum')->first();
         $this->assertNotNull($pvcItem);
         $this->assertNotNull($marmItem);

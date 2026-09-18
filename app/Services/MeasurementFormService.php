@@ -2,14 +2,18 @@
 
 namespace App\Services;
 
+use App\Enums\MeasurementMaterialLocation;
 use App\Enums\UserRole;
 use App\Enums\WorkUnit;
 use App\Models\MeasurementForm;
 use App\Models\MeasurementFormRow;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\WorkActivity;
 use App\Support\Format;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Validator;
 
 class MeasurementFormService
 {
@@ -121,6 +125,7 @@ class MeasurementFormService
                     'steps' => $row->steps,
                     'profile' => $row->profile,
                     'available_on_site' => $row->available_on_site,
+                    'available_location' => $row->available_location?->value,
                 ]))
                 ->values()
                 ->all();
@@ -205,7 +210,7 @@ class MeasurementFormService
                     'skirting' => (string) ($row->skirting ?? ''),
                     'steps' => (string) ($row->steps ?? ''),
                     'profile' => (string) ($row->profile ?? ''),
-                    'available_on_site' => $row->available_on_site ? 'Ja' : '',
+                    'available_on_site' => $row->availableLabel(),
                 ])
                 ->values()
                 ->all(),
@@ -257,6 +262,123 @@ class MeasurementFormService
             ->implode('_');
 
         return ($safe !== '' ? $safe : 'Inmeetformulier').'.pdf';
+    }
+
+    public function validateAgainstShopWork(Validator $validator, Request $request, ?Project $project = null): void
+    {
+        $rows = $request->input('measurement.rows');
+        if (! is_array($rows)) {
+            return;
+        }
+
+        $project?->loadMissing('measurementForm.rows');
+        $selected = $this->selectedFloorProducts($request);
+        $allowed = $selected->pluck('name')->filter()->values()->all();
+        $legacy = collect($project?->measurementForm?->rows)
+            ->pluck('product')
+            ->filter(fn (mixed $name): bool => is_string($name) && trim($name) !== '')
+            ->values()
+            ->all();
+        $allowed = array_values(array_unique([...$allowed, ...$legacy]));
+        $byName = $selected->keyBy('name');
+        $allocated = [];
+
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $product = $this->nullableString($row['product'] ?? null);
+            if ($product === null) {
+                continue;
+            }
+            if ($allowed !== [] && ! in_array($product, $allowed, true)) {
+                $validator->errors()->add(
+                    'measurement.rows.'.$index.'.product',
+                    'Kies een aangevinkt vloerproduct bij Werkzaamheden.',
+                );
+
+                continue;
+            }
+            if ($allowed === [] && $legacy === []) {
+                $validator->errors()->add(
+                    'measurement.rows.'.$index.'.product',
+                    'Vink eerst een vloerproduct aan bij Werkzaamheden.',
+                );
+
+                continue;
+            }
+
+            $quantity = $this->parseQuantity($row['quantity'] ?? null);
+            $unit = WorkUnit::tryFrom((string) ($row['unit'] ?? ''));
+            $activity = $byName->get($product);
+            $shopUnit = $activity instanceof WorkActivity
+                ? WorkUnit::tryFrom((string) $request->input('activity_units.'.$activity->id, $activity->defaultShopUnit()->value))
+                : null;
+            if ($unit === null && in_array($shopUnit, [WorkUnit::SquareMeter, WorkUnit::LinearMeter], true)) {
+                $unit = $shopUnit;
+            }
+            if ($quantity === null || ($unit !== WorkUnit::SquareMeter && $unit !== WorkUnit::LinearMeter)) {
+                continue;
+            }
+            if ($shopUnit instanceof WorkUnit && $unit !== $shopUnit) {
+                continue;
+            }
+
+            $allocated[$product][$unit->value] = ($allocated[$product][$unit->value] ?? 0) + $quantity;
+        }
+
+        foreach ($allocated as $name => $units) {
+            $activity = $byName->get($name);
+            if (! $activity instanceof WorkActivity) {
+                continue;
+            }
+            $available = $this->parseQuantity($request->input('activity_quantities.'.$activity->id));
+            if ($available === null) {
+                continue;
+            }
+            $shopUnit = WorkUnit::tryFrom((string) $request->input('activity_units.'.$activity->id, $activity->defaultShopUnit()->value));
+            if ($shopUnit !== WorkUnit::SquareMeter && $shopUnit !== WorkUnit::LinearMeter) {
+                continue;
+            }
+            $used = (float) ($units[$shopUnit->value] ?? 0);
+            if ($used <= $available + 0.001) {
+                continue;
+            }
+
+            $message = 'Te veel ingevoerd. '.$name.': '.$this->qtyWithUnit($available, $shopUnit)
+                .' beschikbaar, '.$this->qtyWithUnit($used, $shopUnit).' reeds verdeeld.';
+            $validator->errors()->add('measurement.rows', $message);
+        }
+    }
+
+    /**
+     * @return Collection<int, WorkActivity>
+     */
+    public function selectedFloorProducts(Request $request): Collection
+    {
+        $ids = collect($request->input('work_activity_ids', []))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        return WorkActivity::query()
+            ->with('category')
+            ->whereIn('id', $ids)
+            ->get()
+            ->filter(fn (WorkActivity $activity): bool => $activity->isMeasurementProduct())
+            ->values();
+    }
+
+    private function qtyWithUnit(float $quantity, WorkUnit $unit): string
+    {
+        $decimals = fmod($quantity, 1.0) === 0.0 ? 0 : 2;
+
+        return Format::qty($quantity, $decimals).' '.$unit->label();
     }
 
     /**
@@ -322,6 +444,9 @@ class MeasurementFormService
             $unit = null;
         }
         $available = filter_var($row['available_on_site'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $location = $available
+            ? MeasurementMaterialLocation::tryFrom((string) ($row['available_location'] ?? ''))
+            : null;
 
         $empty = collect($strings)->every(fn (?string $value): bool => $value === null)
             && $quantity === null
@@ -337,6 +462,7 @@ class MeasurementFormService
             'quantity' => $quantity,
             'unit' => $unit?->value,
             'available_on_site' => $available,
+            'available_location' => $location?->value,
         ];
     }
 
@@ -359,6 +485,7 @@ class MeasurementFormService
             'steps' => (string) ($row['steps'] ?? ''),
             'profile' => (string) ($row['profile'] ?? ''),
             'available_on_site' => filter_var($row['available_on_site'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'available_location' => (string) ($row['available_location'] ?? ''),
         ];
     }
 

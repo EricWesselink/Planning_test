@@ -685,7 +685,7 @@ class WorkTicketTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $pvc = WorkActivity::query()->where('slug', 'pvc')->firstOrFail();
+        $pvc = WorkActivity::query()->where('slug', 'pvc-banen')->firstOrFail();
         $project = app(ShopWorkService::class)->create([
             'customer_name' => 'Jansen',
             'city' => 'Hengelo',
@@ -718,7 +718,7 @@ class WorkTicketTest extends TestCase
             ->assertOk()
             ->assertSee('Opdrachtbon maken')
             ->assertSee('Winkelwerk')
-            ->assertSee('PVC')
+            ->assertSee('PVC banen')
             ->assertSee('12,50 m²')
             ->assertSee('data-ticket-shop-activity', false)
             ->assertDontSee('Winkelwerk opslaan');
@@ -728,7 +728,7 @@ class WorkTicketTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $pvc = WorkActivity::query()->where('slug', 'pvc')->firstOrFail();
+        $pvc = WorkActivity::query()->where('slug', 'pvc-banen')->firstOrFail();
         $project = app(ShopWorkService::class)->create([
             'customer_name' => 'Jansen',
             'city' => 'Hengelo',
@@ -781,7 +781,7 @@ class WorkTicketTest extends TestCase
             ->get(route('work-tickets.show', $ticket))
             ->assertOk()
             ->assertSee('Kloppenburg Interieur')
-            ->assertSee('PVC')
+            ->assertSee('PVC banen')
             ->assertSee('12,50 m²');
     }
 

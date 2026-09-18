@@ -111,7 +111,7 @@ class DashboardTest extends TestCase
         $user = User::factory()->create();
         $project = $this->makeProject('Winkel Heerde', ProjectStatus::Gepland, ProjectKind::Winkel);
         $egaliseren = WorkActivity::query()->where('slug', 'egaliseren')->firstOrFail();
-        $pvc = WorkActivity::query()->where('slug', 'pvc')->firstOrFail();
+        $pvc = WorkActivity::query()->where('slug', 'pvc-banen')->firstOrFail();
         $plinten = WorkActivity::query()->where('slug', 'plinten')->firstOrFail();
         $screens = WorkActivity::query()->where('slug', 'screens')->firstOrFail();
         $project->workActivities()->sync([

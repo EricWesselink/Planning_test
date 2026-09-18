@@ -24,17 +24,17 @@ class ShopWorkLabelTest extends TestCase
 
     public function test_shop_work_line_for_flooring_combination(): void
     {
-        $project = $this->winkel('De Vries', 'Enschede', ['pvc', 'egaliseren', 'plinten']);
+        $project = $this->winkel('De Vries', 'Enschede', ['pvc-banen', 'egaliseren', 'plinten']);
 
         $this->assertSame('De Vries - Enschede', $project->shopHeadline());
-        $this->assertSame('Vloeren · PVC + Egaliseren + Plinten', $project->shopWorkLine());
+        $this->assertSame('Vloeren · PVC banen + Egaliseren + Plinten', $project->shopWorkLine());
     }
 
     public function test_mixed_product_categories_are_joined_in_the_prefix(): void
     {
-        $project = $this->winkel('Bakker', 'Almelo', ['pvc', 'screens']);
+        $project = $this->winkel('Bakker', 'Almelo', ['pvc-banen', 'screens']);
 
-        $this->assertSame('Vloeren + Zonwering · PVC + Screens', $project->shopWorkLine());
+        $this->assertSame('Vloeren + Zonwering · PVC banen + Screens', $project->shopWorkLine());
     }
 
     public function test_only_misc_activities_use_overig_as_prefix(): void

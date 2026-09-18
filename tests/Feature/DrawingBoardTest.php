@@ -94,6 +94,33 @@ class DrawingBoardTest extends TestCase
             ->assertDontSee('Tekstpositie corrigeren');
     }
 
+    public function test_room_sidebar_shows_work_progress_status_and_save_form(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        app(RoomWorkSetup::class)->ensureProject($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('class="room-panel-head"', false)
+            ->assertSee('class="room-groups"', false)
+            ->assertSee('class="work-card-title"', false)
+            ->assertSee('class="work-card-meta"', false)
+            ->assertSee('class="complete-form"', false)
+            ->assertSee('class="complete-form-who"', false)
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('Marmoleum')
+            ->assertSee('Opdracht 50,97 | Gereed 0,00 | Rest 50,97 m²')
+            ->assertSee('Open')
+            ->assertSee('Kies een of meer werkzaamheden')
+            ->assertSee('placeholder="Aantal"', false)
+            ->assertSee('placeholder="Opmerking"', false)
+            ->assertSee('id="complete-worker"', false)
+            ->assertSee('id="complete-date"', false)
+            ->assertSee('Opslaan en verwerken');
+    }
+
     public function test_planner_sees_progress_read_only_without_input_fields(): void
     {
         Storage::fake('local');

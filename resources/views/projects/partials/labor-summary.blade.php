@@ -1,64 +1,92 @@
 @php
     /** @var array<string, mixed> $labor */
+    $budgetHours = (float) ($labor['budget_hours'] ?? 0);
+    $plannedHours = (float) ($labor['planned_hours'] ?? 0);
+    $actualHours = (float) ($labor['actual_hours'] ?? 0);
+    $hasHours = $budgetHours > 0.0001 || $plannedHours > 0.0001 || $actualHours > 0.0001;
+    $vsBudget = round($plannedHours - $budgetHours, 2);
+    $plannedOver = $budgetHours > 0.0001 && $plannedHours > $budgetHours + 0.0001;
+    $vsBudgetLabel = ($vsBudget > 0.0001 ? '+' : '').\App\Support\PlanningHours::hoursLabel($vsBudget);
+    $unit = $labor['unit'] ?? 'm²';
+    $otherWarnings = array_values(array_filter(
+        $labor['warnings'] ?? [],
+        fn (string $warning): bool => ! in_array($warning, [
+            'Ingeplande uren liggen boven begroot',
+            'uren overschreden',
+            'uren bijna op',
+        ], true),
+    ));
 @endphp
-<div class="mt-1 space-y-1 text-xs" @if ($labor['detail'] ?? null) title="{{ $labor['detail'] }}" @endif>
-    @if (! empty($labor['overrun_label']))
-        <div class="font-semibold text-nicon-danger">{{ $labor['overrun_label'] }}</div>
+<div class="mt-4 space-y-3" @if ($labor['detail'] ?? null) title="{{ $labor['detail'] }}" @endif>
+    @if ($hasHours)
+        <div class="grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Begroot</div>
+                <div class="text-lg font-semibold tabular-nums text-nicon-ink">{{ \App\Support\PlanningHours::hoursLabel($budgetHours) }}</div>
+            </div>
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Ingepland</div>
+                <div @class([
+                    'text-lg font-semibold tabular-nums',
+                    'text-nicon-danger' => $plannedOver,
+                    'text-nicon-ink' => ! $plannedOver,
+                ])>{{ \App\Support\PlanningHours::hoursLabel($plannedHours) }}</div>
+            </div>
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Gemaakt</div>
+                <div class="text-lg font-semibold tabular-nums text-nicon-ink">{{ \App\Support\PlanningHours::hoursLabel($actualHours) }}</div>
+            </div>
+            <div>
+                <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Verschil</div>
+                <div @class([
+                    'text-lg font-semibold tabular-nums',
+                    'text-nicon-danger' => $plannedOver,
+                    'text-nicon-ink' => ! $plannedOver,
+                ])>{{ $vsBudgetLabel }}</div>
+            </div>
+        </div>
     @endif
+
+    @if ($plannedOver)
+        <p class="text-sm font-medium text-nicon-danger">⚠ {{ rtrim(\App\Support\PlanningHours::hoursLabel($vsBudget), 'u') }} uur meer ingepland dan begroot</p>
+    @endif
+    @foreach ($otherWarnings as $warning)
+        <p class="text-sm font-medium text-nicon-danger">⚠ {{ $warning }}</p>
+    @endforeach
     @if (! empty($labor['extra_summary']))
-        <div class="font-medium text-nicon-ink">{{ $labor['extra_summary'] }}</div>
+        <p class="text-xs text-nicon-steel">{{ $labor['extra_summary'] }}</p>
     @endif
-    @if (! empty($labor['budget_summary']))
-        <div @class([
-            'font-medium',
-            'text-nicon-danger' => ($labor['tone'] ?? '') === 'over',
-            'text-nicon-warn' => ($labor['tone'] ?? '') === 'warn',
-            'text-nicon-muted' => ! in_array($labor['tone'] ?? '', ['over', 'warn'], true),
-        ])>{{ $labor['budget_summary'] }}</div>
+
+    @if (($labor['hourly_rate'] ?? null) !== null || $hasHours)
+        <p class="text-xs text-nicon-steel">
+            Tarief {{ $labor['hourly_rate'] === null ? '—' : \App\Support\Format::euroWhole($labor['hourly_rate']).'/u' }}
+            <span class="text-nicon-muted"> | </span>
+            Arbeid {{ $labor['hourly_rate'] === null ? '—' : \App\Support\Format::euroWhole($labor['labor_cost']) }}
+            <span class="text-nicon-muted"> | </span>
+            Gereed {{ \App\Support\Format::qty($labor['completed_m2']) }} m²
+            <span class="text-nicon-muted"> | </span>
+            Begroot {{ ($labor['budget_cost_per_m2'] ?? $labor['budget_unit_price'] ?? null) === null ? '€/'.$unit.' —' : \App\Support\Format::euro($labor['budget_cost_per_m2'] ?? $labor['budget_unit_price'], 2).'/'.$unit }}
+            <span class="text-nicon-muted"> | </span>
+            Werkelijk €/{{ $unit }} {{ ($labor['actual_cost_per_m2'] ?? $labor['actual_unit_price'] ?? null) === null ? '—' : \App\Support\Format::euro($labor['actual_cost_per_m2'] ?? $labor['actual_unit_price'], 2) }}
+        </p>
     @endif
-    <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-nicon-muted">
-        @if (($labor['budget_hours'] ?? 0) > 0.0001)
-            <span>Begroot: {{ \App\Support\PlanningHours::hoursLabel($labor['budget_hours']) }}</span>
-        @endif
-        <span>Ingepland: {{ \App\Support\PlanningHours::hoursLabel($labor['planned_hours']) }}</span>
-        <span>Gemaakt: {{ \App\Support\PlanningHours::hoursLabel($labor['actual_hours']) }}</span>
-        @if (($labor['budget_remaining'] ?? null) !== null)
-            <span @class([
-                'font-semibold',
-                'text-nicon-danger' => ! empty($labor['budget_remaining_over']),
-            ])>Budget over: {{ $labor['budget_remaining_label'] }}</span>
-        @endif
-        @if (($labor['hours_delta_label'] ?? null) !== null)
-            <span class="text-nicon-muted" title="Planning: Ingepland − Gemaakt">Planningverschil: {{ $labor['hours_delta_label'] }}</span>
-        @endif
-        <span>Tarief: {{ $labor['hourly_rate'] === null ? '—' : \App\Support\Format::euroWhole($labor['hourly_rate']).'/u' }}</span>
-        <span>Gereed: {{ \App\Support\Format::qty($labor['completed_m2']) }} m²</span>
-        <span>Arbeid: {{ $labor['hourly_rate'] === null ? '—' : \App\Support\Format::euroWhole($labor['labor_cost']) }}</span>
-        <span>Begroot €/{{ $labor['unit'] ?? 'm²' }}: {{ ($labor['budget_cost_per_m2'] ?? $labor['budget_unit_price'] ?? null) === null ? '—' : \App\Support\Format::euro($labor['budget_cost_per_m2'] ?? $labor['budget_unit_price'], 2) }}</span>
-        <span>Werkelijk €/{{ $labor['unit'] ?? 'm²' }}: {{ ($labor['actual_cost_per_m2'] ?? $labor['actual_unit_price'] ?? null) === null ? '—' : \App\Support\Format::euro($labor['actual_cost_per_m2'] ?? $labor['actual_unit_price'], 2) }}</span>
-        @if (($labor['cost_delta_label'] ?? null) !== null)
-            <span @class([
-                'font-semibold',
-                'text-nicon-ok' => ($labor['cost_delta_tone'] ?? '') === 'ok',
-                'text-nicon-danger' => ($labor['cost_delta_tone'] ?? '') === 'over',
-            ])>Verschil: {{ $labor['cost_delta_label'] }}</span>
-        @endif
-    </div>
+
     @if (! empty($labor['items']))
-        <div class="mt-1 space-y-1">
+        <div class="space-y-2">
             @foreach ($labor['items'] as $itemLabor)
                 @if (($itemLabor['budget_hours'] ?? 0) <= 0 && ($itemLabor['used_hours'] ?? 0) <= 0)
                     @continue
                 @endif
+                @php
+                    $itemBudget = (float) ($itemLabor['budget_hours'] ?? 0);
+                    $itemPlanned = (float) ($itemLabor['planned_hours'] ?? 0);
+                    $itemOver = $itemBudget > 0.0001 && $itemPlanned > $itemBudget + 0.0001;
+                    $itemUnit = $itemLabor['unit'] ?? $unit;
+                    $itemBudgetPrice = $itemLabor['budget_cost_per_m2'] ?? $itemLabor['budget_unit_price'] ?? null;
+                @endphp
                 <div>
-                    @if (! empty($itemLabor['compact']))
-                        <div @class([
-                            'text-nicon-danger' => ($itemLabor['tone'] ?? '') === 'over',
-                            'text-nicon-warn' => ($itemLabor['tone'] ?? '') === 'warn',
-                        ])>{{ $itemLabor['compact'] }}@if (! empty($itemLabor['warning'])) · {{ $itemLabor['warning'] }}@endif</div>
-                    @else
-                        <div class="text-nicon-muted">{{ $itemLabor['title'] }} · ingepland {{ \App\Support\PlanningHours::hoursLabel($itemLabor['planned_hours']) }} · gemaakt {{ \App\Support\PlanningHours::hoursLabel($itemLabor['actual_hours']) }}</div>
-                    @endif
+                    <div class="text-sm font-medium text-nicon-ink">{{ $itemLabor['title'] }}</div>
+                    <div class="text-xs text-nicon-muted">Begroot {{ \App\Support\PlanningHours::hoursLabel($itemBudget) }} · Ingepland <span @class(['font-medium text-nicon-danger' => $itemOver])>{{ \App\Support\PlanningHours::hoursLabel($itemPlanned) }}</span> · Gemaakt {{ \App\Support\PlanningHours::hoursLabel($itemLabor['actual_hours'] ?? 0) }}</div>
                     @if (($itemLabor['bar_label'] ?? null) !== null && ($itemLabor['bar_percent'] ?? null) !== null)
                         <div class="plan-hour-bar plan-hour-bar--{{ $itemLabor['tone'] ?? 'none' }}" style="max-width: 16rem">
                             <span class="plan-hour-bar-track" aria-hidden="true">
@@ -67,12 +95,8 @@
                             <span class="plan-hour-bar-label">{{ $itemLabor['bar_label'] }}</span>
                         </div>
                     @endif
-                    @if (! empty($itemLabor['finance']))
-                        <div @class([
-                            'text-nicon-ok' => ($itemLabor['cost_delta_tone'] ?? '') === 'ok',
-                            'text-nicon-danger' => ($itemLabor['cost_delta_tone'] ?? '') === 'over',
-                            'text-nicon-muted' => ($itemLabor['cost_delta_tone'] ?? 'none') === 'none',
-                        ])>{{ $itemLabor['finance'] }}</div>
+                    @if ($itemBudgetPrice !== null)
+                        <div class="text-xs text-nicon-muted">Begroot {{ \App\Support\Format::euro($itemBudgetPrice, 2) }}/{{ $itemUnit }}</div>
                     @endif
                 </div>
             @endforeach

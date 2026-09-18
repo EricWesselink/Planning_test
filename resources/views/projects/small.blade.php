@@ -28,7 +28,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('projects.small.update', $project) }}" class="mt-6 max-w-xl space-y-4 border border-nicon-line bg-white p-5">
+    <form method="POST" action="{{ route('projects.small.update', $project) }}" class="mt-8 max-w-xl space-y-4 border border-nicon-line bg-white p-5">
         @csrf
         @method('PATCH')
         <div>

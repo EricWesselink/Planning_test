@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\MeasurementMaterialLocation;
 use App\Enums\WorkUnit;
 use App\Support\Format;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'measurement_form_id', 'sort_order', 'room', 'product', 'brand', 'type',
     'color_number', 'quantity', 'unit', 'underlay', 'skirting', 'steps',
-    'profile', 'available_on_site',
+    'profile', 'available_on_site', 'available_location',
 ])]
 class MeasurementFormRow extends Model
 {
@@ -29,6 +30,7 @@ class MeasurementFormRow extends Model
             'quantity' => 'decimal:2',
             'unit' => WorkUnit::class,
             'available_on_site' => 'boolean',
+            'available_location' => MeasurementMaterialLocation::class,
         ];
     }
 
@@ -46,5 +48,16 @@ class MeasurementFormRow extends Model
         $decimals = fmod((float) $this->quantity, 1.0) === 0.0 ? 0 : 2;
 
         return trim(Format::qty($this->quantity, $decimals).' '.($this->unit?->label() ?? ''));
+    }
+
+    public function availableLabel(): string
+    {
+        if (! $this->available_on_site) {
+            return 'Nee';
+        }
+
+        $location = $this->available_location?->label();
+
+        return $location !== null && $location !== '' ? 'Ja · '.$location : 'Ja';
     }
 }

@@ -58,6 +58,7 @@ enum FlooringSpecialty: string
         return match (true) {
             str_contains($flat, 'dekvloer'), str_contains($flat, 'egal'), str_contains($flat, 'primen') => self::PrimenEgaliseren,
             str_contains($flat, 'marmoleum') => self::Linoleum,
+            str_contains($flat, 'pvc') => self::Pvc,
             default => null,
         };
     }

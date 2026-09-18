@@ -67,4 +67,13 @@ class WorkActivity extends Model
 
         return $slug === 'vloeren' ? WorkUnit::SquareMeter : WorkUnit::Pieces;
     }
+
+    public function isMeasurementProduct(?WorkActivityCategory $category = null): bool
+    {
+        if (($category ?? $this->category)?->slug !== 'vloeren') {
+            return false;
+        }
+
+        return ! in_array($this->slug, ['primen', 'egaliseren', 'reparatie-herstel'], true);
+    }
 }

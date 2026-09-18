@@ -7,6 +7,7 @@ use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
 use App\Models\AreaTask;
 use App\Models\Customer;
+use App\Models\MeasurementFormRow;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
@@ -37,6 +38,7 @@ class MeasurementFormTest extends TestCase
             ->assertSee('Inmeetformulier vloeren / plint / trap')
             ->assertSee('Nog niet ingevuld')
             ->assertSee('Inmeetformulier invullen')
+            ->assertSee('data-measurement-product', false)
             ->assertSee('data-measurement-panel', false)
             ->assertSee('hidden', false);
     }
@@ -73,8 +75,16 @@ class MeasurementFormTest extends TestCase
     public function test_planner_creates_winkelwerk_with_a_measurement_form_and_skips_empty_rows(): void
     {
         $user = User::factory()->create(['name' => 'Inmeter Jansen']);
+        $pvc = $this->activity('pvc-banen');
+        $plinten = $this->activity('plinten');
 
         $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
+            'work_activity_ids' => [$pvc->id, $plinten->id],
+            'activity_quantities' => [$pvc->id => '100', $plinten->id => '20'],
+            'activity_units' => [
+                $pvc->id => WorkUnit::SquareMeter->value,
+                $plinten->id => WorkUnit::LinearMeter->value,
+            ],
             'measurement' => [
                 'meter_user_id' => $user->id,
                 'ordered_at' => '2026-09-10',
@@ -83,7 +93,7 @@ class MeasurementFormTest extends TestCase
                     $this->emptyRow(),
                     [
                         'room' => 'Woonkamer',
-                        'product' => 'PVC click',
+                        'product' => 'PVC banen',
                         'brand' => 'Quick-Step',
                         'type' => 'Alpha',
                         'color_number' => '4013',
@@ -94,10 +104,11 @@ class MeasurementFormTest extends TestCase
                         'steps' => '',
                         'profile' => 'Eindprofiel',
                         'available_on_site' => '1',
+                        'available_location' => 'winkel',
                     ],
                     [
                         'room' => 'Hal',
-                        'product' => 'Plint',
+                        'product' => 'Plinten',
                         'brand' => 'Quick-Step',
                         'type' => '',
                         'color_number' => '',
@@ -107,6 +118,7 @@ class MeasurementFormTest extends TestCase
                         'skirting' => '',
                         'steps' => '',
                         'profile' => '',
+                        'available_on_site' => '0',
                     ],
                     $this->emptyRow(),
                 ],
@@ -127,6 +139,8 @@ class MeasurementFormTest extends TestCase
         $this->assertSame('12.50', $form->rows->first()?->quantity);
         $this->assertSame(WorkUnit::SquareMeter, $form->rows->first()?->unit);
         $this->assertTrue($form->rows->first()?->available_on_site);
+        $this->assertSame('winkel', $form->rows->first()?->available_location?->value);
+        $this->assertNull($form->rows->last()?->available_location);
 
         $this->actingAs($user)
             ->get(route('projects.show', $project))
@@ -158,12 +172,20 @@ class MeasurementFormTest extends TestCase
     public function test_planner_updates_a_measurement_form_and_can_add_and_remove_rows(): void
     {
         $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+        $tapijt = $this->activity('tapijt');
         $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
+            'work_activity_ids' => [$pvc->id, $tapijt->id],
+            'activity_quantities' => [$pvc->id => '100', $tapijt->id => '20'],
+            'activity_units' => [
+                $pvc->id => WorkUnit::SquareMeter->value,
+                $tapijt->id => WorkUnit::SquareMeter->value,
+            ],
             'measurement' => [
                 'meter_user_id' => $user->id,
                 'rows' => [
-                    ['room' => 'Keuken', 'product' => 'PVC', 'quantity' => '10', 'unit' => WorkUnit::SquareMeter->value],
-                    ['room' => 'Toilet', 'product' => 'Tegel', 'quantity' => '3', 'unit' => WorkUnit::SquareMeter->value],
+                    ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '10', 'unit' => WorkUnit::SquareMeter->value],
+                    ['room' => 'Toilet', 'product' => 'Tapijt', 'quantity' => '3', 'unit' => WorkUnit::SquareMeter->value],
                 ],
             ],
         ]))->assertRedirect();
@@ -174,12 +196,17 @@ class MeasurementFormTest extends TestCase
         $this->actingAs($user)->patch(route('projects.winkel.update', $project), [
             'customer_name' => 'Jansen',
             'city' => 'Hengelo',
-            'work_activity_ids' => [$screens->id],
+            'work_activity_ids' => [$pvc->id, $tapijt->id, $screens->id],
+            'activity_quantities' => [$pvc->id => '100', $tapijt->id => '20'],
+            'activity_units' => [
+                $pvc->id => WorkUnit::SquareMeter->value,
+                $tapijt->id => WorkUnit::SquareMeter->value,
+            ],
             'measurement' => [
                 'meter_user_id' => $user->id,
                 'ordered_at' => '2026-09-12',
                 'rows' => [
-                    ['room' => 'Keuken', 'product' => 'PVC click', 'quantity' => '11', 'unit' => WorkUnit::SquareMeter->value],
+                    ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '11', 'unit' => WorkUnit::SquareMeter->value],
                     ['room' => 'Overloop', 'product' => 'Tapijt', 'quantity' => '6', 'unit' => WorkUnit::SquareMeter->value],
                     $this->emptyRow(),
                 ],
@@ -189,7 +216,7 @@ class MeasurementFormTest extends TestCase
         $project->refresh()->load('measurementForm.rows');
         $this->assertSame('2026-09-12', $project->measurementForm?->ordered_at?->toDateString());
         $this->assertSame(['Keuken', 'Overloop'], $project->measurementForm?->rows->pluck('room')->all());
-        $this->assertSame('PVC click', $project->measurementForm?->rows->first()?->product);
+        $this->assertSame('PVC banen', $project->measurementForm?->rows->first()?->product);
         $this->assertDatabaseCount('measurement_form_rows', 2);
     }
 
@@ -216,11 +243,15 @@ class MeasurementFormTest extends TestCase
     public function test_measurement_form_pdf_uses_letterhead_and_row_text(): void
     {
         $user = User::factory()->create(['name' => 'Inmeter Jansen']);
+        $pvc = $this->activity('pvc-banen');
         $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
             'customer_name' => 'De Vries',
             'city' => 'Enschede',
             'address' => 'Kerkstraat 12',
             'postal_code' => '7511 AA',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '100'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
             'measurement' => [
                 'meter_user_id' => $user->id,
                 'ordered_at' => '2026-09-10',
@@ -228,10 +259,12 @@ class MeasurementFormTest extends TestCase
                 'rows' => [
                     [
                         'room' => 'Woonkamer',
-                        'product' => 'PVC click',
+                        'product' => 'PVC banen',
                         'brand' => 'Quick-Step',
                         'quantity' => '20',
                         'unit' => WorkUnit::SquareMeter->value,
+                        'available_on_site' => '1',
+                        'available_location' => 'nicon',
                     ],
                 ],
             ],
@@ -246,7 +279,8 @@ class MeasurementFormTest extends TestCase
         $this->assertStringContainsString('INMEETFORMULIER', $text);
         $this->assertStringContainsString('DeVries', $text);
         $this->assertStringContainsString('Woonkamer', $text);
-        $this->assertStringContainsString('PVCclick', $text);
+        $this->assertStringContainsString('PVCbanen', $text);
+        $this->assertStringContainsString('Ja·Nicon', $text);
         $this->assertStringContainsString('InmeterJansen', $text);
         $this->assertStringContainsString('KloppenburgInterieur', $text);
     }
@@ -294,13 +328,17 @@ class MeasurementFormTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create(['name' => 'Inmeter Jansen']);
+        $pvc = $this->activity('pvc-banen');
         $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
             'customer_name' => 'Bakker',
             'city' => 'Almelo',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '100'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
             'measurement' => [
                 'meter_user_id' => $user->id,
                 'rows' => [
-                    ['room' => 'Slaapkamer', 'product' => 'Laminaat', 'quantity' => '18', 'unit' => WorkUnit::SquareMeter->value],
+                    ['room' => 'Slaapkamer', 'product' => 'PVC banen', 'quantity' => '18', 'unit' => WorkUnit::SquareMeter->value],
                 ],
             ],
         ]))->assertRedirect();
@@ -364,6 +402,129 @@ class MeasurementFormTest extends TestCase
             ->assertOk();
     }
 
+    public function test_rejects_a_product_that_is_not_checked_in_vloeren(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), $this->winkelPayload([
+                'work_activity_ids' => [$pvc->id],
+                'activity_quantities' => [$pvc->id => '100'],
+                'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+                'measurement' => [
+                    'rows' => [
+                        ['room' => 'Kamer', 'product' => 'Marmoleum', 'quantity' => '10', 'unit' => WorkUnit::SquareMeter->value],
+                    ],
+                ],
+            ]))
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors('measurement.rows.0.product');
+
+        $this->assertDatabaseCount('projects', 0);
+    }
+
+    public function test_rejects_when_measurement_square_meters_exceed_the_shop_quantity(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), $this->winkelPayload([
+                'work_activity_ids' => [$pvc->id],
+                'activity_quantities' => [$pvc->id => '100'],
+                'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+                'measurement' => [
+                    'rows' => [
+                        ['room' => 'Woonkamer', 'product' => 'PVC banen', 'quantity' => '80', 'unit' => WorkUnit::SquareMeter->value],
+                        ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '20', 'unit' => WorkUnit::SquareMeter->value],
+                        ['room' => 'Hal', 'product' => 'PVC banen', 'quantity' => '10', 'unit' => WorkUnit::SquareMeter->value],
+                    ],
+                ],
+            ]))
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['measurement.rows' => 'Te veel ingevoerd. PVC banen: 100 m² beschikbaar, 110 m² reeds verdeeld.']);
+
+        $this->assertDatabaseCount('projects', 0);
+        $this->assertDatabaseCount('measurement_forms', 0);
+    }
+
+    public function test_rejects_overflow_even_when_row_units_are_empty(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), $this->winkelPayload([
+                'work_activity_ids' => [$pvc->id],
+                'activity_quantities' => [$pvc->id => '100'],
+                'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+                'measurement' => [
+                    'rows' => [
+                        ['room' => 'Woonkamer', 'product' => 'PVC banen', 'quantity' => '80'],
+                        ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '30'],
+                    ],
+                ],
+            ]))
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['measurement.rows' => 'Te veel ingevoerd. PVC banen: 100 m² beschikbaar, 110 m² reeds verdeeld.']);
+
+        $this->assertDatabaseCount('projects', 0);
+    }
+
+    public function test_allows_measurement_rows_that_match_the_shop_square_meters(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '100'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'measurement' => [
+                'rows' => [
+                    ['room' => 'Woonkamer', 'product' => 'PVC banen', 'quantity' => '80', 'unit' => WorkUnit::SquareMeter->value],
+                    ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '20', 'unit' => WorkUnit::SquareMeter->value],
+                ],
+            ],
+        ]))->assertRedirect();
+
+        $this->assertDatabaseCount('measurement_form_rows', 2);
+        $this->assertEquals(100, MeasurementFormRow::query()->sum('quantity'));
+    }
+
+    public function test_clears_available_location_when_material_is_not_present(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '100'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'measurement' => [
+                'rows' => [
+                    [
+                        'room' => 'Kamer',
+                        'product' => 'PVC banen',
+                        'quantity' => '10',
+                        'unit' => WorkUnit::SquareMeter->value,
+                        'available_on_site' => '0',
+                        'available_location' => 'klant',
+                    ],
+                ],
+            ],
+        ]))->assertRedirect();
+
+        $row = MeasurementFormRow::query()->first();
+        $this->assertNotNull($row);
+        $this->assertFalse($row->available_on_site);
+        $this->assertNull($row->available_location);
+    }
+
     public function test_guest_is_redirected_from_the_measurement_form_pdf(): void
     {
         $this->get(route('projects.winkel.measurement.pdf', 1))->assertRedirect(route('login'));
@@ -399,6 +560,8 @@ class MeasurementFormTest extends TestCase
             'skirting' => '',
             'steps' => '',
             'profile' => '',
+            'available_on_site' => '0',
+            'available_location' => '',
         ];
     }
 
