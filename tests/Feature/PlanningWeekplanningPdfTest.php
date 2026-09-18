@@ -666,10 +666,15 @@ class PlanningWeekplanningPdfTest extends TestCase
 
         $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
         $request->setUserResolver(fn () => $user);
-        $days = collect(app(WeekplanningPdfService::class)->build($request)['days'])->keyBy('key');
+        $data = app(WeekplanningPdfService::class)->build($request);
+        $days = collect($data['days'])->keyBy('key');
+        $html = view('planning.weekplanning', $data)->render();
 
         $this->assertSame('Volgt nog', $days['2026-09-11']['empty_label']);
+        $this->assertSame(true, $days['2026-09-11']['empty_pending']);
         $this->assertSame('—', $days['2026-09-12']['empty_label']);
+        $this->assertSame(false, $days['2026-09-12']['empty_pending']);
+        $this->assertStringContainsString('class="empty is-pending"', $html);
 
         $text = $this->pdfText($this->actingAs($user)->get(route('planning.weekplanning', ['week' => '2026-09-07'])));
 

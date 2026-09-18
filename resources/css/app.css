@@ -4804,33 +4804,45 @@ img.calc-print-canvas {
     .calc-print-page {
         width: auto;
         min-height: 0;
-        height: 100%;
+        height: 281mm;
         margin: 0;
         padding: 0;
+        overflow: hidden;
         box-shadow: none;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .calc-print-drawing-page.is-portrait {
+        height: 404mm;
     }
 
     .calc-print-sheet,
     .calc-print-sheet.is-full,
     .calc-print-drawing-page.is-portrait .calc-print-sheet,
     .calc-print-drawing-page.is-portrait .calc-print-sheet.is-full {
-        height: auto;
+        height: calc(100% - 12mm);
         min-height: 0;
-        align-items: stretch;
     }
 
     .calc-print-drawing {
         container-type: normal;
-        overflow: visible;
+        overflow: hidden;
+        min-height: 0;
         height: auto;
-        display: block;
+        flex: 1 1 auto;
+    }
+
+    .calc-print-sheet.is-full .calc-print-drawing {
+        height: 100%;
     }
 
     .calc-print-world {
-        width: 100%;
-        height: auto;
-        max-height: none;
-        aspect-ratio: auto;
+        width: auto;
+        height: 100%;
+        max-width: 100%;
+        margin-inline: auto;
+        aspect-ratio: var(--page-ratio, 1.414);
     }
 
     img.calc-print-canvas,
@@ -4843,7 +4855,8 @@ img.calc-print-canvas {
     img.calc-print-canvas {
         position: static;
         width: 100%;
-        height: auto;
+        height: 100%;
         max-width: none;
+        object-fit: fill;
     }
 }

@@ -90,7 +90,7 @@ class WeekplanningPdfService
      *     companyName: string,
      *     shopName: string,
      *     heading: string,
-     *     days: list<array{key: string, name: string, date: string, empty_label: string}>,
+     *     days: list<array{key: string, name: string, date: string, empty_label: string, empty_pending: bool}>,
      *     people: list<array<string, mixed>>
      * }
      */
@@ -158,6 +158,7 @@ class WeekplanningPdfService
                 'name' => Str::ucfirst($day->translatedFormat('l')),
                 'date' => $day->translatedFormat('j F'),
                 'empty_label' => $day->isWeekday() ? 'Volgt nog' : '—',
+                'empty_pending' => $day->isWeekday(),
             ])->values()->all(),
             'people' => $people,
         ];

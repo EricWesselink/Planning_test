@@ -186,6 +186,17 @@
             padding: 2px 0;
             font-size: 8pt;
         }
+        .empty.is-pending {
+            color: #163a5f;
+            font-weight: 700;
+            font-size: 8.5pt;
+            letter-spacing: 0.03em;
+            padding: 10px 6px;
+            border: 0.7pt dashed #163a5f;
+            background: #e8eef4;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
         .block {
             border: 0.5pt solid rgba(0, 0, 0, 0.12);
             padding: 5px 6px;
@@ -333,7 +344,7 @@
                                     <div class="block-hours">{{ $block['hours'] }}</div>
                                 </div>
                             @empty
-                                <div class="empty">{{ $day['empty_label'] }}</div>
+                                <div class="empty{{ ! empty($day['empty_pending']) ? ' is-pending' : '' }}">{{ $day['empty_label'] }}</div>
                             @endforelse
                         </td>
                     @endforeach
