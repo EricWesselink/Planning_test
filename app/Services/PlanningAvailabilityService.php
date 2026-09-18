@@ -231,7 +231,7 @@ class PlanningAvailabilityService
             return 'Beschikbaar';
         }
         if ($status === 'partial') {
-            return 'Deels vrij · '.PlanningHours::hoursLabel((float) ($person['remaining_hours'] ?? 0));
+            return 'Deels beschikbaar · '.PlanningHours::hoursLabel((float) ($person['remaining_hours'] ?? 0));
         }
 
         return 'Bezet';
@@ -403,8 +403,8 @@ class PlanningAvailabilityService
 
         $full = $remaining >= PlanningHours::WORKDAY_HOURS - 0.01;
         $detail = $full
-            ? PlanningHours::hoursLabel($remaining).' vrij'
-            : 'nog '.PlanningHours::hoursLabel($remaining).' vrij';
+            ? PlanningHours::hoursLabel($remaining).' beschikbaar'
+            : 'nog '.PlanningHours::hoursLabel($remaining).' beschikbaar';
         $title = $absenceHint !== null && $absenceHint !== ''
             ? $name.' — '.$absenceHint
             : $name.' — '.$detail;
@@ -420,8 +420,8 @@ class PlanningAvailabilityService
             'selectable' => true,
             'given' => $given,
             'chip' => $full
-                ? $given.' vrij'
-                : $given.' '.PlanningHours::hoursLabel($remaining).' vrij',
+                ? $given.' beschikbaar'
+                : $given.' '.PlanningHours::hoursLabel($remaining).' beschikbaar',
             'tone' => $full ? 'ok' : 'partial',
         ];
     }
@@ -762,6 +762,6 @@ class PlanningAvailabilityService
             .PlanningHours::manDaysLabel($available)
             .' mandagen gepland · '
             .PlanningHours::manDaysLabel($remaining)
-            .' vrij';
+            .' beschikbaar';
     }
 }

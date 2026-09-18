@@ -146,7 +146,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame(4.5, $this->available());
         $this->assertSame([
-            'Peter — 0,5 / 5 mandagen gepland · 4,5 vrij',
+            'Peter — 0,5 / 5 mandagen gepland · 4,5 beschikbaar',
         ], $this->summaries());
     }
 
@@ -161,7 +161,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame(8.0, $this->available());
         $this->assertSame([
-            'Wespro — 2 / 10 mandagen gepland · 8 vrij',
+            'Wespro — 2 / 10 mandagen gepland · 8 beschikbaar',
         ], $this->summaries());
     }
 
@@ -176,7 +176,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame(9.0, $this->available());
         $this->assertSame([
-            'Wespro — 1 / 10 mandagen gepland · 9 vrij',
+            'Wespro — 1 / 10 mandagen gepland · 9 beschikbaar',
         ], $this->summaries());
     }
 
@@ -191,7 +191,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame(9.0, $this->available());
         $this->assertSame([
-            'Wespro — 1 / 10 mandagen gepland · 9 vrij',
+            'Wespro — 1 / 10 mandagen gepland · 9 beschikbaar',
         ], $this->summaries());
     }
 
@@ -205,7 +205,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame(8.0, $this->available());
         $this->assertSame([
-            'Wespro — 2 / 10 mandagen gepland · 8 vrij',
+            'Wespro — 2 / 10 mandagen gepland · 8 beschikbaar',
         ], $this->summaries());
     }
 
@@ -217,8 +217,8 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assign($peter, $item, '2026-09-07', '2026-09-12');
 
         $this->assertSame([
-            'Kees Jansen — 0 / 5 mandagen gepland · 5 vrij',
-            'Peter — 5 / 5 mandagen gepland · 0 vrij',
+            'Kees Jansen — 0 / 5 mandagen gepland · 5 beschikbaar',
+            'Peter — 5 / 5 mandagen gepland · 0 beschikbaar',
         ], $this->summaries());
     }
 
@@ -229,7 +229,7 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assign($team, $item, '2026-09-07', '2026-09-09', peopleCount: 2);
 
         $this->assertSame([
-            'Wespro — 6 / 10 mandagen gepland · 4 vrij',
+            'Wespro — 6 / 10 mandagen gepland · 4 beschikbaar',
         ], $this->summaries());
     }
 
@@ -241,7 +241,7 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assign($team, $item, '2026-09-07', '2026-09-12', [$people[0]->id]);
 
         $this->assertSame([
-            'Jansen Vloeren — 5 / 10 mandagen gepland · 5 vrij',
+            'Jansen Vloeren — 5 / 10 mandagen gepland · 5 beschikbaar',
         ], $this->summaries());
     }
 
@@ -254,7 +254,7 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assertSame('ok', $monday['tone']);
         $this->assertSame(1, $monday['free_count']);
         $this->assertSame('Beschikbaar', $monday['label']);
-        $this->assertSame('8u vrij', $monday['people'][0]['detail']);
+        $this->assertSame('8u beschikbaar', $monday['people'][0]['detail']);
         $this->assertTrue($monday['people'][0]['selectable']);
         $this->assertSame(['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'], $this->dayLabels());
     }
@@ -269,8 +269,8 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame('partial', $monday['tone']);
         $this->assertSame(1, $monday['free_count']);
-        $this->assertSame('Deels vrij · 4u', $monday['label']);
-        $this->assertSame('nog 4u vrij', $monday['people'][0]['detail']);
+        $this->assertSame('Deels beschikbaar · 4u', $monday['label']);
+        $this->assertSame('nog 4u beschikbaar', $monday['people'][0]['detail']);
         $this->assertSame(4.0, $monday['people'][0]['remaining_hours']);
         $this->assertTrue($monday['people'][0]['selectable']);
         $this->assertSame('ok', $this->cell('Peter', '2026-09-08')['tone']);
@@ -291,8 +291,8 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame('partial', $monday['tone']);
         $this->assertSame(1, $monday['free_count']);
-        $this->assertSame('Deels vrij · 4u', $monday['label']);
-        $this->assertSame('nog 4u vrij', $monday['people'][0]['detail']);
+        $this->assertSame('Deels beschikbaar · 4u', $monday['label']);
+        $this->assertSame('nog 4u beschikbaar', $monday['people'][0]['detail']);
         $this->assertSame(4.0, $monday['people'][0]['remaining_hours']);
         $this->assertTrue($monday['people'][0]['selectable']);
         $this->assertSame('Peter — ochtend vrij, middag beschikbaar', $monday['people'][0]['title']);
@@ -314,7 +314,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $monday = $this->cell('Wespro', '2026-09-07');
 
-        $this->assertSame('EW 4u vrij | HW vrij', $monday['label']);
+        $this->assertSame('EW 4u beschikbaar | HW beschikbaar', $monday['label']);
         $this->assertSame('partial', $monday['people'][0]['tone']);
         $this->assertSame('ok', $monday['people'][1]['tone']);
         $this->assertSame('Eric Wesselink — ochtend vrij, middag beschikbaar', $monday['people'][0]['title']);
@@ -354,13 +354,13 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $monday = $this->cell('Wespro', '2026-09-07');
 
-        $this->assertSame('PI vrij | JA vrij', $monday['label']);
+        $this->assertSame('PI beschikbaar | JA beschikbaar', $monday['label']);
         $this->assertSame('PI', $monday['people'][0]['given']);
         $this->assertSame('JA', $monday['people'][1]['given']);
         $this->assertSame('ok', $monday['people'][0]['tone']);
         $this->assertSame('ok', $monday['people'][1]['tone']);
-        $this->assertSame('PI vrij', $monday['people'][0]['chip']);
-        $this->assertSame('JA vrij', $monday['people'][1]['chip']);
+        $this->assertSame('PI beschikbaar', $monday['people'][0]['chip']);
+        $this->assertSame('JA beschikbaar', $monday['people'][1]['chip']);
     }
 
     public function test_daily_matrix_makes_duplicate_initials_unique(): void
@@ -369,7 +369,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $monday = $this->cell('Ploeg', '2026-09-07');
 
-        $this->assertSame('NS vrij | NSM vrij', $monday['label']);
+        $this->assertSame('NS beschikbaar | NSM beschikbaar', $monday['label']);
         $this->assertSame(['NS', 'NSM'], array_column($monday['people'], 'given'));
     }
 
@@ -383,7 +383,7 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assertSame('PI vrije dag | JA vrije dag', $friday['label']);
         $this->assertSame('away', $friday['people'][0]['tone']);
         $this->assertSame('away', $friday['people'][1]['tone']);
-        $this->assertSame('PI vrij | JA vrij', $this->cell('Wespro', '2026-09-10')['label']);
+        $this->assertSame('PI beschikbaar | JA beschikbaar', $this->cell('Wespro', '2026-09-10')['label']);
     }
 
     public function test_daily_matrix_marks_one_teammate_weekday_off_as_vrije_dag(): void
@@ -399,14 +399,14 @@ class PlanningAvailabilityServiceTest extends TestCase
         $ericRow = collect($wednesday['people'])->firstWhere('name', 'Eric Wesselink');
         $harmRow = collect($wednesday['people'])->firstWhere('name', 'Harm Wesselink');
 
-        $this->assertSame('EW vrije dag | HW vrij', $wednesday['label']);
+        $this->assertSame('EW vrije dag | HW beschikbaar', $wednesday['label']);
         $this->assertSame('away', $ericRow['status']);
         $this->assertSame('Vrije dag', $ericRow['detail']);
         $this->assertFalse($ericRow['selectable']);
         $this->assertSame('EW vrije dag', $ericRow['chip']);
         $this->assertSame('free', $harmRow['status']);
         $this->assertTrue($harmRow['selectable']);
-        $this->assertSame('EW vrij | HW vrij', $this->cell('Wespro', '2026-09-08')['label']);
+        $this->assertSame('EW beschikbaar | HW beschikbaar', $this->cell('Wespro', '2026-09-08')['label']);
     }
 
     public function test_saturday_work_day_counts_as_available(): void
@@ -493,11 +493,11 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame('partial', $tuesday['tone']);
         $this->assertSame(1, $tuesday['free_count']);
-        $this->assertSame('PI bezet | JA vrij', $tuesday['label']);
+        $this->assertSame('PI bezet | JA beschikbaar', $tuesday['label']);
         $this->assertSame('none', $tuesday['people'][0]['tone']);
         $this->assertSame('ok', $tuesday['people'][1]['tone']);
         $this->assertSame('PI bezet', $tuesday['people'][0]['chip']);
-        $this->assertSame('JA vrij', $tuesday['people'][1]['chip']);
+        $this->assertSame('JA beschikbaar', $tuesday['people'][1]['chip']);
         $this->assertSame('Piet', $tuesday['people'][0]['name']);
         $this->assertSame('busy', $tuesday['people'][0]['status']);
         $this->assertSame('8u ingepland', $tuesday['people'][0]['detail']);
@@ -515,7 +515,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $monday = $this->cell('Wespro', '2026-09-07');
 
-        $this->assertSame('PI 4u vrij | JA vrij', $monday['label']);
+        $this->assertSame('PI 4u beschikbaar | JA beschikbaar', $monday['label']);
         $this->assertSame('partial', $monday['people'][0]['tone']);
         $this->assertSame('ok', $monday['people'][1]['tone']);
     }
@@ -526,7 +526,7 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame(['Eric / Harm'], collect($this->overview()['teams'])->pluck('label')->all());
         $monday = $this->cell('Eric / Harm', '2026-09-07');
-        $this->assertSame('EW vrij | HW vrij', $monday['label']);
+        $this->assertSame('EW beschikbaar | HW beschikbaar', $monday['label']);
         $this->assertSame(['EW', 'HW'], array_column($monday['people'], 'given'));
         $this->assertSame('Eric Wesselink', $monday['people'][0]['name']);
         $this->assertSame('Harm Wesselink', $monday['people'][1]['name']);

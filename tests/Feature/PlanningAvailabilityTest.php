@@ -39,7 +39,7 @@ class PlanningAvailabilityTest extends TestCase
             ->assertSee('planning-available-name">Peter</span>', false)
             ->assertSee('planning-avail-cell is-none', false)
             ->assertSee('>Bezet</button>', false)
-            ->assertSee('✓ Kees Jansen — 8u vrij', false)
+            ->assertSee('✓ Kees Jansen — 8u beschikbaar', false)
             ->assertSee('✕ Peter — 8u ingepland', false)
             ->assertSee('data-plan-avail-pick', false);
     }
@@ -113,7 +113,7 @@ class PlanningAvailabilityTest extends TestCase
             ->assertSee('planning-available-count">5</span>', false)
             ->assertSee('planning-available-name">Peter</span>', false)
             ->assertDontSee('planning-available-name">H.D. Vervoort</span>', false)
-            ->assertDontSee('>3 vrij</button>', false);
+            ->assertDontSee('>3 beschikbaar</button>', false);
     }
 
     public function test_planning_page_omits_intake_only_own_staff_from_the_daily_availability(): void
@@ -185,8 +185,8 @@ class PlanningAvailabilityTest extends TestCase
             ->assertSee('planning-available-count">4</span>', false)
             ->assertSee('planning-available-name">Wespro</span>', false)
             ->assertSee('planning-avail-part is-ok', false)
-            ->assertSee('>PI vrij</button>', false)
-            ->assertSee('>JA vrij</button>', false)
+            ->assertSee('>PI beschikbaar</button>', false)
+            ->assertSee('>JA beschikbaar</button>', false)
             ->assertSee('planning-avail-part is-none', false)
             ->assertSee('>PI bezet</span>', false)
             ->assertSee('>JA bezet</span>', false);
@@ -205,8 +205,8 @@ class PlanningAvailabilityTest extends TestCase
             ->assertSee('planning-available-count">4,5</span>', false)
             ->assertSee('planning-available-name">Peter</span>', false)
             ->assertSee('planning-avail-cell is-partial', false)
-            ->assertSee('nog 4u vrij', false)
-            ->assertSee('>Deels vrij · 4u</button>', false);
+            ->assertSee('nog 4u beschikbaar', false)
+            ->assertSee('>Deels beschikbaar · 4u</button>', false);
     }
 
     public function test_planning_page_uses_the_singular_man_day_label(): void
@@ -258,8 +258,8 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('>PI vrij</button>', false)
-            ->assertSee('>JA vrij</button>', false);
+            ->assertSee('>PI beschikbaar</button>', false)
+            ->assertSee('>JA beschikbaar</button>', false);
 
         $this->assign($team, $item, '2026-09-07', '2026-09-09', 2);
 
@@ -267,7 +267,7 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('>PI vrij</button>', false)
+            ->assertSee('>PI beschikbaar</button>', false)
             ->assertSee('>PI bezet</span>', false)
             ->assertSee('>JA bezet</span>', false);
     }
@@ -319,10 +319,10 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Eric / Harm</span>', false)
-            ->assertSee('>EW vrij</button>', false)
-            ->assertSee('>HW vrij</button>', false)
-            ->assertSee('title="Eric Wesselink"', false)
-            ->assertSee('title="Harm Wesselink"', false);
+            ->assertSee('>EW beschikbaar</button>', false)
+            ->assertSee('>HW beschikbaar</button>', false)
+            ->assertSee('title="Eric Wesselink — 8u beschikbaar"', false)
+            ->assertSee('title="Harm Wesselink — 8u beschikbaar"', false);
     }
 
     private function makeWorker(string $name, string $employmentType = 'eigen', string $specialty = 'Linoleum'): Worker
