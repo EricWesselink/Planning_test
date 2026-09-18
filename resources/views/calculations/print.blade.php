@@ -16,7 +16,7 @@
     @endphp
     <p class="calc-print-toolbar no-print">
         <a href="{{ url()->previous(route('calculations.index')) }}">← Terug</a>
-        <button type="button" class="bg-nicon-orange px-3 py-1.5 text-sm text-white" onclick="niconPrintCalculation()">
+        <button type="button" class="bg-nicon-orange px-3 py-1.5 text-sm text-white" data-print-start disabled onclick="niconPrintCalculation()">
             {{ $output === 'print' ? 'Afdrukken' : 'PDF maken' }}
         </button>
     </p>

@@ -4695,8 +4695,22 @@ button.plan-labor-toggle:hover {
     display: block;
 }
 
-.calc-print-canvas {
+img.calc-print-canvas {
     z-index: 1;
+    max-width: none;
+    height: 100%;
+    object-fit: fill;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
+
+.calc-print-drawing,
+.calc-print-world,
+.calc-print-hit,
+.calc-print-markers,
+.calc-print-markers .calc-code-chip {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
 }
 
 .calc-print-hit {
@@ -4801,5 +4815,12 @@ button.plan-labor-toggle:hover {
     .calc-print-drawing-page.is-portrait .calc-print-sheet,
     .calc-print-drawing-page.is-portrait .calc-print-sheet.is-full {
         height: calc(100% - 12mm);
+    }
+
+    img.calc-print-canvas,
+    .calc-print-hit,
+    .calc-print-markers {
+        display: block !important;
+        visibility: visible !important;
     }
 }

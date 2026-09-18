@@ -21,8 +21,11 @@ import {
     candidatesFetchInit,
     datesForExactMode,
     isLatestCandidatesRequest,
-    whoLoadingOptionList,
+    preservedWhoValue,
+    whoChoice,
     whoOptionList,
+    whoValueForWorker,
+    workerNameFromBarLabel,
 } from './planning-who-options.js';
 
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -69,9 +72,20 @@ if (board) {
     const crews = JSON.parse(board.dataset.crews || '{}');
     const candidatesUrl = board.dataset.candidatesUrl || '';
     const dates = [...board.querySelectorAll('.plan-line--head [data-date]')].map((el) => el.dataset.date);
+    const whoMeta = {};
+    [...whoSelect.options].forEach((option) => {
+        if (option.value) {
+            whoMeta[option.value] = {
+                name: option.textContent.trim(),
+                peopleCount: Number(option.dataset.men || 1),
+            };
+        }
+    });
     let lastCandidates = [];
     let candidatesAbort = null;
     let candidatesRequestId = 0;
+    let selectedWho = '';
+    let selectedWhoChoice = null;
     let saving = false;
     const submitBtn = form.querySelector('button[type="submit"]');
     const dayCount = dates.length;
@@ -293,9 +307,23 @@ if (board) {
         }).join('');
     }
 
+    function choiceForWho(value, fallbackName = '', fallbackPeople = 1) {
+        if (!value) {
+            return null;
+        }
+        const meta = whoMeta[value];
+
+        return whoChoice(meta?.name || fallbackName, meta?.peopleCount || fallbackPeople);
+    }
+
+    function rememberWho(value, choice = null) {
+        selectedWho = value || '';
+        selectedWhoChoice = choice || choiceForWho(selectedWho);
+    }
+
     function renderWhoOptions(preserveValue) {
-        const current = preserveValue || whoSelect.value;
-        paintWhoOptions(whoOptionList(lastCandidates, current));
+        const current = preservedWhoValue(preserveValue, selectedWho || whoSelect.value);
+        paintWhoOptions(whoOptionList(lastCandidates, current, 'Kies vakman of team', selectedWhoChoice));
         const stillValid = current
             && whoSelect.querySelector(`option[value="${CSS.escape(current)}"]:not(:disabled)`);
         whoSelect.value = stillValid ? current : '';
@@ -311,11 +339,10 @@ if (board) {
     }
 
     async function refreshCandidates() {
-        const preserveValue = whoSelect.value;
+        const preserveValue = preservedWhoValue(selectedWho, whoSelect.value);
         const requestId = ++candidatesRequestId;
         lastCandidates = [];
-        paintWhoOptions(whoLoadingOptionList());
-        whoSelect.value = '';
+        renderWhoOptions(preserveValue);
 
         if (weekMode()) {
             syncDatesFromWeeks();
@@ -671,7 +698,8 @@ if (board) {
             crewHeading.textContent = 'Wie gaat er naartoe';
         }
         crewHint?.classList.add('hidden');
-        whoSelect.value = whoValue || '';
+        rememberWho(whoValue || '', choiceForWho(whoValue || ''));
+        renderWhoOptions(selectedWho);
         whoSelect.disabled = false;
         projectInput.value = projectId;
         fillWorkItems(projectId, workItemId);
@@ -732,9 +760,18 @@ if (board) {
         whoSelect.querySelectorAll('option[value^="team:"]').forEach((option) => {
             option.hidden = true;
         });
-        whoSelect.value = `worker:${bar.dataset.workerId}`;
+        const whoValue = whoValueForWorker(bar.dataset.workerId);
+        rememberWho(whoValue, choiceForWho(
+            whoValue,
+            workerNameFromBarLabel(bar.querySelector('.bar-label')?.textContent || bar.title || ''),
+            bar.dataset.peopleCount,
+        ));
+        renderWhoOptions(selectedWho);
         projectInput.value = bar.dataset.projectId;
-        fillWorkItems(bar.dataset.projectId, (bar.dataset.workItemIds || bar.dataset.workItemId || '').split(','));
+        fillWorkItems(
+            bar.dataset.projectId,
+            (bar.dataset.workItemIds || bar.dataset.workItemId || bar.closest('.person-stack')?.dataset.workItemId || '').split(','),
+        );
         startInput.value = bar.dataset.startDate;
         endInput.value = bar.dataset.endDate;
         setWeekendDays(bar.dataset.includeSaturday === '1', bar.dataset.includeSunday === '1');
@@ -1041,7 +1078,15 @@ if (board) {
     });
     }
 
-    whoSelect.addEventListener('change', syncMenFromWho);
+    whoSelect.addEventListener('change', () => {
+        const option = whoSelect.selectedOptions[0];
+        rememberWho(whoSelect.value, choiceForWho(
+            whoSelect.value,
+            option?.textContent || '',
+            option?.dataset.men,
+        ));
+        syncMenFromWho();
+    });
     workSelect?.addEventListener('change', () => {
         syncProjectFromWork();
         refreshCandidates();
@@ -1225,7 +1270,10 @@ if (board) {
     });
 
     document.getElementById('plan-cancel').addEventListener('click', () => dialog.close());
-    dialog.addEventListener('close', () => invalidateWhoCandidates());
+    dialog.addEventListener('close', () => {
+        invalidateWhoCandidates();
+        rememberWho('', null);
+    });
 
     deleteBtn.addEventListener('click', async () => {
         const assignmentId = form.dataset.assignmentId;

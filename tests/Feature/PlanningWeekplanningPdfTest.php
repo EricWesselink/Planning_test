@@ -529,6 +529,60 @@ class PlanningWeekplanningPdfTest extends TestCase
         $this->assertSame(['Vrije dag', 'Vakantie', 'Dussen - IJsselmuiden'], $titles);
     }
 
+    public function test_week_long_vacation_stays_first_when_a_teammate_has_one_day_off(): void
+    {
+        $user = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Team 3 Arek',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => ''],
+                ['name' => 'Sietse', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        $arek = $team->crewPeople->firstWhere('name', 'Arek');
+        $sietse = $team->crewPeople->firstWhere('name', 'Sietse');
+        $arek->setRelation('worker', $team);
+        $arek->setWorkDay(3, false);
+        $arek->save();
+        $team->unsetRelation('crewPeople');
+        $team->availabilities()->create([
+            'crew_member_id' => $sietse->id,
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-11',
+            'kind' => AvailabilityKind::Vacation,
+        ]);
+        [$project, $item] = $this->makeProject('Dussen - IJsselmuiden', [
+            'city' => 'IJsselmuiden',
+        ]);
+        $this->assign($team, $project, $item, '2026-09-07', '2026-09-08', '08:00:00', '14:00:00', [$arek->id]);
+        $this->assign($team, $project, $item, '2026-09-10', '2026-09-11', '08:00:00', '16:00:00', [$arek->id]);
+
+        $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $row = app(WeekplanningPdfService::class)->build($request)['people'][0];
+
+        $this->assertSame('Vakantie', $row['days']['2026-09-07'][0]['title']);
+        $this->assertSame('Sietse', $row['days']['2026-09-07'][0]['who']);
+        $this->assertSame(['Vakantie', 'Vrije dag'], array_column($row['days']['2026-09-09'], 'title'));
+        $this->assertSame('Sietse', $row['days']['2026-09-09'][0]['who']);
+        $this->assertSame('Arek', $row['days']['2026-09-09'][1]['who']);
+        $this->assertSame('Vakantie', $row['days']['2026-09-11'][0]['title']);
+        $this->assertSame('Sietse', $row['days']['2026-09-11'][0]['who']);
+
+        $response = $this->actingAs($user)->get(route('planning.weekplanning', [
+            'week' => '2026-09-07',
+            'teams' => ['worker-'.$team->id],
+        ]));
+
+        $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
+        $text = $this->pdfText($response);
+        $this->assertStringContainsString('Vakantie', $text);
+        $this->assertStringContainsString('Vrije dag', $text);
+    }
+
     public function test_vacation_without_work_that_week_stays_hidden(): void
     {
         $user = User::factory()->create();

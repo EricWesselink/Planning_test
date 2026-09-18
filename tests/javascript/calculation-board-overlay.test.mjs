@@ -5,9 +5,12 @@ import {
     overlayChipText,
     overlayPlan,
     printDrawingSheets,
+    printImageFromCanvas,
     printPaper,
     roomLabelAnchor,
     usableLabelHits,
+    waitForPrintAssets,
+    waitForPrintImage,
 } from '../../resources/js/calculation-board-overlay.js';
 
 function room(overrides = {}) {
@@ -160,4 +163,79 @@ test('ignores a dense legend strip of room codes above the plan', () => {
 
     assert.equal(usableLabelHits(hits).length, 0);
     assert.deepEqual(usableLabelHits([...hits, inRoom]).map((hit) => hit.y), [0.64]);
+});
+
+test('print snapshot keeps a jpeg data url from the rendered canvas', () => {
+    const src = `data:image/jpeg;base64,${'A'.repeat(80)}`;
+    const result = printImageFromCanvas({
+        width: 120,
+        height: 80,
+        toDataURL(type) {
+            assert.equal(type, 'image/jpeg');
+
+            return src;
+        },
+    });
+
+    assert.equal(result.src, src);
+    assert.equal(result.width, 120);
+    assert.equal(result.height, 80);
+});
+
+test('print snapshot rejects a blank or zero-size canvas', () => {
+    assert.throws(() => printImageFromCanvas({
+        width: 0,
+        height: 10,
+        toDataURL: () => `data:image/jpeg;base64,${'A'.repeat(80)}`,
+    }), /empty drawing canvas/);
+    assert.throws(() => printImageFromCanvas({
+        width: 10,
+        height: 10,
+        toDataURL: () => 'data:,',
+    }), /empty drawing snapshot/);
+});
+
+test('print snapshot falls back to png when jpeg data is empty', () => {
+    const png = `data:image/png;base64,${'B'.repeat(80)}`;
+    const result = printImageFromCanvas({
+        width: 20,
+        height: 20,
+        toDataURL(type) {
+            return type === 'image/png' ? png : 'data:,';
+        },
+    });
+
+    assert.equal(result.src, png);
+});
+
+test('print waits until every drawing image has a non-empty size', async () => {
+    const src = `data:image/jpeg;base64,${'A'.repeat(80)}`;
+    const image = {
+        tagName: 'IMG',
+        src,
+        getAttribute: () => src,
+        complete: true,
+        naturalWidth: 400,
+        naturalHeight: 280,
+        decode: async () => {},
+    };
+
+    const images = await waitForPrintAssets({
+        querySelectorAll: () => [image],
+    }, { fonts: { ready: Promise.resolve() }, requireDrawings: true });
+
+    assert.equal(images.length, 1);
+});
+
+test('print does not treat a missing or empty drawing image as ready', async () => {
+    await assert.rejects(() => waitForPrintImage({
+        src: '',
+        getAttribute: () => '',
+        complete: true,
+        naturalWidth: 0,
+        naturalHeight: 0,
+    }), /empty drawing image/);
+    await assert.rejects(() => waitForPrintAssets({
+        querySelectorAll: () => [],
+    }, { requireDrawings: true }), /no print drawings/);
 });

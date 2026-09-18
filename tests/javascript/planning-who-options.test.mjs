@@ -5,9 +5,14 @@ import {
     candidatesFetchInit,
     datesForExactMode,
     isLatestCandidatesRequest,
+    preservedWhoValue,
     shouldOverwriteDatesFromWeeks,
+    whoChoice,
     whoLoadingOptionList,
     whoOptionList,
+    whoOptionName,
+    whoValueForWorker,
+    workerNameFromBarLabel,
 } from '../../resources/js/planning-who-options.js';
 
 const candidates = [
@@ -96,4 +101,27 @@ test('asks the browser not to reuse a previous candidates response', () => {
 
     assert.equal(init.cache, 'no-store');
     assert.equal(init.headers.Accept, 'application/json');
+});
+
+test('keeps the assigned team selected after the native select was emptied', () => {
+    assert.equal(preservedWhoValue('worker:12', ''), 'worker:12');
+    assert.equal(preservedWhoValue('', 'worker:9'), 'worker:9');
+    assert.equal(whoValueForWorker(12), 'worker:12');
+});
+
+test('shows the clicked team immediately even before candidates load', () => {
+    const options = whoOptionList([], 'worker:12', 'Kies vakman of team', whoChoice('Het Vloerenhuis', 3));
+    const chosen = options.find((option) => option.value === 'worker:12');
+
+    assert.equal(chosen?.selected, true);
+    assert.equal(chosen?.label, 'Het Vloerenhuis');
+    assert.equal(options[0].selected, false);
+});
+
+test('reads the team name from a planning bar label', () => {
+    assert.equal(
+        workerNameFromBarLabel('Het Vloerenhuis · Rick Wellink, Bjorn, Fins · 16u'),
+        'Het Vloerenhuis',
+    );
+    assert.equal(whoOptionName('Het Vloerenhuis — 2/3 geschikt en beschikbaar'), 'Het Vloerenhuis');
 });

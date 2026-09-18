@@ -496,13 +496,14 @@ class WeekplanningPdfService
 
     /**
      * @param  array<string, list<array<string, mixed>>>  $days
+     * @param  array<string, true>  $fullWeekAway
      * @return array<string, list<array<string, mixed>>>
      */
-    private function sortDayBlocks(array $days): array
+    private function sortDayBlocks(array $days, array $fullWeekAway = []): array
     {
         foreach ($days as $date => $blocks) {
-            usort($blocks, function (array $left, array $right): int {
-                $rank = $this->blockSortRank($left) <=> $this->blockSortRank($right);
+            usort($blocks, function (array $left, array $right) use ($fullWeekAway): int {
+                $rank = $this->blockSortRank($left, $fullWeekAway) <=> $this->blockSortRank($right, $fullWeekAway);
                 if ($rank !== 0) {
                     return $rank;
                 }
@@ -512,7 +513,12 @@ class WeekplanningPdfService
                     return $time;
                 }
 
-                return strcasecmp((string) $left['title'], (string) $right['title']);
+                $title = strcasecmp((string) $left['title'], (string) $right['title']);
+                if ($title !== 0) {
+                    return $title;
+                }
+
+                return strcasecmp($this->blockWhoLabel($left), $this->blockWhoLabel($right));
             });
             $days[$date] = array_values($blocks);
         }
@@ -521,19 +527,112 @@ class WeekplanningPdfService
     }
 
     /**
-     * @param  array<string, mixed>  $block
+     * @param  array<string, list<array<string, mixed>>>  $days
+     * @return array<string, true>
      */
-    private function blockSortRank(array $block): int
+    private function peopleAwayEveryWeekday(array $days): array
     {
-        if (($block['title'] ?? '') === 'Vrije dag') {
+        $weekdays = [];
+        foreach (array_keys($days) as $date) {
+            if ((int) Carbon::parse((string) $date)->dayOfWeekIso <= 5) {
+                $weekdays[] = $date;
+            }
+        }
+        if ($weekdays === []) {
+            return [];
+        }
+
+        $awayOn = [];
+        foreach ($weekdays as $date) {
+            foreach ($days[$date] as $block) {
+                if (empty($block['away'])) {
+                    continue;
+                }
+                foreach ($this->blockWhoNames($block) as $name) {
+                    $awayOn[$name][$date] = true;
+                }
+            }
+        }
+
+        $fullWeekAway = [];
+        foreach ($awayOn as $name => $dates) {
+            if (count($dates) === count($weekdays)) {
+                $fullWeekAway[$name] = true;
+            }
+        }
+
+        return $fullWeekAway;
+    }
+
+    /**
+     * @param  array<string, mixed>  $block
+     * @param  array<string, true>  $fullWeekAway
+     */
+    private function blockSortRank(array $block, array $fullWeekAway = []): int
+    {
+        if ($this->blockIsFullWeekAway($block, $fullWeekAway)) {
             return 0;
         }
 
-        if (! empty($block['away'])) {
+        if (($block['title'] ?? '') === 'Vrije dag') {
             return 1;
         }
 
-        return 2;
+        if (! empty($block['away'])) {
+            return 2;
+        }
+
+        return 3;
+    }
+
+    /**
+     * @param  array<string, mixed>  $block
+     * @param  array<string, true>  $fullWeekAway
+     */
+    private function blockIsFullWeekAway(array $block, array $fullWeekAway): bool
+    {
+        if (empty($block['away']) || $fullWeekAway === []) {
+            return false;
+        }
+
+        $names = $this->blockWhoNames($block);
+        if ($names === []) {
+            return true;
+        }
+
+        foreach ($names as $name) {
+            if (isset($fullWeekAway[$name])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $block
+     * @return list<string>
+     */
+    private function blockWhoNames(array $block): array
+    {
+        $who = $block['who'] ?? null;
+        if (is_array($who)) {
+            return array_values(array_filter($who, fn (mixed $name): bool => is_string($name) && $name !== ''));
+        }
+
+        if (! is_string($who) || $who === '') {
+            return [];
+        }
+
+        return preg_split('/\s*·\s*/u', $who, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $block
+     */
+    private function blockWhoLabel(array $block): string
+    {
+        return implode(' · ', $this->blockWhoNames($block));
     }
 
     /**

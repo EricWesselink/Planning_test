@@ -1,6 +1,7 @@
 /**
  * @typedef {{id: number, name: string, people_count?: number, selectable?: boolean, status_label?: string}} PlanWhoCandidate
  * @typedef {{value: string, label: string, peopleCount: number, selectable: boolean, disabled: boolean, selected: boolean}} PlanWhoOption
+ * @typedef {{name: string, people_count?: number, peopleCount?: number}} PlanWhoChoice
  */
 
 export const WHO_LOADING_LABEL = 'Beschikbaarheid laden...';
@@ -75,6 +76,78 @@ export function whoLoadingOptionList() {
 }
 
 /**
+ * @param {string|number|null|undefined} workerId
+ */
+export function whoValueForWorker(workerId) {
+    const id = String(workerId ?? '').trim();
+    if (id === '' || id === '0') {
+        return '';
+    }
+
+    return `worker:${id}`;
+}
+
+/**
+ * Candidate refresh empties the native select. Keep the dialog's chosen team
+ * instead of the wiped value.
+ *
+ * @param {string|null|undefined} desiredWho
+ * @param {string|null|undefined} selectValue
+ */
+export function preservedWhoValue(desiredWho, selectValue = '') {
+    const desired = String(desiredWho ?? '').trim();
+    if (desired) {
+        return desired;
+    }
+
+    return String(selectValue ?? '').trim();
+}
+
+/**
+ * @param {string|null|undefined} label
+ */
+export function whoOptionName(label) {
+    const text = String(label ?? '').trim();
+    if (text === '') {
+        return '';
+    }
+
+    const separator = ' — ';
+    const index = text.indexOf(separator);
+
+    return index === -1 ? text : text.slice(0, index).trim();
+}
+
+/**
+ * @param {string|null|undefined} label
+ */
+export function workerNameFromBarLabel(label) {
+    const text = String(label ?? '').trim();
+    if (text === '') {
+        return '';
+    }
+
+    return text.split('·')[0].trim();
+}
+
+/**
+ * @param {string|null|undefined} name
+ * @param {string|number|null|undefined} peopleCount
+ * @returns {PlanWhoChoice|null}
+ */
+export function whoChoice(name, peopleCount = 1) {
+    const label = whoOptionName(name);
+    if (label === '') {
+        return null;
+    }
+
+    return {
+        name: label,
+        people_count: Math.max(1, Number(peopleCount) || 1),
+    };
+}
+
+/**
  * Build Wie-dropdown options for active planning candidates.
  *
  * A new planning only lists people who are suitable and free. The current
@@ -85,9 +158,10 @@ export function whoLoadingOptionList() {
  * @param {PlanWhoCandidate[]} candidates
  * @param {string} selectedValue
  * @param {string} placeholderLabel
+ * @param {PlanWhoChoice|null} [currentChoice]
  * @returns {PlanWhoOption[]}
  */
-export function whoOptionList(candidates, selectedValue = '', placeholderLabel = 'Kies vakman of team') {
+export function whoOptionList(candidates, selectedValue = '', placeholderLabel = 'Kies vakman of team', currentChoice = null) {
     const current = String(selectedValue ?? '');
     const visible = candidates.filter((candidate) => {
         if (candidate.selectable) {
@@ -96,8 +170,7 @@ export function whoOptionList(candidates, selectedValue = '', placeholderLabel =
 
         return current === `worker:${candidate.id}`;
     });
-
-    return [
+    const options = [
         {
             value: '',
             label: placeholderLabel,
@@ -119,4 +192,17 @@ export function whoOptionList(candidates, selectedValue = '', placeholderLabel =
             };
         }),
     ];
+
+    if (current && currentChoice?.name && !options.some((option) => option.value === current)) {
+        options.splice(1, 0, {
+            value: current,
+            label: currentChoice.name,
+            peopleCount: Number(currentChoice.people_count || currentChoice.peopleCount || 1),
+            selectable: true,
+            disabled: false,
+            selected: true,
+        });
+    }
+
+    return options;
 }

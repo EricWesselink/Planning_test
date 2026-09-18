@@ -213,6 +213,81 @@ export function printPaper(cssViewport) {
     };
 }
 
+export function isUsablePrintImageSrc(src) {
+    return typeof src === 'string'
+        && src.startsWith('data:image/')
+        && src.includes('base64,')
+        && src.length > 64;
+}
+
+export function printImageFromCanvas(canvas) {
+    const width = Math.max(0, Math.floor(Number(canvas?.width) || 0));
+    const height = Math.max(0, Math.floor(Number(canvas?.height) || 0));
+    if (width < 2 || height < 2) {
+        throw new Error('empty drawing canvas');
+    }
+    let src = '';
+    try {
+        src = canvas.toDataURL('image/jpeg', 0.82);
+    } catch {
+        src = '';
+    }
+    if (!isUsablePrintImageSrc(src) && typeof canvas.toDataURL === 'function') {
+        try {
+            src = canvas.toDataURL('image/png');
+        } catch {
+            src = '';
+        }
+    }
+    if (!isUsablePrintImageSrc(src)) {
+        throw new Error('empty drawing snapshot');
+    }
+
+    return { src, width, height };
+}
+
+export function printDrawingHasSize(image) {
+    return Number(image?.naturalWidth) >= 2 && Number(image?.naturalHeight) >= 2;
+}
+
+export async function waitForPrintImage(image) {
+    if (!image) {
+        throw new Error('missing drawing image');
+    }
+    const src = typeof image.getAttribute === 'function'
+        ? image.getAttribute('src')
+        : image.src;
+    if (!src) {
+        throw new Error('empty drawing image');
+    }
+    if (typeof image.decode === 'function') {
+        await image.decode();
+    } else if (!image.complete) {
+        await new Promise((resolve, reject) => {
+            image.addEventListener('load', () => resolve(image), { once: true });
+            image.addEventListener('error', () => reject(new Error('drawing image failed')), { once: true });
+        });
+    }
+    if (!printDrawingHasSize(image)) {
+        throw new Error('empty drawing image');
+    }
+
+    return image;
+}
+
+export async function waitForPrintAssets(root, { fonts, requireDrawings = false } = {}) {
+    const images = [...(root?.querySelectorAll?.('img.calc-print-canvas') || [])];
+    if (requireDrawings && images.length === 0) {
+        throw new Error('no print drawings');
+    }
+    await Promise.all(images.map((image) => waitForPrintImage(image)));
+    if (fonts?.ready) {
+        await fonts.ready;
+    }
+
+    return images;
+}
+
 export function paintCalculationOverlays({
     hitEl,
     markersEl,

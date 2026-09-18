@@ -90,6 +90,7 @@ class CalculationPrintTest extends TestCase
             ->assertSee('A3 liggend')
             ->assertSee('Opslaan als PDF')
             ->assertSee('id="calc-print-sheets"', false)
+            ->assertSee('data-print-start', false)
             ->getContent();
 
         $this->assertStringContainsString('fase 1 verdieping 1', $html);

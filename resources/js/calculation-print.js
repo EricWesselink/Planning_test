@@ -6,14 +6,27 @@ import {
     hydrateRoomMarkers,
     paintCalculationOverlays,
     printDrawingSheets,
+    printImageFromCanvas,
     printPaper,
+    waitForPrintAssets,
 } from './calculation-board-overlay';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const PRINT_RENDER_SCALE = Math.max(VIEW_RENDER_SCALE, 4);
+let printReady = Promise.resolve();
+let autoPrint = false;
 
-function niconPrintCalculation() {
+async function niconPrintCalculation() {
+    try {
+        await printReady;
+        await waitUntilPrintable();
+    } catch (error) {
+        console.error(error);
+        if (document.querySelector('.calc-print-drawing-page')) {
+            return;
+        }
+    }
     const title = document.title;
     document.title = document.body?.dataset.printTitle || title;
     const restore = () => {
@@ -31,25 +44,38 @@ if (typeof window !== 'undefined') {
 if (typeof document !== 'undefined') {
     const dataEl = document.getElementById('calc-print-data');
     if (dataEl) {
-        boot(JSON.parse(dataEl.textContent)).catch((error) => {
+        printReady = boot(JSON.parse(dataEl.textContent)).then(async (documentData) => {
+            await waitUntilPrintable(documentData);
+            finish(documentData);
+
+            return documentData;
+        });
+        printReady.then(() => {
+            if (autoPrint) {
+                return niconPrintCalculation();
+            }
+
+            return undefined;
+        }, (error) => {
             const status = document.getElementById('calc-print-status');
             if (status) {
                 status.textContent = 'Tekeningen konden niet worden geladen.';
                 status.classList.add('is-error');
             }
+            enablePrintButton();
             console.error(error);
         });
     }
 }
 
 async function boot(documentData) {
+    autoPrint = Boolean(documentData.auto_print);
     const include = documentData.include || {};
     const rooms = documentData.rooms || [];
     const materialKeys = documentData.material_keys || [];
     const sheets = document.getElementById('calc-print-sheets');
     if (!sheets || !documentData.show_drawings) {
-        finish(documentData);
-        return;
+        return documentData;
     }
 
     for (const drawing of documentData.drawings || []) {
@@ -68,7 +94,7 @@ async function boot(documentData) {
         }
     }
 
-    finish(documentData);
+    return documentData;
 }
 
 function createDrawingPage(sheets, documentData, drawing, page, pageCount) {
@@ -92,7 +118,7 @@ function createDrawingPage(sheets, documentData, drawing, page, pageCount) {
         <div class="calc-print-sheet${documentData.include?.legend ? '' : ' is-full'}">
             <div class="calc-print-drawing">
                 <div class="calc-print-world">
-                    <canvas class="calc-print-canvas"></canvas>
+                    <img class="calc-print-canvas" alt="">
                     <svg class="calc-print-hit" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
                     <div class="calc-print-markers"></div>
                 </div>
@@ -119,7 +145,7 @@ function legendMarkup(materials) {
 }
 
 async function renderDrawingPage(host, pdf, pageNumber, paint) {
-    const canvas = host.querySelector('.calc-print-canvas');
+    const image = host.querySelector('.calc-print-canvas');
     const world = host.querySelector('.calc-print-world');
     const hitEl = host.querySelector('.calc-print-hit');
     const markersEl = host.querySelector('.calc-print-markers');
@@ -134,7 +160,8 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
     }
     const renderScale = viewerRenderScale(cssViewport.width, cssViewport.height, PRINT_RENDER_SCALE, 3);
     const renderViewport = pdfPage.getViewport({ scale: renderScale });
-    const context = canvas.getContext('2d', { alpha: false });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
     canvas.width = Math.max(1, Math.floor(renderViewport.width));
     canvas.height = Math.max(1, Math.floor(renderViewport.height));
     world.style.setProperty('--page-ratio', String(paper.ratio));
@@ -152,6 +179,9 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
             viewport: renderViewport,
         }).promise;
     }
+    const snapshot = printImageFromCanvas(canvas);
+    image.src = snapshot.src;
+    await waitForPrintAssets(host, { requireDrawings: true });
     paintCalculationOverlays({
         hitEl,
         markersEl,
@@ -167,6 +197,24 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
     });
 }
 
+async function waitUntilPrintable(documentData = null) {
+    const needsDrawings = Boolean(documentData?.show_drawings)
+        || document.querySelectorAll('.calc-print-drawing-page').length > 0;
+    await waitForPrintAssets(document, {
+        fonts: document.fonts,
+        requireDrawings: needsDrawings,
+    });
+    if (typeof requestAnimationFrame === 'function') {
+        await new Promise((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+    }
+}
+
+function enablePrintButton() {
+    document.querySelector('[data-print-start]')?.removeAttribute('disabled');
+}
+
 function finish(documentData) {
     const status = document.getElementById('calc-print-status');
     if (status) {
@@ -175,9 +223,7 @@ function finish(documentData) {
             : 'Kies in het afdrukvenster Opslaan als PDF, papierformaat A3 liggend.';
         status.textContent = hint;
     }
-    if (documentData.auto_print) {
-        window.setTimeout(() => niconPrintCalculation(), 50);
-    }
+    enablePrintButton();
 }
 
 function escapeHtml(value) {
