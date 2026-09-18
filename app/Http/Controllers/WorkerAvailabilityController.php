@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AvailabilityKind;
+use App\Enums\EmploymentType;
 use App\Models\Worker;
 use App\Models\WorkerAvailability;
 use Illuminate\Http\RedirectResponse;
@@ -26,6 +27,7 @@ class WorkerAvailabilityController extends Controller
             $payload['unavailable'] = $request->boolean('unavailable');
         }
         if ($request->exists('friday_off')) {
+            abort_unless($worker->employment_type === EmploymentType::Eigen, 403);
             $payload['friday_off'] = $request->boolean('friday_off');
         }
         if ($payload !== []) {

@@ -376,6 +376,11 @@ class Worker extends Model
         $query->whereHas('users');
     }
 
+    public function scopeOwnStaff(Builder $query): void
+    {
+        $query->where('employment_type', EmploymentType::Eigen);
+    }
+
     public function user(): HasOne
     {
         return $this->hasOne(User::class)->whereNull('crew_member_id');

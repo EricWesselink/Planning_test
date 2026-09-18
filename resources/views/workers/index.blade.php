@@ -11,6 +11,8 @@
         </div>
     </div>
 
+    @include('workers._tabs', ['tab' => 'teams'])
+
     @if (session('status'))
         <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
     @endif
@@ -168,7 +170,9 @@
                     @if ($worker->specialtyLabel())
                         <p class="text-xs text-nicon-muted">{{ $worker->specialtyLabel() }}</p>
                     @endif
-                    @include('workers._availability', ['worker' => $worker])
+                    @if ($worker->employment_type?->isExternal())
+                        @include('workers._availability', ['worker' => $worker])
+                    @endif
                 </div>
             </article>
         @empty

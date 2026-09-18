@@ -29,6 +29,7 @@ use App\Http\Controllers\VakmanPlanningController;
 use App\Http\Controllers\VoucherController;
 use App\Http\Controllers\WorkActivityCategoryController;
 use App\Http\Controllers\WorkActivityController;
+use App\Http\Controllers\WorkerAbsenceController;
 use App\Http\Controllers\WorkerAvailabilityController;
 use App\Http\Controllers\WorkerController;
 use App\Http\Controllers\WorkerLoginInviteController;
@@ -210,6 +211,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/beheer/werkzaamheden/categorieen', [WorkActivityCategoryController::class, 'store'])->name('work-activity-categories.store');
     Route::patch('/beheer/werkzaamheden/categorieen/{category}', [WorkActivityCategoryController::class, 'update'])->name('work-activity-categories.update');
     Route::get('/vakmensen', [WorkerController::class, 'index'])->name('workers.index');
+    Route::get('/vakmensen/afwezigheid', [WorkerAbsenceController::class, 'index'])->name('workers.absence');
     Route::get('/vakmensen/nieuw', [WorkerController::class, 'create'])->name('workers.create');
     Route::post('/vakmensen', [WorkerController::class, 'store'])->name('workers.store');
     Route::post('/vakmensen/pdf', [WorkerPdfImportController::class, 'preview'])->name('workers.pdf.preview');

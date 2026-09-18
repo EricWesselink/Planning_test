@@ -23,19 +23,58 @@ class WorkerAvailabilityTest extends TestCase
         $peter = $this->makeWorker('Peter', 'eigen');
 
         $this->actingAs($user)
-            ->from(route('workers.index'))
+            ->from(route('workers.absence'))
             ->patch(route('workers.friday.update', $peter), [
                 'friday_off' => '1',
             ])
-            ->assertRedirect(route('workers.index'));
+            ->assertRedirect(route('workers.absence'));
 
         $this->assertTrue($peter->fresh()->friday_off);
 
         $this->actingAs($user)
-            ->get(route('workers.index'))
+            ->get(route('workers.absence'))
             ->assertOk()
             ->assertSee('Vrij op vrijdag')
             ->assertSee('checked', false);
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertDontSee('Vrij op vrijdag');
+    }
+
+    public function test_absence_tab_lists_only_own_staff(): void
+    {
+        $user = User::factory()->create();
+        $this->makeWorker('Peter', 'eigen');
+        $this->makeWorker('Nick Seine', 'zzp');
+
+        $this->actingAs($user)
+            ->get(route('workers.absence'))
+            ->assertOk()
+            ->assertSee('Afwezigheid')
+            ->assertSee('Peter')
+            ->assertDontSee('Nick Seine');
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('Peter')
+            ->assertSee('Nick Seine');
+    }
+
+    public function test_rejects_friday_off_for_a_zzp(): void
+    {
+        $user = User::factory()->create();
+        $nick = $this->makeWorker('Nick Seine', 'zzp');
+
+        $this->actingAs($user)
+            ->patch(route('workers.friday.update', $nick), [
+                'friday_off' => '1',
+            ])
+            ->assertForbidden();
+
+        $this->assertFalse($nick->fresh()->friday_off);
     }
 
     public function test_overview_lets_a_planner_set_zzp_unavailable_and_available_periods(): void
@@ -83,18 +122,20 @@ class WorkerAvailabilityTest extends TestCase
         $user = User::factory()->create();
         $worker = $this->makeWorker($name, $type);
 
+        $overview = $this->availabilityOverview($type);
+
         $this->actingAs($user)
-            ->from(route('workers.index'))
+            ->from($overview)
             ->patch(route('workers.availability.update', $worker), [
                 'unavailable' => '1',
             ])
-            ->assertRedirect(route('workers.index'))
+            ->assertRedirect($overview)
             ->assertSessionHas('status', 'Staat nu helemaal niet beschikbaar.');
 
         $this->assertTrue($worker->fresh()->unavailable);
 
         $html = $this->actingAs($user)
-            ->get(route('workers.index'))
+            ->get($overview)
             ->assertOk()
             ->assertSee('Helemaal niet beschikbaar')
             ->assertSee('text-nicon-danger">Niet beschikbaar</span>', false)
@@ -106,11 +147,11 @@ class WorkerAvailabilityTest extends TestCase
         );
 
         $this->actingAs($user)
-            ->from(route('workers.index'))
+            ->from($overview)
             ->patch(route('workers.availability.update', $worker), [
                 'unavailable' => '0',
             ])
-            ->assertRedirect(route('workers.index'))
+            ->assertRedirect($overview)
             ->assertSessionHas('status', 'Staat weer beschikbaar.');
 
         $this->assertFalse($worker->fresh()->unavailable);
@@ -204,6 +245,8 @@ class WorkerAvailabilityTest extends TestCase
         $this->patch(route('workers.availability.update', $peter), [
             'unavailable' => '1',
         ])->assertRedirect(route('login'));
+
+        $this->get(route('workers.absence'))->assertRedirect(route('login'));
     }
 
     public function test_planning_candidates_mark_friday_off_as_unavailable(): void
@@ -310,6 +353,11 @@ class WorkerAvailabilityTest extends TestCase
             'eigen' => ['eigen', 'Peter'],
             'zzp' => ['zzp', 'Nick Seine'],
         ];
+    }
+
+    private function availabilityOverview(string $type): string
+    {
+        return $type === 'eigen' ? route('workers.absence') : route('workers.index');
     }
 
     private function makeWorker(string $name, string $type): Worker

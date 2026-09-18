@@ -120,6 +120,7 @@ class VakmanAccessTest extends TestCase
             ->assertDontSee('images/decoloop.png', false);
 
         $this->actingAs($user)->get(route('workers.index'))->assertForbidden();
+        $this->actingAs($user)->get(route('workers.absence'))->assertForbidden();
     }
 
     public function test_vakman_dashboard_hides_projects_where_he_is_not_scheduled(): void

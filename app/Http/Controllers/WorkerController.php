@@ -262,8 +262,13 @@ class WorkerController extends Controller
         ]);
 
         $data['active'] = $request->boolean('active', true);
-        if ($request->exists('friday_off')) {
+        $type = $data['employment_type'] instanceof EmploymentType
+            ? $data['employment_type']
+            : EmploymentType::tryFrom((string) $data['employment_type']);
+        if ($type === EmploymentType::Eigen && $request->exists('friday_off')) {
             $data['friday_off'] = $request->boolean('friday_off');
+        } elseif ($type !== EmploymentType::Eigen) {
+            $data['friday_off'] = false;
         } else {
             unset($data['friday_off']);
         }

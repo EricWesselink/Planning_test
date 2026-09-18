@@ -33,6 +33,33 @@ class WorkerAvailabilityServiceTest extends TestCase
         ));
     }
 
+    public function test_own_staff_with_friday_off_and_weekday_leave_are_away_all_week(): void
+    {
+        $peter = Worker::query()->create([
+            'name' => 'Peter',
+            'employment_type' => 'eigen',
+            'friday_off' => true,
+            'active' => true,
+        ]);
+        $peter->availabilities()->create([
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-10',
+            'kind' => AvailabilityKind::Unavailable,
+        ]);
+        $peter->load('availabilities');
+
+        $service = app(WorkerAvailabilityService::class);
+
+        $this->assertSame('Niet beschikbaar', $service->awayLabelOn($peter, Carbon::parse('2026-09-07')));
+        $this->assertSame('Niet beschikbaar', $service->awayLabelOn($peter, Carbon::parse('2026-09-10')));
+        $this->assertSame('Vrij op vrijdag', $service->awayLabelOn($peter, Carbon::parse('2026-09-11')));
+        $this->assertSame('Peter is niet beschikbaar.', $service->rejection(
+            $peter,
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-11'),
+        ));
+    }
+
     public function test_zzp_unavailable_period_marks_those_days_away(): void
     {
         $nick = Worker::query()->create([
