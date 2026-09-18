@@ -161,7 +161,7 @@ class PlanningBoardService
                 ->values();
 
             if ($project->isWinkel()) {
-                [$workRows, $usedIds] = $this->winkelWorkRows($project, $projectAssignments, $days, $doubleBooked, $usedIds);
+                [$workRows, $usedIds] = $this->winkelWorkRows($project, $projectAssignments, $days, $doubleBooked, $usedIds, $labor);
             } else {
                 foreach ($project->workItems
                     ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
@@ -1354,67 +1354,145 @@ class PlanningBoardService
      * @param  Collection<int, Carbon>  $days
      * @param  array<int, array<string, mixed>>  $doubleBooked
      * @param  list<int>  $usedIds
+     * @param  array<string, mixed>  $labor
      * @return array{0: list<array<string, mixed>>, 1: list<int>}
      */
-    private function winkelWorkRows(Project $project, Collection $projectAssignments, Collection $days, array $doubleBooked, array $usedIds): array
+    private function winkelWorkRows(Project $project, Collection $projectAssignments, Collection $days, array $doubleBooked, array $usedIds, array $labor): array
     {
         $workRows = [];
+        $items = $project->workItems
+            ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
+            ->sortBy([
+                ['sort_order', 'asc'],
+                ['id', 'asc'],
+            ]);
+        $ondergrond = $items
+            ->filter(fn (WorkItem $item): bool => $item->packageKey() === 'ondergrond')
+            ->values();
+        $rest = $items
+            ->reject(fn (WorkItem $item): bool => $item->packageKey() === 'ondergrond')
+            ->values();
 
-        foreach ($project->workItems->sortBy('sort_order') as $item) {
-            if ($item->isExtraWork()) {
-                continue;
-            }
-            $personBars = [];
-            foreach ($projectAssignments as $assignment) {
-                if (! $assignment->coversWorkIds([(int) $item->id], $project->workOrders)) {
-                    continue;
-                }
-
-                [$personBars, $usedIds] = $this->appendAssignmentPersonBars(
-                    $personBars,
-                    $usedIds,
-                    $assignment,
-                    $days,
-                    $doubleBooked,
-                    $item->name,
-                    $project->name,
-                );
-            }
-
-            $budgetHours = $item->begrote_uren === null ? 0.0 : round((float) $item->begrote_uren, 2);
-            $personBars = $this->decorateBarsWithBudget(
-                $personBars,
+        if ($ondergrond->isNotEmpty()) {
+            [$row, $usedIds] = $this->winkelWorkRow(
+                $project,
+                $ondergrond,
+                true,
                 $projectAssignments,
-                [(int) $item->id],
-                $budgetHours,
-                $project->workOrders,
+                $days,
+                $doubleBooked,
+                $usedIds,
+                $labor,
             );
+            $workRows[] = $row;
+        }
 
-            $note = trim((string) $item->notes);
-            $ordered = (float) $item->ordered_quantity;
-            $hasQuantity = $ordered > 0;
-
-            $workRows[] = [
-                'type' => 'work',
-                'id' => $item->id,
-                'project_id' => $project->id,
-                'title' => $item->name,
-                'steps' => $note === '' ? [] : [$note],
-                'unit' => $hasQuantity ? ($item->unit?->label() ?? '') : '',
-                'ordered' => $hasQuantity ? $ordered : null,
-                'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
-                'completed' => null,
-                'remaining' => null,
-                'percent' => null,
-                'who' => collect(),
-                'bar' => $this->bar($item->planned_start_date, $item->planned_end_date, $days),
-                'person_bars' => $personBars,
-                'bar_count' => $this->stackedBarCount($personBars),
-                'warnings' => [],
-                'status' => $item->status,
-            ];
+        foreach ($rest as $item) {
+            [$row, $usedIds] = $this->winkelWorkRow(
+                $project,
+                collect([$item]),
+                false,
+                $projectAssignments,
+                $days,
+                $doubleBooked,
+                $usedIds,
+                $labor,
+            );
+            $workRows[] = $row;
         }
 
         return [$workRows, $usedIds];
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     * @param  Collection<int, WorkerAssignment>  $projectAssignments
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<int, array<string, mixed>>  $doubleBooked
+     * @param  list<int>  $usedIds
+     * @param  array<string, mixed>  $labor
+     * @return array{0: array<string, mixed>, 1: list<int>}
+     */
+    private function winkelWorkRow(
+        Project $project,
+        Collection $items,
+        bool $grouped,
+        Collection $projectAssignments,
+        Collection $days,
+        array $doubleBooked,
+        array $usedIds,
+        array $labor,
+    ): array {
+        $primary = $grouped ? $this->primaryWorkItem($items) : $items->first();
+        $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $title = $grouped ? $primary->packageLabel() : $primary->name;
+        $ordered = $grouped
+            ? (float) $items->max(fn (WorkItem $item): float => (float) $item->ordered_quantity)
+            : (float) $primary->ordered_quantity;
+        $hasQuantity = $ordered > 0;
+        $steps = $items
+            ->map(fn (WorkItem $item): string => trim((string) $item->notes))
+            ->filter(fn (string $note): bool => $note !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $personBars = [];
+
+        foreach ($projectAssignments as $assignment) {
+            if (! $assignment->coversWorkIds($ids, $project->workOrders)) {
+                continue;
+            }
+
+            [$personBars, $usedIds] = $this->appendAssignmentPersonBars(
+                $personBars,
+                $usedIds,
+                $assignment,
+                $days,
+                $doubleBooked,
+                $title,
+                $project->name,
+            );
+        }
+
+        $budgetHours = round((float) $items->sum(
+            fn (WorkItem $item): float => $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren
+        ), 2);
+        $personBars = $this->decorateBarsWithBudget(
+            $personBars,
+            $projectAssignments,
+            $ids,
+            $budgetHours,
+            $project->workOrders,
+        );
+
+        $row = [
+            'type' => 'work',
+            'id' => $primary->id,
+            'project_id' => $project->id,
+            'title' => $title,
+            'steps' => $steps,
+            'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
+            'ordered' => $hasQuantity ? $ordered : null,
+            'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
+            'completed' => null,
+            'remaining' => null,
+            'percent' => null,
+            'who' => collect(),
+            'bar' => $this->bar(
+                $items->pluck('planned_start_date')->filter()->min(),
+                $items->pluck('planned_end_date')->filter()->max(),
+                $days,
+            ),
+            'person_bars' => $personBars,
+            'bar_count' => $this->stackedBarCount($personBars),
+            'warnings' => [],
+            'status' => $primary->status,
+        ];
+
+        if ($grouped) {
+            $row['labor'] = $labor['groups']['ondergrond'] ?? null;
+        }
+
+        return [$row, $usedIds];
     }
 }

@@ -12,8 +12,10 @@ use App\Models\WorkActivity;
 use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
+use App\Services\PlanningBoardService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -708,10 +710,22 @@ class ShopWorkTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
             ->assertOk()
             ->assertSee('Vloeren · PVC banen + Primen + Egaliseren')
-            ->assertSee('PVC banen')
-            ->assertSee('Primen')
-            ->assertSee('Egaliseren')
+            ->assertSee('Primen & Egaliseren')
+            ->assertSeeInOrder(['Primen & Egaliseren', 'PVC banen'])
             ->assertSee('141,08 m²');
+
+        $request = Request::create('/planning', 'GET', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]);
+        $request->setUserResolver(fn () => $user);
+        $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
+            ->firstWhere('id', $project->id);
+
+        $this->assertNotNull($row);
+        $this->assertSame(['Primen & Egaliseren', 'PVC banen'], collect($row['children'])->pluck('title')->all());
+        $this->assertSame(141.08, $row['children'][0]['ordered']);
+        $this->assertSame(141.08, $row['children'][1]['ordered']);
     }
 
     public function test_winkel_assignment_to_pvc_renders_on_the_pvc_row(): void
