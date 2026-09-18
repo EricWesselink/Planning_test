@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Enums\AvailabilitySlot;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
 use App\Models\CrewMember;
 use App\Models\Project;
+use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\PlanningHours;
@@ -48,6 +50,19 @@ class WeekplanningPdfService
     /**
      * @var array<string, string>
      */
+    private const AWAY_COLORS = [
+        'vakantie' => '#dbe4ee',
+        'ziek' => '#efe4dc',
+        'verlof' => '#e8e4f0',
+        'vrij' => '#ececec',
+        'adv' => '#ececec',
+        'cursus' => '#e8e4f0',
+        'overig' => '#ececec',
+    ];
+
+    /**
+     * @var array<string, string>
+     */
     private array $projectColors = [];
 
     private ?string $niconLogo = null;
@@ -58,7 +73,10 @@ class WeekplanningPdfService
 
     private string $shopName = '';
 
-    public function __construct(private PlanningBoardService $board) {}
+    public function __construct(
+        private PlanningBoardService $board,
+        private WorkerAvailabilityService $availability,
+    ) {}
 
     /**
      * @return array{
@@ -96,7 +114,8 @@ class WeekplanningPdfService
 
         $assignments = WorkerAssignment::query()
             ->with([
-                'worker',
+                'worker.crewPeople',
+                'worker.availabilities',
                 'workItem',
                 'project.customer',
                 'crewMembers',
@@ -230,6 +249,8 @@ class WeekplanningPdfService
             }
         }
 
+        $this->addAbsences($rows, $days);
+
         $people = [];
         foreach ($rows as $row) {
             if ($row['has_work'] !== true) {
@@ -264,6 +285,7 @@ class WeekplanningPdfService
             $rows[$key] = [
                 'key' => $key,
                 'name' => $this->groupLabel($assignment),
+                'worker' => $worker,
                 'names' => [],
                 'days' => $days->mapWithKeys(fn (Carbon $day): array => [$day->toDateString() => []])->all(),
                 'has_work' => false,
@@ -290,6 +312,131 @@ class WeekplanningPdfService
             $rows[$key]['days'][$date][] = $block;
             $rows[$key]['has_work'] = true;
         }
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $rows
+     * @param  Collection<int, Carbon>  $days
+     */
+    private function addAbsences(array &$rows, Collection $days): void
+    {
+        foreach ($rows as &$row) {
+            $worker = $row['worker'] ?? null;
+            if (! $worker instanceof Worker) {
+                continue;
+            }
+
+            $crew = $worker->activeCrewPeople();
+            if ($crew->isEmpty()) {
+                $this->addPersonAbsences($row, $worker, null, $worker->planName(), $days);
+
+                continue;
+            }
+
+            foreach ($crew as $member) {
+                $member->setRelation('worker', $worker);
+                $name = trim((string) $member->name) !== ''
+                    ? $member->label()
+                    : $worker->planName();
+                $this->addPersonAbsences($row, $worker, $member, $name, $days);
+            }
+        }
+        unset($row);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  Collection<int, Carbon>  $days
+     */
+    private function addPersonAbsences(array &$row, Worker $worker, ?CrewMember $member, string $personName, Collection $days): void
+    {
+        foreach ($days as $day) {
+            $absence = $this->availability->absenceOn($worker, $day, $member);
+            if ($absence === null) {
+                continue;
+            }
+            if ($absence['structural'] && (int) $day->dayOfWeekIso >= 6) {
+                continue;
+            }
+
+            if (! in_array($personName, $row['names'], true)) {
+                $row['names'][] = $personName;
+            }
+
+            $row['days'][$day->toDateString()][] = $this->absenceBlock($worker, $absence, $day, $personName);
+        }
+    }
+
+    /**
+     * @param  array{key: string, label: string, short: string, hours: float, full: bool, slot: AvailabilitySlot, hint: ?string, structural: bool}  $absence
+     * @return array<string, mixed>
+     */
+    private function absenceBlock(Worker $worker, array $absence, CarbonInterface $day, string $personName): array
+    {
+        [$start, $end] = $this->absenceInterval($absence, $day);
+        $hours = max(0.0, ($end->timestamp - $start->timestamp) / 3600);
+        $title = $this->awayTitle($absence);
+        $hoursCaption = $this->hoursCaption($hours, $start, $end);
+
+        return [
+            'title' => $title,
+            'city' => null,
+            'numbers' => null,
+            'activity' => $absence['full'] ? null : $absence['hint'],
+            'badge' => null,
+            'source_label' => $worker->planName(),
+            'source_logo' => null,
+            'hours' => $hoursCaption,
+            'start' => $start->format('H:i'),
+            'color' => self::AWAY_COLORS[$absence['key']] ?? self::AWAY_COLORS['overig'],
+            'who' => [$personName],
+            'away' => true,
+            'merge_key' => implode('|', [
+                'away',
+                $title,
+                $start->format('H:i'),
+                $end->format('H:i'),
+                $hoursCaption,
+            ]),
+        ];
+    }
+
+    /**
+     * @param  array{key: string, label: string, short: string, hours: float, full: bool, slot: AvailabilitySlot, hint: ?string, structural: bool}  $absence
+     */
+    private function awayTitle(array $absence): string
+    {
+        return $absence['label'] === 'Vrij op vrijdag' ? 'Vrije dag' : $absence['label'];
+    }
+
+    /**
+     * @param  array{key: string, label: string, short: string, hours: float, full: bool, slot: AvailabilitySlot, hint: ?string, structural: bool}  $absence
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function absenceInterval(array $absence, CarbonInterface $day): array
+    {
+        $date = $day->toDateString();
+        $minutes = (int) round(((float) $absence['hours']) * 60);
+        $slot = $absence['slot'] instanceof AvailabilitySlot
+            ? $absence['slot']
+            : AvailabilitySlot::Full;
+
+        if ($absence['full'] || $slot === AvailabilitySlot::Full) {
+            return [
+                Carbon::parse($date.' '.PlanningHours::DAY_START.':00'),
+                Carbon::parse($date.' '.PlanningHours::DAY_END.':00'),
+            ];
+        }
+
+        if ($slot === AvailabilitySlot::Afternoon) {
+            $end = Carbon::parse($date.' '.PlanningHours::DAY_END.':00');
+
+            return [$end->copy()->subMinutes($minutes), $end];
+        }
+
+        $start = Carbon::parse($date.' '.PlanningHours::DAY_START.':00');
+
+        return [$start, $start->copy()->addMinutes($minutes)];
     }
 
     /**

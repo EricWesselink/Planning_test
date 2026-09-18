@@ -194,6 +194,12 @@
             -webkit-print-color-adjust: exact;
         }
         .block:last-child { margin-bottom: 0; }
+        .block.is-away {
+            border-style: dashed;
+        }
+        .block.is-away .block-title {
+            color: #4b5d73;
+        }
         .block-title {
             font-weight: 700;
             font-size: 8pt;
@@ -291,22 +297,24 @@
                         @php $blocks = $person['days'][$day['key']] ?? []; @endphp
                         <td>
                             @forelse ($blocks as $block)
-                                <div class="block" style="background: {{ $block['color'] }};">
-                                    <table class="block-brand">
-                                        <tr>
-                                            <td class="block-brand-label">{{ $block['source_label'] }}</td>
-                                            @if (! empty($block['source_logo']))
-                                                <td class="block-brand-logo">
-                                                    @php
-                                                        $shopLogoCard = str_contains((string) $block['source_logo'], 'kloppenburg');
-                                                        $logoHeight = 20;
-                                                        $logoWidth = $shopLogoCard ? 80 : 41;
-                                                    @endphp
-                                                    <img src="{{ $block['source_logo'] }}" alt="{{ $block['source_label'] }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}">
-                                                </td>
-                                            @endif
-                                        </tr>
-                                    </table>
+                                <div class="block{{ ! empty($block['away']) ? ' is-away' : '' }}" style="background: {{ $block['color'] }};">
+                                    @if (empty($block['away']))
+                                        <table class="block-brand">
+                                            <tr>
+                                                <td class="block-brand-label">{{ $block['source_label'] }}</td>
+                                                @if (! empty($block['source_logo']))
+                                                    <td class="block-brand-logo">
+                                                        @php
+                                                            $shopLogoCard = str_contains((string) $block['source_logo'], 'kloppenburg');
+                                                            $logoHeight = 20;
+                                                            $logoWidth = $shopLogoCard ? 80 : 41;
+                                                        @endphp
+                                                        <img src="{{ $block['source_logo'] }}" alt="{{ $block['source_label'] }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}">
+                                                    </td>
+                                                @endif
+                                            </tr>
+                                        </table>
+                                    @endif
                                     <div class="block-title">@foreach (preg_split('/\s+/u', (string) $block['title'], -1, PREG_SPLIT_NO_EMPTY) ?: [] as $index => $word)@if ($index > 0) {{ ' ' }}@endif<span class="block-title-word">{{ $word }}</span>@endforeach</div>
                                     @if (! empty($block['city']))
                                         <div class="block-place">{{ $block['city'] }}</div>

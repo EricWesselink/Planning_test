@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AvailabilityKind;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
 use App\Models\Customer;
@@ -399,6 +400,117 @@ class PlanningWeekplanningPdfTest extends TestCase
         $this->assertStringNotContainsString('Laakse Tuinen', $text);
         $this->assertStringNotContainsString('Team 2', $text);
         $this->assertSame(2, WorkerAssignment::query()->count());
+    }
+
+    public function test_vacation_day_is_shown_instead_of_a_dash(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item] = $this->makeProjectWorker('Peter', 'TMZ Meubelenbelt');
+        $this->assign($worker, $project, $item, '2026-09-07', '2026-09-10', '08:00:00', '16:00:00');
+        $worker->availabilities()->create([
+            'start_date' => '2026-09-11',
+            'end_date' => '2026-09-11',
+            'kind' => AvailabilityKind::Vacation,
+        ]);
+
+        $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $data = app(WeekplanningPdfService::class)->build($request);
+        $friday = $data['people'][0]['days']['2026-09-11'][0];
+
+        $this->assertTrue($friday['away']);
+        $this->assertSame('Vakantie', $friday['title']);
+        $this->assertSame('Hele dag', $friday['hours']);
+
+        $html = view('planning.weekplanning', $data)->render();
+        $this->assertStringContainsString('is-away', $html);
+        $this->assertStringContainsString('Vakantie', $html);
+
+        $text = $this->pdfText($this->actingAs($user)->get(route('planning.weekplanning', ['week' => '2026-09-07'])));
+        $this->assertStringContainsString('Vakantie', $text);
+        $this->assertStringContainsString('Peter', $text);
+    }
+
+    public function test_friday_off_is_shown_as_vrije_dag_and_saturday_stays_empty(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item] = $this->makeProjectWorker('Peter', 'TMZ Meubelenbelt');
+        $worker->update(['friday_off' => true]);
+        $this->assign($worker, $project, $item, '2026-09-07', '2026-09-10', '08:00:00', '16:00:00');
+
+        $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $data = app(WeekplanningPdfService::class)->build($request);
+        $row = $data['people'][0];
+
+        $this->assertSame('Vrije dag', $row['days']['2026-09-11'][0]['title']);
+        $this->assertTrue($row['days']['2026-09-11'][0]['away']);
+        $this->assertSame([], $row['days']['2026-09-12']);
+
+        $text = $this->pdfText($this->actingAs($user)->get(route('planning.weekplanning', ['week' => '2026-09-07'])));
+        $this->assertStringContainsString('Vrije dag', $text);
+        $this->assertStringContainsString('—', $text);
+    }
+
+    public function test_one_teammate_weekday_off_is_named_on_the_card(): void
+    {
+        $user = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Wepro',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => ''],
+                ['name' => 'Harm Wesselink', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        $eric = $team->crewPeople->firstWhere('name', 'Eric Wesselink');
+        $eric->setRelation('worker', $team);
+        $eric->setWorkDay(3, false);
+        $eric->save();
+        $team->unsetRelation('crewPeople');
+        [$project, $item] = $this->makeProject('Gezondheidscentrum Laren', [
+            'city' => 'Laren',
+        ]);
+        $crew = $team->crewPeople()->orderBy('sort_order')->get();
+        $this->assign($team, $project, $item, '2026-09-07', '2026-09-08', '08:00:00', '16:00:00', [$crew[0]->id, $crew[1]->id]);
+
+        $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $data = app(WeekplanningPdfService::class)->build($request);
+        $wednesday = $data['people'][0]['days']['2026-09-09'];
+
+        $this->assertCount(1, $wednesday);
+        $this->assertTrue($wednesday[0]['away']);
+        $this->assertSame('Vrije dag', $wednesday[0]['title']);
+        $this->assertSame('Eric W.', $wednesday[0]['who']);
+
+        $text = $this->pdfText($this->actingAs($user)->get(route('planning.weekplanning', ['week' => '2026-09-07'])));
+        $this->assertStringContainsString('Vrije dag', $text);
+        $this->assertStringContainsString('Eric W.', $text);
+    }
+
+    public function test_vacation_without_work_that_week_stays_hidden(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $project, $item] = $this->makeProjectWorker('Peter', 'TMZ Meubelenbelt');
+        $this->assign($worker, $project, $item, '2026-09-07', '2026-09-10', '08:00:00', '16:00:00');
+        $away = Worker::query()->create([
+            'name' => 'AlleenVakantie',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        $away->availabilities()->create([
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-11',
+            'kind' => AvailabilityKind::Vacation,
+        ]);
+
+        $text = $this->pdfText($this->actingAs($user)->get(route('planning.weekplanning', ['week' => '2026-09-07'])));
+
+        $this->assertStringContainsString('Peter', $text);
+        $this->assertStringNotContainsString('AlleenVakantie', $text);
     }
 
     public function test_empty_day_shows_a_dash_and_unscheduled_people_are_hidden(): void
