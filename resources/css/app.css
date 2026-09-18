@@ -4814,7 +4814,23 @@ img.calc-print-canvas {
     .calc-print-sheet.is-full,
     .calc-print-drawing-page.is-portrait .calc-print-sheet,
     .calc-print-drawing-page.is-portrait .calc-print-sheet.is-full {
-        height: calc(100% - 12mm);
+        height: auto;
+        min-height: 0;
+        align-items: stretch;
+    }
+
+    .calc-print-drawing {
+        container-type: normal;
+        overflow: visible;
+        height: auto;
+        display: block;
+    }
+
+    .calc-print-world {
+        width: 100%;
+        height: auto;
+        max-height: none;
+        aspect-ratio: auto;
     }
 
     img.calc-print-canvas,
@@ -4822,5 +4838,12 @@ img.calc-print-canvas {
     .calc-print-markers {
         display: block !important;
         visibility: visible !important;
+    }
+
+    img.calc-print-canvas {
+        position: static;
+        width: 100%;
+        height: auto;
+        max-width: none;
     }
 }
