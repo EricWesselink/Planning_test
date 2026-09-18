@@ -183,7 +183,7 @@ if (board) {
                 .filter((id) => id > 0),
         );
         const edit = Boolean(form.dataset.assignmentId);
-        const sources = edit
+        const sources = edit || ! projectId
             ? Object.entries(workItems)
             : [[String(projectId), workItems[projectId] || workItems[String(projectId)] || []]];
         if (workList) {
@@ -653,7 +653,7 @@ if (board) {
         menInput.readOnly = isTeam;
     }
 
-    function openAdd(projectId, workItemId, date, startTime = '08:00', hours = WORKDAY_HOURS) {
+    function openAdd(projectId, workItemId, date, startTime = '08:00', hours = WORKDAY_HOURS, whoValue = '') {
         invalidateWhoCandidates();
         form.dataset.assignmentId = '';
         titleEl.textContent = 'Iemand inplannen';
@@ -671,7 +671,7 @@ if (board) {
             crewHeading.textContent = 'Wie gaat er naartoe';
         }
         crewHint?.classList.add('hidden');
-        whoSelect.value = '';
+        whoSelect.value = whoValue || '';
         whoSelect.disabled = false;
         projectInput.value = projectId;
         fillWorkItems(projectId, workItemId);
@@ -692,6 +692,9 @@ if (board) {
         }
         syncWeeksFromDates();
         setWhenMode('dates');
+        if (whoValue) {
+            syncMenFromWho();
+        }
         dialog.showModal();
         whoSelect.focus();
         refreshCandidates();
@@ -1262,6 +1265,39 @@ if (board) {
             focusConflictBars(button.dataset.focusWorker);
         });
     });
+
+    const availabilityRoot = document.querySelector('[data-plan-avail]');
+    if (availabilityRoot && ! readonly) {
+        availabilityRoot.addEventListener('click', (event) => {
+            const pick = event.target.closest('[data-plan-avail-pick]');
+            if (! pick) {
+                return;
+            }
+
+            event.preventDefault();
+            pick.closest('[popover]')?.hidePopover?.();
+            const workerId = pick.dataset.workerId;
+            const date = pick.dataset.date;
+            if (! workerId || ! date) {
+                return;
+            }
+
+            const hours = snapHours(Number(pick.dataset.hours || WORKDAY_HOURS));
+            const stack = board.querySelector('.person-stack[data-project-id]');
+            openAdd(
+                stack?.dataset.projectId || '',
+                stack?.dataset.workItemId || '',
+                date,
+                '08:00',
+                hours,
+                `worker:${workerId}`,
+            );
+            const crewId = Number(pick.dataset.crewId || 0);
+            if (crewId > 0 && workerCrew(workerId).length >= 2) {
+                renderCrew(workerId, [crewId], { [crewId]: hours });
+            }
+        });
+    }
 
     bindLaborFold(board);
     bindWeekplanningExport();

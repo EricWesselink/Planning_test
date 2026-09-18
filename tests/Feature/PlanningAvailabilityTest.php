@@ -32,10 +32,16 @@ class PlanningAvailabilityTest extends TestCase
             ->assertSee('planning-available-count">5</span>', false)
             ->assertSee('planning-available-name">Kees Jansen</span>', false)
             ->assertSee('--chip-color: '.$kees->planColor(), false)
-            ->assertSee('<span class="planning-available-planned">0</span> / 5', false)
-            ->assertSee('planning-available-free">5 vrij</span>', false)
-            ->assertDontSee('planning-available-name">Peter</span>', false)
-            ->assertDontSee('planning-available-free">0 vrij</span>', false);
+            ->assertSee('planning-avail-day">Ma</div>', false)
+            ->assertSee('planning-avail-day">Za</div>', false)
+            ->assertSee('planning-avail-cell is-ok', false)
+            ->assertSee('>1 vrij</button>', false)
+            ->assertSee('planning-available-name">Peter</span>', false)
+            ->assertSee('planning-avail-cell is-none', false)
+            ->assertSee('>0 vrij</button>', false)
+            ->assertSee('✓ Kees Jansen — vrij', false)
+            ->assertSee('✕ Peter — 8u ingepland', false)
+            ->assertSee('data-plan-avail-pick', false);
     }
 
     public function test_planning_page_shows_zero_remaining_when_everyone_is_booked(): void
@@ -50,8 +56,8 @@ class PlanningAvailabilityTest extends TestCase
             ->assertOk()
             ->assertSee('Mandagen week')
             ->assertSee('planning-available-count">0</span>', false)
-            ->assertDontSee('planning-available-name">Peter</span>', false)
-            ->assertDontSee('planning-available-free">0 vrij</span>', false);
+            ->assertSee('planning-available-name">Peter</span>', false)
+            ->assertSee('>0 vrij</button>', false);
     }
 
     public function test_planning_page_uses_the_period_label_for_multiple_weeks(): void
@@ -66,8 +72,9 @@ class PlanningAvailabilityTest extends TestCase
             ->assertSee('planning-available-week-nr">37–38</span>', false)
             ->assertSee('planning-available-count">10</span>', false)
             ->assertSee('planning-available-name">Kees Jansen</span>', false)
-            ->assertSee('<span class="planning-available-planned">0</span> / 10', false)
-            ->assertSee('planning-available-free">10 vrij</span>', false);
+            ->assertSee('planning-avail-day">Ma 7</div>', false)
+            ->assertSee('planning-avail-day">Ma 14</div>', false)
+            ->assertSee('>1 vrij</button>', false);
     }
 
     public function test_planning_page_includes_teams_without_a_login(): void
@@ -87,10 +94,12 @@ class PlanningAvailabilityTest extends TestCase
             ->assertOk()
             ->assertSee('planning-available-name">Harm Wesselink</span>', false)
             ->assertSee('planning-available-name">Kees Jansen</span>', false)
-            ->assertSee('planning-available-count">20</span>', false);
+            ->assertSee('planning-available-count">20</span>', false)
+            ->assertSee('>3 vrij</button>', false)
+            ->assertSee('>1 vrij</button>', false);
     }
 
-    public function test_planning_page_omits_own_staff_from_the_man_day_overview(): void
+    public function test_planning_page_shows_own_staff_in_the_daily_availability(): void
     {
         $user = User::factory()->create();
         $this->makeWorker('Kees Jansen');
@@ -101,7 +110,8 @@ class PlanningAvailabilityTest extends TestCase
             ->assertOk()
             ->assertSee('planning-available-count">10</span>', false)
             ->assertSee('planning-available-name">Kees Jansen</span>', false)
-            ->assertDontSee('planning-available-name">Peter</span>', false);
+            ->assertSee('planning-available-name">Peter</span>', false)
+            ->assertSee('>1 vrij</button>', false);
     }
 
     public function test_planning_page_omits_a_fully_unavailable_team(): void
@@ -115,7 +125,10 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-count">5</span>', false)
-            ->assertDontSee('planning-available-name">Peter</span>', false);
+            ->assertSee('planning-available-name">Kees Jansen</span>', false)
+            ->assertSee('planning-available-name">Peter</span>', false)
+            ->assertSee('planning-avail-cell is-away', false)
+            ->assertSee('✕ Peter — Niet beschikbaar', false);
     }
 
     public function test_planning_page_does_not_count_saturday_as_available(): void
@@ -154,9 +167,10 @@ class PlanningAvailabilityTest extends TestCase
             ->assertOk()
             ->assertSee('planning-available-count">4</span>', false)
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('<span class="planning-available-planned">6</span> / 10', false)
-            ->assertSee('planning-available-free">4 vrij</span>', false)
-            ->assertSee('width: 60%', false);
+            ->assertSee('>2 vrij</button>', false)
+            ->assertSee('>0 vrij</button>', false)
+            ->assertSee('planning-avail-cell is-none', false)
+            ->assertSee('planning-avail-cell is-ok', false);
     }
 
     public function test_planning_page_counts_a_half_day_as_half_a_man_day(): void
@@ -171,8 +185,9 @@ class PlanningAvailabilityTest extends TestCase
             ->assertOk()
             ->assertSee('planning-available-count">4,5</span>', false)
             ->assertSee('planning-available-name">Peter</span>', false)
-            ->assertSee('<span class="planning-available-planned">0,5</span> / 5', false)
-            ->assertSee('planning-available-free">4,5 vrij</span>', false);
+            ->assertSee('planning-avail-cell is-partial', false)
+            ->assertSee('nog 4u vrij', false)
+            ->assertSee('>1 vrij</button>', false);
     }
 
     public function test_planning_page_uses_the_singular_man_day_label(): void
@@ -186,7 +201,7 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-count">1</span>', false)
-            ->assertSee('planning-available-free">1 vrij</span>', false)
+            ->assertSee('>1 vrij</button>', false)
             ->assertDontSee('1 mandagen');
     }
 
@@ -223,8 +238,7 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('<span class="planning-available-planned">0</span> / 10', false)
-            ->assertSee('planning-available-free">10 vrij</span>', false);
+            ->assertSee('>2 vrij</button>', false);
 
         $this->assign($team, $item, '2026-09-07', '2026-09-09', 2);
 
@@ -232,8 +246,8 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('<span class="planning-available-planned">6</span> / 10', false)
-            ->assertSee('planning-available-free">4 vrij</span>', false);
+            ->assertSee('>2 vrij</button>', false)
+            ->assertSee('>0 vrij</button>', false);
     }
 
     private function makeWorker(string $name, string $employmentType = 'zzp'): Worker

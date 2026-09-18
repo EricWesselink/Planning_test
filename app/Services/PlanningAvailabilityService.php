@@ -105,7 +105,10 @@ class PlanningAvailabilityService
                 );
             }
             $planned = round($planned, 2);
-            $remaining = round($available - $planned, 2);
+            $remaining = $available < 0.0001 ? 0.0 : round($available - $planned, 2);
+            if ($remaining < 0) {
+                $remaining = 0.0;
+            }
             $dayCells = [];
             foreach ($boardDays as $day) {
                 $dayCells[$day->toDateString()] = $this->dayCell(
@@ -144,8 +147,12 @@ class PlanningAvailabilityService
         $away = $this->awayDetail($worker, $day);
         $people = $this->peopleOnTeam($worker);
         $crew = $worker->crewPeople;
-        $rows = $crew->isNotEmpty()
-            ? $this->namedPeopleForDay($crew, $assignments, $day, $away)
+        $namedToday = $assignments->contains(
+            fn (WorkerAssignment $assignment): bool => $assignment->crewMembers->isNotEmpty()
+                && $assignment->intervalOnDate($day) !== null
+        );
+        $rows = $crew->isNotEmpty() && $namedToday
+            ? $this->namedPeopleForDay($worker, $crew, $assignments, $day, $away)
             : $this->unnamedPeopleForDay($worker, $people, $assignments, $day, $away);
 
         $freeCount = collect($rows)->where('selectable', true)->count();
@@ -169,14 +176,23 @@ class PlanningAvailabilityService
      * @param  Collection<int, WorkerAssignment>  $assignments
      * @return list<array<string, mixed>>
      */
-    private function namedPeopleForDay(Collection $crew, Collection $assignments, CarbonInterface $day, ?string $away): array
-    {
+    private function namedPeopleForDay(
+        Worker $worker,
+        Collection $crew,
+        Collection $assignments,
+        CarbonInterface $day,
+        ?string $away,
+    ): array {
         $rows = [];
         foreach ($crew as $member) {
             $plannedHours = $away === null
                 ? $this->memberPlannedHours($assignments, $day, $member)
                 : PlanningHours::WORKDAY_HOURS;
-            $rows[] = $this->personRow((int) $member->id, $member->label(), $plannedHours, $away);
+            $name = trim((string) $member->name);
+            $label = $name !== ''
+                ? $member->label()
+                : ($crew->count() === 1 ? $worker->planName() : $member->label());
+            $rows[] = $this->personRow((int) $member->id, $label, $plannedHours, $away);
         }
 
         return $rows;
@@ -289,6 +305,16 @@ class PlanningAvailabilityService
     private function peopleOnTeam(Worker $worker): array
     {
         $crew = $worker->crewPeople;
+        if ($crew->count() === 1) {
+            $member = $crew->first();
+            $name = trim((string) $member->name);
+
+            return [[
+                'id' => (int) $member->id,
+                'name' => $name !== '' ? $member->label() : $worker->planName(),
+            ]];
+        }
+
         if ($crew->isNotEmpty()) {
             return $crew
                 ->map(fn (CrewMember $member): array => [

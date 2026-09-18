@@ -244,6 +244,100 @@ class PlanningAvailabilityServiceTest extends TestCase
         ], $this->summaries());
     }
 
+    public function test_daily_matrix_counts_free_people_per_weekday(): void
+    {
+        $this->makeWorker('Kees Jansen');
+
+        $monday = $this->cell('Kees Jansen', '2026-09-07');
+
+        $this->assertSame('ok', $monday['tone']);
+        $this->assertSame(1, $monday['free_count']);
+        $this->assertSame('1 vrij', $monday['label']);
+        $this->assertSame('vrij', $monday['people'][0]['detail']);
+        $this->assertTrue($monday['people'][0]['selectable']);
+        $this->assertSame(['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'], $this->dayLabels());
+    }
+
+    public function test_daily_matrix_keeps_a_half_day_selectable(): void
+    {
+        $peter = $this->makeWorker('Peter');
+        $item = $this->makeWorkItem();
+        $this->assign($peter, $item, '2026-09-07', '2026-09-07', startTime: '08:00:00', endTime: '12:00:00');
+
+        $monday = $this->cell('Peter', '2026-09-07');
+
+        $this->assertSame('partial', $monday['tone']);
+        $this->assertSame(1, $monday['free_count']);
+        $this->assertSame('nog 4u vrij', $monday['people'][0]['detail']);
+        $this->assertSame(4.0, $monday['people'][0]['remaining_hours']);
+        $this->assertTrue($monday['people'][0]['selectable']);
+        $this->assertSame('ok', $this->cell('Peter', '2026-09-08')['tone']);
+    }
+
+    public function test_daily_matrix_marks_friday_off_as_away(): void
+    {
+        $peter = $this->makeWorker('Peter');
+        $peter->update(['friday_off' => true]);
+
+        $friday = $this->cell('Peter', '2026-09-11');
+
+        $this->assertSame('away', $friday['tone']);
+        $this->assertSame(0, $friday['free_count']);
+        $this->assertSame('0 vrij', $friday['label']);
+        $this->assertSame('Vrij', $friday['people'][0]['detail']);
+        $this->assertFalse($friday['people'][0]['selectable']);
+        $this->assertSame('ok', $this->cell('Peter', '2026-09-10')['tone']);
+    }
+
+    public function test_daily_matrix_shows_named_teammates_who_are_still_free(): void
+    {
+        $team = $this->makeWorker('Wespro', ['Piet', 'Jan']);
+        $people = $team->crewPeople()->orderBy('sort_order')->get();
+        $item = $this->makeWorkItem();
+        $this->assign($team, $item, '2026-09-08', '2026-09-08', [$people[0]->id]);
+
+        $tuesday = $this->cell('Wespro', '2026-09-08');
+
+        $this->assertSame('partial', $tuesday['tone']);
+        $this->assertSame(1, $tuesday['free_count']);
+        $this->assertSame('Piet', $tuesday['people'][0]['name']);
+        $this->assertSame('busy', $tuesday['people'][0]['status']);
+        $this->assertSame('8u ingepland', $tuesday['people'][0]['detail']);
+        $this->assertSame('Jan', $tuesday['people'][1]['name']);
+        $this->assertSame('free', $tuesday['people'][1]['status']);
+        $this->assertTrue($tuesday['people'][1]['selectable']);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function dayLabels(int $weeks = 1): array
+    {
+        return array_column($this->overview($weeks)['days'], 'label');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cell(string $name, string $date, int $weeks = 1): array
+    {
+        $team = collect($this->overview($weeks)['teams'])->firstWhere('label', $name);
+        $this->assertIsArray($team);
+        $this->assertArrayHasKey($date, $team['days']);
+
+        return $team['days'][$date];
+    }
+
+    /**
+     * @return array{days: list<array<string, string>>, teams: list<array<string, mixed>>}
+     */
+    private function overview(int $weeks = 1): array
+    {
+        $days = app(PlanningBoardService::class)->weekDays(Carbon::parse('2026-09-07'), $weeks);
+
+        return app(PlanningAvailabilityService::class)->overview($days);
+    }
+
     private function available(int $weeks = 1): float
     {
         $days = app(PlanningBoardService::class)->weekDays(Carbon::parse('2026-09-07'), $weeks);
