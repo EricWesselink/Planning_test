@@ -10,21 +10,23 @@
                 <span class="inline-block size-4 shrink-0 rounded-full" style="background: {{ $worker->planColor() }}" title="Planningskleur"></span>
                 {{ $worker->displayName() }}
             </h1>
-            <p class="text-sm text-nicon-muted">
-                {{ $worker->employment_type->label() }}
-                · {{ $worker->peopleCountLabel() }}
-                @foreach ($worker->crewMembers() as $member)
-                    @if ($member['name'] !== '' || $member['phone'] !== '')
-                        · {{ trim($member['name'].($member['phone'] !== '' ? ' '.$member['phone'] : '')) }}
-                    @endif
-                @endforeach
-                @if ($worker->specialtyLabel()) · {{ $worker->specialtyLabel() }} @endif
-                @if ($worker->company) · {{ $worker->company }} @endif
-                @if ($worker->contact_name) · {{ $worker->contact_name }} @endif
-                @if ($worker->email) · {{ $worker->email }} @endif
-            </p>
-            @if ($worker->nawLine())
-                <p class="text-sm text-nicon-muted">{{ $worker->nawLine() }}</p>
+            @if ($worker->employment_type->isExternal())
+                <p class="text-sm text-nicon-muted">
+                    {{ $worker->employment_type->label() }}
+                    · {{ $worker->peopleCountLabel() }}
+                    @foreach ($worker->crewMembers() as $member)
+                        @if ($member['name'] !== '' || $member['phone'] !== '')
+                            · {{ trim($member['name'].($member['phone'] !== '' ? ' '.$member['phone'] : '')) }}
+                        @endif
+                    @endforeach
+                    @if ($worker->specialtyLabel()) · {{ $worker->specialtyLabel() }} @endif
+                    @if ($worker->company) · {{ $worker->company }} @endif
+                    @if ($worker->contact_name) · {{ $worker->contact_name }} @endif
+                    @if ($worker->email) · {{ $worker->email }} @endif
+                </p>
+                @if ($worker->nawLine())
+                    <p class="text-sm text-nicon-muted">{{ $worker->nawLine() }}</p>
+                @endif
             @endif
         </div>
         <div class="flex flex-wrap items-center gap-3">
@@ -79,13 +81,11 @@
 
     <section class="mt-6 max-w-2xl border border-nicon-line bg-white p-5 space-y-3">
         <h2 class="font-semibold">Beschikbaarheid</h2>
-        <p class="text-sm text-nicon-muted">
-            @if ($worker->employment_type === \App\Enums\EmploymentType::Eigen)
-                Zet het team helemaal uit als ze niet ingepland mogen worden. Vink vrijdagen af als dit team dan niet werkt. Extra periodes voor vakantie of andere vrije dagen.
-            @else
+        @if ($worker->employment_type->isExternal())
+            <p class="text-sm text-nicon-muted">
                 Zet het team helemaal uit als ze niet ingepland mogen worden, of kies periodes.
-            @endif
-        </p>
+            </p>
+        @endif
         @include('workers._availability', ['worker' => $worker])
     </section>
 
@@ -97,28 +97,36 @@
         <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Opslaan</button>
     </form>
 
-    @can('update', $worker)
-        @include('workers._rates', ['worker' => $worker, 'rateRows' => $rateRows])
-    @endcan
+    @if ($worker->employment_type->isExternal())
+        @can('update', $worker)
+            <div data-zzp-only>
+                @include('workers._rates', ['worker' => $worker, 'rateRows' => $rateRows])
+            </div>
+        @endcan
 
-    <h2 class="mt-8 font-semibold">Opdrachten</h2>
-    <div class="mt-3 border border-nicon-line bg-white divide-y">
-        @forelse ($worker->workOrders as $order)
-            <div class="px-4 py-3 text-sm">{{ $order->project?->name }} · {{ $order->label() }}</div>
-        @empty
-            <p class="px-4 py-3 text-sm text-nicon-muted">Geen opdrachten.</p>
-        @endforelse
-    </div>
+        <div data-zzp-only>
+            <h2 class="mt-8 font-semibold">Opdrachten</h2>
+            <div class="mt-3 border border-nicon-line bg-white divide-y">
+                @forelse ($worker->workOrders as $order)
+                    <div class="px-4 py-3 text-sm">{{ $order->project?->name }} · {{ $order->label() }}</div>
+                @empty
+                    <p class="px-4 py-3 text-sm text-nicon-muted">Geen opdrachten.</p>
+                @endforelse
+            </div>
+        </div>
 
-    <div class="mt-8 flex items-end justify-between gap-4 flex-wrap">
-        <h2 class="font-semibold">Uitgevoerd</h2>
-        <a href="{{ route('production.index', ['worker_id' => $worker->id]) }}" class="text-sm text-nicon-orange-dark">Open in productie</a>
-    </div>
-    @include('production._groups', [
-        'groups' => $groups,
-        'canCreateVouchers' => $canCreateVouchers,
-        'vouchersByKey' => $vouchersByKey,
-        'billingByKey' => $billingByKey ?? collect(),
-        'sheetsByKey' => $sheetsByKey ?? collect(),
-    ])
+        <div data-zzp-only>
+            <div class="mt-8 flex items-end justify-between gap-4 flex-wrap">
+                <h2 class="font-semibold">Uitgevoerd</h2>
+                <a href="{{ route('production.index', ['worker_id' => $worker->id]) }}" class="text-sm text-nicon-orange-dark">Open in productie</a>
+            </div>
+            @include('production._groups', [
+                'groups' => $groups,
+                'canCreateVouchers' => $canCreateVouchers,
+                'vouchersByKey' => $vouchersByKey,
+                'billingByKey' => $billingByKey ?? collect(),
+                'sheetsByKey' => $sheetsByKey ?? collect(),
+            ])
+        </div>
+    @endif
 @endsection

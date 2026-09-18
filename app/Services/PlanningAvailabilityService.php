@@ -45,7 +45,7 @@ class PlanningAvailabilityService
 
                 return $team;
             },
-            $this->overview($days)['teams'],
+            $this->build($days, false)['teams'],
         );
     }
 
@@ -54,6 +54,15 @@ class PlanningAvailabilityService
      * @return array{days: list<array{date: string, label: string}>, teams: list<array<string, mixed>>}
      */
     public function overview(Collection $days): array
+    {
+        return $this->build($days, true);
+    }
+
+    /**
+     * @param  Collection<int, CarbonInterface>  $days
+     * @return array{days: list<array{date: string, label: string}>, teams: list<array<string, mixed>>}
+     */
+    private function build(Collection $days, bool $ownProductionOnly): array
     {
         $boardDays = $days->values();
         $weekDays = $boardDays
@@ -71,12 +80,19 @@ class PlanningAvailabilityService
             return ['days' => [], 'teams' => []];
         }
 
-        $workers = Worker::query()
+        $query = Worker::query()
             ->where('active', true)
             ->with(['crewPeople', 'availabilities'])
             ->orderBy('name')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
+        if ($ownProductionOnly) {
+            $query->ownStaff();
+        }
+
+        $workers = $query->get();
+        if ($ownProductionOnly) {
+            $workers = $workers->filter->doesProductionFloorWork()->values();
+        }
 
         if ($workers->isEmpty()) {
             return ['days' => $headings, 'teams' => []];
@@ -89,6 +105,7 @@ class PlanningAvailabilityService
             ->whereDate('start_date', '<=', $boardDays->last())
             ->get()
             ->groupBy(fn (WorkerAssignment $assignment): int => (int) $assignment->worker_id);
+        $initialsByKey = $this->initialsForWorkers($workers);
 
         $rows = [];
         foreach ($workers as $worker) {
@@ -115,6 +132,7 @@ class PlanningAvailabilityService
                     $worker,
                     $assignments->get($worker->id, collect()),
                     $day,
+                    $initialsByKey,
                 );
             }
 
@@ -140,9 +158,10 @@ class PlanningAvailabilityService
 
     /**
      * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  array<string, string>  $initialsByKey
      * @return array{date: string, tone: string, free_count: int, label: string, people: list<array<string, mixed>>}
      */
-    private function dayCell(Worker $worker, Collection $assignments, CarbonInterface $day): array
+    private function dayCell(Worker $worker, Collection $assignments, CarbonInterface $day, array $initialsByKey): array
     {
         $away = $this->awayDetail($worker, $day);
         $people = $this->peopleOnTeam($worker);
@@ -152,8 +171,8 @@ class PlanningAvailabilityService
                 && $assignment->intervalOnDate($day) !== null
         );
         $rows = $crew->isNotEmpty() && $namedToday
-            ? $this->namedPeopleForDay($worker, $crew, $assignments, $day, $away)
-            : $this->unnamedPeopleForDay($worker, $people, $assignments, $day, $away);
+            ? $this->namedPeopleForDay($worker, $crew, $assignments, $day, $away, $initialsByKey)
+            : $this->unnamedPeopleForDay($worker, $people, $assignments, $day, $away, $initialsByKey);
 
         $freeCount = collect($rows)->where('selectable', true)->count();
         $awayCount = collect($rows)->where('status', 'away')->count();
@@ -166,14 +185,44 @@ class PlanningAvailabilityService
             'date' => $day->toDateString(),
             'tone' => $this->tone($awayCount, $freeCount, $fullFreeCount, $total),
             'free_count' => $freeCount,
-            'label' => $freeCount.' vrij',
+            'label' => $this->cellLabel($worker, $freeCount, $away, $rows),
             'people' => $rows,
         ];
     }
 
     /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function cellLabel(Worker $worker, int $freeCount, ?string $away, array $rows): string
+    {
+        if ($worker->peopleCount() > 1) {
+            if ($away !== null && $freeCount === 0) {
+                return $away;
+            }
+
+            return implode(' · ', array_column($rows, 'compact'));
+        }
+
+        if ($away !== null) {
+            return $away;
+        }
+
+        $person = $rows[0] ?? [];
+        $status = (string) ($person['status'] ?? 'busy');
+        if ($status === 'free') {
+            return 'Beschikbaar';
+        }
+        if ($status === 'partial') {
+            return 'Deels vrij · '.PlanningHours::hoursLabel((float) ($person['remaining_hours'] ?? 0));
+        }
+
+        return 'Bezet';
+    }
+
+    /**
      * @param  Collection<int, CrewMember>  $crew
      * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  array<string, string>  $initialsByKey
      * @return list<array<string, mixed>>
      */
     private function namedPeopleForDay(
@@ -182,9 +231,10 @@ class PlanningAvailabilityService
         Collection $assignments,
         CarbonInterface $day,
         ?string $away,
+        array $initialsByKey,
     ): array {
         $rows = [];
-        foreach ($crew as $member) {
+        foreach ($crew->values() as $index => $member) {
             $plannedHours = $away === null
                 ? $this->memberPlannedHours($assignments, $day, $member)
                 : PlanningHours::WORKDAY_HOURS;
@@ -192,7 +242,14 @@ class PlanningAvailabilityService
             $label = $name !== ''
                 ? $member->label()
                 : ($crew->count() === 1 ? $worker->planName() : $member->label());
-            $rows[] = $this->personRow((int) $member->id, $label, $plannedHours, $away);
+            $person = ['id' => (int) $member->id, 'name' => $label];
+            $rows[] = $this->personRow(
+                (int) $member->id,
+                $label,
+                $plannedHours,
+                $away,
+                $initialsByKey[$this->personKey($worker, $person, $index)] ?? $this->personInitials($label),
+            );
         }
 
         return $rows;
@@ -201,6 +258,7 @@ class PlanningAvailabilityService
     /**
      * @param  list<array{id: int, name: string}>  $people
      * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  array<string, string>  $initialsByKey
      * @return list<array<string, mixed>>
      */
     private function unnamedPeopleForDay(
@@ -209,6 +267,7 @@ class PlanningAvailabilityService
         Collection $assignments,
         CarbonInterface $day,
         ?string $away,
+        array $initialsByKey,
     ): array {
         $capacityHours = count($people) * PlanningHours::WORKDAY_HOURS;
         $plannedHours = $away === null
@@ -216,14 +275,16 @@ class PlanningAvailabilityService
             : $capacityHours;
         $remainingPool = max(0.0, $capacityHours - $plannedHours);
         $rows = [];
-        foreach ($people as $person) {
+        foreach ($people as $index => $person) {
             $remaining = min(PlanningHours::WORKDAY_HOURS, $remainingPool);
             $remainingPool = round($remainingPool - $remaining, 2);
+            $name = (string) $person['name'];
             $rows[] = $this->personRow(
                 (int) $person['id'],
-                (string) $person['name'],
+                $name,
                 PlanningHours::WORKDAY_HOURS - $remaining,
                 $away,
+                $initialsByKey[$this->personKey($worker, $person, $index)] ?? $this->personInitials($name),
             );
         }
 
@@ -231,9 +292,9 @@ class PlanningAvailabilityService
     }
 
     /**
-     * @return array{id: int, name: string, status: string, mark: string, detail: string, remaining_hours: float, selectable: bool}
+     * @return array{id: int, name: string, status: string, mark: string, detail: string, remaining_hours: float, selectable: bool, initials: string, compact: string}
      */
-    private function personRow(int $id, string $name, float $plannedHours, ?string $away): array
+    private function personRow(int $id, string $name, float $plannedHours, ?string $away, string $initials): array
     {
         $plannedHours = max(0.0, min(PlanningHours::WORKDAY_HOURS, round($plannedHours, 2)));
         $remaining = round(PlanningHours::WORKDAY_HOURS - $plannedHours, 2);
@@ -246,6 +307,8 @@ class PlanningAvailabilityService
                 'detail' => $away,
                 'remaining_hours' => 0.0,
                 'selectable' => false,
+                'initials' => $initials,
+                'compact' => $initials.' '.$this->compactAway($away),
             ];
         }
 
@@ -258,6 +321,8 @@ class PlanningAvailabilityService
                 'detail' => PlanningHours::hoursLabel($plannedHours).' ingepland',
                 'remaining_hours' => 0.0,
                 'selectable' => false,
+                'initials' => $initials,
+                'compact' => $initials.' ✕',
             ];
         }
 
@@ -268,9 +333,13 @@ class PlanningAvailabilityService
             'name' => $name,
             'status' => $full ? 'free' : 'partial',
             'mark' => '✓',
-            'detail' => $full ? 'vrij' : 'nog '.PlanningHours::hoursLabel($remaining).' vrij',
+            'detail' => $full ? PlanningHours::hoursLabel($remaining).' vrij' : 'nog '.PlanningHours::hoursLabel($remaining).' vrij',
             'remaining_hours' => $remaining,
             'selectable' => true,
+            'initials' => $initials,
+            'compact' => $full
+                ? $initials.' ✓'
+                : $initials.' ½ '.PlanningHours::hoursLabel($remaining),
         ];
     }
 
@@ -293,7 +362,7 @@ class PlanningAvailabilityService
     {
         $label = $this->availability->awayLabelOn($worker, $day);
         if ($label === 'Vrij op vrijdag') {
-            return 'Vrij';
+            return 'Vrije dag';
         }
 
         return $label;
@@ -350,6 +419,151 @@ class PlanningAvailabilityService
         }
 
         return $people;
+    }
+
+    /**
+     * @param  Collection<int, Worker>  $workers
+     * @return array<string, string>
+     */
+    private function initialsForWorkers(Collection $workers): array
+    {
+        $keys = [];
+        $names = [];
+        foreach ($workers as $worker) {
+            foreach ($this->peopleOnTeam($worker) as $index => $person) {
+                $keys[] = $this->personKey($worker, $person, $index);
+                $names[] = $person['name'];
+            }
+        }
+
+        $map = [];
+        foreach ($this->uniqueInitials($names) as $index => $initials) {
+            $map[$keys[$index]] = $initials;
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param  array{id: int, name: string}  $person
+     */
+    private function personKey(Worker $worker, array $person, int $index): string
+    {
+        return (int) $worker->id.'-'.(int) $person['id'].'-'.$index;
+    }
+
+    /**
+     * @param  list<string>  $names
+     * @return list<string>
+     */
+    private function uniqueInitials(array $names): array
+    {
+        $result = array_fill(0, count($names), '');
+        $used = [];
+        $groups = [];
+        foreach ($names as $index => $name) {
+            $groups[$this->personInitials($name)][] = $index;
+        }
+
+        foreach ($groups as $indexes) {
+            foreach ($this->disambiguateInitials($names, $indexes, $used) as $index => $initials) {
+                $result[$index] = $initials;
+                $used[$initials] = true;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  list<string>  $names
+     * @param  list<int>  $indexes
+     * @param  array<string, true>  $used
+     * @return array<int, string>
+     */
+    private function disambiguateInitials(array $names, array $indexes, array $used): array
+    {
+        if (count($indexes) === 1) {
+            $initials = $this->personInitials($names[$indexes[0]]);
+            if (! isset($used[$initials])) {
+                return [$indexes[0] => $initials];
+            }
+        }
+
+        for ($last = 1; $last <= 8; $last++) {
+            for ($first = 1; $first <= 4; $first++) {
+                if ($last === 1 && $first === 1 && count($indexes) > 1) {
+                    continue;
+                }
+                $try = [];
+                $ok = true;
+                foreach ($indexes as $index) {
+                    $candidate = $this->personInitials($names[$index], $last, $first);
+                    if (isset($used[$candidate]) || isset($try[$candidate])) {
+                        $ok = false;
+                        break;
+                    }
+                    $try[$candidate] = $index;
+                }
+                if ($ok) {
+                    $chosen = [];
+                    foreach ($try as $candidate => $index) {
+                        $chosen[$index] = $candidate;
+                    }
+
+                    return $chosen;
+                }
+            }
+        }
+
+        $chosen = [];
+        $taken = $used;
+        $n = 2;
+        foreach ($indexes as $offset => $index) {
+            $base = $this->personInitials($names[$index]);
+            $candidate = $offset === 0 ? $base : $base.$n;
+            while (isset($taken[$candidate])) {
+                $candidate = $base.$n;
+                $n++;
+            }
+            $chosen[$index] = $candidate;
+            $taken[$candidate] = true;
+            $n++;
+        }
+
+        return $chosen;
+    }
+
+    private function personInitials(string $name, int $lastLetters = 1, int $firstLetters = 1): string
+    {
+        $parts = preg_split('/\s+/u', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($parts === []) {
+            return '?';
+        }
+
+        $first = $parts[0];
+        $last = $parts[count($parts) - 1];
+        if (count($parts) === 1) {
+            $take = min(mb_strlen($first), max(2, $firstLetters + $lastLetters));
+
+            return mb_strtoupper(mb_substr($first, 0, $take));
+        }
+
+        $firstTake = min(mb_strlen($first), max(1, $firstLetters));
+        $lastTake = min(mb_strlen($last), max(1, $lastLetters));
+
+        return mb_strtoupper(mb_substr($first, 0, $firstTake).mb_substr($last, 0, $lastTake));
+    }
+
+    private function compactAway(string $away): string
+    {
+        return match ($away) {
+            'Vrije dag' => 'vd',
+            'Vakantie' => 'vak',
+            'Ziek' => 'ziek',
+            'Verlof' => 'verl',
+            default => '✕',
+        };
     }
 
     /**

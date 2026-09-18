@@ -265,6 +265,9 @@ class WorkerController extends Controller
         $type = $data['employment_type'] instanceof EmploymentType
             ? $data['employment_type']
             : EmploymentType::tryFrom((string) $data['employment_type']);
+        if ($type === EmploymentType::Eigen) {
+            unset($data['company'], $data['contact_name'], $data['address'], $data['postal_code'], $data['city']);
+        }
         if ($type === EmploymentType::Eigen && $request->exists('friday_off')) {
             $data['friday_off'] = $request->boolean('friday_off');
         } elseif ($type !== EmploymentType::Eigen) {
@@ -299,8 +302,7 @@ class WorkerController extends Controller
             $data['email'] = strtolower(trim((string) $data['email']));
         }
 
-        $type = EmploymentType::tryFrom((string) $data['employment_type']);
-        if ($type?->isExternal() && blank($data['company'] ?? null)) {
+        if ($type?->isExternal() && blank($data['company'] ?? null) && (array_key_exists('company', $data) || $creating)) {
             $data['company'] = $data['name'];
         }
 

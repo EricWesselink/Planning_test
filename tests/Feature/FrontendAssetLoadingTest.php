@@ -90,6 +90,20 @@ class FrontendAssetLoadingTest extends TestCase
         $this->assertPageScriptsDoNotContain($html, 'drawing-board', 'pdf.worker', 'pdfjs', 'tesseract', 'snag-pdf', 'project-upload');
     }
 
+    public function test_project_list_loads_autosave_script_without_drawing_board(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject();
+
+        $html = $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertPageScriptsContain($html, 'project-list');
+        $this->assertPageScriptsDoNotContain($html, 'drawing-board', 'pdf.worker', 'pdfjs', 'tesseract', 'snag-pdf');
+    }
+
     public function test_snag_pdf_export_loads_pdfjs_only_for_pdf_drawings(): void
     {
         Storage::fake('local');
@@ -131,6 +145,7 @@ class FrontendAssetLoadingTest extends TestCase
         $this->assertStringNotContainsString('tesseract', $source);
         $this->assertStringNotContainsString('snag-pdf', $source);
         $this->assertStringNotContainsString('planning.js', $source);
+        $this->assertStringNotContainsString('project-list', $source);
     }
 
     private function makeProject(): Project

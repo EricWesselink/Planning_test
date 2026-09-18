@@ -6,6 +6,8 @@ use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\Worker;
+use App\Models\WorkerAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -209,6 +211,37 @@ class ProjectIndexSearchTest extends TestCase
         $this->assertSame(2, Project::query()->count());
         $this->assertDatabaseHas('projects', ['id' => $project->id, 'kind' => ProjectKind::Project->value]);
         $this->assertDatabaseHas('projects', ['id' => $winkel->id, 'kind' => ProjectKind::Winkel->value]);
+    }
+
+    public function test_project_list_hides_assigned_workers_and_keeps_row_actions(): void
+    {
+        $user = User::factory()->admin()->create();
+        $project = $this->makeProject('11P251047 Griftland college', '251000077');
+        $worker = Worker::query()->create([
+            'name' => 'Team 2 Peter',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'start_date' => '2026-09-21',
+            'end_date' => '2026-10-17',
+            'people_count' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertOk()
+            ->assertDontSee('>Wie</th>', false)
+            ->assertDontSee('Team 2 Peter')
+            ->assertSee('Archiveren')
+            ->assertSee('Verwijderen');
+
+        $this->assertDatabaseHas('worker_assignments', [
+            'project_id' => $project->id,
+            'worker_id' => $worker->id,
+        ]);
     }
 
     private function makeWinkel(string $customerName, string $city): Project

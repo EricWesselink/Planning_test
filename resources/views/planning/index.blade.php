@@ -190,8 +190,7 @@
                 @endphp
                 <div class="planning-available" data-plan-avail @if ($availabilityDays !== []) style="--avail-days: {{ count($availabilityDays) }}" @endif>
                     <div class="planning-available-head">
-                        <span class="planning-available-title">Mandagen week <span class="planning-available-week-nr">{{ $manDayWeekNumber }}</span></span>
-                        <span class="planning-available-total">Totaal vrij: <span class="planning-available-count">{{ \App\Support\PlanningHours::manDaysLabel($availableManDays) }}</span></span>
+                        <span class="planning-available-title">Mandagen week <span class="planning-available-week-nr">{{ $manDayWeekNumber }}</span> — totaal vrij: <span class="planning-available-count">{{ \App\Support\PlanningHours::manDaysLabel($availableManDays) }}</span></span>
                     </div>
                     @if ($availabilityTeams === [])
                         <span class="planning-available-empty">Geen actieve teams {{ $weeks === 1 ? 'deze week' : 'in deze weken' }}</span>
@@ -210,18 +209,24 @@
                                         $cell = $team['days'][$availabilityDay['date']] ?? null;
                                         $people = $cell['people'] ?? [];
                                         $hover = collect($people)
-                                            ->map(fn (array $person): string => $person['mark'].' '.$person['name'].' — '.$person['detail'])
+                                            ->map(function (array $person) use ($people): string {
+                                                $lead = count($people) > 1 && ($person['initials'] ?? '') !== ''
+                                                    ? $person['initials'].' '
+                                                    : '';
+
+                                                return $lead.$person['mark'].' '.$person['name'].' — '.$person['detail'];
+                                            })
                                             ->implode("\n");
                                         $popoverId = 'avail-'.$team['worker_id'].'-'.$availabilityDay['date'];
                                     @endphp
                                     <div class="planning-avail-slot">
                                         <button
                                             type="button"
-                                            class="planning-avail-cell is-{{ $cell['tone'] ?? 'none' }}"
+                                            class="planning-avail-cell is-{{ $cell['tone'] ?? 'none' }}{{ count($people) > 1 ? ' is-crew' : '' }}"
                                             popovertarget="{{ $popoverId }}"
                                             title="{{ $hover }}"
-                                            aria-label="{{ $team['label'] }} {{ $availabilityDay['label'] }} {{ $cell['label'] ?? '0 vrij' }}"
-                                        >{{ $cell['label'] ?? '0 vrij' }}</button>
+                                            aria-label="{{ $team['label'] }} {{ $availabilityDay['label'] }} {{ $cell['label'] ?? 'Bezet' }}"
+                                        >{{ $cell['label'] ?? 'Bezet' }}</button>
                                         <div id="{{ $popoverId }}" popover="auto" class="planning-avail-pop">
                                             <p class="planning-avail-pop-title">{{ $availabilityDay['label'] }} · {{ $team['label'] }}</p>
                                             <ul class="planning-avail-people">
@@ -236,9 +241,9 @@
                                                                 data-date="{{ $availabilityDay['date'] }}"
                                                                 data-crew-id="{{ $person['id'] }}"
                                                                 data-hours="{{ $person['remaining_hours'] }}"
-                                                            >{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</button>
+                                                            >@if (count($people) > 1 && ($person['initials'] ?? '') !== ''){{ $person['initials'] }} @endif{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</button>
                                                         @else
-                                                            <span class="planning-avail-busy">{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</span>
+                                                            <span class="planning-avail-busy">@if (count($people) > 1 && ($person['initials'] ?? '') !== ''){{ $person['initials'] }} @endif{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</span>
                                                         @endif
                                                     </li>
                                                 @endforeach

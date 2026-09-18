@@ -352,6 +352,30 @@ class Worker extends Model
         return FlooringSpecialty::storedHas((string) $this->specialty, $value);
     }
 
+    /**
+     * Eigen staff who lay or finish floors, not intake-only people.
+     */
+    public function doesProductionFloorWork(): bool
+    {
+        if ($this->employment_type !== EmploymentType::Eigen) {
+            return false;
+        }
+
+        $parts = FlooringSpecialty::inputValues((string) $this->specialty);
+        if ($parts === []) {
+            return true;
+        }
+
+        foreach ($parts as $part) {
+            $case = FlooringSpecialty::caseFrom($part);
+            if (! $case?->isIntakeWork()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function nawLine(): ?string
     {
         $street = trim((string) $this->address);

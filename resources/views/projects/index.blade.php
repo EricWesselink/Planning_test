@@ -2,6 +2,10 @@
 
 @section('title', 'Projecten · Nicon Planning')
 
+@push('scripts')
+    @vite(['resources/js/project-list.js'])
+@endpush
+
 @section('content')
     <div class="flex items-end justify-between gap-4 flex-wrap">
         <div>
@@ -69,6 +73,7 @@
     @if (session('status'))
         <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
     @endif
+    <p class="mt-4 text-sm hidden" data-autosave-status-global aria-live="polite"></p>
     @if ($errors->any())
         <ul class="mt-4 text-sm text-nicon-danger list-disc pl-5">
             @foreach ($errors->all() as $error)
@@ -80,16 +85,15 @@
         <table class="w-full text-sm">
             <thead class="bg-nicon-ink text-white text-left">
                 <tr>
-                    <th class="px-2 py-1.5">Projectnr.</th>
-                    <th class="px-2 py-1.5">Werk</th>
+                    <th class="px-2 py-1.5 whitespace-nowrap">Projectnr.</th>
+                    <th class="min-w-[12rem] px-2 py-1.5">Werk</th>
                     <th class="px-2 py-1.5">Opdrachtgever</th>
                     <th class="px-2 py-1.5">Werkadres</th>
-                    <th class="px-2 py-1.5">Start werk</th>
-                    <th class="px-2 py-1.5">Klaar werk</th>
-                    <th class="px-2 py-1.5">Status</th>
+                    <th class="px-2 py-1.5 whitespace-nowrap">Start werk</th>
+                    <th class="px-2 py-1.5 whitespace-nowrap">Klaar werk</th>
+                    <th class="px-2 py-1.5 whitespace-nowrap">Status</th>
                     <th class="px-2 py-1.5">Voortgang</th>
-                    <th class="px-2 py-1.5">Wie</th>
-                    <th class="px-2 py-1.5"></th>
+                    <th class="w-px px-2 py-1.5"></th>
                 </tr>
             </thead>
             <tbody>
@@ -102,7 +106,7 @@
                 <tr class="border-t border-nicon-line">
                     <td class="px-2 py-1.5">
                         @can('update', $project)
-                            <form id="{{ $formId }}" method="POST" action="{{ route('projects.update', $project) }}">
+                            <form id="{{ $formId }}" method="POST" action="{{ route('projects.update', $project) }}" data-autosave>
                                 @csrf
                                 @method('PATCH')
                                 <input type="hidden" name="planning_project_id" value="{{ $project->id }}">
@@ -118,7 +122,7 @@
                             @endif
                         </a>
                     </td>
-                    <td class="px-2 py-1.5">
+                    <td class="min-w-[12rem] px-2 py-1.5 leading-tight">
                         @if ($project->isWinkel())
                             <div>{{ $project->displayTitle() }}</div>
                             @if ($project->shopWorkLine())
@@ -143,7 +147,7 @@
                                 aria-label="Opdrachtgever"
                                 title="Opdrachtgever"
                                 placeholder="Opdrachtgever"
-                                class="min-w-[10rem] border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
+                                class="min-w-[12rem] border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
                             >
                         @else
                             {{ $project->customer?->name ?: '—' }}
@@ -210,19 +214,16 @@
                     </td>
                     <td class="px-2 py-1.5">
                         @can('update', $project)
-                            <div class="flex items-center gap-1">
-                                @include('projects.partials.planning-weeks', [
-                                    'idPrefix' => 'index-'.$project->id.'-klaar-',
-                                    'side' => 'klaar',
-                                    'table' => true,
-                                    'formId' => $formId,
-                                    'useOld' => $editing,
-                                    'klaarYear' => $project->planningEndYear(),
-                                    'klaarWeek' => $project->planningEndWeek(),
-                                    'klaarDate' => $project->planned_end_date?->toDateString(),
-                                ])
-                                <button type="submit" form="{{ $formId }}" class="shrink-0 bg-nicon-ink text-white px-2 py-1 text-xs">Opslaan</button>
-                            </div>
+                            @include('projects.partials.planning-weeks', [
+                                'idPrefix' => 'index-'.$project->id.'-klaar-',
+                                'side' => 'klaar',
+                                'table' => true,
+                                'formId' => $formId,
+                                'useOld' => $editing,
+                                'klaarYear' => $project->planningEndYear(),
+                                'klaarWeek' => $project->planningEndWeek(),
+                                'klaarDate' => $project->planned_end_date?->toDateString(),
+                            ])
                         @else
                             <div>{{ \App\Support\PlanningWeek::label($project->planned_end_date) ?? '—' }}</div>
                             @if ($project->planned_end_date)
@@ -230,7 +231,7 @@
                             @endif
                         @endcan
                     </td>
-                    <td class="px-2 py-1.5">{{ $project->status->label() }}</td>
+                    <td class="px-2 py-1.5 whitespace-nowrap">{{ $project->status->label() }}</td>
                     <td class="px-2 py-1.5">
                         @if ($project->isWinkel())
                             {{ $project->shopWorkLine() }}
@@ -240,14 +241,9 @@
                             {{ \App\Support\Format::qty($head->completedQuantity()) }} / {{ \App\Support\Format::qty($head->ordered_quantity) }} {{ $head->unit->label() }}
                         @endif
                     </td>
-                    <td class="px-2 py-1.5">{{ $project->assignments->map(function ($assignment) {
-                        $team = $assignment->worker?->name;
-                        $present = $assignment->presentNamesLabel();
-
-                        return $present ? $team.' ('.$present.')' : $team;
-                    })->unique()->join(', ') }}</td>
-                    <td class="px-2 py-1.5 text-right whitespace-nowrap">
-                        <div class="flex justify-end gap-3">
+                    <td class="w-px px-2 py-1.5 text-right whitespace-nowrap">
+                        <div class="flex items-center justify-end gap-3">
+                            <span data-autosave-status class="text-xs hidden" aria-live="polite"></span>
                             @can('archive', $project)
                                 <form method="POST" action="{{ route('projects.archive', $project) }}" onsubmit="return confirm({{ json_encode($project->name.' verdwijnt uit planning en projecten. Je kunt het later terugzetten vanuit het archief.') }})">
                                     @csrf
@@ -266,7 +262,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10" class="px-3 py-6 text-sm text-nicon-muted">
+                    <td colspan="9" class="px-3 py-6 text-sm text-nicon-muted">
                         @if ($search !== '' || $week !== null || $kind !== '')
                             Geen projecten voor deze selectie.
                         @else

@@ -100,7 +100,8 @@ class ProjectPlanningWeeksTest extends TestCase
             ->assertSee('name="start_date"', false)
             ->assertSee('name="start_week"', false)
             ->assertSee('name="klaar_date"', false)
-            ->assertSee('Opslaan')
+            ->assertSee('data-autosave', false)
+            ->assertDontSee('>Opslaan<', false)
             ->assertSee('data-planning-week', false)
             ->assertSee('data-planning-week-number', false)
             ->assertDontSee('>Datum</label>', false)
@@ -130,6 +131,45 @@ class ProjectPlanningWeeksTest extends TestCase
         $this->assertSame('2026-10-31', $project->planned_end_date?->toDateString());
         $this->assertSame('2026-09-28', $item->planned_start_date?->toDateString());
         $this->assertSame('2026-10-31', $item->planned_end_date?->toDateString());
+    }
+
+    public function test_autosave_keeps_planning_weeks_after_reload(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject();
+
+        $this->actingAs($user)
+            ->withHeaders([
+                'Accept' => 'application/json',
+                'X-Requested-With' => 'XMLHttpRequest',
+            ])
+            ->post(route('projects.update', $project), [
+                '_method' => 'PATCH',
+                'customer_name' => 'Hegeman',
+                'start_date' => '2026-09-21',
+                'start_year' => '2026',
+                'start_week' => '39',
+                'klaar_date' => '2026-10-17',
+                'klaar_year' => '2026',
+                'klaar_week' => '42',
+            ])
+            ->assertOk()
+            ->assertJson(['status' => 'Project opgeslagen.']);
+
+        $project->refresh();
+        $this->assertSame('2026-09-21', $project->planned_start_date?->toDateString());
+        $this->assertSame('2026-10-17', $project->planned_end_date?->toDateString());
+        $this->assertSame(2026, $project->planningStartYear());
+        $this->assertSame(39, $project->planningStartWeek());
+        $this->assertSame(42, $project->planningEndWeek());
+
+        $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertOk()
+            ->assertSee('value="2026-09-21"', false)
+            ->assertSee('value="39"', false)
+            ->assertSee('value="2026-10-17"', false)
+            ->assertSee('value="42"', false);
     }
 
     public function test_project_list_saves_exact_dates(): void

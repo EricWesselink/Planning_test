@@ -704,7 +704,7 @@ class SmallWorkTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('Totaal vrij:')
+            ->assertSee('totaal vrij:')
             ->assertSee('4,5');
     }
 

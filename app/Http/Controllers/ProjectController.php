@@ -28,6 +28,7 @@ use App\Services\WorkTicketService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -119,7 +120,7 @@ class ProjectController extends Controller
             ->with('status', $name.' is verwijderd.');
     }
 
-    public function update(Request $request, Project $project): RedirectResponse
+    public function update(Request $request, Project $project): RedirectResponse|JsonResponse
     {
         Gate::authorize('update', $project);
         if ($request->exists('basis_uurtarief')) {
@@ -176,6 +177,10 @@ class ProjectController extends Controller
 
         if ($request->hasAny(['start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'])) {
             $project->applyPlanningWindow($data);
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['status' => 'Project opgeslagen.']);
         }
 
         return back()->with('status', 'Project opgeslagen.');

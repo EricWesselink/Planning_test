@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Voucher;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
+use App\Models\WorkerRate;
 use App\Models\WorkItem;
 use App\Services\PlanningBoardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,49 +26,57 @@ class WorkerProfileTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_show_page_lists_naw_email_and_color(): void
+    public function test_show_page_lists_email_color_and_intake_work(): void
     {
         $user = User::factory()->create();
         $worker = Worker::query()->create([
-            'name' => 'Albert',
+            'name' => 'Eric',
             'employment_type' => 'eigen',
             'phone' => '06 11111111',
-            'email' => 'albert@niconvloeren.nl',
+            'email' => 'eric@niconvloeren.nl',
             'color' => '#c2410c',
             'address' => 'Industrieweg 8',
             'postal_code' => '8013 PM',
             'city' => 'Zwolle',
-            'specialty' => 'dekvloeren',
+            'specialty' => 'Inmeten, Werkopname',
             'active' => true,
         ]);
 
         $this->actingAs($user)
             ->get(route('workers.show', $worker))
             ->assertOk()
-            ->assertSee('Albert')
-            ->assertSee('albert@niconvloeren.nl')
-            ->assertSee('Industrieweg 8')
-            ->assertSee('8013 PM')
-            ->assertSee('Zwolle')
-            ->assertSee('Primen & egaliseren')
-            ->assertSee('#c2410c', false);
+            ->assertSee('Eric')
+            ->assertSee('eric@niconvloeren.nl')
+            ->assertSee('Inmeten')
+            ->assertSee('Werkopname')
+            ->assertSee('#c2410c', false)
+            ->assertDontSee('Afgesproken prijzen')
+            ->assertDontSee('Opdrachtbon')
+            ->assertDontSee('>Opdrachten</h2>', false)
+            ->assertDontSee('Uitgevoerd')
+            ->assertDontSee('Open in productie')
+            ->assertDontSee('Nog geen productie')
+            ->assertDontSee('1 persoon')
+            ->assertDontSee('Vink vrijdagen af')
+            ->assertSee('class="space-y-4 hidden"', false);
     }
 
-    public function test_planner_can_update_naw_and_email(): void
+    public function test_planner_can_update_naw_and_email_for_a_zzp(): void
     {
         $user = User::factory()->create();
         $worker = Worker::query()->create([
-            'name' => 'Albert',
-            'employment_type' => 'eigen',
+            'name' => 'Sander',
+            'employment_type' => 'zzp',
             'active' => true,
         ]);
 
         $this->actingAs($user)
             ->patch(route('workers.update', $worker), [
-                'name' => 'Albert',
-                'employment_type' => 'eigen',
+                'name' => 'Sander',
+                'employment_type' => 'zzp',
+                'company' => 'Sander Vloeren',
                 'phone' => '06 11111111',
-                'email' => 'albert@niconvloeren.nl',
+                'email' => 'sander@example.nl',
                 'address' => 'Industrieweg 8',
                 'postal_code' => '8013 PM',
                 'city' => 'Zwolle',
@@ -76,10 +85,120 @@ class WorkerProfileTest extends TestCase
             ->assertRedirect(route('workers.show', $worker));
 
         $worker->refresh();
-        $this->assertSame('albert@niconvloeren.nl', $worker->email);
+        $this->assertSame('sander@example.nl', $worker->email);
+        $this->assertSame('Sander Vloeren', $worker->company);
         $this->assertSame('Industrieweg 8', $worker->address);
         $this->assertSame('8013 PM', $worker->postal_code);
         $this->assertSame('Zwolle', $worker->city);
+    }
+
+    public function test_saving_an_own_employee_keeps_existing_company_and_address(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Eric',
+            'employment_type' => 'eigen',
+            'company' => 'Nicon Vloeren',
+            'contact_name' => 'Kantoor',
+            'address' => 'Industrieweg 8',
+            'postal_code' => '8013 PM',
+            'city' => 'Zwolle',
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('workers.update', $worker), [
+                'name' => 'Eric',
+                'employment_type' => 'eigen',
+                'company' => '',
+                'contact_name' => '',
+                'address' => '',
+                'postal_code' => '',
+                'city' => '',
+                'email' => 'eric@niconvloeren.nl',
+                'active' => '1',
+            ])
+            ->assertRedirect(route('workers.show', $worker));
+
+        $worker->refresh();
+        $this->assertSame('eric@niconvloeren.nl', $worker->email);
+        $this->assertSame('Nicon Vloeren', $worker->company);
+        $this->assertSame('Kantoor', $worker->contact_name);
+        $this->assertSame('Industrieweg 8', $worker->address);
+        $this->assertSame('8013 PM', $worker->postal_code);
+        $this->assertSame('Zwolle', $worker->city);
+    }
+
+    public function test_zzp_page_shows_company_address_and_agreed_prices(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Harm Wesselink',
+            'employment_type' => 'zzp',
+            'company' => 'Harm Wesselink',
+            'contact_name' => 'Harm',
+            'address' => 'Kerkstraat 2',
+            'postal_code' => '8011 AA',
+            'city' => 'Zwolle',
+            'specialty' => 'Primen & egaliseren',
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('workers.show', $worker))
+            ->assertOk()
+            ->assertSee('Harm Wesselink')
+            ->assertSee('Kerkstraat 2')
+            ->assertSee('8011 AA')
+            ->assertSee('Zwolle')
+            ->assertSee('Harm')
+            ->assertSee('Afgesproken prijzen')
+            ->assertSee('Uurtarief')
+            ->assertSee('>Opdrachten</h2>', false)
+            ->assertSee('Uitgevoerd')
+            ->assertSee('Open in productie')
+            ->assertSee('1 persoon')
+            ->assertDontSee('class="space-y-4 hidden"', false);
+    }
+
+    public function test_switching_an_own_employee_to_zzp_shows_stored_company_and_prices(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Eric',
+            'employment_type' => 'eigen',
+            'company' => 'Eric Vloeren',
+            'address' => 'Industrieweg 8',
+            'postal_code' => '8013 PM',
+            'city' => 'Zwolle',
+            'specialty' => 'Inmeten, Werkopname',
+            'active' => true,
+        ]);
+        WorkerRate::query()->create([
+            'worker_id' => $worker->id,
+            'specialty' => 'uurtarief',
+            'unit' => 'uren',
+            'unit_price' => 45,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('workers.update', $worker), [
+                'name' => 'Eric',
+                'employment_type' => 'zzp',
+                'active' => '1',
+                'specialties' => ['inmeten', 'werkopname'],
+            ])
+            ->assertRedirect(route('workers.show', $worker));
+
+        $this->actingAs($user)
+            ->get(route('workers.show', $worker))
+            ->assertOk()
+            ->assertSee('Eric Vloeren')
+            ->assertSee('Industrieweg 8')
+            ->assertSee('Afgesproken prijzen')
+            ->assertSee('45.00')
+            ->assertSee('Inmeten')
+            ->assertSee('Werkopname');
     }
 
     public function test_create_form_asks_for_vakkennis(): void
@@ -102,6 +221,7 @@ class WorkerProfileTest extends TestCase
             ->assertSee('E-mail (inlog, optioneel)')
             ->assertSee('Tijdelijk wachtwoord')
             ->assertSee('Stuur uitnodiging voor de planning')
+            ->assertSee('class="space-y-4 hidden"', false)
             ->assertDontSee('name="team_ids[]"', false)
             ->assertDontSee('Kleur in de planning')
             ->assertDontSee('name="color"', false);
