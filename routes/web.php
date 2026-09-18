@@ -214,7 +214,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/vakmensen', [WorkerController::class, 'index'])->name('workers.index');
     Route::get('/vakmensen/afwezigheid', [WorkerAbsenceController::class, 'index'])->name('workers.absence');
     Route::get('/vakmensen/personeel', [WorkerPersonnelController::class, 'index'])->name('workers.personnel');
-    Route::patch('/vakmensen/{worker}/leden/{crewMember}/werkdagen', [WorkerPersonnelController::class, 'update'])->scopeBindings()->name('workers.personnel.update');
+    Route::patch('/vakmensen/{worker}/leden/{crewMember}/werkdagen', [WorkerPersonnelController::class, 'update'])->name('workers.personnel.update');
     Route::get('/vakmensen/nieuw', [WorkerController::class, 'create'])->name('workers.create');
     Route::post('/vakmensen', [WorkerController::class, 'store'])->name('workers.store');
     Route::post('/vakmensen/pdf', [WorkerPdfImportController::class, 'preview'])->name('workers.pdf.preview');

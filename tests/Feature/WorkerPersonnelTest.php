@@ -89,6 +89,23 @@ class WorkerPersonnelTest extends TestCase
         $this->assertTrue($member->fresh()->worksOn(5));
     }
 
+    public function test_rejects_a_workday_change_for_a_person_from_another_team(): void
+    {
+        $user = User::factory()->create();
+        $peter = $this->makeWorker('Peter', 'eigen');
+        $other = $this->makeWorker('Kees', 'eigen');
+        $member = $other->fresh()->crewPeople->first();
+
+        $this->actingAs($user)
+            ->patch(route('workers.personnel.update', [$peter, $member]), [
+                'day' => 5,
+                'works' => '0',
+            ])
+            ->assertNotFound();
+
+        $this->assertTrue($member->fresh()->worksOn(5));
+    }
+
     public function test_rejects_an_invalid_weekday(): void
     {
         $user = User::factory()->create();

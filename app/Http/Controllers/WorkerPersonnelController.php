@@ -51,6 +51,7 @@ class WorkerPersonnelController extends Controller
     {
         Gate::authorize('update', $worker);
         abort_unless($worker->employment_type === EmploymentType::Eigen, 403);
+        abort_unless((int) $crewMember->worker_id === (int) $worker->id, 404);
 
         $data = $request->validate([
             'day' => ['required', 'integer', Rule::in(array_keys(CrewMember::WEEKDAY_LABELS))],

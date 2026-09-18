@@ -341,6 +341,44 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assertSame('PI vrij | JA vrij', $this->cell('Wespro', '2026-09-10')['label']);
     }
 
+    public function test_daily_matrix_marks_one_teammate_weekday_off_as_vrije_dag(): void
+    {
+        $team = $this->makeWorker('Wespro', ['Eric Wesselink', 'Harm Wesselink']);
+        $eric = $team->crewPeople->firstWhere('name', 'Eric Wesselink');
+        $eric->setRelation('worker', $team);
+        $eric->setWorkDay(3, false);
+        $eric->save();
+        $team->unsetRelation('crewPeople');
+
+        $wednesday = $this->cell('Wespro', '2026-09-09');
+        $ericRow = collect($wednesday['people'])->firstWhere('name', 'Eric Wesselink');
+        $harmRow = collect($wednesday['people'])->firstWhere('name', 'Harm Wesselink');
+
+        $this->assertSame('EW vrije dag | HW vrij', $wednesday['label']);
+        $this->assertSame('away', $ericRow['status']);
+        $this->assertSame('Vrije dag', $ericRow['detail']);
+        $this->assertFalse($ericRow['selectable']);
+        $this->assertSame('EW vrije dag', $ericRow['chip']);
+        $this->assertSame('free', $harmRow['status']);
+        $this->assertTrue($harmRow['selectable']);
+        $this->assertSame('EW vrij | HW vrij', $this->cell('Wespro', '2026-09-08')['label']);
+    }
+
+    public function test_saturday_work_day_counts_as_available(): void
+    {
+        $peter = $this->makeWorker('Peter');
+        $member = $peter->crewPeople->first();
+        $member->setRelation('worker', $peter);
+        $member->setWorkDay(6, true);
+        $member->save();
+        $peter->unsetRelation('crewPeople');
+
+        $this->assertSame(6.0, $this->available());
+        $saturday = $this->cell('Peter', '2026-09-12');
+        $this->assertSame('ok', $saturday['tone']);
+        $this->assertSame('Beschikbaar', $saturday['label']);
+    }
+
     public function test_daily_matrix_omits_zzp_teams(): void
     {
         $this->makeWorker('Peter');

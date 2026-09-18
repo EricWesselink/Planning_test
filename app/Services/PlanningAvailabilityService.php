@@ -291,16 +291,33 @@ class PlanningAvailabilityService
             ? round($this->plannedManDaysOnDate($worker, $assignments, $day) * PlanningHours::WORKDAY_HOURS, 2)
             : $capacityHours;
         $remainingPool = max(0.0, $capacityHours - $plannedHours);
+        $crew = $worker->crewPeople;
         $rows = [];
         foreach ($people as $index => $person) {
+            $name = (string) $person['name'];
+            $member = $crew->firstWhere('id', (int) $person['id']);
+            $personAway = $member instanceof CrewMember
+                ? $this->awayDetail($worker, $day, $member)
+                : $away;
+            if ($personAway !== null) {
+                $rows[] = $this->personRow(
+                    (int) $person['id'],
+                    $name,
+                    PlanningHours::WORKDAY_HOURS,
+                    $personAway,
+                    $initialsByKey[$this->personKey($worker, $person, $index)] ?? $this->personInitials($name),
+                );
+
+                continue;
+            }
+
             $remaining = min(PlanningHours::WORKDAY_HOURS, $remainingPool);
             $remainingPool = round($remainingPool - $remaining, 2);
-            $name = (string) $person['name'];
             $rows[] = $this->personRow(
                 (int) $person['id'],
                 $name,
                 PlanningHours::WORKDAY_HOURS - $remaining,
-                $away,
+                null,
                 $initialsByKey[$this->personKey($worker, $person, $index)] ?? $this->personInitials($name),
             );
         }
