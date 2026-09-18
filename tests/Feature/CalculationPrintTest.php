@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\FinishRole;
 use App\Enums\QuantitySource;
 use App\Enums\WorkUnit;
 use App\Models\Calculation;
@@ -184,6 +185,72 @@ class CalculationPrintTest extends TestCase
         $this->assertStringContainsString('"colored":false', $seven);
         $this->assertStringContainsString('"rooms":false', $seven);
         $this->assertStringContainsString('"legend":false', $seven);
+    }
+
+    public function test_print_json_keeps_the_same_room_codes_as_the_board_for_one_drawing(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeCalculation($user);
+        $kelder = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => '2401531_TEK_BK5_1_K_01.pdf',
+            'file_path' => 'calculations/1/k01.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1,
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $kelder->id,
+            'sort_order' => 10,
+            'room_number' => 'K-01-02',
+            'room_name' => 'hal',
+            'product_code' => 'v06.b',
+            'product' => 'PVC',
+            'quantity' => 40,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::FromDrawing,
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $kelder->id,
+            'sort_order' => 11,
+            'room_number' => 'K-01-02',
+            'room_name' => 'hal',
+            'product_code' => 'v01.i',
+            'product' => 'Marmoleum',
+            'quantity' => 20,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::FromDrawing,
+            'finish_role' => FinishRole::Local,
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $kelder->id,
+            'sort_order' => 12,
+            'room_number' => 'K-01-12',
+            'room_name' => 'recreatie',
+            'product_code' => 'v04',
+            'product' => 'Gietvloer',
+            'quantity' => 8.5,
+            'unit' => WorkUnit::SquareMeter,
+            'source' => QuantitySource::FromDrawing,
+        ]);
+
+        $html = $this->actingAs($user)
+            ->get(route('calculations.print', [
+                'calculation' => $calculation,
+                'include' => ['colored', 'rooms', 'codes', 'legend'],
+                'drawing_ids' => [$kelder->id],
+                'output' => 'pdf',
+            ]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('"number":"K-01-02"', $html);
+        $this->assertStringContainsString('"number":"K-01-12"', $html);
+        $this->assertStringContainsString('v06.b + v01.i', $html);
+        $this->assertStringContainsString('"label":"2401531_TEK_BK5_1_K_01"', $html);
+        $this->assertStringNotContainsString('"number":"A-00-13"', $html);
     }
 
     public function test_print_view_can_add_room_lists_and_square_meter_totals(): void

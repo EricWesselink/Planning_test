@@ -4,6 +4,9 @@ import {
     applyRoomGeometry,
     overlayChipText,
     overlayPlan,
+    overlayRoomsOnPage,
+    placeBoardRooms,
+    legendFromRooms,
     printDrawingSheets,
     printImageFromCanvas,
     isUsablePrintImageSrc,
@@ -164,6 +167,94 @@ test('ignores a dense legend strip of room codes above the plan', () => {
 
     assert.equal(usableLabelHits(hits).length, 0);
     assert.deepEqual(usableLabelHits([...hits, inRoom]).map((hit) => hit.y), [0.64]);
+});
+
+test('print still places every known board room when labels sit in a dense strip', () => {
+    const rooms = [
+        room({ key: 'k-01-01', number: 'K-01-01', contour: null, floor_codes_label: 'v04' }),
+        room({ key: 'k-01-02', number: 'K-01-02', contour: null, floor_codes_label: 'v01.d' }),
+        room({ key: 'k-01-06', number: 'K-01-06', contour: null, floor_codes_label: 'v09' }),
+        room({
+            key: 'k-01-10',
+            number: 'K-01-10',
+            floor_codes_label: 'v04',
+            contour: { page: 1, reliable: true, rects: [{ x: 0.41, y: 0.62, w: 0.10, h: 0.08 }] },
+        }),
+        room({
+            key: 'k-01-12',
+            number: 'K-01-12',
+            contour: null,
+            floor_code: 'v06.b',
+            floor_codes_label: 'v06.b + v01.i + v01.d',
+            material_key: 'v06.b',
+            floors: [
+                { code: 'v06.b', product: 'PVC', quantity: 40, material_key: 'v06.b', material_color: '#c2410c' },
+                { code: 'v01.i', product: 'Marmoleum', quantity: 20, material_key: 'v01.i', material_color: '#7c3aed' },
+                { code: 'v01.d', product: 'Marmoleum', quantity: 18.9, material_key: 'v01.d', material_color: '#0f766e' },
+            ],
+        }),
+    ];
+    const hits = rooms.map((item, index) => ({
+        number: item.number,
+        page: 1,
+        x: 0.04 + (index % 10) * 0.08,
+        y: 0.04,
+        w: 0.04,
+        h: 0.016,
+        source: 'text',
+    }));
+    for (let index = 0; index < 12; index += 1) {
+        hits.push({
+            number: `K-01-${String(20 + index).padStart(2, '0')}`,
+            page: 1,
+            x: 0.04 + (index % 6) * 0.08,
+            y: 0.04,
+            w: 0.04,
+            h: 0.016,
+            source: 'text',
+        });
+    }
+
+    placeBoardRooms(rooms, 336, hits);
+    const plan = overlayPlan(rooms, 336, 1, { roomLabels: true, materialCodes: true });
+
+    assert.equal(usableLabelHits(hits).length, 0);
+    assert.deepEqual(plan.map((item) => item.number).sort(), ['K-01-01', 'K-01-02', 'K-01-06', 'K-01-10', 'K-01-12']);
+    assert.equal(plan.find((item) => item.number === 'K-01-12').text, 'K-01-12 · v06.b + v01.i + v01.d');
+    assert.equal(overlayRoomsOnPage(rooms, 336, 1).length, 5);
+});
+
+test('legend totals come from the rooms on that sheet, not the whole calculation', () => {
+    const kelder = [
+        room({
+            key: 'k-01-01',
+            number: 'K-01-01',
+            floor_code: 'v04',
+            floors: [{ code: 'v04', product: 'Gietvloer', quantity: 12.7, material_color: '#c2410c' }],
+            contour: { page: 1, reliable: true, rects: [{ x: 0.2, y: 0.5, w: 0.1, h: 0.08 }] },
+        }),
+        room({
+            key: 'k-01-06',
+            number: 'K-01-06',
+            floor_code: 'v09',
+            floors: [{ code: 'v09', product: 'Schoonloopmat', quantity: 4.2, material_color: '#0369a1' }],
+            contour: { page: 1, reliable: true, rects: [{ x: 0.4, y: 0.5, w: 0.1, h: 0.08 }] },
+        }),
+    ];
+    const other = room({
+        key: 'a-00-15',
+        drawing_id: 337,
+        number: 'A-00-15',
+        floor_code: 'v01.g',
+        floors: [{ code: 'v01.g', product: 'Marmoleum', quantity: 240, material_color: '#15803d' }],
+        contour: { page: 1, reliable: true, rects: [{ x: 0.2, y: 0.5, w: 0.1, h: 0.08 }] },
+    });
+
+    const legend = legendFromRooms(overlayRoomsOnPage([...kelder, other], 336, 1));
+
+    assert.deepEqual(legend.map((item) => item.code), ['v04', 'v09']);
+    assert.equal(legend.find((item) => item.code === 'v04').m2_label, '12,70 m²');
+    assert.equal(legend.some((item) => item.code === 'v01.g'), false);
 });
 
 test('print snapshot keeps a jpeg data url from the rendered canvas', async () => {

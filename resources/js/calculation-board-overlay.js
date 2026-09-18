@@ -51,18 +51,22 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
         hits.push(...assessTextLayer(items, known).hits);
         finishItems.push(...items);
     }
-    const usableHits = usableLabelHits(hits);
+    placeBoardRooms(rooms, drawingId, hits);
+    assignFinishHits(rooms, drawingId, finishItems);
+}
+
+export function placeBoardRooms(rooms, drawingId, hits) {
     rooms
         .filter((room) => Number(room.drawing_id) === Number(drawingId))
         .forEach((room) => {
-            if (applyRoomGeometry(room)) {
+            applyRoomGeometry(room);
+            if (roomLabelAnchor(room)) {
                 return;
             }
-            const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, usableHits)
-                || usableHits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
+            const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
+                || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
             assignHit(room, hit);
         });
-    assignFinishHits(rooms, drawingId, finishItems);
 }
 
 export function usableLabelHits(hits) {
@@ -198,6 +202,47 @@ export function printDrawingSheets(drawings) {
             page: index + 1,
             pageCount,
         }));
+    });
+}
+
+export function legendFromRooms(rooms) {
+    const groups = {};
+    (rooms || []).forEach((room) => {
+        roomFinishes(room).forEach((finish) => {
+            const code = String(finish.code || '').trim();
+            if (code === '') {
+                return;
+            }
+            const key = code.toLowerCase();
+            if (! groups[key]) {
+                groups[key] = {
+                    key,
+                    code,
+                    product: String(finish.product || '').trim(),
+                    color: finish.material_color || room.material_color || '#e7e5e4',
+                    m2: 0,
+                };
+            }
+            const quantity = Number(finish.quantity);
+            if (Number.isFinite(quantity)) {
+                groups[key].m2 += quantity;
+            }
+            if (groups[key].product === '' && finish.product) {
+                groups[key].product = String(finish.product).trim();
+            }
+        });
+    });
+
+    return Object.keys(groups).sort().map((key) => {
+        const group = groups[key];
+        const m2 = Math.round(group.m2 * 1000) / 1000;
+
+        return {
+            ...group,
+            m2,
+            m2_label: `${m2.toFixed(2).replace('.', ',')} m²`,
+            label: group.product !== '' ? `${group.code} – ${group.product}` : group.code,
+        };
     });
 }
 

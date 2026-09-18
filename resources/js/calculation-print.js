@@ -9,6 +9,8 @@ import {
     printImageFromCanvas,
     printPaper,
     waitForPrintAssets,
+    overlayRoomsOnPage,
+    legendFromRooms,
 } from './calculation-board-overlay';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -124,7 +126,7 @@ function createDrawingPage(sheets, documentData, drawing, page, pageCount) {
                     <div class="calc-print-markers"></div>
                 </div>
             </div>
-            ${documentData.include?.legend ? legendMarkup(documentData.materials || []) : ''}
+            ${documentData.include?.legend ? legendMarkup(drawing.materials || []) : ''}
         </div>
     `;
     sheets.append(pageEl);
@@ -196,6 +198,12 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
         chipTag: 'span',
         showChips: Boolean(paint.roomLabels || paint.materialCodes),
     });
+    const legend = host.querySelector('.calc-print-legend');
+    if (legend) {
+        const sheetRooms = overlayRoomsOnPage(paint.rooms, paint.drawingId, pageNumber);
+        const drawingRooms = paint.rooms.filter((room) => Number(room.drawing_id) === Number(paint.drawingId));
+        legend.outerHTML = legendMarkup(legendFromRooms(sheetRooms.length > 0 ? sheetRooms : drawingRooms));
+    }
 }
 
 async function waitUntilPrintable(documentData = null) {

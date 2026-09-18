@@ -98,21 +98,23 @@ class CalculationPrintService
             $options['material_keys'],
         )));
 
-        $drawings = array_values(array_filter(
-            $payload['drawings'],
-            fn (array $drawing): bool => in_array((int) $drawing['id'], $drawingIds, true),
-        ));
         $rooms = array_values(array_filter(
             $payload['rooms'],
             fn (array $room): bool => $this->roomMatches($room, $drawingIds, $materialKeys),
         ));
-        $materials = $this->board->materials($rooms);
-        if ($materialKeys !== []) {
-            $materials = array_values(array_filter(
-                $materials,
-                fn (array $material): bool => in_array((string) $material['key'], $materialKeys, true),
+        $drawings = array_values(array_map(function (array $drawing) use ($rooms): array {
+            $drawingRooms = array_values(array_filter(
+                $rooms,
+                fn (array $room): bool => (int) ($room['drawing_id'] ?? 0) === (int) $drawing['id'],
             ));
-        }
+            $drawing['materials'] = $this->board->materials($drawingRooms);
+
+            return $drawing;
+        }, array_filter(
+            $payload['drawings'],
+            fn (array $drawing): bool => in_array((int) $drawing['id'], $drawingIds, true),
+        )));
+        $materials = $this->board->materials($rooms);
 
         $showDrawings = $this->wantsAny($include, self::DRAWING_INCLUDES);
 
