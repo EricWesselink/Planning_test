@@ -155,7 +155,7 @@
                         @if (! $worker->active)
                             <span class="border border-nicon-line bg-nicon-paper px-2 py-0.5">Inactief</span>
                         @endif
-                        @if ($worker->users->isEmpty())
+                        @if ($worker->needsVakmanLogin($officeUsers ?? null))
                             <span class="border border-nicon-line bg-nicon-paper px-2 py-0.5">Nog geen inlog</span>
                         @endif
                         @if ($worker->unavailable)

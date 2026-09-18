@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\AvailabilityKind;
 use App\Enums\ProjectKind;
 use App\Models\CrewMember;
 use App\Models\Customer;
@@ -254,6 +255,41 @@ class PlanningFitServiceTest extends TestCase
         $this->assertIsArray($row);
         $this->assertFalse($row['selectable']);
         $this->assertSame('Vrij op vrijdag', $row['status_label']);
+    }
+
+    public function test_morning_leave_leaves_the_afternoon_selectable(): void
+    {
+        $kees = $this->makeWorker('Kees Jansen', 'Linoleum');
+        $kees->availabilities()->create([
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-07',
+            'kind' => AvailabilityKind::Leave,
+            'hours' => 4,
+            'slot' => 'morning',
+        ]);
+        $item = $this->makeWorkItem('Linoleum');
+
+        $morning = collect(app(PlanningFitService::class)->candidates(
+            $item,
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-07'),
+            '08:00:00',
+            '12:00:00',
+        )['workers'])->firstWhere('name', 'Kees Jansen');
+        $afternoon = collect(app(PlanningFitService::class)->candidates(
+            $item,
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-07'),
+            '12:00:00',
+            '16:00:00',
+        )['workers'])->firstWhere('name', 'Kees Jansen');
+
+        $this->assertIsArray($morning);
+        $this->assertFalse($morning['selectable']);
+        $this->assertSame('Verlof', $morning['status_label']);
+        $this->assertIsArray($afternoon);
+        $this->assertTrue($afternoon['selectable']);
+        $this->assertSame('Beschikbaar', $afternoon['status_label']);
     }
 
     public function test_shop_candidates_mark_a_busy_vakman_unavailable(): void

@@ -1432,6 +1432,78 @@ class WorkerProfileTest extends TestCase
         $this->assertDatabaseMissing('users', ['email' => 'wespro@niconvloeren.nl']);
     }
 
+    public function test_office_account_replaces_vakman_login_on_the_worker_page(): void
+    {
+        $user = User::factory()->admin()->create([
+            'name' => 'Eric Wesselink',
+            'email' => 'e.wesselink@niconvloeren.nl',
+        ]);
+        $worker = Worker::query()->create([
+            'name' => 'Eric Wesselink (Projectleider/Uitvoerder)',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('workers.show', $worker))
+            ->assertOk()
+            ->assertSee('Heeft al een kantoorinlog als Beheerder')
+            ->assertDontSee('Nog geen inlog')
+            ->assertDontSee('Inlog opslaan');
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('Eric Wesselink (Projectleider/Uitvoerder)')
+            ->assertDontSee('Nog geen inlog');
+    }
+
+    public function test_office_email_on_the_worker_hides_the_vakman_login_form(): void
+    {
+        $planner = User::factory()->create(['name' => 'Marie']);
+        User::factory()->admin()->create([
+            'name' => 'Eric Wesselink',
+            'email' => 'e.wesselink@niconvloeren.nl',
+        ]);
+        $worker = Worker::query()->create([
+            'name' => 'Inmeet Eric',
+            'email' => 'e.wesselink@niconvloeren.nl',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+
+        $this->actingAs($planner)
+            ->get(route('workers.show', $worker))
+            ->assertOk()
+            ->assertSee('Heeft al een kantoorinlog als Beheerder')
+            ->assertDontSee('Inlog opslaan');
+    }
+
+    public function test_planner_cannot_add_a_vakman_login_when_the_person_has_an_office_account(): void
+    {
+        $planner = User::factory()->create(['name' => 'Marie']);
+        User::factory()->admin()->create([
+            'name' => 'Eric Wesselink',
+            'email' => 'e.wesselink@niconvloeren.nl',
+        ]);
+        $worker = Worker::query()->create([
+            'name' => 'Eric Wesselink (Projectleider/Uitvoerder)',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+
+        $this->actingAs($planner)
+            ->from(route('workers.show', $worker))
+            ->post(route('workers.login.store', $worker), [
+                'email' => 'eric.vakman@niconvloeren.nl',
+                'password' => 'tijdelijk1',
+                'password_confirmation' => 'tijdelijk1',
+            ])
+            ->assertRedirect(route('workers.show', $worker));
+
+        $this->assertDatabaseMissing('users', ['email' => 'eric.vakman@niconvloeren.nl']);
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */

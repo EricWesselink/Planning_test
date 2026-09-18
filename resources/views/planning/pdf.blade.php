@@ -192,9 +192,11 @@
             text-transform: uppercase;
             white-space: nowrap;
             overflow: hidden;
+            text-overflow: ellipsis;
         }
         .period-marker.is-done { color: #3f6212; }
         .period-marker span { display: block; }
+        .period-marker--paired.period-marker--end { top: 14px; }
         .missing-craftsman {
             float: right;
             clear: right;
@@ -373,7 +375,11 @@
                     @php
                         $projectBars = $projectRow['person_bars'] ?? [];
                         $hasPeriodChrome = $projectRow['bar'] || ($projectRow['start_marker'] ?? null) || ($projectRow['end_marker'] ?? null);
-                        $projectHeight = max($hasPeriodChrome ? 42 : 28, 8 + (count($projectBars) * 20) + ($hasPeriodChrome ? 18 : 0));
+                        $pairedPeriod = is_array($projectRow['start_marker'] ?? null)
+                            && is_array($projectRow['end_marker'] ?? null)
+                            && (int) $projectRow['start_marker']['index'] === (int) $projectRow['end_marker']['index'];
+                        $periodPad = $hasPeriodChrome ? ($pairedPeriod ? 28 : 18) : 0;
+                        $projectHeight = max($hasPeriodChrome ? ($pairedPeriod ? 52 : 42) : 28, 8 + (count($projectBars) * 20) + $periodPad);
                     @endphp
                     <tr class="project-row">
                         <td class="col-werk">

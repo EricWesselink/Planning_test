@@ -208,14 +208,18 @@ class WorkerAvailabilityTest extends TestCase
         $html = $this->actingAs($user)
             ->get($overview)
             ->assertOk()
-            ->assertSee('Helemaal niet beschikbaar')
             ->assertSee('text-nicon-danger">Niet beschikbaar</span>', false)
             ->getContent();
 
-        $this->assertMatchesRegularExpression(
-            '/name="unavailable"[^>]*checked/',
-            $html,
-        );
+        if ($type === 'eigen') {
+            $this->assertStringNotContainsString('Helemaal niet beschikbaar', $html);
+        } else {
+            $this->assertStringContainsString('Helemaal niet beschikbaar', $html);
+            $this->assertMatchesRegularExpression(
+                '/name="unavailable"[^>]*checked/',
+                $html,
+            );
+        }
 
         $this->actingAs($user)
             ->from($overview)

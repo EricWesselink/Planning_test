@@ -259,7 +259,7 @@ class PlanningFitService
         $person = $this->presentPerson(
             $skipSkill || $this->personHasSkill($member, $worker, $specialty),
             $this->busyInterval($assignments, $worker, $member?->id, $start, $end, $from, $to, $includeSaturday, $includeSunday)
-                ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday),
+                ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday, $from, $to, $member),
             $specialty['label'],
         );
 
@@ -302,7 +302,7 @@ class PlanningFitService
             $person = $this->presentPerson(
                 $skipSkill || $this->personHasSkill($member, $worker, $specialty),
                 $this->busyInterval($assignments, $worker, $member->id, $start, $end, $from, $to, $includeSaturday, $includeSunday)
-                    ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday),
+                    ?? $this->availability->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday, $from, $to, $member),
                 $specialty['label'],
             );
             $crew[] = array_merge($person, [
@@ -369,11 +369,46 @@ class PlanningFitService
         return $this->workerHasSkill($worker, $specialty);
     }
 
-    public function awayRejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeSaturday = false, bool $includeSunday = false): ?string
-    {
-        $worker->loadMissing('availabilities');
+    /**
+     * @param  list<int>  $crewIds
+     */
+    public function awayRejection(
+        Worker $worker,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
+        ?string $from = null,
+        ?string $to = null,
+        array $crewIds = [],
+    ): ?string {
+        $worker->loadMissing(['availabilities', 'crewPeople']);
+        if ($crewIds !== []) {
+            foreach ($crewIds as $id) {
+                $member = $worker->crewPeople->firstWhere('id', (int) $id);
+                if (! $member instanceof CrewMember) {
+                    continue;
+                }
+                $member->setRelation('worker', $worker);
+                $label = $this->availability->awayLabelInRange(
+                    $worker,
+                    $start,
+                    $end,
+                    $includeSaturday,
+                    $includeSunday,
+                    $from,
+                    $to,
+                    $member,
+                );
+                if ($label !== null) {
+                    return $member->label().' is '.mb_strtolower($label).'.';
+                }
+            }
 
-        return $this->availability->rejection($worker, $start, $end, $includeSaturday, $includeSunday);
+            return null;
+        }
+
+        return $this->availability->rejection($worker, $start, $end, $includeSaturday, $includeSunday, $from, $to);
     }
 
     /**

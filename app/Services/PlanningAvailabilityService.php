@@ -118,17 +118,17 @@ class PlanningAvailabilityService
                 $crew = $worker->activeCrewPeople();
                 if ($crew->isNotEmpty()) {
                     foreach ($crew as $member) {
-                        if (! $this->availability->isAwayOn($worker, $day, $member)) {
-                            $available += 1;
-                        }
+                        $absence = $this->availability->absenceOn($worker, $day, $member);
+                        $hours = (float) ($absence['hours'] ?? 0.0);
+                        $available += max(0.0, 1 - ($hours / PlanningHours::WORKDAY_HOURS));
                     }
 
                     continue;
                 }
 
-                if (! $this->availability->isAwayOn($worker, $day)) {
-                    $available += $worker->peopleCount();
-                }
+                $absence = $this->availability->absenceOn($worker, $day);
+                $hours = (float) ($absence['hours'] ?? 0.0);
+                $available += $worker->peopleCount() * max(0.0, 1 - ($hours / PlanningHours::WORKDAY_HOURS));
             }
             $available = round($available, 2);
             $planned = 0.0;
@@ -184,7 +184,8 @@ class PlanningAvailabilityService
      */
     private function dayCell(Worker $worker, Collection $assignments, CarbonInterface $day, array $initialsByKey): array
     {
-        $away = $this->awayDetail($worker, $day);
+        $absence = $this->availability->absenceOn($worker, $day);
+        $away = ($absence !== null && $absence['full']) ? $this->awayDetail($worker, $day) : null;
         $people = $this->peopleOnTeam($worker);
         $crew = $worker->activeCrewPeople();
         $namedToday = $assignments->contains(
@@ -251,8 +252,8 @@ class PlanningAvailabilityService
     ): array {
         $rows = [];
         foreach ($crew->values() as $index => $member) {
-            $away = $this->awayDetail($worker, $day, $member);
-            $plannedHours = $away === null
+            $state = $this->personAbsence($worker, $day, $member);
+            $plannedHours = $state['away'] === null
                 ? $this->memberPlannedHours($assignments, $day, $member)
                 : PlanningHours::WORKDAY_HOURS;
             $name = trim((string) $member->name);
@@ -264,8 +265,10 @@ class PlanningAvailabilityService
                 (int) $member->id,
                 $label,
                 $plannedHours,
-                $away,
+                $state['away'],
                 $initialsByKey[$this->personKey($worker, $person, $index)] ?? $this->personInitials($label),
+                $state['hours'],
+                $state['hint'],
             );
         }
 
@@ -296,15 +299,15 @@ class PlanningAvailabilityService
         foreach ($people as $index => $person) {
             $name = (string) $person['name'];
             $member = $crew->firstWhere('id', (int) $person['id']);
-            $personAway = $member instanceof CrewMember
-                ? $this->awayDetail($worker, $day, $member)
-                : $away;
-            if ($personAway !== null) {
+            $state = $member instanceof CrewMember
+                ? $this->personAbsence($worker, $day, $member)
+                : ['away' => $away, 'hours' => 0.0, 'hint' => null];
+            if ($state['away'] !== null) {
                 $rows[] = $this->personRow(
                     (int) $person['id'],
                     $name,
                     PlanningHours::WORKDAY_HOURS,
-                    $personAway,
+                    $state['away'],
                     $initialsByKey[$this->personKey($worker, $person, $index)] ?? $this->personInitials($name),
                 );
 
@@ -319,6 +322,8 @@ class PlanningAvailabilityService
                 PlanningHours::WORKDAY_HOURS - $remaining,
                 null,
                 $initialsByKey[$this->personKey($worker, $person, $index)] ?? $this->personInitials($name),
+                $state['hours'],
+                $state['hint'],
             );
         }
 
@@ -326,19 +331,52 @@ class PlanningAvailabilityService
     }
 
     /**
-     * @return array{id: int, name: string, status: string, mark: string, detail: string, remaining_hours: float, selectable: bool, given: string, chip: string, tone: string}
+     * @return array{away: ?string, hours: float, hint: ?string}
      */
-    private function personRow(int $id, string $name, float $plannedHours, ?string $away, string $given): array
+    private function personAbsence(Worker $worker, CarbonInterface $day, CrewMember $member): array
     {
+        $absence = $this->availability->absenceOn($worker, $day, $member);
+        if ($absence === null) {
+            return ['away' => null, 'hours' => 0.0, 'hint' => null];
+        }
+        if ($absence['full']) {
+            return [
+                'away' => $this->awayDetail($worker, $day, $member),
+                'hours' => 0.0,
+                'hint' => null,
+            ];
+        }
+
+        return [
+            'away' => null,
+            'hours' => (float) $absence['hours'],
+            'hint' => $absence['hint'],
+        ];
+    }
+
+    /**
+     * @return array{id: int, name: string, status: string, mark: string, detail: string, title: string, remaining_hours: float, selectable: bool, given: string, chip: string, tone: string}
+     */
+    private function personRow(
+        int $id,
+        string $name,
+        float $plannedHours,
+        ?string $away,
+        string $given,
+        float $absenceHours = 0.0,
+        ?string $absenceHint = null,
+    ): array {
         $plannedHours = max(0.0, min(PlanningHours::WORKDAY_HOURS, round($plannedHours, 2)));
-        $remaining = round(PlanningHours::WORKDAY_HOURS - $plannedHours, 2);
-        if ($away !== null) {
+        $absenceHours = max(0.0, min(PlanningHours::WORKDAY_HOURS, round($absenceHours, 2)));
+        $remaining = round(max(0.0, PlanningHours::WORKDAY_HOURS - $plannedHours - $absenceHours), 2);
+        if ($away !== null && $remaining <= 0.01) {
             return [
                 'id' => $id,
                 'name' => $name,
                 'status' => 'away',
                 'mark' => '✕',
                 'detail' => $away,
+                'title' => $name.' — '.$away,
                 'remaining_hours' => 0.0,
                 'selectable' => false,
                 'given' => $given,
@@ -354,6 +392,7 @@ class PlanningAvailabilityService
                 'status' => 'busy',
                 'mark' => '✕',
                 'detail' => PlanningHours::hoursLabel($plannedHours).' ingepland',
+                'title' => $name.' — '.PlanningHours::hoursLabel($plannedHours).' ingepland',
                 'remaining_hours' => 0.0,
                 'selectable' => false,
                 'given' => $given,
@@ -363,13 +402,20 @@ class PlanningAvailabilityService
         }
 
         $full = $remaining >= PlanningHours::WORKDAY_HOURS - 0.01;
+        $detail = $full
+            ? PlanningHours::hoursLabel($remaining).' vrij'
+            : 'nog '.PlanningHours::hoursLabel($remaining).' vrij';
+        $title = $absenceHint !== null && $absenceHint !== ''
+            ? $name.' — '.$absenceHint
+            : $name.' — '.$detail;
 
         return [
             'id' => $id,
             'name' => $name,
             'status' => $full ? 'free' : 'partial',
             'mark' => '✓',
-            'detail' => $full ? PlanningHours::hoursLabel($remaining).' vrij' : 'nog '.PlanningHours::hoursLabel($remaining).' vrij',
+            'detail' => $detail,
+            'title' => $title,
             'remaining_hours' => $remaining,
             'selectable' => true,
             'given' => $given,

@@ -68,7 +68,9 @@
                     <div class="mt-1 flex flex-wrap items-start gap-2">
                         <input type="tel" name="crew_members[{{ $index }}][phone]" value="{{ $member['phone'] }}" data-crew-phone class="min-w-40 flex-1 border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="06 12345678" autocomplete="tel">
                         @can('update', $worker)
-                            <x-vakman-login-invite :worker="$worker" :member-id="$member['id'] ?? null" :phone="$member['phone']" />
+                            @if ($worker->officeLoginForPerson((string) ($member['name'] ?? '')) === null)
+                                <x-vakman-login-invite :worker="$worker" :member-id="$member['id'] ?? null" :phone="$member['phone']" />
+                            @endif
                         @endcan
                     </div>
                 </div>

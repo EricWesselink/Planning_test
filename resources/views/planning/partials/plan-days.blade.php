@@ -3,7 +3,12 @@
     $periodBar = $showPeriod ? ($periodBar ?? null) : null;
     $startMarker = $showPeriod ? ($startMarker ?? null) : null;
     $endMarker = $showPeriod ? ($endMarker ?? null) : null;
-    $personBarOffset = $showPeriod ? ($personBarOffset ?? 16) : 4;
+    $pairedPeriodMarkers = is_array($startMarker)
+        && is_array($endMarker)
+        && (int) $startMarker['index'] === (int) $endMarker['index'];
+    $personBarOffset = $showPeriod
+        ? ($pairedPeriodMarkers ? 30 : ($personBarOffset ?? 16))
+        : 4;
 @endphp
 <div class="plan-days person-stack"
      data-project-id="{{ $projectId }}"
@@ -18,14 +23,14 @@
              title="Geplande uitvoeringsperiode"></div>
     @endif
     @if ($startMarker)
-        <div class="period-marker period-marker--start"
+        <div class="period-marker period-marker--start{{ $pairedPeriodMarkers ? ' period-marker--paired' : '' }}"
              title="Start werk {{ $startMarker['date'] }}"
              style="width: calc(100% / {{ $dayCount }} - 4px); left: calc({{ $startMarker['index'] }} * 100% / {{ $dayCount }} + 2px);">
             ▶ Start {{ $startMarker['date'] }}
         </div>
     @endif
     @if ($endMarker)
-        <div class="period-marker period-marker--end{{ ! empty($endMarker['done']) ? ' is-done' : '' }}"
+        <div class="period-marker period-marker--end{{ ! empty($endMarker['done']) ? ' is-done' : '' }}{{ $pairedPeriodMarkers ? ' period-marker--paired' : '' }}"
              title="Klaar werk {{ $endMarker['date'] }}"
              style="width: calc(100% / {{ $dayCount }} - 4px); left: calc({{ $endMarker['index'] }} * 100% / {{ $dayCount }} + 2px);">
             Klaar {{ $endMarker['date'] }}

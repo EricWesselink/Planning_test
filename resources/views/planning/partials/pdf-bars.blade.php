@@ -3,6 +3,9 @@
     $periodBar = $showPeriod ? ($periodBar ?? null) : null;
     $startMarker = $showPeriod ? ($startMarker ?? null) : null;
     $endMarker = $showPeriod ? ($endMarker ?? null) : null;
+    $pairedPeriodMarkers = is_array($startMarker)
+        && is_array($endMarker)
+        && (int) $startMarker['index'] === (int) $endMarker['index'];
 @endphp
 <div class="days" style="min-height: {{ $height }}px">
     <div class="day-grid" aria-hidden="true">
@@ -16,13 +19,13 @@
                  style="width: calc({{ $periodBar['span'] }} * 100% / {{ $dayCount }} - 2px); left: calc({{ $periodBar['start'] }} * 100% / {{ $dayCount }} + 1px);"></div>
         @endif
         @if ($startMarker)
-            <div class="period-marker"
+            <div class="period-marker period-marker--start{{ $pairedPeriodMarkers ? ' period-marker--paired' : '' }}"
                  style="width: calc(100% / {{ $dayCount }} - 4px); left: calc({{ $startMarker['index'] }} * 100% / {{ $dayCount }} + 2px);">
                 ▶ Start {{ $startMarker['date'] }}
             </div>
         @endif
         @if ($endMarker)
-            <div class="period-marker{{ ! empty($endMarker['done']) ? ' is-done' : '' }}"
+            <div class="period-marker period-marker--end{{ ! empty($endMarker['done']) ? ' is-done' : '' }}{{ $pairedPeriodMarkers ? ' period-marker--paired' : '' }}"
                  style="width: calc(100% / {{ $dayCount }} - 4px); left: calc({{ $endMarker['index'] }} * 100% / {{ $dayCount }} + 2px);">
                 Klaar {{ $endMarker['date'] }}
             </div>

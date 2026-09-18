@@ -28,6 +28,9 @@ class Worker extends Model
         'unavailable' => false,
     ];
 
+    /** @var Collection<int, User>|null */
+    private ?Collection $cachedOfficeUsers = null;
+
     protected static function booted(): void
     {
         static::creating(function (Worker $worker): void {
@@ -477,6 +480,84 @@ class Worker extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    /**
+     * @param  iterable<int, User>|null  $officeUsers
+     */
+    public function officeLogin(?iterable $officeUsers = null): ?User
+    {
+        return $this->matchOfficeUser((string) $this->email, (string) $this->name, $officeUsers);
+    }
+
+    /**
+     * @param  iterable<int, User>|null  $officeUsers
+     */
+    public function officeLoginForPerson(?string $name, ?iterable $officeUsers = null): ?User
+    {
+        $name = trim((string) $name);
+
+        return $this->matchOfficeUser('', $name !== '' ? $name : (string) $this->name, $officeUsers);
+    }
+
+    /**
+     * @param  iterable<int, User>|null  $officeUsers
+     */
+    public function needsVakmanLogin(?iterable $officeUsers = null): bool
+    {
+        $users = $this->relationLoaded('users') ? $this->users : $this->users()->get();
+        if ($users->isNotEmpty()) {
+            return false;
+        }
+
+        return $this->officeLogin($officeUsers) === null;
+    }
+
+    /**
+     * @param  iterable<int, User>|null  $officeUsers
+     */
+    private function matchOfficeUser(string $email, string $name, ?iterable $officeUsers): ?User
+    {
+        $email = mb_strtolower(trim($email));
+        $name = self::normalizedPersonName($name);
+        $candidates = $this->officeUserPool($officeUsers);
+
+        return $candidates->first(function (User $user) use ($email, $name): bool {
+            if (! $user->isOfficeUser()) {
+                return false;
+            }
+
+            $userEmail = mb_strtolower(trim((string) $user->email));
+            if ($email !== '' && $userEmail === $email) {
+                return true;
+            }
+
+            $userName = self::normalizedPersonName((string) $user->name);
+
+            return $name !== '' && $userName === $name;
+        });
+    }
+
+    /**
+     * @param  iterable<int, User>|null  $officeUsers
+     * @return Collection<int, User>
+     */
+    private function officeUserPool(?iterable $officeUsers): Collection
+    {
+        if ($officeUsers !== null) {
+            return collect($officeUsers);
+        }
+
+        return $this->cachedOfficeUsers ??= User::query()->office()->get();
+    }
+
+    public static function normalizedPersonName(string $name): string
+    {
+        $name = trim($name);
+        $stripped = preg_replace('/\s*\([^)]*\)\s*/u', ' ', $name) ?? $name;
+        $collapsed = preg_replace('/\s+/u', ' ', $stripped) ?? $stripped;
+
+        return mb_strtolower(trim($collapsed));
     }
 
     public function scopeWithLogin(Builder $query): void

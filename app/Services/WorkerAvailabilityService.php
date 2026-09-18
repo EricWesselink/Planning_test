@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\AvailabilityKind;
+use App\Enums\AvailabilitySlot;
 use App\Enums\EmploymentType;
 use App\Models\CrewMember;
 use App\Models\Worker;
@@ -14,53 +16,72 @@ class WorkerAvailabilityService
 {
     public function isAwayOn(Worker $worker, CarbonInterface $day, ?CrewMember $member = null): bool
     {
-        return $this->awayLabelOn($worker, $day, $member) !== null;
+        $absence = $this->absenceOn($worker, $day, $member);
+
+        return $absence !== null && $absence['full'];
     }
 
     public function awayLabelOn(Worker $worker, CarbonInterface $day, ?CrewMember $member = null): ?string
     {
+        return $this->absenceOn($worker, $day, $member)['label'] ?? null;
+    }
+
+    /**
+     * @return array{key: string, label: string, short: string, hours: float, full: bool, slot: AvailabilitySlot, hint: ?string, structural: bool}|null
+     */
+    public function absenceOn(Worker $worker, CarbonInterface $day, ?CrewMember $member = null): ?array
+    {
         if ($member instanceof CrewMember) {
-            return $this->awayLabelForMember($worker, $member, $day);
+            return $this->absenceForMember($worker, $member, $day);
         }
 
         $crew = $this->crew($worker);
         if ($worker->employment_type === EmploymentType::Eigen && $crew->isNotEmpty()) {
             if ($crew->count() === 1) {
-                return $this->awayLabelForMember($worker, $crew->first(), $day);
+                return $this->absenceForMember($worker, $crew->first(), $day);
             }
 
-            $labels = $crew->map(fn (CrewMember $person): ?string => $this->awayLabelForMember($worker, $person, $day));
-            if ($labels->every(fn (?string $label): bool => $label !== null)) {
-                return $labels->first();
+            $states = $crew->map(fn (CrewMember $person): ?array => $this->absenceForMember($worker, $person, $day));
+            if ($states->every(fn (?array $state): bool => $state !== null && $state['full'])) {
+                return $states->first();
             }
 
             return null;
         }
 
         if ($worker->unavailable) {
-            return 'Niet beschikbaar';
+            return $this->structuralAbsence('Niet beschikbaar');
         }
 
         $date = $day->copy()->startOfDay();
-
         foreach ($this->windows($worker) as $window) {
             if ($window->crew_member_id !== null) {
                 continue;
             }
             if ($window->kind->isAway() && $window->covers($date)) {
-                return $window->kind->awayLabel();
+                return $this->windowAbsence($window);
             }
         }
 
         if ($this->hasFridayOff($worker) && $date->isFriday()) {
-            return 'Vrij op vrijdag';
+            return $this->structuralAbsence('Vrij op vrijdag');
         }
 
         return null;
     }
 
-    public function awayLabelInRange(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeSaturday = false, bool $includeSunday = false): ?string
-    {
+    public function awayLabelInRange(
+        Worker $worker,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
+        ?string $from = null,
+        ?string $to = null,
+        ?CrewMember $member = null,
+    ): ?string {
+        $from = $from ?? PlanningHours::DAY_START;
+        $to = $to ?? PlanningHours::DAY_END;
         $day = $start->copy()->startOfDay();
         $last = $end->copy()->startOfDay();
         while ($day->lte($last)) {
@@ -70,9 +91,15 @@ class WorkerAvailabilityService
                 continue;
             }
 
-            $label = $this->awayLabelOn($worker, $day);
-            if ($label !== null) {
-                return $label;
+            $absence = $this->absenceOn($worker, $day, $member);
+            if ($absence === null) {
+                $day->addDay();
+
+                continue;
+            }
+
+            if ($absence['full'] || $this->absenceOverlapsTimes($worker, $day, $member, $from, $to)) {
+                return $absence['label'];
             }
             $day->addDay();
         }
@@ -80,14 +107,24 @@ class WorkerAvailabilityService
         return null;
     }
 
-    public function rejection(Worker $worker, CarbonInterface $start, CarbonInterface $end, bool $includeSaturday = false, bool $includeSunday = false): ?string
-    {
-        $label = $this->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday);
+    public function rejection(
+        Worker $worker,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        bool $includeSaturday = false,
+        bool $includeSunday = false,
+        ?string $from = null,
+        ?string $to = null,
+        ?CrewMember $member = null,
+    ): ?string {
+        $label = $this->awayLabelInRange($worker, $start, $end, $includeSaturday, $includeSunday, $from, $to, $member);
         if ($label === null) {
             return null;
         }
 
-        return $worker->planName().' is '.mb_strtolower($label).'.';
+        $name = $member instanceof CrewMember ? $member->label() : $worker->planName();
+
+        return $name.' is '.mb_strtolower($label).'.';
     }
 
     /**
@@ -125,28 +162,99 @@ class WorkerAvailabilityService
         return $lines;
     }
 
-    private function awayLabelForMember(Worker $worker, CrewMember $member, CarbonInterface $day): ?string
+    /**
+     * @return array{key: string, label: string, short: string, hours: float, full: bool, slot: AvailabilitySlot, hint: ?string, structural: bool}|null
+     */
+    private function absenceForMember(Worker $worker, CrewMember $member, CarbonInterface $day): ?array
     {
         $member->setRelation('worker', $worker);
 
         if ($worker->unavailable || $member->unavailable) {
-            return 'Niet beschikbaar';
+            return $this->structuralAbsence('Niet beschikbaar');
         }
 
         $date = $day->copy()->startOfDay();
-
         foreach ($this->windowsFor($worker, $member) as $window) {
             if ($window->kind->isAway() && $window->covers($date)) {
-                return $window->kind->awayLabel();
+                return $this->windowAbsence($window);
             }
         }
 
         $isoDay = (int) $date->dayOfWeekIso;
         if ($worker->employment_type === EmploymentType::Eigen && ! $member->worksOn($isoDay)) {
-            return $isoDay === 5 ? 'Vrij op vrijdag' : 'Vrije dag';
+            return $this->structuralAbsence($isoDay === 5 ? 'Vrij op vrijdag' : 'Vrije dag');
         }
 
         return null;
+    }
+
+    /**
+     * @return array{key: string, label: string, short: string, hours: float, full: bool, slot: AvailabilitySlot, hint: ?string, structural: bool}
+     */
+    private function windowAbsence(WorkerAvailability $window): array
+    {
+        $kind = $window->kind;
+        $hours = $window->hoursPerDay();
+        $slot = $window->slotValue();
+        $full = $window->isFullDay();
+
+        return [
+            'key' => match ($kind) {
+                AvailabilityKind::Vacation => 'vakantie',
+                AvailabilityKind::Sick => 'ziek',
+                AvailabilityKind::DayOff => 'vrij',
+                AvailabilityKind::Leave => 'verlof',
+                AvailabilityKind::Adv => 'adv',
+                AvailabilityKind::Course => 'cursus',
+                default => 'overig',
+            },
+            'label' => $kind->awayLabel(),
+            'short' => $kind->shortLabel(),
+            'hours' => $hours,
+            'full' => $full,
+            'slot' => $slot,
+            'hint' => $full ? null : $slot->hint($hours),
+            'structural' => false,
+        ];
+    }
+
+    /**
+     * @return array{key: string, label: string, short: string, hours: float, full: bool, slot: AvailabilitySlot, hint: ?string, structural: bool}
+     */
+    private function structuralAbsence(string $label): array
+    {
+        $vrij = $label === 'Vrij op vrijdag' || $label === 'Vrije dag';
+
+        return [
+            'key' => $vrij ? 'vrij' : 'overig',
+            'label' => $label,
+            'short' => $vrij ? 'Vrij' : $label,
+            'hours' => (float) PlanningHours::WORKDAY_HOURS,
+            'full' => true,
+            'slot' => AvailabilitySlot::Full,
+            'hint' => null,
+            'structural' => true,
+        ];
+    }
+
+    private function absenceOverlapsTimes(
+        Worker $worker,
+        CarbonInterface $day,
+        ?CrewMember $member,
+        string $from,
+        string $to,
+    ): bool {
+        $windows = $member instanceof CrewMember
+            ? $this->windowsFor($worker, $member)
+            : $this->windows($worker)->filter(fn (WorkerAvailability $window): bool => $window->crew_member_id === null);
+
+        foreach ($windows as $window) {
+            if ($window->kind->isAway() && $window->overlapsTimes($day, $from, $to)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function offDaySummary(CrewMember $member): ?string

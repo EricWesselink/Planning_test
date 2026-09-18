@@ -12,6 +12,19 @@ use Illuminate\Support\Collection;
 
 class PersonnelWeekService
 {
+    /**
+     * @var array<string, string>
+     */
+    private const KIND_LABELS = [
+        'vrij' => 'Vrij',
+        'vakantie' => 'Vakantie',
+        'ziek' => 'Ziek',
+        'verlof' => 'Verlof',
+        'adv' => 'ADV',
+        'cursus' => 'Cursus',
+        'overig' => 'Overig',
+    ];
+
     public function __construct(
         private WorkerAvailabilityService $availability,
     ) {}
@@ -25,7 +38,8 @@ class PersonnelWeekService
      *     worked_hours: float,
      *     worked_label: string,
      *     absence_hours: float,
-     *     absence_label: string
+     *     absence_label: string,
+     *     week_summary: string
      * }>
      */
     public function forDays(Collection $days): array
@@ -89,7 +103,8 @@ class PersonnelWeekService
      *     worked_hours: float,
      *     worked_label: string,
      *     absence_hours: float,
-     *     absence_label: string
+     *     absence_label: string,
+     *     week_summary: string
      * }
      */
     private function personWeek(Worker $worker, CrewMember $member, Collection $days, Collection $assignments): array
@@ -97,24 +112,34 @@ class PersonnelWeekService
         $cells = [];
         $worked = 0.0;
         $absence = 0.0;
+        $kindHours = array_fill_keys(array_keys(self::KIND_LABELS), 0.0);
 
         foreach ($days as $day) {
-            $status = $this->statusOn($worker, $member, $day);
-            $hours = $status === null
-                ? $this->plannedHours($worker, $member, $assignments, $day)
-                : 0.0;
-            if ($status !== null) {
-                $absence += PlanningHours::WORKDAY_HOURS;
-            } else {
-                $worked += $hours;
+            $state = $this->availability->absenceOn($worker, $day, $member);
+            $planned = $this->plannedHours($worker, $member, $assignments, $day);
+            $absenceHours = (float) ($state['hours'] ?? 0.0);
+            $workedHours = max(0.0, min($planned, PlanningHours::WORKDAY_HOURS - $absenceHours));
+            $incidental = $state !== null && ! ($state['structural'] ?? false);
+            $statusLabel = null;
+            if ($state !== null) {
+                if ($incidental) {
+                    $kindHours[$state['key']] = ($kindHours[$state['key']] ?? 0.0) + $absenceHours;
+                    $absence += $absenceHours;
+                }
+                if ($state['full'] || $workedHours < 0.01) {
+                    $statusLabel = $state['full']
+                        ? $state['short']
+                        : PlanningHours::hoursLabel($absenceHours).' '.$state['short'];
+                }
             }
+            $worked += $workedHours;
 
             $cells[] = [
                 'date' => $day->toDateString(),
-                'hours' => $hours,
-                'hours_label' => $hours > 0.01 ? PlanningHours::hoursLabel($hours) : '',
-                'status' => $status['key'] ?? null,
-                'status_label' => $status['label'] ?? null,
+                'hours' => $workedHours,
+                'hours_label' => $workedHours > 0.01 ? PlanningHours::hoursLabel($workedHours) : '',
+                'status' => $state['key'] ?? null,
+                'status_label' => $statusLabel,
             ];
         }
 
@@ -126,30 +151,24 @@ class PersonnelWeekService
             'worked_label' => PlanningHours::hoursLabel($worked),
             'absence_hours' => round($absence, 2),
             'absence_label' => PlanningHours::hoursLabel($absence),
+            'week_summary' => $this->weekSummary($worked, $absence, $kindHours),
         ];
     }
 
     /**
-     * @return array{key: string, label: string}|null
+     * @param  array<string, float>  $kindHours
      */
-    private function statusOn(Worker $worker, CrewMember $member, CarbonInterface $day): ?array
+    private function weekSummary(float $worked, float $absence, array $kindHours): string
     {
-        $label = $this->availability->awayLabelOn($worker, $day, $member);
-        if ($label === null) {
-            return null;
+        $parts = ['Gewerkt '.PlanningHours::hoursLabel($worked)];
+        foreach (self::KIND_LABELS as $key => $label) {
+            if (($kindHours[$key] ?? 0.0) > 0.01) {
+                $parts[] = $label.' '.PlanningHours::hoursLabel($kindHours[$key]);
+            }
         }
+        $parts[] = 'Totaal afwezig '.PlanningHours::hoursLabel($absence);
 
-        return match ($label) {
-            'Vrij op vrijdag', 'Vrije dag' => ['key' => 'vrij', 'label' => 'Vrij'],
-            'Vakantie' => ['key' => 'vakantie', 'label' => 'Vakantie'],
-            'Ziek' => ['key' => 'ziek', 'label' => 'Ziek'],
-            'Verlof' => ['key' => 'verlof', 'label' => 'Verlof'],
-            'ADV' => ['key' => 'adv', 'label' => 'ADV'],
-            'Cursus' => ['key' => 'cursus', 'label' => 'Cursus'],
-            'Overig' => ['key' => 'overig', 'label' => 'Overig'],
-            'Niet beschikbaar' => ['key' => 'overig', 'label' => 'Niet beschikbaar'],
-            default => ['key' => 'overig', 'label' => $label],
-        };
+        return implode(' | ', $parts);
     }
 
     /**

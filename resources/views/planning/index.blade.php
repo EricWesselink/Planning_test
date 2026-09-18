@@ -137,17 +137,32 @@
                             'weeks' => $weeks,
                             'staffing' => 'planned',
                         ];
+                        if (($filters['todo_running'] ?? '') === '1') {
+                            $weekStaffedQuery['todo_running'] = '1';
+                        }
                         $weekStaffedActive = ($filters['staffing'] ?? '') === 'planned'
                             && empty($filters['worker_id'])
                             && empty($filters['project_id'])
                             && empty($filters['status'])
                             && empty($filters['kind']);
+                        $todoRunningActive = ($filters['todo_running'] ?? '') === '1';
+                        $todoRunningQuery = $todoRunningActive
+                            ? array_diff_key($query, ['todo_running' => true])
+                            : array_merge($query, ['todo_running' => '1']);
                     @endphp
+                    @if ($todoRunningActive)
+                        <input type="hidden" name="todo_running" value="1">
+                    @endif
                     <a
                         href="{{ route('planning', $weekStaffedQuery) }}"
                         class="planning-filter planning-filter--staffed{{ $weekStaffedActive ? ' is-active' : '' }}"
                         title="Alle werken waarop deze week een vakman staat"
                     >Deze week met vakman</a>
+                    <a
+                        href="{{ route('planning', $todoRunningQuery) }}"
+                        class="planning-filter planning-filter--todo{{ $todoRunningActive ? ' is-active' : '' }}"
+                        title="Werken die deze week nog vakmensen nodig hebben of al lopen"
+                    >Te plannen + lopend ({{ $todoRunningCount }})</a>
                 @endif
                 <a href="{{ route('planning', ['week' => $weekStart->toDateString(), 'weeks' => $weeks]) }}" class="planning-filter planning-filter--reset">Reset</a>
             </form>
@@ -297,7 +312,7 @@
                                                                     <button
                                                                         type="button"
                                                                         class="planning-avail-part is-{{ $person['tone'] ?? 'none' }}"
-                                                                        title="{{ $person['name'] }}"
+                                                                        title="{{ $person['title'] ?? $person['name'] }}"
                                                                         data-plan-avail-pick
                                                                         data-worker-id="{{ $team['worker_id'] }}"
                                                                         data-date="{{ $date }}"
@@ -307,7 +322,7 @@
                                                                 @else
                                                                     <span
                                                                         class="planning-avail-part is-{{ $person['tone'] ?? 'none' }}"
-                                                                        title="{{ $person['name'] }}"
+                                                                        title="{{ $person['title'] ?? $person['name'] }}"
                                                                     >{{ $person['chip'] ?? $person['name'] }}</span>
                                                                 @endif
                                                             @endforeach
@@ -446,7 +461,10 @@
                             $projectHref = $isAttachedSmall
                                 ? route('projects.extra.edit', [$projectRow['id'], $projectRow['work_item_id']])
                                 : route('projects.show', $projectRow['id']);
-                            $projectBarOffset = $projectHasPeriod ? 16 : 4;
+                            $pairedPeriod = is_array($projectRow['start_marker'] ?? null)
+                                && is_array($projectRow['end_marker'] ?? null)
+                                && (int) $projectRow['start_marker']['index'] === (int) $projectRow['end_marker']['index'];
+                            $projectBarOffset = $projectHasPeriod ? ($pairedPeriod ? 30 : 16) : 4;
                             $projectHeight = max(28, $projectBarOffset + 4 + ($projectRow['bar_count'] * 24));
                             $projectOver = $canViewLaborCosts && ! empty($projectRow['labor']['hours_over']);
                         @endphp

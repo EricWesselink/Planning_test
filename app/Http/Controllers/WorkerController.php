@@ -45,6 +45,7 @@ class WorkerController extends Controller
 
         return view('workers.index', [
             'workers' => $workers,
+            'officeUsers' => User::query()->office()->get(),
             'specialtyCatalog' => $specialtyCatalog,
             'filterSpecialties' => $filterSpecialties,
             'filtering' => $filtering,
@@ -135,6 +136,13 @@ class WorkerController extends Controller
             return redirect()
                 ->route('workers.show', $worker)
                 ->with('status', 'Dit team heeft al een inlog.');
+        }
+
+        $officeLogin = $worker->officeLogin();
+        if ($officeLogin !== null) {
+            return redirect()
+                ->route('workers.show', $worker)
+                ->with('status', $officeLogin->name.' heeft al een kantoorinlog. Geen aparte vakman-inlog nodig.');
         }
 
         $this->loginRules($request, required: true);

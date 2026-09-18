@@ -253,7 +253,7 @@ body {
 
 @media (min-width: 900px) {
     .planning-filters {
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 }
 
@@ -262,7 +262,7 @@ body {
         grid-template-columns:
             minmax(8.5rem, 0.9fr) minmax(11rem, 1.3fr)
             minmax(8rem, 0.95fr) minmax(7rem, 0.85fr) minmax(8.5rem, 0.95fr)
-            minmax(9.75rem, 1.15fr) minmax(4.5rem, 0.55fr);
+            minmax(9.75rem, 1.1fr) minmax(11rem, 1.25fr) minmax(4.5rem, 0.5fr);
     }
 }
 
@@ -272,7 +272,8 @@ body {
 }
 
 .planning-filter--reset,
-.planning-filter--staffed {
+.planning-filter--staffed,
+.planning-filter--todo {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -281,6 +282,12 @@ body {
 
 .planning-filter--staffed.is-active {
     background: var(--color-nicon-ink);
+    border-color: var(--color-nicon-ink);
+    color: white;
+}
+
+.planning-filter--todo.is-active {
+    background: var(--color-nicon-orange);
     border-color: var(--color-nicon-ink);
     color: white;
 }
@@ -1317,10 +1324,15 @@ button.plan-labor-toggle:hover {
     text-transform: uppercase;
     white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .period-marker.is-done {
     color: var(--color-nicon-ok);
+}
+
+.period-marker--paired.period-marker--end {
+    top: 15px;
 }
 
 .person-bar {

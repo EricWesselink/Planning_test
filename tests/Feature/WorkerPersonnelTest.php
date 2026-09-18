@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\AvailabilityKind;
+use App\Enums\AvailabilitySlot;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
@@ -124,7 +125,10 @@ class WorkerPersonnelTest extends TestCase
             ->assertOk()
             ->assertSee('8u')
             ->assertSee('Vakantie')
-            ->assertSee('Vrij');
+            ->assertSee('Vrij')
+            ->assertSee('Gewerkt 8u')
+            ->assertSee('Vakantie 8u')
+            ->assertSee('Totaal afwezig 8u');
     }
 
     public function test_planner_can_turn_off_a_fixed_workday_and_it_saves_immediately(): void
@@ -238,7 +242,128 @@ class WorkerPersonnelTest extends TestCase
             'worker_id' => $team->id,
             'crew_member_id' => $eric->id,
             'kind' => AvailabilityKind::Vacation->value,
+            'slot' => 'full',
         ]);
+        $this->assertSame(8.0, (float) $team->availabilities()->first()->hours);
+    }
+
+    public function test_absence_table_is_compact_and_hides_zzp_unavailable_toggle(): void
+    {
+        $user = User::factory()->create();
+        $this->makeWorker('Eric Wesselink', 'eigen');
+
+        $html = $this->actingAs($user)
+            ->get(route('personnel.index'))
+            ->assertOk()
+            ->assertSee('Eric Wesselink')
+            ->assertSee('Hele dag')
+            ->assertSee('Halve dag · ochtend')
+            ->assertSee('Aantal uren')
+            ->assertSee('Opslaan')
+            ->assertDontSee('Helemaal niet beschikbaar')
+            ->assertDontSee('Geen incidentele afwezigheid gezet.')
+            ->getContent();
+
+        $this->assertSame(1, substr_count($html, 'name="crew_member_id"'));
+    }
+
+    public function test_absence_can_store_a_morning_half_day(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makeWorker('Team Wespro', 'eigen');
+        $team->update([
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => '0611111111'],
+                ['name' => 'Harm Wesselink', 'phone' => '0622222222'],
+            ],
+        ]);
+        $harm = $team->fresh()->crewPeople->firstWhere('name', 'Harm Wesselink');
+
+        $this->actingAs($user)
+            ->from(route('personnel.index'))
+            ->post(route('workers.availability.store', $team), [
+                'crew_member_id' => $harm->id,
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-08',
+                'kind' => AvailabilityKind::DayOff->value,
+                'slot' => 'morning',
+            ])
+            ->assertRedirect(route('personnel.index'))
+            ->assertSessionHas('status', 'Vrije dag opgeslagen.');
+
+        $row = $team->availabilities()->first();
+        $this->assertSame(AvailabilityKind::DayOff, $row->kind);
+        $this->assertSame(AvailabilitySlot::Morning, $row->slot);
+        $this->assertSame(4.0, (float) $row->hours);
+    }
+
+    public function test_absence_can_store_three_hours_leave(): void
+    {
+        $user = User::factory()->create();
+        $peter = $this->makeWorker('Fabian', 'eigen');
+        $member = $peter->fresh()->crewPeople->first();
+
+        $this->actingAs($user)
+            ->from(route('personnel.index'))
+            ->post(route('workers.availability.store', $peter), [
+                'crew_member_id' => $member->id,
+                'start_date' => '2026-09-09',
+                'end_date' => '2026-09-09',
+                'kind' => AvailabilityKind::Leave->value,
+                'slot' => 'hours',
+                'hours' => '3',
+            ])
+            ->assertRedirect(route('personnel.index'));
+
+        $row = $peter->availabilities()->first();
+        $this->assertSame(AvailabilityKind::Leave, $row->kind);
+        $this->assertSame(AvailabilitySlot::Hours, $row->slot);
+        $this->assertSame(3.0, (float) $row->hours);
+    }
+
+    public function test_week_overview_counts_partial_leave_apart_from_worked_hours(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makeWorker('Team Wespro', 'eigen');
+        $team->update([
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => '0611111111'],
+                ['name' => 'Harm Wesselink', 'phone' => '0622222222'],
+            ],
+        ]);
+        $eric = $team->fresh()->crewPeople->firstWhere('name', 'Eric Wesselink');
+        $team->availabilities()->create([
+            'crew_member_id' => $eric->id,
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-07',
+            'kind' => AvailabilityKind::DayOff,
+            'slot' => 'hours',
+            'hours' => 4,
+        ]);
+        $item = $this->makeWorkItem();
+        $assignment = new WorkerAssignment([
+            'worker_id' => $team->id,
+            'project_id' => $item->project_id,
+            'work_item_id' => $item->id,
+            'people_count' => 1,
+        ]);
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-07'),
+            '12:00:00',
+            '16:00:00',
+        );
+        $assignment->save();
+        $assignment->syncPresentCrew([$eric->id]);
+
+        $this->actingAs($user)
+            ->get(route('personnel.index', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('Gewerkt 4u')
+            ->assertSee('Vrij 4u')
+            ->assertSee('Totaal afwezig 4u');
     }
 
     public function test_uitvoerder_cannot_change_work_days(): void

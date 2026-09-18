@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\AvailabilityKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
@@ -273,6 +274,50 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assertSame(4.0, $monday['people'][0]['remaining_hours']);
         $this->assertTrue($monday['people'][0]['selectable']);
         $this->assertSame('ok', $this->cell('Peter', '2026-09-08')['tone']);
+    }
+
+    public function test_daily_matrix_keeps_morning_leave_as_four_hours_free(): void
+    {
+        $peter = $this->makeWorker('Peter');
+        $peter->availabilities()->create([
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-07',
+            'kind' => AvailabilityKind::Leave,
+            'hours' => 4,
+            'slot' => 'morning',
+        ]);
+
+        $monday = $this->cell('Peter', '2026-09-07');
+
+        $this->assertSame('partial', $monday['tone']);
+        $this->assertSame(1, $monday['free_count']);
+        $this->assertSame('Deels vrij · 4u', $monday['label']);
+        $this->assertSame('nog 4u vrij', $monday['people'][0]['detail']);
+        $this->assertSame(4.0, $monday['people'][0]['remaining_hours']);
+        $this->assertTrue($monday['people'][0]['selectable']);
+        $this->assertSame('Peter — ochtend vrij, middag beschikbaar', $monday['people'][0]['title']);
+        $this->assertSame(4.5, $this->available());
+    }
+
+    public function test_daily_matrix_shows_partial_leave_on_a_crew_chip(): void
+    {
+        $team = $this->makeWorker('Wespro', ['Eric Wesselink', 'Harm Wesselink']);
+        $eric = $team->crewPeople()->orderBy('sort_order')->first();
+        $team->availabilities()->create([
+            'crew_member_id' => $eric->id,
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-07',
+            'kind' => AvailabilityKind::DayOff,
+            'hours' => 4,
+            'slot' => 'morning',
+        ]);
+
+        $monday = $this->cell('Wespro', '2026-09-07');
+
+        $this->assertSame('EW 4u vrij | HW vrij', $monday['label']);
+        $this->assertSame('partial', $monday['people'][0]['tone']);
+        $this->assertSame('ok', $monday['people'][1]['tone']);
+        $this->assertSame('Eric Wesselink — ochtend vrij, middag beschikbaar', $monday['people'][0]['title']);
     }
 
     public function test_daily_matrix_marks_friday_off_as_away(): void

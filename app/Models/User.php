@@ -72,6 +72,16 @@ class User extends Authenticatable
         return $this->role === UserRole::Vakman;
     }
 
+    public function isOfficeUser(): bool
+    {
+        return ! $this->isVakman();
+    }
+
+    public function scopeOffice(Builder $query): void
+    {
+        $query->where('role', '!=', UserRole::Vakman);
+    }
+
     public function scheduledWorkerId(): ?int
     {
         if (! $this->isVakman() || $this->worker_id === null) {

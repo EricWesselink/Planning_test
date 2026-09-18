@@ -28,6 +28,12 @@ class VakmanLoginInviteService
             return $this->payload($member, $account, password: null, accountExisted: true);
         }
 
+        if ($this->officeAccount($member) !== null) {
+            throw ValidationException::withMessages([
+                'invite' => 'Deze persoon heeft al een kantoorinlog. Geen aparte vakman-inlog nodig.',
+            ]);
+        }
+
         $plain = $this->temporaryPassword();
         $account = $this->createAccount($member, $plain);
 
@@ -66,6 +72,15 @@ class VakmanLoginInviteService
             : $member->user()->first();
 
         return $user?->isVakman() ? $user : null;
+    }
+
+    private function officeAccount(CrewMember $member): ?User
+    {
+        $worker = $member->relationLoaded('worker')
+            ? $member->worker
+            : $member->worker()->first();
+
+        return $worker?->officeLoginForPerson($member->displayName());
     }
 
     /**

@@ -213,8 +213,23 @@ class PlanningActionController extends Controller
         }
 
         if (! $isProvisional) {
+            $times = PlanningHours::resolve(
+                $data['hours'] ?? null,
+                $data['slot'] ?? null,
+                $data['start_time'] ?? null,
+                $data['end_time'] ?? null,
+            );
             foreach ($workers as $worker) {
-                $message = $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
+                $message = $fit->awayRejection(
+                    $worker,
+                    $start,
+                    $end,
+                    $includeSaturday,
+                    $includeSunday,
+                    $times['start_time'],
+                    $times['end_time'],
+                    $crewIds ?? [],
+                );
                 if ($message) {
                     return response()->json(['message' => $message], 422);
                 }
@@ -349,7 +364,16 @@ class PlanningActionController extends Controller
             return response()->json(['message' => 'Vink aan wie er naar dit werk gaat.'], 422);
         }
 
-        $away = $isProvisional ? null : $fit->awayRejection($worker, $start, $end, $includeSaturday, $includeSunday);
+        $away = $isProvisional ? null : $fit->awayRejection(
+            $worker,
+            $start,
+            $end,
+            $includeSaturday,
+            $includeSunday,
+            $data['start_time'] ?? $assignment->startTimeValue(),
+            $data['end_time'] ?? $assignment->endTimeValue(),
+            $crewIds,
+        );
         if ($away) {
             return response()->json(['message' => $away], 422);
         }

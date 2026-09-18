@@ -80,6 +80,48 @@ class WorkerAvailabilityServiceTest extends TestCase
         ));
     }
 
+    public function test_partial_leave_is_not_fully_away_and_leaves_the_afternoon_free(): void
+    {
+        $peter = Worker::query()->create([
+            'name' => 'Peter',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        $peter->availabilities()->create([
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-07',
+            'kind' => AvailabilityKind::Leave,
+            'hours' => 4,
+            'slot' => 'morning',
+        ]);
+        $peter->load(['availabilities', 'crewPeople']);
+
+        $service = app(WorkerAvailabilityService::class);
+        $monday = Carbon::parse('2026-09-07');
+
+        $this->assertFalse($service->isAwayOn($peter, $monday));
+        $this->assertSame('Verlof', $service->awayLabelOn($peter, $monday));
+        $this->assertSame(4.0, $service->absenceOn($peter, $monday)['hours']);
+        $this->assertSame('Verlof', $service->awayLabelInRange(
+            $peter,
+            $monday,
+            $monday,
+            false,
+            false,
+            '08:00',
+            '16:00',
+        ));
+        $this->assertNull($service->awayLabelInRange(
+            $peter,
+            $monday,
+            $monday,
+            false,
+            false,
+            '12:00',
+            '16:00',
+        ));
+    }
+
     public function test_zzp_unavailable_period_marks_those_days_away(): void
     {
         $nick = Worker::query()->create([

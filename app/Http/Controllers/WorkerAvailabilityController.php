@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AvailabilityKind;
+use App\Enums\AvailabilitySlot;
 use App\Enums\EmploymentType;
 use App\Models\CrewMember;
 use App\Models\Worker;
 use App\Models\WorkerAvailability;
+use App\Support\PlanningHours;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -75,6 +77,8 @@ class WorkerAvailabilityController extends Controller
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'kind' => ['required', Rule::enum(AvailabilityKind::class)],
+            'slot' => ['nullable', Rule::enum(AvailabilitySlot::class)],
+            'hours' => ['nullable', 'numeric', 'min:1', 'max:'.PlanningHours::WORKDAY_HOURS],
             'crew_member_id' => ['nullable', 'integer'],
         ], [
             'start_date.required' => 'Kies een begindatum.',
@@ -84,8 +88,22 @@ class WorkerAvailabilityController extends Controller
         ]);
 
         $member = $this->requestedMember($request, $worker);
-        $data['crew_member_id'] = $member?->id;
-        $worker->availabilities()->create($data);
+        $slot = AvailabilitySlot::tryFrom((string) ($data['slot'] ?? '')) ?? AvailabilitySlot::Full;
+        $hours = $slot === AvailabilitySlot::Hours
+            ? (float) ($data['hours'] ?? 4)
+            : $slot->defaultHours();
+        if ($hours >= PlanningHours::WORKDAY_HOURS - 0.01) {
+            $slot = AvailabilitySlot::Full;
+            $hours = (float) PlanningHours::WORKDAY_HOURS;
+        }
+        $worker->availabilities()->create([
+            'crew_member_id' => $member?->id,
+            'start_date' => $data['start_date'],
+            'end_date' => $data['end_date'],
+            'kind' => $data['kind'],
+            'slot' => $slot,
+            'hours' => $hours,
+        ]);
 
         $kind = AvailabilityKind::from($data['kind']);
 

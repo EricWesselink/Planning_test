@@ -49,7 +49,12 @@
     @endif
 
     @can('update', $worker)
-        @if ($worker->users->isEmpty())
+        @php
+            $officeLogin = $worker->officeLogin();
+        @endphp
+        @if ($officeLogin)
+            <p class="mt-6 max-w-2xl text-sm text-nicon-muted">Heeft al een kantoorinlog als {{ $officeLogin->role->label() }}. Geen aparte vakman-inlog nodig.</p>
+        @elseif ($worker->users->isEmpty())
             <section class="mt-6 max-w-2xl border border-nicon-line bg-white p-5 space-y-3">
                 <h2 class="font-semibold">Inlog</h2>
                 <p class="text-sm text-nicon-muted">Nog geen inlog. Vul e-mail en een tijdelijk wachtwoord in. Optioneel stuur je meteen een uitnodiging voor de planning.</p>

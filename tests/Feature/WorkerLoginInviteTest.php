@@ -224,6 +224,38 @@ class WorkerLoginInviteTest extends TestCase
             ->assertSessionHasErrors(['invite' => 'Geen telefoonnummer ingevuld']);
     }
 
+    public function test_office_person_does_not_get_a_vakman_invite(): void
+    {
+        $planner = User::factory()->create(['name' => 'Marie']);
+        User::factory()->admin()->create(['name' => 'Eric Wesselink']);
+        $worker = Worker::query()->create([
+            'name' => 'Eric Wesselink (Projectleider/Uitvoerder)',
+            'employment_type' => 'eigen',
+            'active' => true,
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => '06 12345678'],
+            ],
+        ]);
+        $member = $worker->crewPeople()->first();
+        $this->assertNotNull($member);
+
+        $html = $this->actingAs($planner)
+            ->get(route('workers.show', $worker))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringNotContainsString('form="vakman-login-invite-'.$member->id.'"', $html);
+
+        $this->actingAs($planner)
+            ->from(route('workers.show', $worker))
+            ->post(route('workers.login-invite.store', [$worker, $member]))
+            ->assertRedirect(route('workers.show', $worker))
+            ->assertSessionHasErrors(['invite' => 'Deze persoon heeft al een kantoorinlog. Geen aparte vakman-inlog nodig.']);
+
+        $this->assertDatabaseMissing('users', ['crew_member_id' => $member->id]);
+    }
+
     /**
      * @return array{0: Worker, 1: CrewMember}
      */

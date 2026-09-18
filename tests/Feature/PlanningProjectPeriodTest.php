@@ -137,6 +137,40 @@ class PlanningProjectPeriodTest extends TestCase
             ->getContent();
 
         $this->assertDoesNotMatchRegularExpression('/period-marker--end is-done/', $html);
+        $this->assertDoesNotMatchRegularExpression('/period-marker--paired/', $html);
+    }
+
+    public function test_one_day_period_stacks_start_and_klaar_on_the_same_day(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makePeriodProject();
+        $project->forceFill([
+            'planned_start_date' => '2026-09-22',
+            'planned_end_date' => '2026-09-22',
+        ])->save();
+        $project->workItems()->update([
+            'planned_start_date' => '2026-09-22',
+            'planned_end_date' => '2026-09-22',
+        ]);
+
+        $row = $this->boardRow($project, 39);
+
+        $this->assertNotNull($row['bar']);
+        $this->assertSame(1, $row['bar']['start']);
+        $this->assertSame(1, $row['bar']['span']);
+        $this->assertSame(1, $row['start_marker']['index']);
+        $this->assertSame(1, $row['end_marker']['index']);
+        $this->assertSame('22-09-2026', $row['start_marker']['date']);
+        $this->assertSame('22-09-2026', $row['end_marker']['date']);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week_nr' => 39, 'year' => 2026, 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('period-band', false)
+            ->assertSee('period-marker--start period-marker--paired', false)
+            ->assertSee('period-marker--end period-marker--paired', false)
+            ->assertSee('▶ Start 22-09-2026', false)
+            ->assertSee('Klaar 22-09-2026');
     }
 
     public function test_staffing_filter_shows_only_works_without_a_craftsman(): void
@@ -505,6 +539,278 @@ class PlanningProjectPeriodTest extends TestCase
         ));
     }
 
+    public function test_todo_running_button_toggles_and_shows_the_week_count(): void
+    {
+        $user = User::factory()->create();
+        $this->makePeriodProject('250200030', 'Open deze week Utrecht');
+        $staffed = $this->makePeriodProject('250200031', 'Lopend met vakman Utrecht');
+        $later = $this->makePeriodProject('250200032', 'Later start Almere');
+        $later->forceFill([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ])->save();
+        $later->workItems()->update([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ]);
+        $worker = Worker::query()->create([
+            'name' => 'Kees',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $staffed->id,
+            'work_item_id' => $staffed->workItems->first()->id,
+            'start_date' => '2026-09-15',
+            'end_date' => '2026-09-15',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', [
+                'week_nr' => 38,
+                'year' => 2026,
+                'kind' => 'project',
+            ]))
+            ->assertOk()
+            ->assertSee('Te plannen + lopend (2)')
+            ->assertSee(route('planning', [
+                'week' => '2026-09-14',
+                'weeks' => 1,
+                'kind' => 'project',
+                'todo_running' => '1',
+            ]))
+            ->assertDontSee('planning-filter--todo is-active', false)
+            ->assertSee('Open deze week Utrecht')
+            ->assertSee('Lopend met vakman Utrecht')
+            ->assertSee('Later start Almere');
+
+        $this->actingAs($user)
+            ->get(route('planning', [
+                'week' => '2026-09-14',
+                'weeks' => 1,
+                'kind' => 'project',
+                'todo_running' => '1',
+            ]))
+            ->assertOk()
+            ->assertSee('Te plannen + lopend (2)')
+            ->assertSee('planning-filter--todo is-active', false)
+            ->assertSee('name="todo_running"', false)
+            ->assertSee(route('planning', [
+                'week' => '2026-09-14',
+                'weeks' => 1,
+                'kind' => 'project',
+            ]))
+            ->assertSee('Open deze week Utrecht')
+            ->assertSee('Lopend met vakman Utrecht')
+            ->assertDontSee('Later start Almere');
+    }
+
+    public function test_todo_running_filter_keeps_works_that_need_planning_or_are_running_this_week(): void
+    {
+        $user = User::factory()->create();
+        $open = $this->makePeriodProject('250200033', 'Nog in te plannen Utrecht');
+        $partial = $this->makePeriodProject('250200034', 'Gedeeltelijk ingepland Utrecht');
+        WorkItem::query()->create([
+            'project_id' => $partial->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 400,
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-10-24',
+            'status' => 'gepland',
+        ]);
+        $running = $this->makePeriodProject('250200035', 'Lopend bezet Utrecht');
+        $gereed = $this->makePeriodProject('250200036', 'Gereed deze week Utrecht');
+        $gereed->forceFill(['status' => ProjectStatus::Gereed])->save();
+        $finished = $this->makePeriodProject('250200037', 'Klaar in augustus');
+        $finished->forceFill([
+            'planned_start_date' => '2026-08-03',
+            'planned_end_date' => '2026-08-08',
+        ])->save();
+        $finished->workItems()->update([
+            'planned_start_date' => '2026-08-03',
+            'planned_end_date' => '2026-08-08',
+        ]);
+        $later = $this->makePeriodProject('250200038', 'Start in week 45');
+        $later->forceFill([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ])->save();
+        $later->workItems()->update([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ]);
+        $worker = Worker::query()->create([
+            'name' => 'Piet',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $partial->id,
+            'work_item_id' => $partial->workItems->first()->id,
+            'start_date' => '2026-09-15',
+            'end_date' => '2026-09-15',
+            'hours_per_day' => 8,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $running->id,
+            'work_item_id' => $running->workItems->first()->id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user);
+        $titles = $this->boardTitles([
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+            'todo_running' => '1',
+        ], $user);
+
+        $this->assertSame([
+            'Nog in te plannen Utrecht',
+            'Gedeeltelijk ingepland Utrecht',
+            'Lopend bezet Utrecht',
+        ], $titles);
+
+        $assignment = WorkerAssignment::query()->where('project_id', $running->id)->first();
+        $this->assertModelExists($assignment);
+        $this->assertSame(8.0, (float) $assignment->hours_per_day);
+        $this->assertSame('2026-09-14', $assignment->start_date->toDateString());
+        $this->assertSame('2026-09-18', $assignment->end_date->toDateString());
+        $this->assertSame(ProjectStatus::Gepland, $open->fresh()->status);
+        $this->assertSame(ProjectStatus::Gereed, $gereed->fresh()->status);
+    }
+
+    public function test_todo_running_filter_follows_the_selected_week(): void
+    {
+        $user = User::factory()->create();
+        $thisWeek = $this->makePeriodProject('250200039', 'Loopt in week 38');
+        $thisWeek->forceFill([
+            'planned_end_date' => '2026-09-19',
+        ])->save();
+        $thisWeek->workItems()->update([
+            'planned_end_date' => '2026-09-19',
+        ]);
+        $later = $this->makePeriodProject('250200040', 'Start in week 40');
+        $later->forceFill([
+            'planned_start_date' => '2026-09-28',
+            'planned_end_date' => '2026-10-09',
+        ])->save();
+        $later->workItems()->update([
+            'planned_start_date' => '2026-09-28',
+            'planned_end_date' => '2026-10-09',
+        ]);
+
+        $this->actingAs($user);
+
+        $this->assertSame(['Loopt in week 38'], $this->boardTitles([
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+            'todo_running' => '1',
+        ], $user));
+        $this->assertSame(['Start in week 40'], $this->boardTitles([
+            'week_nr' => 40,
+            'year' => 2026,
+            'weeks' => 1,
+            'todo_running' => '1',
+        ], $user));
+
+        $this->actingAs($user)
+            ->get(route('planning', [
+                'week' => '2026-09-14',
+                'weeks' => 1,
+                'todo_running' => '1',
+            ]))
+            ->assertOk()
+            ->assertSee('todo_running=1', false)
+            ->assertSee('week=2026-09-21', false);
+    }
+
+    public function test_todo_running_filter_keeps_extra_work_this_week_without_the_later_parent(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makePeriodProject('250200041', 'Hoofdwerk later');
+        $project->forceFill([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ])->save();
+        $project->workItems()->update([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Nacalculatie plinten',
+            'unit' => 'm1',
+            'ordered_quantity' => 40,
+            'is_extra_work' => true,
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-16',
+            'status' => 'gepland',
+        ]);
+
+        $this->actingAs($user);
+        $rows = collect($this->boardRows([
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+            'todo_running' => '1',
+        ], $user));
+
+        $this->assertTrue($rows->contains(
+            fn (array $row): bool => str_contains((string) ($row['title'] ?? ''), 'Nacalculatie plinten')
+        ));
+        $this->assertFalse($rows->contains(
+            fn (array $row): bool => ($row['type'] ?? '') === 'project' && ($row['title'] ?? '') === 'Hoofdwerk later'
+        ));
+    }
+
+    public function test_todo_running_filter_combines_with_the_open_staffing_filter(): void
+    {
+        $user = User::factory()->create();
+        $this->makePeriodProject('250200042', 'Open deze week');
+        $staffed = $this->makePeriodProject('250200043', 'Bezet deze week');
+        $later = $this->makePeriodProject('250200044', 'Open later');
+        $later->forceFill([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ])->save();
+        $later->workItems()->update([
+            'planned_start_date' => '2026-11-02',
+            'planned_end_date' => '2026-11-20',
+        ]);
+        $worker = Worker::query()->create([
+            'name' => 'Kees',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $staffed->id,
+            'work_item_id' => $staffed->workItems->first()->id,
+            'start_date' => '2026-09-15',
+            'end_date' => '2026-09-15',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user);
+
+        $this->assertSame(['Open deze week'], $this->boardTitles([
+            'week_nr' => 38,
+            'year' => 2026,
+            'weeks' => 1,
+            'staffing' => 'open',
+            'todo_running' => '1',
+        ], $user));
+    }
+
     public function test_missing_craftsman_does_not_query_assignments_once_per_project(): void
     {
         $user = User::factory()->uitvoerder()->create();
@@ -546,6 +852,31 @@ class PlanningProjectPeriodTest extends TestCase
             'week 41' => [41],
             'week 42' => [42],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     * @return list<string>
+     */
+    private function boardTitles(array $params, User $user): array
+    {
+        return collect($this->boardRows($params, $user))
+            ->whereIn('type', ['project', 'small'])
+            ->pluck('title')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     * @return list<array<string, mixed>>
+     */
+    private function boardRows(array $params, User $user): array
+    {
+        $request = Request::create('/planning', 'GET', $params);
+        $request->setUserResolver(fn () => $user);
+
+        return app(PlanningBoardService::class)->build($request)['rows'];
     }
 
     /**
