@@ -473,7 +473,7 @@ class WeekplanningPdfService
             $row['name'],
             $names,
             $peopleLabel,
-            $this->sortDayBlocks($days),
+            $this->sortDayBlocks($days, $this->peopleAwayEveryWeekday($days)),
         );
     }
 
