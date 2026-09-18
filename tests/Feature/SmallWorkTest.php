@@ -52,6 +52,8 @@ class SmallWorkTest extends TestCase
             'type' => SmallWorkType::Service->value,
             'customer_name' => 'Gemeente Deventer',
             'description' => 'plint herstellen',
+            'address' => 'Keizerstraat 12',
+            'postal_code' => '7411 HD',
             'location' => 'Deventer',
             'date' => '2026-09-08',
             'hours' => 2,
@@ -66,7 +68,10 @@ class SmallWorkTest extends TestCase
         ]));
 
         $this->assertSame('plint herstellen', $project->name);
+        $this->assertSame('Keizerstraat 12', $project->address);
+        $this->assertSame('7411 HD', $project->postal_code);
         $this->assertSame('Deventer', $project->city);
+        $this->assertSame('Keizerstraat 12, 7411 HD Deventer', $project->nawLine());
         $this->assertSame(1, $project->workItems()->count());
         $item = $project->workItems()->first();
         $this->assertSame(WorkUnit::Hours, $item?->unit);
@@ -97,7 +102,10 @@ class SmallWorkTest extends TestCase
             ->get(route('projects.show', $project))
             ->assertOk()
             ->assertSee('€48/u', false)
-            ->assertSee('€96');
+            ->assertSee('€96')
+            ->assertSee('Keizerstraat 12')
+            ->assertSee('7411 HD')
+            ->assertSee('Navigeren in Google Maps');
     }
 
     public function test_planner_creates_service_without_a_craftsman(): void
@@ -131,37 +139,43 @@ class SmallWorkTest extends TestCase
             ->assertDontSee('Klaar 11-09-2026');
     }
 
-    public function test_planner_creates_klein_werk_on_an_existing_assignment(): void
+    public function test_planner_creates_standalone_klein_werk_with_a_work_address(): void
     {
         $user = User::factory()->create();
         $worker = $this->makeWorker();
-        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
 
-        $this->actingAs($user)->post(route('projects.small.store'), [
+        $response = $this->actingAs($user)->post(route('projects.small.store'), [
             'type' => SmallWorkType::Klein->value,
-            'project_id' => $parent->id,
+            'customer_name' => 'Gemeente Deventer',
             'description' => '25 m² PVC',
+            'address' => 'Keizerstraat 12',
+            'postal_code' => '7411 HD',
+            'location' => 'Deventer',
             'date' => '2026-09-08',
             'hours' => 8,
             'worker_id' => $worker->id,
-        ])->assertRedirect(route('planning', [
+        ]);
+
+        $project = Project::query()->where('kind', ProjectKind::Klein)->first();
+        $this->assertNotNull($project);
+        $response->assertRedirect(route('planning', [
             'week' => '2026-09-07',
-            'project_id' => $parent->id,
+            'project_id' => $project->id,
         ]));
 
-        $this->assertSame(1, Project::query()->count());
-        $item = $parent->workItems()->where('is_extra_work', true)->first();
-        $this->assertNotNull($item);
-        $this->assertSame('25 m² PVC', $item->name);
-        $this->assertSame(SmallWorkType::Klein, $item->small_work_type);
-        $this->assertSame(0, $parent->areas()->count());
-        $this->assertSame(0, $parent->documents()->count());
+        $this->assertSame('25 m² PVC', $project->name);
+        $this->assertSame('Keizerstraat 12', $project->address);
+        $this->assertSame('7411 HD', $project->postal_code);
+        $this->assertSame('Deventer', $project->city);
+        $this->assertSame(1, $project->workItems()->count());
+        $item = $project->workItems()->first();
+        $this->assertFalse((bool) $item?->is_extra_work);
 
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('>KLEIN</span>', false)
-            ->assertSee('Gezondheidscentrum Laren – 25 m² PVC');
+            ->assertSee('Deventer – 25 m² PVC');
     }
 
     public function test_new_small_work_form_lists_existing_assignment_numbers(): void
@@ -180,6 +194,9 @@ class SmallWorkTest extends TestCase
             ->assertSee('11P241267')
             ->assertSee('250100010')
             ->assertSee('Gezondheidscentrum Laren')
+            ->assertSee('Adres')
+            ->assertSee('Postcode')
+            ->assertSee('Plaats')
             ->assertSee('Klaar')
             ->assertSee('Egaliseren')
             ->assertSee('Materiaal')
@@ -206,7 +223,7 @@ class SmallWorkTest extends TestCase
         $this->assertSame(0, WorkItem::query()->where('is_extra_work', true)->count());
     }
 
-    public function test_klein_werk_requires_an_existing_project(): void
+    public function test_klein_werk_requires_a_customer_and_place(): void
     {
         $user = User::factory()->create();
 
@@ -219,7 +236,12 @@ class SmallWorkTest extends TestCase
                 'hours' => 8,
             ])
             ->assertRedirect(route('projects.small.create'))
-            ->assertSessionHasErrors(['project_id' => 'Kies een bestaand opdrachtnummer.']);
+            ->assertSessionHasErrors([
+                'customer_name' => 'Vul een klantnaam in.',
+                'location' => 'Vul een plaats in.',
+            ]);
+
+        $this->assertSame(0, Project::query()->where('kind', ProjectKind::Klein)->count());
     }
 
     public function test_extra_work_stays_on_the_parent_project_and_shows_as_a_compact_row(): void
@@ -589,6 +611,8 @@ class SmallWorkTest extends TestCase
             ->patch(route('projects.small.update', $project), [
                 'customer_name' => 'Gemeente Apeldoorn',
                 'description' => 'plinten herstellen',
+                'address' => 'Hoofdstraat 8',
+                'postal_code' => '7311 KK',
                 'location' => 'Apeldoorn',
                 'date' => '2026-09-14',
                 'hours' => 6,
@@ -598,7 +622,10 @@ class SmallWorkTest extends TestCase
 
         $project->refresh();
         $this->assertSame('plinten herstellen', $project->name);
+        $this->assertSame('Hoofdstraat 8', $project->address);
+        $this->assertSame('7311 KK', $project->postal_code);
         $this->assertSame('Apeldoorn', $project->city);
+        $this->assertSame('Hoofdstraat 8, 7311 KK Apeldoorn', $project->nawLine());
         $this->assertSame('KW-77', $project->project_number);
         $this->assertSame('2026-09-14', $project->planned_start_date?->toDateString());
         $this->assertSame('Gemeente Apeldoorn', $project->customer?->name);
@@ -618,7 +645,9 @@ class SmallWorkTest extends TestCase
             ->assertOk()
             ->assertSee('plinten herstellen')
             ->assertSee('Gemeente Apeldoorn')
-            ->assertSee('Apeldoorn');
+            ->assertSee('Hoofdstraat 8')
+            ->assertSee('Apeldoorn')
+            ->assertSee('Navigeren in Google Maps');
     }
 
     public function test_small_work_update_is_not_found_for_a_full_project(): void

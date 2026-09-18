@@ -39,11 +39,11 @@ enum SmallWorkType: string
 
     public function isStandalone(): bool
     {
-        return $this === self::Service;
+        return $this === self::Service || $this === self::Klein;
     }
 
     public function attachesToExistingProject(): bool
     {
-        return $this === self::Extra || $this === self::Klein;
+        return $this === self::Extra;
     }
 }

@@ -388,6 +388,12 @@ class Project extends Model
         return null;
     }
 
+    public function applyCustomerName(string $name): void
+    {
+        $name = trim($name);
+        $this->customer_id = Customer::query()->firstOrCreate(['name' => $name])->id;
+    }
+
     /**
      * Zet of wist de 11P-projectcode in de referentie. Het werknummer blijft ongewijzigd.
      */

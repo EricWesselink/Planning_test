@@ -69,12 +69,12 @@
                     @endif
                     @can('update', $project)
                         @include('projects.partials.source-files', ['project' => $project, 'sourceCatalog' => $sourceCatalog ?? []])
-                        <details class="relative" @if ($errors->hasAny(['address', 'postal_code', 'city', 'work_code', 'basis_uurtarief', 'work_items', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date']) || $errors->has('work_items.*')) open @endif>
+                        <details class="relative" @if ($errors->hasAny(['address', 'postal_code', 'city', 'customer_name', 'work_code', 'basis_uurtarief', 'work_items', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date']) || $errors->has('work_items.*')) open @endif>
                             <summary class="cursor-pointer hover:text-nicon-ink">Project bewerken</summary>
                             <form method="POST" action="{{ route('projects.update', $project) }}" class="absolute z-30 mt-1 w-[28rem] max-h-[80vh] overflow-auto border border-nicon-line bg-white p-3 shadow-sm space-y-2">
                                 @csrf
                                 @method('PATCH')
-                                @foreach (['address', 'postal_code', 'city', 'work_code', 'basis_uurtarief', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'] as $field)
+                                @foreach (['address', 'postal_code', 'city', 'customer_name', 'work_code', 'basis_uurtarief', 'start_year', 'start_week', 'klaar_year', 'klaar_week', 'start_date', 'klaar_date'] as $field)
                                     @error($field)
                                         <p class="text-xs text-nicon-danger">{{ $message }}</p>
                                     @enderror
@@ -84,6 +84,8 @@
                                 @enderror
                                 <label class="block text-[11px] uppercase tracking-wide">Projectnr.</label>
                                 <input name="work_code" value="{{ old('work_code', $project->workCode()) }}" class="w-full border border-nicon-line px-2 py-1" placeholder="11P260521">
+                                <label class="block text-[11px] uppercase tracking-wide">Opdrachtgever</label>
+                                <input name="customer_name" value="{{ old('customer_name', $project->customer?->name) }}" class="w-full border border-nicon-line px-2 py-1" placeholder="Opdrachtgever">
                                 <label class="block text-[11px] uppercase tracking-wide">Straat</label>
                                 <input name="address" value="{{ old('address', $project->address) }}" class="w-full border border-nicon-line px-2 py-1" placeholder="Straat 12">
                                 <div class="grid grid-cols-2 gap-2">

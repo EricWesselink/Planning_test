@@ -336,10 +336,11 @@ body {
     gap: 0.4rem 0.5rem;
     width: 100%;
     margin-top: 0.35rem;
-    padding: 0.28rem 0.4rem;
+    padding: 0.22rem 0.35rem;
     border: 1px solid var(--color-nicon-line);
     border-radius: 2px;
     background: white;
+    min-width: 0;
 }
 
 .planning-available-head {
@@ -348,7 +349,7 @@ body {
     justify-content: center;
     gap: 0.1rem;
     flex: 0 0 auto;
-    min-width: 7rem;
+    min-width: 6.5rem;
     padding: 0.05rem 0.5rem 0.05rem 0.05rem;
     border-right: 1px solid var(--color-nicon-line);
 }

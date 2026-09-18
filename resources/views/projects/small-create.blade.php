@@ -4,7 +4,7 @@
 
 @section('content')
     @php
-        $linked = in_array($selectedType, [\App\Enums\SmallWorkType::Extra->value, \App\Enums\SmallWorkType::Klein->value], true);
+        $linked = $selectedType === \App\Enums\SmallWorkType::Extra->value;
     @endphp
     <a href="{{ route('planning') }}" class="text-sm text-nicon-muted">← Planning</a>
     <h1 class="mt-2 text-2xl font-semibold">Klein werk inplannen</h1>
@@ -75,8 +75,18 @@
         </div>
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>
-            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="location">Locatie</label>
-            <input id="location" name="location" value="{{ old('location') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Deventer" @required(! $linked)>
+            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="address">Adres</label>
+            <input id="address" name="address" value="{{ old('address') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Straat 12">
+            <div class="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
+                    <input id="postal_code" name="postal_code" value="{{ old('postal_code') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="7411 HD">
+                </div>
+                <div>
+                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="location">Plaats</label>
+                    <input id="location" name="location" value="{{ old('location') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Deventer" @required(! $linked)>
+                </div>
+            </div>
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
@@ -119,7 +129,7 @@
             const form = document.querySelector('[data-small-work-form]');
             const typeSelect = form?.querySelector('[data-small-work-type]');
             const toggle = () => {
-                const linked = typeSelect?.value === 'extra' || typeSelect?.value === 'klein';
+                const linked = typeSelect?.value === 'extra';
                 form?.querySelectorAll('[data-small-work-standalone]').forEach((el) => el.classList.toggle('hidden', linked));
                 form?.querySelectorAll('[data-small-work-linked]').forEach((el) => el.classList.toggle('hidden', !linked));
                 const customer = form?.querySelector('#customer_name');

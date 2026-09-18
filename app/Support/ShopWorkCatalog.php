@@ -62,6 +62,7 @@ class ShopWorkCatalog
                 'slug' => 'overig',
                 'activities' => [
                     ['name' => 'Inmeten', 'slug' => 'inmeten'],
+                    ['name' => 'Werkopname', 'slug' => 'werkopname'],
                     ['name' => 'Montage', 'slug' => 'montage'],
                     ['name' => 'Reparatie', 'slug' => 'reparatie'],
                     ['name' => 'Service', 'slug' => 'service'],

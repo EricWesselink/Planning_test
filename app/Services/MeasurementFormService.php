@@ -2,15 +2,18 @@
 
 namespace App\Services;
 
+use App\Enums\FlooringSpecialty;
 use App\Enums\MeasurementMaterialLocation;
-use App\Enums\UserRole;
 use App\Enums\WorkUnit;
 use App\Models\MeasurementForm;
 use App\Models\MeasurementFormRow;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\WorkActivity;
+use App\Models\Worker;
 use App\Support\Format;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Validator;
@@ -18,6 +21,10 @@ use Illuminate\Validation\Validator;
 class MeasurementFormService
 {
     public const BLANK_ROW_COUNT = 5;
+
+    public function __construct(
+        private WorkerAvailabilityService $availability,
+    ) {}
 
     /**
      * @return list<WorkUnit>
@@ -38,23 +45,44 @@ class MeasurementFormService
     /**
      * @return Collection<int, User>
      */
-    public function meterUsers(?int $keepId = null): Collection
+    public function meterUsers(?int $keepId = null, ?CarbonInterface $on = null): Collection
     {
-        return User::query()
-            ->where(function ($query) use ($keepId): void {
-                $query->where('active', true)
-                    ->whereIn('role', [
-                        UserRole::Admin->value,
-                        UserRole::Planner->value,
-                        UserRole::Projectleider->value,
-                    ]);
-                if ($keepId !== null && $keepId > 0) {
-                    $query->orWhereKey($keepId);
-                }
-            })
+        $users = Worker::query()
+            ->ownStaff()
+            ->where('active', true)
+            ->with(['user', 'users', 'availabilities'])
             ->orderBy('name')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(fn (Worker $worker): bool => $worker->hasSpecialty(FlooringSpecialty::Inmeten->value))
+            ->map(function (Worker $worker) use ($on, $keepId): ?User {
+                $user = $worker->user ?? $worker->users->first();
+                if (! $user instanceof User || ! $user->active) {
+                    return null;
+                }
+
+                if ($on !== null && $this->availability->isAwayOn($worker, $on) && (int) $user->id !== (int) $keepId) {
+                    return null;
+                }
+
+                return $user;
+            })
+            ->filter()
+            ->values();
+
+        if ($keepId !== null && $keepId > 0 && ! $users->contains(fn (User $user): bool => (int) $user->id === $keepId)) {
+            $kept = User::query()->find($keepId);
+            if ($kept instanceof User) {
+                $users->push($kept);
+            }
+        }
+
+        return $users
+            ->sortBy([
+                ['name', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values();
     }
 
     /**
@@ -233,12 +261,14 @@ class MeasurementFormService
         $form = $project?->measurementForm;
         $old = old('measurement');
         $oldRows = is_array($old['rows'] ?? null) ? $old['rows'] : [];
+        $orderedAt = old('measurement.ordered_at', $form?->ordered_at?->toDateString());
+        $on = is_string($orderedAt) && $orderedAt !== '' ? Carbon::parse($orderedAt) : null;
 
         return [
-            'meterUsers' => $this->meterUsers($form?->meter_user_id),
+            'meterUsers' => $this->meterUsers($form?->meter_user_id, $on),
             'measurementRows' => $this->formRows($form, $oldRows),
             'measurementMeterUserId' => old('measurement.meter_user_id', $form?->meter_user_id),
-            'measurementOrderedAt' => old('measurement.ordered_at', $form?->ordered_at?->toDateString()),
+            'measurementOrderedAt' => $orderedAt,
             'measurementInstallationAt' => old('measurement.installation_at', $form?->installation_at?->toDateString()),
             'measurementFilled' => $this->isFilled($form),
             'measurementOpen' => is_array($old),
@@ -266,6 +296,8 @@ class MeasurementFormService
 
     public function validateAgainstShopWork(Validator $validator, Request $request, ?Project $project = null): void
     {
+        $this->validateMeterUser($validator, $request, $project);
+
         $rows = $request->input('measurement.rows');
         if (! is_array($rows)) {
             return;
@@ -348,6 +380,41 @@ class MeasurementFormService
             $message = 'Te veel ingevoerd. '.$name.': '.$this->qtyWithUnit($available, $shopUnit)
                 .' beschikbaar, '.$this->qtyWithUnit($used, $shopUnit).' reeds verdeeld.';
             $validator->errors()->add('measurement.rows', $message);
+        }
+    }
+
+    private function validateMeterUser(Validator $validator, Request $request, ?Project $project): void
+    {
+        $meterId = (int) $request->input('measurement.meter_user_id');
+        if ($meterId <= 0) {
+            return;
+        }
+
+        $keepId = $project?->measurementForm?->meter_user_id;
+        $allowed = $this->meterUsers($keepId);
+
+        if (! $allowed->contains(fn (User $user): bool => (int) $user->id === $meterId)) {
+            $validator->errors()->add(
+                'measurement.meter_user_id',
+                'Kies een eigen medewerker met werkzaamheid Inmeten.',
+            );
+
+            return;
+        }
+
+        $orderedAt = $request->input('measurement.ordered_at');
+        $on = is_string($orderedAt) && $orderedAt !== '' ? Carbon::parse($orderedAt) : null;
+        if ($on === null) {
+            return;
+        }
+
+        $user = User::query()->with('worker.availabilities')->find($meterId);
+        $worker = $user?->worker;
+        if ($worker instanceof Worker && $this->availability->isAwayOn($worker, $on)) {
+            $validator->errors()->add(
+                'measurement.meter_user_id',
+                $worker->planName().' is die dag niet beschikbaar.',
+            );
         }
     }
 

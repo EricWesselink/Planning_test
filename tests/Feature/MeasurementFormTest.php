@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AvailabilityKind;
 use App\Enums\ProjectKind;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
@@ -43,6 +44,87 @@ class MeasurementFormTest extends TestCase
             ->assertSee('hidden', false);
     }
 
+    public function test_inmeter_dropdown_lists_own_staff_with_inmeten(): void
+    {
+        $planner = User::factory()->create(['name' => 'Piet Planner']);
+        $this->inmeterUser('Eric Wesselink');
+        $zzp = Worker::query()->create([
+            'name' => 'Nick Seine',
+            'employment_type' => 'zzp',
+            'specialty' => 'Inmeten',
+            'active' => true,
+        ]);
+        User::factory()->create([
+            'name' => 'Nick Seine',
+            'worker_id' => $zzp->id,
+        ]);
+        $this->inmeterUser('Kees Jansen')->worker?->update(['specialty' => 'PVC']);
+
+        $html = $this->actingAs($planner)
+            ->get(route('projects.winkel.create'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/id="measurement_meter_user_id"[\s\S]*Eric Wesselink[\s\S]*<\/select>/',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/id="measurement_meter_user_id"[\s\S]*Nick Seine[\s\S]*<\/select>/',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/id="measurement_meter_user_id"[\s\S]*Piet Planner[\s\S]*<\/select>/',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/id="measurement_meter_user_id"[\s\S]*Kees Jansen[\s\S]*<\/select>/',
+            $html
+        );
+    }
+
+    public function test_rejects_a_planner_without_inmeten_as_inmeter(): void
+    {
+        $user = User::factory()->create(['name' => 'Piet Planner']);
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), $this->winkelPayload([
+                'measurement' => [
+                    'meter_user_id' => $user->id,
+                ],
+            ]))
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['measurement.meter_user_id' => 'Kies een eigen medewerker met werkzaamheid Inmeten.']);
+    }
+
+    public function test_rejects_an_inmeter_who_is_away_on_the_ordered_day(): void
+    {
+        $user = User::factory()->create();
+        $meter = $this->inmeterUser('Eric Wesselink');
+        $meter->worker?->availabilities()->create([
+            'start_date' => '2026-09-10',
+            'end_date' => '2026-09-10',
+            'kind' => AvailabilityKind::Unavailable,
+        ]);
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)
+            ->from(route('projects.winkel.create'))
+            ->post(route('projects.winkel.store'), $this->winkelPayload([
+                'work_activity_ids' => [$pvc->id],
+                'measurement' => [
+                    'meter_user_id' => $meter->id,
+                    'ordered_at' => '2026-09-10',
+                    'rows' => [
+                        ['room' => 'Woonkamer', 'product' => 'PVC banen', 'quantity' => '12', 'unit' => WorkUnit::SquareMeter->value],
+                    ],
+                ],
+            ]))
+            ->assertRedirect(route('projects.winkel.create'))
+            ->assertSessionHasErrors(['measurement.meter_user_id' => 'Eric Wesselink is die dag niet beschikbaar.']);
+    }
+
     public function test_planner_creates_winkelwerk_without_a_measurement_form(): void
     {
         $user = User::factory()->create();
@@ -74,7 +156,8 @@ class MeasurementFormTest extends TestCase
 
     public function test_planner_creates_winkelwerk_with_a_measurement_form_and_skips_empty_rows(): void
     {
-        $user = User::factory()->create(['name' => 'Inmeter Jansen']);
+        $user = User::factory()->create();
+        $meter = $this->inmeterUser('Inmeter Jansen');
         $pvc = $this->activity('pvc-banen');
         $plinten = $this->activity('plinten');
 
@@ -86,7 +169,7 @@ class MeasurementFormTest extends TestCase
                 $plinten->id => WorkUnit::LinearMeter->value,
             ],
             'measurement' => [
-                'meter_user_id' => $user->id,
+                'meter_user_id' => $meter->id,
                 'ordered_at' => '2026-09-10',
                 'installation_at' => '2026-09-18',
                 'rows' => [
@@ -132,7 +215,7 @@ class MeasurementFormTest extends TestCase
 
         $form = $project->measurementForm;
         $this->assertNotNull($form);
-        $this->assertSame($user->id, $form->meter_user_id);
+        $this->assertSame($meter->id, $form->meter_user_id);
         $this->assertSame('2026-09-10', $form->ordered_at?->toDateString());
         $this->assertSame('2026-09-18', $form->installation_at?->toDateString());
         $this->assertSame(['Woonkamer', 'Hal'], $form->rows->pluck('room')->all());
@@ -172,6 +255,7 @@ class MeasurementFormTest extends TestCase
     public function test_planner_updates_a_measurement_form_and_can_add_and_remove_rows(): void
     {
         $user = User::factory()->create();
+        $meter = $this->inmeterUser();
         $pvc = $this->activity('pvc-banen');
         $tapijt = $this->activity('tapijt');
         $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
@@ -182,7 +266,7 @@ class MeasurementFormTest extends TestCase
                 $tapijt->id => WorkUnit::SquareMeter->value,
             ],
             'measurement' => [
-                'meter_user_id' => $user->id,
+                'meter_user_id' => $meter->id,
                 'rows' => [
                     ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '10', 'unit' => WorkUnit::SquareMeter->value],
                     ['room' => 'Toilet', 'product' => 'Tapijt', 'quantity' => '3', 'unit' => WorkUnit::SquareMeter->value],
@@ -203,7 +287,7 @@ class MeasurementFormTest extends TestCase
                 $tapijt->id => WorkUnit::SquareMeter->value,
             ],
             'measurement' => [
-                'meter_user_id' => $user->id,
+                'meter_user_id' => $meter->id,
                 'ordered_at' => '2026-09-12',
                 'rows' => [
                     ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '11', 'unit' => WorkUnit::SquareMeter->value],
@@ -242,7 +326,8 @@ class MeasurementFormTest extends TestCase
 
     public function test_measurement_form_pdf_uses_letterhead_and_row_text(): void
     {
-        $user = User::factory()->create(['name' => 'Inmeter Jansen']);
+        $user = User::factory()->create();
+        $meter = $this->inmeterUser('Inmeter Jansen');
         $pvc = $this->activity('pvc-banen');
         $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
             'customer_name' => 'De Vries',
@@ -253,7 +338,7 @@ class MeasurementFormTest extends TestCase
             'activity_quantities' => [$pvc->id => '100'],
             'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
             'measurement' => [
-                'meter_user_id' => $user->id,
+                'meter_user_id' => $meter->id,
                 'ordered_at' => '2026-09-10',
                 'installation_at' => '2026-09-20',
                 'rows' => [
@@ -327,7 +412,8 @@ class MeasurementFormTest extends TestCase
     public function test_werkbon_with_a_measurement_form_can_append_it_after_drawings(): void
     {
         Storage::fake('local');
-        $user = User::factory()->create(['name' => 'Inmeter Jansen']);
+        $user = User::factory()->create();
+        $meter = $this->inmeterUser('Inmeter Jansen');
         $pvc = $this->activity('pvc-banen');
         $this->actingAs($user)->post(route('projects.winkel.store'), $this->winkelPayload([
             'customer_name' => 'Bakker',
@@ -336,7 +422,7 @@ class MeasurementFormTest extends TestCase
             'activity_quantities' => [$pvc->id => '100'],
             'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
             'measurement' => [
-                'meter_user_id' => $user->id,
+                'meter_user_id' => $meter->id,
                 'rows' => [
                     ['room' => 'Slaapkamer', 'product' => 'PVC banen', 'quantity' => '18', 'unit' => WorkUnit::SquareMeter->value],
                 ],
@@ -563,6 +649,21 @@ class MeasurementFormTest extends TestCase
             'available_on_site' => '0',
             'available_location' => '',
         ];
+    }
+
+    private function inmeterUser(string $name = 'Inmeter Jansen'): User
+    {
+        $worker = Worker::query()->create([
+            'name' => $name,
+            'employment_type' => 'eigen',
+            'specialty' => 'Inmeten',
+            'active' => true,
+        ]);
+
+        return User::factory()->create([
+            'name' => $name,
+            'worker_id' => $worker->id,
+        ]);
     }
 
     private function activity(string $slug): WorkActivity

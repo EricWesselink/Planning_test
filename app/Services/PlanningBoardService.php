@@ -380,7 +380,10 @@ class PlanningBoardService
             ];
         }
 
-        $teamManDays = $scheduledWorkerId ? [] : $this->availability->forDays($days);
+        $availabilityOverview = $scheduledWorkerId
+            ? ['days' => [], 'teams' => []]
+            : $this->availability->overview($days);
+        $teamManDays = $availabilityOverview['teams'];
 
         return [
             'weekStart' => $weekStart,
@@ -410,6 +413,7 @@ class PlanningBoardService
             ],
             'weekOptions' => self::WEEK_OPTIONS,
             'teamManDays' => $teamManDays,
+            'availabilityDays' => $availabilityOverview['days'],
             'availableManDays' => round((float) collect($teamManDays)->sum('remaining'), 2),
         ];
     }
@@ -1429,7 +1433,7 @@ class PlanningBoardService
         $ordered = $grouped
             ? (float) $items->max(fn (WorkItem $item): float => (float) $item->ordered_quantity)
             : (float) $primary->ordered_quantity;
-        $hasQuantity = $ordered > 0;
+        $hasQuantity = $ordered > 0 && ! $primary->isIntakeTask();
         $steps = $items
             ->map(fn (WorkItem $item): string => trim((string) $item->notes))
             ->filter(fn (string $note): bool => $note !== '')

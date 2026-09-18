@@ -57,6 +57,8 @@ class ShopWorkTest extends TestCase
             ->assertSee('>Egaliseren</span>', false)
             ->assertSee('Screens')
             ->assertSee('Gordijnen')
+            ->assertSee('Inmeten')
+            ->assertSee('Werkopname')
             ->assertSee('Montage')
             ->assertSee('Horren')
             ->assertDontSee('>Anders</span>', false)
@@ -726,6 +728,98 @@ class ShopWorkTest extends TestCase
         $this->assertSame(['Primen & Egaliseren', 'PVC banen'], collect($row['children'])->pluck('title')->all());
         $this->assertSame(141.08, $row['children'][0]['ordered']);
         $this->assertSame(141.08, $row['children'][1]['ordered']);
+    }
+
+    public function test_planning_shows_inmeten_without_square_meters_and_rejects_zzp(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $eric = Worker::query()->create([
+            'name' => 'Eric Wesselink',
+            'employment_type' => 'eigen',
+            'specialty' => 'Inmeten, Werkopname',
+            'active' => true,
+        ]);
+        $nick = Worker::query()->create([
+            'name' => 'Nick Seine',
+            'employment_type' => 'zzp',
+            'specialty' => 'Inmeten',
+            'active' => true,
+        ]);
+        $inmeten = $this->activity('inmeten');
+        $pvc = $this->activity('pvc-banen');
+
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Kloppenburg',
+            'city' => 'Enschede',
+            'work_activity_ids' => [$inmeten->id, $pvc->id],
+            'activity_quantities' => [
+                $inmeten->id => '50',
+                $pvc->id => '50',
+            ],
+            'activity_units' => [
+                $inmeten->id => WorkUnit::SquareMeter->value,
+                $pvc->id => WorkUnit::SquareMeter->value,
+            ],
+            'start_year' => 2026,
+            'start_week' => 37,
+            'klaar_year' => 2026,
+            'klaar_week' => 37,
+        ])->assertRedirect();
+
+        $project = Project::query()->first();
+        $this->assertNotNull($project);
+        $inmetenItem = $project->workItems()->where('name', 'Inmeten')->first();
+        $this->assertNotNull($inmetenItem);
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $nick->id,
+                'project_id' => $project->id,
+                'work_item_id' => $inmetenItem->id,
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-08',
+                'people_count' => 1,
+                'start_time' => '09:00',
+                'end_time' => '11:00',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Nick Seine is geen eigen medewerker voor Inmeten.');
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $eric->id,
+                'project_id' => $project->id,
+                'work_item_id' => $inmetenItem->id,
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-08',
+                'people_count' => 1,
+                'start_time' => '09:00',
+                'end_time' => '11:00',
+            ])
+            ->assertOk();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('Inmeten')
+            ->assertSee('09:00 – Inmeten – Kloppenburg - Enschede')
+            ->getContent();
+
+        $request = Request::create('/planning', 'GET', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]);
+        $request->setUserResolver(fn () => $user);
+        $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
+            ->firstWhere('id', $project->id);
+
+        $this->assertNotNull($row);
+        $inmetenRow = collect($row['children'])->firstWhere('title', 'Inmeten');
+        $this->assertNotNull($inmetenRow);
+        $this->assertNull($inmetenRow['ordered']);
+        $this->assertSame('', $inmetenRow['unit']);
+        $this->assertStringContainsString('09:00 – Inmeten – Kloppenburg - Enschede', $html);
     }
 
     public function test_winkel_assignment_to_pvc_renders_on_the_pvc_row(): void

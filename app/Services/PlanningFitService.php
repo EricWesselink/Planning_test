@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\EmploymentType;
 use App\Models\CrewMember;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
@@ -36,6 +37,11 @@ class PlanningFitService
         $from = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
         $workers = $this->activeWorkers();
+        if ($item->isIntakeTask()) {
+            $workers = $workers
+                ->filter(fn (Worker $worker): bool => $worker->employment_type === EmploymentType::Eigen)
+                ->values();
+        }
         $assignments = $this->assignmentsFor($workers, $start, $end, $ignoreAssignmentId);
 
         return [
@@ -142,6 +148,10 @@ class PlanningFitService
         array $crewIds = [],
     ): ?string {
         $item->loadMissing(['workActivity', 'project']);
+        if ($item->isIntakeTask() && $worker->employment_type !== EmploymentType::Eigen) {
+            return $worker->planName().' is geen eigen medewerker voor '.$item->requiredSpecialty()['label'].'.';
+        }
+
         if ($item->skipsSkillMatch()) {
             return null;
         }

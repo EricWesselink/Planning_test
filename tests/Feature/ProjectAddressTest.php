@@ -98,13 +98,73 @@ class ProjectAddressTest extends TestCase
             ->get(route('projects.index'))
             ->assertOk()
             ->assertSee('Werkadres')
+            ->assertSee('Opdrachtgever')
             ->assertSee('name="address"', false)
             ->assertSee('name="postal_code"', false)
             ->assertSee('name="city"', false)
+            ->assertSee('name="customer_name"', false)
             ->assertSee('value="Schoolstraat 1"', false)
             ->assertSee('value="3811 AA"', false)
             ->assertSee('value="Amersfoort"', false)
+            ->assertSee('value="Hegeman"', false)
             ->assertDontSee('>Straat</label>', false);
+    }
+
+    public function test_project_list_saves_an_opdrachtgever(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject();
+        $existing = Customer::query()->create(['name' => 'Stichting Griftland']);
+
+        $this->actingAs($user)
+            ->from(route('projects.index'))
+            ->patch(route('projects.update', $project), [
+                'planning_project_id' => $project->id,
+                'customer_name' => 'Stichting Griftland',
+                'address' => $project->address,
+                'postal_code' => $project->postal_code,
+                'city' => $project->city,
+            ])
+            ->assertRedirect(route('projects.index'));
+
+        $project->refresh();
+        $this->assertSame($existing->id, $project->customer_id);
+        $this->assertSame(2, Customer::query()->count());
+    }
+
+    public function test_project_list_creates_an_opdrachtgever_when_the_name_is_new(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject();
+
+        $this->actingAs($user)
+            ->from(route('projects.index'))
+            ->patch(route('projects.update', $project), [
+                'planning_project_id' => $project->id,
+                'customer_name' => 'Stichting Griftland',
+            ])
+            ->assertRedirect(route('projects.index'));
+
+        $project->refresh();
+        $this->assertSame('Stichting Griftland', $project->customer?->name);
+        $this->assertTrue(Customer::query()->where('name', 'Hegeman')->exists());
+        $this->assertSame(2, Customer::query()->count());
+    }
+
+    public function test_rejects_an_empty_opdrachtgever(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeProject();
+
+        $this->actingAs($user)
+            ->from(route('projects.index'))
+            ->patch(route('projects.update', $project), [
+                'customer_name' => '',
+            ])
+            ->assertRedirect(route('projects.index'))
+            ->assertSessionHasErrors(['customer_name' => 'Vul een opdrachtgever in.']);
+
+        $this->assertSame('Hegeman', $project->fresh()->customer?->name);
     }
 
     public function test_project_list_saves_a_work_address(): void
@@ -141,7 +201,9 @@ class ProjectAddressTest extends TestCase
             ->get(route('projects.index'))
             ->assertOk()
             ->assertSee('Schoolstraat 1, Amersfoort')
+            ->assertSee('Hegeman')
             ->assertDontSee('name="address"', false)
+            ->assertDontSee('name="customer_name"', false)
             ->assertDontSee('>Opslaan<', false);
     }
 

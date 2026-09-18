@@ -461,6 +461,19 @@ class WorkerAssignment extends Model
 
     public function planningLabel(): string
     {
+        $this->loadMissing(['workItem.workActivity', 'project', 'worker']);
+        if ($this->workItem?->isIntakeTask() && ! $this->isProvisional()) {
+            $time = PlanningHours::formatTime($this->startTimeValue());
+            $work = trim((string) $this->workItem->name);
+            $who = $this->worker?->planName() ?? 'Onbekend';
+            $project = trim((string) ($this->project?->name ?? ''));
+
+            return implode(' – ', array_filter(
+                [$time, $work !== '' ? $work : null, $project !== '' ? $project : $who],
+                fn (?string $part): bool => $part !== null && $part !== '',
+            ));
+        }
+
         $team = $this->worker?->planName() ?? 'Onbekend';
         if ($this->isProvisional()) {
             $weeks = $this->weekPeriodLabel();

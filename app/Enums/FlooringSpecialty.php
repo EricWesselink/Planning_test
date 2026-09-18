@@ -14,6 +14,7 @@ enum FlooringSpecialty: string
     case Entreemat = 'entreemat';
     case Plinten = 'plinten';
     case Inmeten = 'inmeten';
+    case Werkopname = 'werkopname';
     case Montage = 'montage';
     case Reparatie = 'reparatie';
     case Service = 'service';
@@ -31,6 +32,7 @@ enum FlooringSpecialty: string
             self::Entreemat => 'Entreemat',
             self::Plinten => 'Plinten',
             self::Inmeten => 'Inmeten',
+            self::Werkopname => 'Werkopname',
             self::Montage => 'Montage',
             self::Reparatie => 'Reparatie',
             self::Service => 'Service',
@@ -40,9 +42,23 @@ enum FlooringSpecialty: string
     public function hasQuantityRate(): bool
     {
         return match ($this) {
-            self::Inmeten, self::Montage, self::Reparatie, self::Service => false,
+            self::Inmeten, self::Werkopname, self::Montage, self::Reparatie, self::Service => false,
             default => true,
         };
+    }
+
+    public function isIntakeWork(): bool
+    {
+        return $this === self::Inmeten || $this === self::Werkopname;
+    }
+
+    public static function isIntakeLabel(?string $label): bool
+    {
+        if ($label === null) {
+            return false;
+        }
+
+        return self::tryFromLabel($label)?->isIntakeWork() ?? false;
     }
 
     public static function tryFromLabel(string $label): ?self

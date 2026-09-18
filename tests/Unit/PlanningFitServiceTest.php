@@ -199,6 +199,63 @@ class PlanningFitServiceTest extends TestCase
         $this->assertTrue($item->fresh('project')->skipsSkillMatch());
     }
 
+    public function test_winkel_inmeten_requires_own_staff_with_that_vakkennis(): void
+    {
+        $eric = $this->makeWorker('Eric Wesselink', 'Inmeten');
+        $this->makeWorker('Kees Jansen', 'PVC');
+        $nick = $this->makeWorker('Nick Seine', 'Inmeten');
+        $nick->update(['employment_type' => 'zzp']);
+        $item = $this->makeWorkItem('Inmeten');
+        $item->project->forceFill(['kind' => ProjectKind::Winkel])->save();
+        $item = $item->fresh(['project', 'workActivity']);
+
+        $this->assertFalse($item->skipsSkillMatch());
+
+        $payload = app(PlanningFitService::class)->candidates(
+            $item,
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-07'),
+            '08:00:00',
+            '16:00:00',
+        );
+
+        $this->assertSame(['Eric Wesselink', 'Kees Jansen'], collect($payload['workers'])->pluck('name')->all());
+        $this->assertTrue(collect($payload['workers'])->firstWhere('name', 'Eric Wesselink')['selectable']);
+        $this->assertFalse(collect($payload['workers'])->firstWhere('name', 'Kees Jansen')['selectable']);
+        $this->assertSame(
+            'Kees Jansen heeft geen vakkennis voor Inmeten.',
+            app(PlanningFitService::class)->skillRejection(
+                Worker::query()->where('name', 'Kees Jansen')->firstOrFail(),
+                $item,
+            ),
+        );
+        $this->assertSame(
+            'Nick Seine is geen eigen medewerker voor Inmeten.',
+            app(PlanningFitService::class)->skillRejection($nick->fresh(), $item),
+        );
+        $this->assertNull(app(PlanningFitService::class)->skillRejection($eric->fresh(), $item));
+    }
+
+    public function test_winkel_werkopname_marks_friday_off_as_unavailable(): void
+    {
+        $eric = $this->makeWorker('Eric Wesselink', 'Werkopname');
+        $eric->update(['friday_off' => true]);
+        $item = $this->makeWorkItem('Werkopname');
+        $item->project->forceFill(['kind' => ProjectKind::Winkel])->save();
+
+        $row = collect(app(PlanningFitService::class)->candidates(
+            $item->fresh(['project', 'workActivity']),
+            Carbon::parse('2026-09-11'),
+            Carbon::parse('2026-09-11'),
+            '08:00:00',
+            '16:00:00',
+        )['workers'])->firstWhere('name', 'Eric Wesselink');
+
+        $this->assertIsArray($row);
+        $this->assertFalse($row['selectable']);
+        $this->assertSame('Vrij op vrijdag', $row['status_label']);
+    }
+
     public function test_shop_candidates_mark_a_busy_vakman_unavailable(): void
     {
         $kees = $this->makeWorker('Kees Jansen', 'PVC');
@@ -329,6 +386,7 @@ class PlanningFitServiceTest extends TestCase
     {
         return [
             'inmeten' => ['Inmeten', 'inmeten', 'Inmeten'],
+            'werkopname' => ['Werkopname', 'werkopname', 'Werkopname'],
             'montage' => ['Montage', 'montage', 'Montage'],
             'reparatie' => ['Reparatie', 'reparatie', 'Reparatie'],
             'service' => ['Service', 'service', 'Service'],

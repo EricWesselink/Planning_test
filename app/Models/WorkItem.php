@@ -165,10 +165,22 @@ class WorkItem extends Model
         return $parts === [] ? null : implode(' · ', $parts);
     }
 
+    public function isIntakeTask(): bool
+    {
+        $this->loadMissing('workActivity');
+
+        return FlooringSpecialty::isIntakeLabel($this->workActivity?->name)
+            || FlooringSpecialty::isIntakeLabel($this->name);
+    }
+
     public function skipsSkillMatch(): bool
     {
         if ($this->isExtraWork()) {
             return true;
+        }
+
+        if ($this->isIntakeTask()) {
+            return false;
         }
 
         $this->loadMissing('project');

@@ -82,6 +82,7 @@
                 <tr>
                     <th class="px-2 py-1.5">Projectnr.</th>
                     <th class="px-2 py-1.5">Werk</th>
+                    <th class="px-2 py-1.5">Opdrachtgever</th>
                     <th class="px-2 py-1.5">Werkadres</th>
                     <th class="px-2 py-1.5">Start werk</th>
                     <th class="px-2 py-1.5">Klaar werk</th>
@@ -131,6 +132,22 @@
                             @endif
                             <div>{{ $project->displayTitle() }}</div>
                         @endif
+                    </td>
+                    <td class="px-2 py-1.5">
+                        @can('update', $project)
+                            <input
+                                id="index-{{ $project->id }}-customer"
+                                form="{{ $formId }}"
+                                name="customer_name"
+                                value="{{ $editing ? old('customer_name', $project->customer?->name) : $project->customer?->name }}"
+                                aria-label="Opdrachtgever"
+                                title="Opdrachtgever"
+                                placeholder="Opdrachtgever"
+                                class="min-w-[10rem] border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
+                            >
+                        @else
+                            {{ $project->customer?->name ?: '—' }}
+                        @endcan
                     </td>
                     <td class="px-2 py-1.5">
                         @can('update', $project)
@@ -249,7 +266,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9" class="px-3 py-6 text-sm text-nicon-muted">
+                    <td colspan="10" class="px-3 py-6 text-sm text-nicon-muted">
                         @if ($search !== '' || $week !== null || $kind !== '')
                             Geen projecten voor deze selectie.
                         @else

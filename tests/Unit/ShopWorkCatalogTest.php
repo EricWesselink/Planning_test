@@ -63,6 +63,31 @@ class ShopWorkCatalogTest extends TestCase
         $this->assertSame(0, WorkActivity::query()->where('slug', 'pvc')->count());
     }
 
+    public function test_ensure_missing_adds_werkopname_after_inmeten_without_duplicating_it(): void
+    {
+        $werkopname = WorkActivity::query()->where('slug', 'werkopname')->first();
+        $this->assertNotNull($werkopname);
+        $werkopname->delete();
+
+        $inmeten = WorkActivity::query()->where('slug', 'inmeten')->firstOrFail();
+        $inmeten->update(['sort_order' => 1]);
+        $montage = WorkActivity::query()->where('slug', 'montage')->firstOrFail();
+        $montage->update(['sort_order' => 2]);
+
+        ShopWorkCatalog::ensureMissing();
+
+        $werkopname = WorkActivity::query()->where('slug', 'werkopname')->first();
+        $montage = $montage->fresh();
+
+        $this->assertNotNull($werkopname);
+        $this->assertSame('Werkopname', $werkopname->name);
+        $this->assertSame($inmeten->work_activity_category_id, $werkopname->work_activity_category_id);
+        $this->assertSame(2, $werkopname->sort_order);
+        $this->assertSame(3, $montage->sort_order);
+        $this->assertSame(1, WorkActivity::query()->where('slug', 'inmeten')->count());
+        $this->assertSame(1, WorkActivity::query()->where('slug', 'werkopname')->count());
+    }
+
     public function test_replace_legacy_pvc_renames_existing_activity_and_work_item(): void
     {
         $banen = WorkActivity::query()->where('slug', 'pvc-banen')->firstOrFail();

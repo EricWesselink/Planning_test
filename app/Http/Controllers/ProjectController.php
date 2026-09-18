@@ -133,6 +133,7 @@ class ProjectController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'city' => ['nullable', 'string', 'max:255'],
+            'customer_name' => ['sometimes', 'required', 'string', 'max:255'],
             'work_code' => ['sometimes', 'nullable', 'string', 'max:32'],
             'basis_uurtarief' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999.99'],
             'work_items' => ['sometimes', 'array'],
@@ -141,6 +142,7 @@ class ProjectController extends Controller
             'work_items.*.uurtarief' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
             ...PlanningWeek::rules(),
         ], array_merge(PlanningWeek::messages(), [
+            'customer_name.required' => 'Vul een opdrachtgever in.',
             'basis_uurtarief.min' => 'Het uurtarief kan niet lager zijn dan 0.',
             'basis_uurtarief.numeric' => 'Vul een geldig uurtarief in.',
             'work_items.*.begrote_uren.min' => 'Begrote uren kunnen niet lager zijn dan 0.',
@@ -162,6 +164,9 @@ class ProjectController extends Controller
         }
         if ($request->exists('work_code')) {
             $project->applyWorkCode($data['work_code'] ?? null);
+        }
+        if ($request->exists('customer_name')) {
+            $project->applyCustomerName($data['customer_name']);
         }
         $project->update(collect($data)->only($fields)->all());
 

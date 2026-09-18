@@ -171,7 +171,7 @@ class ShopWorkService
                 ['sort_order', 'asc'],
                 ['id', 'asc'],
             ])
-            ->first();
+            ->first(fn (WorkItem $item): bool => ! $item->isIntakeTask());
 
         if ($workerId === null || ! $item instanceof WorkItem || $start === null || $end === null) {
             return;

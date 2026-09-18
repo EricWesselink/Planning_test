@@ -29,6 +29,8 @@ class SmallWorkService
      *     customer_name?: ?string,
      *     project_id?: ?int,
      *     description: string,
+     *     address?: ?string,
+     *     postal_code?: ?string,
      *     location?: ?string,
      *     date: string,
      *     klaar_date?: ?string,
@@ -61,6 +63,8 @@ class SmallWorkService
         $hours = PlanningHours::snapHours((float) $data['hours']);
         $date = Carbon::parse($data['date'])->toDateString();
         $location = trim((string) ($data['location'] ?? ''));
+        $address = trim((string) ($data['address'] ?? ''));
+        $postalCode = trim((string) ($data['postal_code'] ?? ''));
         $description = trim((string) $data['description']);
         $customer = Customer::query()->firstOrCreate(
             ['name' => trim((string) $data['customer_name'])],
@@ -73,6 +77,8 @@ class SmallWorkService
                 : $this->intake->nextProjectNumber(),
             'customer_id' => $customer->id,
             'name' => $description,
+            'address' => $address !== '' ? $address : null,
+            'postal_code' => $postalCode !== '' ? $postalCode : null,
             'city' => $location !== '' ? $location : null,
             'supervisor_user_id' => $user->id,
             'planned_start_date' => $date,
@@ -103,6 +109,8 @@ class SmallWorkService
      * @param  array{
      *     customer_name: string,
      *     description: string,
+     *     address?: ?string,
+     *     postal_code?: ?string,
      *     location?: ?string,
      *     date: string,
      *     hours: float|int|string,
@@ -117,6 +125,8 @@ class SmallWorkService
             $hours = PlanningHours::snapHours((float) $data['hours']);
             $date = Carbon::parse($data['date'])->toDateString();
             $location = trim((string) ($data['location'] ?? ''));
+            $address = trim((string) ($data['address'] ?? ''));
+            $postalCode = trim((string) ($data['postal_code'] ?? ''));
             $description = trim((string) $data['description']);
             $customer = Customer::query()->firstOrCreate(
                 ['name' => trim((string) $data['customer_name'])],
@@ -127,6 +137,8 @@ class SmallWorkService
             $project->update([
                 'customer_id' => $customer->id,
                 'name' => $description,
+                'address' => $address !== '' ? $address : null,
+                'postal_code' => $postalCode !== '' ? $postalCode : null,
                 'city' => $location !== '' ? $location : null,
                 'planned_start_date' => $date,
                 'planned_end_date' => $date,
