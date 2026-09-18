@@ -17,41 +17,15 @@ const candidates = [
     { id: 4, name: 'Team 5 Lukas', people_count: 3, selectable: true, status_label: '3/3 geschikt en beschikbaar' },
 ];
 
-test('keeps unsuitable and busy vakmensen enabled with their status label', () => {
+test('omits unavailable vakmensen from a new planning picker', () => {
     const options = whoOptionList(candidates);
 
-    assert.equal(options[0].disabled, false);
-    assert.deepEqual(options.slice(1).map((option) => ({
-        value: option.value,
-        disabled: option.disabled,
-        selectable: option.selectable,
-        label: option.label,
-    })), [
-        {
-            value: 'worker:1',
-            disabled: false,
-            selectable: false,
-            label: 'H.D. Verwoert — 0/4 geschikt en beschikbaar',
-        },
-        {
-            value: 'worker:2',
-            disabled: false,
-            selectable: false,
-            label: 'Max Project — Geen vakkennis: PVC',
-        },
-        {
-            value: 'worker:3',
-            disabled: false,
-            selectable: true,
-            label: 'Team 4 Lukasz — Beschikbaar',
-        },
-        {
-            value: 'worker:4',
-            disabled: false,
-            selectable: true,
-            label: 'Team 5 Lukas — 3/3 geschikt en beschikbaar',
-        },
+    assert.deepEqual(options.slice(1).map((option) => option.label), [
+        'Team 4 Lukasz — Beschikbaar',
+        'Team 5 Lukas — 3/3 geschikt en beschikbaar',
     ]);
+    assert.equal(options.some((option) => option.label.includes('0/4')), false);
+    assert.equal(options.some((option) => option.label.includes('Geen vakkennis')), false);
 });
 
 test('keeps a previously chosen weaker-fit vakman selected', () => {
@@ -60,7 +34,9 @@ test('keeps a previously chosen weaker-fit vakman selected', () => {
 
     assert.equal(chosen?.selected, true);
     assert.equal(chosen?.disabled, false);
+    assert.equal(chosen?.label, 'Max Project — Geen vakkennis: PVC');
     assert.equal(options.filter((option) => option.selected).length, 1);
+    assert.equal(options.some((option) => option.label.includes('H.D. Verwoert')), false);
 });
 
 test('replaces stale who-options with a loading row', () => {

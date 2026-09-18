@@ -77,9 +77,10 @@ export function whoLoadingOptionList() {
 /**
  * Build Wie-dropdown options for active planning candidates.
  *
- * Candidates already exclude inactive workers. `selectable` is fit information
- * (skill / availability) and must not map to HTML `disabled`: native select
- * popups ignore option colors and paint those rows as unreadable GrayText.
+ * A new planning only lists people who are suitable and free. The current
+ * choice stays visible when editing, even if that person is now busy. Do not
+ * map `selectable` to HTML `disabled`: native select popups ignore option
+ * colors and paint those rows as unreadable GrayText.
  *
  * @param {PlanWhoCandidate[]} candidates
  * @param {string} selectedValue
@@ -88,6 +89,13 @@ export function whoLoadingOptionList() {
  */
 export function whoOptionList(candidates, selectedValue = '', placeholderLabel = 'Kies vakman of team') {
     const current = String(selectedValue ?? '');
+    const visible = candidates.filter((candidate) => {
+        if (candidate.selectable) {
+            return true;
+        }
+
+        return current === `worker:${candidate.id}`;
+    });
 
     return [
         {
@@ -98,7 +106,7 @@ export function whoOptionList(candidates, selectedValue = '', placeholderLabel =
             disabled: false,
             selected: current === '',
         },
-        ...candidates.map((candidate) => {
+        ...visible.map((candidate) => {
             const value = `worker:${candidate.id}`;
 
             return {
