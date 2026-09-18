@@ -32,6 +32,7 @@ use App\Http\Controllers\WorkActivityController;
 use App\Http\Controllers\WorkerAbsenceController;
 use App\Http\Controllers\WorkerAvailabilityController;
 use App\Http\Controllers\WorkerController;
+use App\Http\Controllers\WorkerCrewMemberController;
 use App\Http\Controllers\WorkerLoginInviteController;
 use App\Http\Controllers\WorkerPdfImportController;
 use App\Http\Controllers\WorkerPersonnelController;
@@ -224,6 +225,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/vakmensen/{worker}/inlog', [WorkerController::class, 'storeLogin'])->name('workers.login.store');
     Route::post('/vakmensen/{worker}/leden/{crewMember}/inlogbericht', [WorkerLoginInviteController::class, 'store'])->middleware('throttle:vakman-login-invite')->name('workers.login-invite.store');
     Route::post('/vakmensen/{worker}/leden/{crewMember}/inlogbericht/wachtwoord', [WorkerLoginInviteController::class, 'resetPassword'])->middleware('throttle:vakman-login-invite')->name('workers.login-invite.reset');
+    Route::patch('/vakmensen/{worker}/leden/{crewMember}/actief', [WorkerCrewMemberController::class, 'updateActive'])->name('workers.crew-members.active.update');
+    Route::delete('/vakmensen/{worker}/leden/{crewMember}', [WorkerCrewMemberController::class, 'destroy'])->name('workers.crew-members.destroy');
     Route::patch('/vakmensen/{worker}/actief', [WorkerController::class, 'updateActive'])->name('workers.active.update');
     Route::delete('/vakmensen/{worker}', [WorkerController::class, 'destroy'])->name('workers.destroy');
     Route::patch('/vakmensen/{worker}', [WorkerController::class, 'update'])->name('workers.update');

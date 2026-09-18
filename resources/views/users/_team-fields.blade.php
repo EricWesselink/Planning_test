@@ -3,7 +3,7 @@
         'employment_type' => \App\Enums\EmploymentType::Eigen,
         'people_count' => 1,
     ]);
-    $crewCount = max(1, min(50, (int) old('people_count', $worker->peopleCount() ?: 1)));
+    $crewCount = max(1, min(50, (int) old('people_count', $worker->rosterCount() ?: 1)));
     $oldMembers = old('crew_members');
     if (is_array($oldMembers)) {
         $raw = array_values($oldMembers);

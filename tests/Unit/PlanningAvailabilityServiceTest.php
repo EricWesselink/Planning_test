@@ -487,6 +487,19 @@ class PlanningAvailabilityServiceTest extends TestCase
         $this->assertSame('Harm Wesselink', $monday['people'][1]['name']);
     }
 
+    public function test_daily_matrix_omits_an_inactive_teammate(): void
+    {
+        $team = $this->makeWorker('Team 1 Nick', ['Nick', 'Mahmoud', 'Mohammed']);
+        $team->crewPeople->firstWhere('name', 'Mohammed')->update(['active' => false]);
+        $team->unsetRelation('crewPeople');
+
+        $monday = $this->cell('Team 1 Nick', '2026-09-07');
+
+        $this->assertSame(['Nick', 'Mahmoud'], array_column($monday['people'], 'name'));
+        $this->assertSame(2, $monday['free_count']);
+        $this->assertSame(2, $team->fresh('crewPeople')->peopleCount());
+    }
+
     public function test_daily_matrix_keeps_an_existing_team_name(): void
     {
         $this->makeWorker('Wespro', ['Piet', 'Jan']);

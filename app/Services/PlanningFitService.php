@@ -247,7 +247,7 @@ class PlanningFitService
         bool $includeSaturday = false,
         bool $includeSunday = false,
     ): array {
-        $people = $worker->crewPeople;
+        $people = $worker->activeCrewPeople();
         if ($people->count() >= 2) {
             return $this->presentTeam($worker, $people, $specialty, $assignments, $start, $end, $from, $to, $skipSkill, $includeSaturday, $includeSunday);
         }

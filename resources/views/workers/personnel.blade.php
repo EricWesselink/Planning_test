@@ -38,7 +38,7 @@
                         $worker = $row['worker'];
                         $member = $row['member'];
                     @endphp
-                    <tr @class(['border-t border-nicon-line', 'opacity-60' => ! $worker->active])>
+                    <tr @class(['border-t border-nicon-line', 'opacity-60' => ! $worker->active || ! $member->isActive()])>
                         <td class="px-4 py-2">
                             <a href="{{ route('workers.show', $worker) }}" class="font-semibold text-nicon-ink">{{ $member->displayName() }}</a>
                             @if ($member->displayName() !== $worker->name)

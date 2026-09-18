@@ -115,7 +115,7 @@ class PlanningAvailabilityService
                 if (! $this->countsTowardCapacityFor($worker, $day)) {
                     continue;
                 }
-                $crew = $worker->crewPeople;
+                $crew = $worker->activeCrewPeople();
                 if ($crew->isNotEmpty()) {
                     foreach ($crew as $member) {
                         if (! $this->availability->isAwayOn($worker, $day, $member)) {
@@ -186,7 +186,7 @@ class PlanningAvailabilityService
     {
         $away = $this->awayDetail($worker, $day);
         $people = $this->peopleOnTeam($worker);
-        $crew = $worker->crewPeople;
+        $crew = $worker->activeCrewPeople();
         $namedToday = $assignments->contains(
             fn (WorkerAssignment $assignment): bool => $assignment->crewMembers->isNotEmpty()
                 && $assignment->intervalOnDate($day) !== null
@@ -410,18 +410,21 @@ class PlanningAvailabilityService
      */
     private function peopleOnTeam(Worker $worker): array
     {
-        $crew = $worker->crewPeople;
-        if ($crew->count() === 1) {
-            $member = $crew->first();
-            $name = trim((string) $member->name);
+        if ($worker->crewPeople->isNotEmpty()) {
+            $crew = $worker->activeCrewPeople();
+            if ($crew->isEmpty()) {
+                return [];
+            }
+            if ($crew->count() === 1) {
+                $member = $crew->first();
+                $name = trim((string) $member->name);
 
-            return [[
-                'id' => (int) $member->id,
-                'name' => $name !== '' ? $member->label() : $worker->planName(),
-            ]];
-        }
+                return [[
+                    'id' => (int) $member->id,
+                    'name' => $name !== '' ? $member->label() : $worker->planName(),
+                ]];
+            }
 
-        if ($crew->isNotEmpty()) {
             return $crew
                 ->map(fn (CrewMember $member): array => [
                     'id' => (int) $member->id,

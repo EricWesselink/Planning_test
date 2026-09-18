@@ -643,6 +643,7 @@ class PlanningActionController extends Controller
         }
 
         $owned = $worker->crewPeople()
+            ->where('active', true)
             ->whereIn('id', $ids)
             ->pluck('id')
             ->map(fn (mixed $id): int => (int) $id)

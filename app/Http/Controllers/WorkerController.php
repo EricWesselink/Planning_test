@@ -240,6 +240,7 @@ class WorkerController extends Controller
             'crew_members.*.id' => ['nullable', 'integer', 'min:1'],
             'crew_members.*.name' => ['nullable', 'string', 'max:255'],
             'crew_members.*.phone' => ['nullable', 'string', 'max:64'],
+            'crew_members.*.active' => ['sometimes', 'boolean'],
             'active' => ['sometimes', 'boolean'],
             'friday_off' => ['sometimes', 'boolean'],
             'unavailable' => ['sometimes', 'boolean'],

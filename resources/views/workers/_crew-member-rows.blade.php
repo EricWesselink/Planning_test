@@ -1,6 +1,6 @@
 @php
     $worker ??= new \App\Models\Worker;
-    $crewCount = max(1, min(50, (int) old('people_count', $worker->peopleCount())));
+    $crewCount = max(1, min(50, (int) old('people_count', $worker->rosterCount())));
     $oldMembers = old('crew_members');
     $crewMembers = \App\Models\Worker::normalizeCrewMembers(
         is_array($oldMembers) ? $oldMembers : $worker->crewMembersForForm(),
@@ -12,11 +12,56 @@
     <p class="mt-1 text-[11px] text-nicon-muted">Per persoon een naam en telefoonnummer. Het aantal rijen volgt Personen.</p>
     <div class="mt-2 grid gap-3" data-crew-rows>
         @foreach ($crewMembers as $index => $member)
-            <div class="grid gap-3 sm:grid-cols-2" data-crew-row>
+            @php
+                $memberId = (int) ($member['id'] ?? 0);
+                $memberActive = array_key_exists('active', $member) ? (bool) $member['active'] : true;
+                $memberName = trim((string) ($member['name'] ?? '')) ?: 'Persoon '.($index + 1);
+            @endphp
+            <div class="grid gap-3 sm:grid-cols-2{{ $memberActive ? '' : ' opacity-60' }}" data-crew-row>
                 <div>
                     <label class="text-xs uppercase tracking-wide text-nicon-muted">Naam persoon {{ $index + 1 }}</label>
                     <input type="text" name="crew_members[{{ $index }}][name]" value="{{ $member['name'] }}" data-crew-name class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="Voor- en achternaam" autocomplete="name">
                     <input type="hidden" name="crew_members[{{ $index }}][id]" value="{{ $member['id'] ?? '' }}" data-crew-id>
+                    <div class="mt-2 flex flex-wrap items-center gap-3">
+                        @if ($memberId > 0 && $worker->exists)
+                            <label class="flex items-center gap-2 text-sm">
+                                <input type="hidden" form="crew-member-active-{{ $memberId }}" name="active" value="0">
+                                <input
+                                    type="checkbox"
+                                    form="crew-member-active-{{ $memberId }}"
+                                    name="active"
+                                    value="1"
+                                    data-crew-active
+                                    class="size-4 accent-nicon-ok"
+                                    @checked($memberActive)
+                                    onchange="this.form.submit()"
+                                >
+                                Actief
+                            </label>
+                            <button
+                                type="submit"
+                                form="crew-member-delete-{{ $memberId }}"
+                                class="text-xs text-nicon-danger hover:text-nicon-ink"
+                                onclick="return confirm({{ json_encode($memberName.' wordt verwijderd uit het team. Dit kan niet ongedaan worden gemaakt.') }})"
+                            >Verwijderen</button>
+                            @push('detached-forms')
+                                <form id="crew-member-active-{{ $memberId }}" method="POST" action="{{ route('workers.crew-members.active.update', [$worker, $memberId]) }}">
+                                    @csrf
+                                    @method('PATCH')
+                                </form>
+                                <form id="crew-member-delete-{{ $memberId }}" method="POST" action="{{ route('workers.crew-members.destroy', [$worker, $memberId]) }}">
+                                    @csrf
+                                    @method('DELETE')
+                                </form>
+                            @endpush
+                        @else
+                            <label class="flex items-center gap-2 text-sm">
+                                <input type="hidden" name="crew_members[{{ $index }}][active]" value="0">
+                                <input type="checkbox" name="crew_members[{{ $index }}][active]" value="1" data-crew-active class="size-4 accent-nicon-ok" @checked($memberActive)>
+                                Actief
+                            </label>
+                        @endif
+                    </div>
                 </div>
                 <div>
                     <label class="text-xs uppercase tracking-wide text-nicon-muted">Telefoon</label>
@@ -36,6 +81,11 @@
                 <label class="text-xs uppercase tracking-wide text-nicon-muted">Naam persoon __NUMBER__</label>
                 <input type="text" name="crew_members[__INDEX__][name]" value="" data-crew-name class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="Voor- en achternaam" autocomplete="name">
                 <input type="hidden" name="crew_members[__INDEX__][id]" value="" data-crew-id>
+                <label class="mt-2 flex items-center gap-2 text-sm">
+                    <input type="hidden" name="crew_members[__INDEX__][active]" value="0">
+                    <input type="checkbox" name="crew_members[__INDEX__][active]" value="1" data-crew-active class="size-4 accent-nicon-ok" checked>
+                    Actief
+                </label>
             </div>
             <div>
                 <label class="text-xs uppercase tracking-wide text-nicon-muted">Telefoon</label>
@@ -71,6 +121,7 @@
                         id: row.querySelector('[data-crew-id]')?.value ?? '',
                         name: row.querySelector('[data-crew-name]')?.value ?? '',
                         phone: row.querySelector('[data-crew-phone]')?.value ?? '',
+                        active: row.querySelector('[data-crew-active]')?.checked ?? true,
                     }));
 
                     rows.replaceChildren();
@@ -87,6 +138,7 @@
                         const nameInput = row.querySelector('[data-crew-name]');
                         const phoneInput = row.querySelector('[data-crew-phone]');
                         const idInput = row.querySelector('[data-crew-id]');
+                        const activeInput = row.querySelector('[data-crew-active]');
                         if (nameInput) {
                             nameInput.value = existing[index]?.name ?? '';
                         }
@@ -95,6 +147,9 @@
                         }
                         if (idInput) {
                             idInput.value = existing[index]?.id ?? '';
+                        }
+                        if (activeInput) {
+                            activeInput.checked = existing[index]?.active ?? true;
                         }
                         const inviteButton = row.querySelector('button');
                         const savedId = existing[index]?.id ?? '';

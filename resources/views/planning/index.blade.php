@@ -211,7 +211,7 @@
                  data-ticket-url="{{ url('/planning/assignments') }}"
                  data-readonly="{{ $canManagePlanning ? '0' : '1' }}"
                  data-week-year="{{ $weekStart->isoWeekYear() }}"
-                 data-crews='@json($workers->mapWithKeys(fn ($worker) => [$worker->id => $worker->crewPeople->unique(function ($person) {
+                 data-crews='@json($workers->mapWithKeys(fn ($worker) => [$worker->id => $worker->activeCrewPeople()->unique(function ($person) {
                     $name = trim((string) $person->name);
 
                     return $name === '' ? 'id:'.$person->id : mb_strtolower($name);

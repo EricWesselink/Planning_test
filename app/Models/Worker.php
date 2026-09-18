@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 #[Fillable([
@@ -105,7 +106,46 @@ class Worker extends Model
 
     public function peopleCount(): int
     {
+        $active = $this->activeCrewCount();
+        if ($active !== null) {
+            return max(1, $active);
+        }
+
         return max(1, (int) $this->people_count);
+    }
+
+    public function rosterCount(): int
+    {
+        $crew = $this->loadedCrewPeople();
+        if ($crew !== null && $crew->isNotEmpty()) {
+            return $crew->count();
+        }
+
+        return max(1, (int) $this->people_count);
+    }
+
+    /**
+     * @return Collection<int, CrewMember>|null
+     */
+    private function loadedCrewPeople(): ?Collection
+    {
+        if (! $this->exists) {
+            return null;
+        }
+
+        return $this->relationLoaded('crewPeople')
+            ? $this->crewPeople
+            : $this->crewPeople()->get();
+    }
+
+    private function activeCrewCount(): ?int
+    {
+        $crew = $this->loadedCrewPeople();
+        if ($crew === null || $crew->isEmpty()) {
+            return null;
+        }
+
+        return $crew->filter(fn (CrewMember $member): bool => $member->isActive())->count();
     }
 
     public function peopleCountLabel(): string
@@ -127,10 +167,11 @@ class Worker extends Model
                         'id' => $member->id,
                         'name' => (string) $member->name,
                         'phone' => (string) $member->phone,
+                        'active' => $member->isActive(),
                     ])
                     ->values()
                     ->all(),
-                $this->peopleCount(),
+                $this->rosterCount(),
             );
         }
 
@@ -178,6 +219,9 @@ class Worker extends Model
                 'name' => trim((string) ($member['name'] ?? '')),
                 'phone' => trim((string) ($member['phone'] ?? '')),
             ];
+            if (array_key_exists('active', $member)) {
+                $row['active'] = filter_var($member['active'], FILTER_VALIDATE_BOOLEAN);
+            }
             $id = (int) ($member['id'] ?? 0);
             if ($id > 0) {
                 $row['id'] = $id;
@@ -201,7 +245,7 @@ class Worker extends Model
         $count = max(1, min(50, $count - max(0, $namedBefore - $namedAfter)));
 
         while (count($normalized) < $count) {
-            $normalized[] = ['name' => '', 'phone' => ''];
+            $normalized[] = ['name' => '', 'phone' => '', 'active' => true];
         }
 
         return array_values(array_slice($normalized, 0, $count));
@@ -390,6 +434,46 @@ class Worker extends Model
         return $this->hasMany(CrewMember::class)->orderBy('sort_order')->orderBy('id');
     }
 
+    /**
+     * @return Collection<int, CrewMember>
+     */
+    public function activeCrewPeople(): Collection
+    {
+        return $this->crewPeople
+            ->filter(fn (CrewMember $member): bool => $member->isActive())
+            ->values();
+    }
+
+    public function refreshRosterFromCrewPeople(): void
+    {
+        $people = CrewMember::query()
+            ->where('worker_id', $this->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+        $members = [];
+        foreach ($people as $index => $person) {
+            if ((int) $person->sort_order !== $index) {
+                $person->sort_order = $index;
+                $person->save();
+            }
+            $members[] = [
+                'id' => $person->id,
+                'name' => (string) $person->name,
+                'phone' => (string) $person->phone,
+                'active' => $person->isActive(),
+            ];
+        }
+
+        $this->forceFill([
+            'crew_members' => $members,
+            'crew_names' => self::joinedCrewNames($members),
+            'people_count' => max(1, count($members)),
+            'phone' => self::firstCrewPhone($members) ?? $this->phone,
+        ])->saveQuietly();
+        $this->unsetRelation('crewPeople');
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
@@ -445,6 +529,9 @@ class Worker extends Model
                 'phone' => (string) ($member['phone'] ?? ''),
                 'sort_order' => $index,
             ];
+            if (array_key_exists('active', $member)) {
+                $values['active'] = (bool) $member['active'];
+            }
 
             if ($row && (int) $row->worker_id === (int) $this->id) {
                 $row->fill($values)->save();
