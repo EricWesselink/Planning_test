@@ -526,7 +526,7 @@ class PlanningWeekplanningPdfTest extends TestCase
         $request->setUserResolver(fn () => $user);
         $titles = array_column(app(WeekplanningPdfService::class)->build($request)['people'][0]['days']['2026-09-09'], 'title');
 
-        $this->assertSame(['Vrije dag', 'Dussen - IJsselmuiden', 'Vakantie'], $titles);
+        $this->assertSame(['Vrije dag', 'Vakantie', 'Dussen - IJsselmuiden'], $titles);
     }
 
     public function test_vacation_without_work_that_week_stays_hidden(): void

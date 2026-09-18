@@ -525,7 +525,15 @@ class WeekplanningPdfService
      */
     private function blockSortRank(array $block): int
     {
-        return ($block['title'] ?? '') === 'Vrije dag' ? 0 : 1;
+        if (($block['title'] ?? '') === 'Vrije dag') {
+            return 0;
+        }
+
+        if (! empty($block['away'])) {
+            return 1;
+        }
+
+        return 2;
     }
 
     /**
