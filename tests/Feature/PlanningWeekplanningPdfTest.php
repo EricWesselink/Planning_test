@@ -491,6 +491,44 @@ class PlanningWeekplanningPdfTest extends TestCase
         $this->assertStringContainsString('Eric W.', $text);
     }
 
+    public function test_vrije_dag_is_listed_above_vacation_and_work_on_the_same_day(): void
+    {
+        $user = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Team 3 Arek',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => ''],
+                ['name' => 'Sietse', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        $arek = $team->crewPeople->firstWhere('name', 'Arek');
+        $sietse = $team->crewPeople->firstWhere('name', 'Sietse');
+        $arek->setRelation('worker', $team);
+        $arek->setWorkDay(3, false);
+        $arek->save();
+        $team->unsetRelation('crewPeople');
+        $team->availabilities()->create([
+            'crew_member_id' => $sietse->id,
+            'start_date' => '2026-09-09',
+            'end_date' => '2026-09-09',
+            'kind' => AvailabilityKind::Vacation,
+        ]);
+        [$project, $item] = $this->makeProject('Dussen - IJsselmuiden', [
+            'city' => 'IJsselmuiden',
+        ]);
+        $this->assign($team, $project, $item, '2026-09-07', '2026-09-07', '08:00:00', '16:00:00', [$arek->id, $sietse->id]);
+        $this->assign($team, $project, $item, '2026-09-09', '2026-09-09', '08:00:00', '14:00:00', [$arek->id]);
+
+        $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $titles = array_column(app(WeekplanningPdfService::class)->build($request)['people'][0]['days']['2026-09-09'], 'title');
+
+        $this->assertSame(['Vrije dag', 'Dussen - IJsselmuiden', 'Vakantie'], $titles);
+    }
+
     public function test_vacation_without_work_that_week_stays_hidden(): void
     {
         $user = User::factory()->create();

@@ -502,6 +502,11 @@ class WeekplanningPdfService
     {
         foreach ($days as $date => $blocks) {
             usort($blocks, function (array $left, array $right): int {
+                $rank = $this->blockSortRank($left) <=> $this->blockSortRank($right);
+                if ($rank !== 0) {
+                    return $rank;
+                }
+
                 $time = strcmp((string) ($left['start'] ?? ''), (string) ($right['start'] ?? ''));
                 if ($time !== 0) {
                     return $time;
@@ -513,6 +518,14 @@ class WeekplanningPdfService
         }
 
         return $days;
+    }
+
+    /**
+     * @param  array<string, mixed>  $block
+     */
+    private function blockSortRank(array $block): int
+    {
+        return ($block['title'] ?? '') === 'Vrije dag' ? 0 : 1;
     }
 
     /**
