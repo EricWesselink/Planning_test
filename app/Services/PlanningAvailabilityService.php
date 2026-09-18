@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\EmploymentType;
 use App\Models\CrewMember;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
@@ -65,8 +66,8 @@ class PlanningAvailabilityService
     private function build(Collection $days, bool $ownProductionOnly): array
     {
         $boardDays = $days->values();
-        $weekDays = $boardDays
-            ->filter(fn (CarbonInterface $day): bool => $day->isWeekday())
+        $capacityDays = $boardDays
+            ->filter(fn (CarbonInterface $day): bool => $this->countsTowardCapacity($day))
             ->values();
 
         $headings = $boardDays
@@ -109,12 +110,32 @@ class PlanningAvailabilityService
 
         $rows = [];
         foreach ($workers as $worker) {
-            $workDays = $weekDays->filter(
-                fn (CarbonInterface $day): bool => ! $this->availability->isAwayOn($worker, $day)
-            );
-            $available = (float) ($worker->peopleCount() * $workDays->count());
+            $available = 0.0;
+            foreach ($capacityDays as $day) {
+                if (! $this->countsTowardCapacityFor($worker, $day)) {
+                    continue;
+                }
+                $crew = $worker->crewPeople;
+                if ($crew->isNotEmpty()) {
+                    foreach ($crew as $member) {
+                        if (! $this->availability->isAwayOn($worker, $day, $member)) {
+                            $available += 1;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (! $this->availability->isAwayOn($worker, $day)) {
+                    $available += $worker->peopleCount();
+                }
+            }
+            $available = round($available, 2);
             $planned = 0.0;
-            foreach ($weekDays as $day) {
+            foreach ($capacityDays as $day) {
+                if (! $this->countsTowardCapacityFor($worker, $day)) {
+                    continue;
+                }
                 $planned += $this->plannedManDaysOnDate(
                     $worker,
                     $assignments->get($worker->id, collect()),
@@ -138,7 +159,7 @@ class PlanningAvailabilityService
 
             $rows[] = [
                 'worker_id' => (int) $worker->id,
-                'label' => $worker->planName(),
+                'label' => $this->teamLabel($worker),
                 'color' => $worker->planColor(),
                 'planned' => $planned,
                 'available' => $available,
@@ -171,7 +192,7 @@ class PlanningAvailabilityService
                 && $assignment->intervalOnDate($day) !== null
         );
         $rows = $crew->isNotEmpty() && $namedToday
-            ? $this->namedPeopleForDay($worker, $crew, $assignments, $day, $away, $initialsByKey)
+            ? $this->namedPeopleForDay($worker, $crew, $assignments, $day, $initialsByKey)
             : $this->unnamedPeopleForDay($worker, $people, $assignments, $day, $away, $initialsByKey);
 
         $freeCount = collect($rows)->where('selectable', true)->count();
@@ -196,11 +217,7 @@ class PlanningAvailabilityService
     private function cellLabel(Worker $worker, int $freeCount, ?string $away, array $rows): string
     {
         if ($worker->peopleCount() > 1) {
-            if ($away !== null && $freeCount === 0) {
-                return $away;
-            }
-
-            return implode(' · ', array_column($rows, 'compact'));
+            return implode(' | ', array_column($rows, 'chip'));
         }
 
         if ($away !== null) {
@@ -230,11 +247,11 @@ class PlanningAvailabilityService
         Collection $crew,
         Collection $assignments,
         CarbonInterface $day,
-        ?string $away,
         array $initialsByKey,
     ): array {
         $rows = [];
         foreach ($crew->values() as $index => $member) {
+            $away = $this->awayDetail($worker, $day, $member);
             $plannedHours = $away === null
                 ? $this->memberPlannedHours($assignments, $day, $member)
                 : PlanningHours::WORKDAY_HOURS;
@@ -292,9 +309,9 @@ class PlanningAvailabilityService
     }
 
     /**
-     * @return array{id: int, name: string, status: string, mark: string, detail: string, remaining_hours: float, selectable: bool, initials: string, compact: string}
+     * @return array{id: int, name: string, status: string, mark: string, detail: string, remaining_hours: float, selectable: bool, given: string, chip: string, tone: string}
      */
-    private function personRow(int $id, string $name, float $plannedHours, ?string $away, string $initials): array
+    private function personRow(int $id, string $name, float $plannedHours, ?string $away, string $given): array
     {
         $plannedHours = max(0.0, min(PlanningHours::WORKDAY_HOURS, round($plannedHours, 2)));
         $remaining = round(PlanningHours::WORKDAY_HOURS - $plannedHours, 2);
@@ -307,8 +324,9 @@ class PlanningAvailabilityService
                 'detail' => $away,
                 'remaining_hours' => 0.0,
                 'selectable' => false,
-                'initials' => $initials,
-                'compact' => $initials.' '.$this->compactAway($away),
+                'given' => $given,
+                'chip' => $given.' '.$this->awayChip($away),
+                'tone' => $this->personTone('away', $away),
             ];
         }
 
@@ -321,8 +339,9 @@ class PlanningAvailabilityService
                 'detail' => PlanningHours::hoursLabel($plannedHours).' ingepland',
                 'remaining_hours' => 0.0,
                 'selectable' => false,
-                'initials' => $initials,
-                'compact' => $initials.' ✕',
+                'given' => $given,
+                'chip' => $given.' bezet',
+                'tone' => 'none',
             ];
         }
 
@@ -336,10 +355,11 @@ class PlanningAvailabilityService
             'detail' => $full ? PlanningHours::hoursLabel($remaining).' vrij' : 'nog '.PlanningHours::hoursLabel($remaining).' vrij',
             'remaining_hours' => $remaining,
             'selectable' => true,
-            'initials' => $initials,
-            'compact' => $full
-                ? $initials.' ✓'
-                : $initials.' ½ '.PlanningHours::hoursLabel($remaining),
+            'given' => $given,
+            'chip' => $full
+                ? $given.' vrij'
+                : $given.' '.PlanningHours::hoursLabel($remaining).' vrij',
+            'tone' => $full ? 'ok' : 'partial',
         ];
     }
 
@@ -358,9 +378,9 @@ class PlanningAvailabilityService
         return 'partial';
     }
 
-    private function awayDetail(Worker $worker, CarbonInterface $day): ?string
+    private function awayDetail(Worker $worker, CarbonInterface $day, ?CrewMember $member = null): ?string
     {
-        $label = $this->availability->awayLabelOn($worker, $day);
+        $label = $this->availability->awayLabelOn($worker, $day, $member);
         if ($label === 'Vrij op vrijdag') {
             return 'Vrije dag';
         }
@@ -421,6 +441,33 @@ class PlanningAvailabilityService
         return $people;
     }
 
+    private function teamLabel(Worker $worker): string
+    {
+        $people = $this->peopleOnTeam($worker);
+        if (count($people) < 2) {
+            return $worker->planName();
+        }
+
+        $plan = mb_strtolower(trim($worker->planName()));
+        $planFirst = mb_strtolower($this->firstName($worker->planName()));
+        $matchesPerson = false;
+        foreach ($people as $person) {
+            $name = mb_strtolower($person['name']);
+            $first = mb_strtolower($this->firstName($person['name']));
+            if ($name === $plan || ($planFirst !== '' && $first === $planFirst)) {
+                $matchesPerson = true;
+                break;
+            }
+        }
+        if (! $matchesPerson) {
+            return $worker->planName();
+        }
+
+        return collect($people)
+            ->map(fn (array $person): string => $this->firstName($person['name']))
+            ->implode(' / ');
+    }
+
     /**
      * @param  Collection<int, Worker>  $workers
      * @return array<string, string>
@@ -458,111 +505,90 @@ class PlanningAvailabilityService
      */
     private function uniqueInitials(array $names): array
     {
-        $result = array_fill(0, count($names), '');
         $used = [];
-        $groups = [];
-        foreach ($names as $index => $name) {
-            $groups[$this->personInitials($name)][] = $index;
-        }
-
-        foreach ($groups as $indexes) {
-            foreach ($this->disambiguateInitials($names, $indexes, $used) as $index => $initials) {
-                $result[$index] = $initials;
-                $used[$initials] = true;
+        $result = [];
+        foreach ($names as $name) {
+            $base = $this->personInitials($name);
+            $candidate = $base;
+            $n = 2;
+            $first = $this->firstName($name);
+            $last = $this->lastName($name);
+            while (isset($used[$candidate])) {
+                if ($last !== '' && $n <= mb_strlen($last)) {
+                    $candidate = mb_strtoupper(mb_substr($first, 0, 1).mb_substr($last, 0, $n));
+                } else {
+                    $candidate = $base.$n;
+                }
+                $n++;
             }
+            $used[$candidate] = true;
+            $result[] = $candidate;
         }
 
         return $result;
     }
 
-    /**
-     * @param  list<string>  $names
-     * @param  list<int>  $indexes
-     * @param  array<string, true>  $used
-     * @return array<int, string>
-     */
-    private function disambiguateInitials(array $names, array $indexes, array $used): array
-    {
-        if (count($indexes) === 1) {
-            $initials = $this->personInitials($names[$indexes[0]]);
-            if (! isset($used[$initials])) {
-                return [$indexes[0] => $initials];
-            }
-        }
-
-        for ($last = 1; $last <= 8; $last++) {
-            for ($first = 1; $first <= 4; $first++) {
-                if ($last === 1 && $first === 1 && count($indexes) > 1) {
-                    continue;
-                }
-                $try = [];
-                $ok = true;
-                foreach ($indexes as $index) {
-                    $candidate = $this->personInitials($names[$index], $last, $first);
-                    if (isset($used[$candidate]) || isset($try[$candidate])) {
-                        $ok = false;
-                        break;
-                    }
-                    $try[$candidate] = $index;
-                }
-                if ($ok) {
-                    $chosen = [];
-                    foreach ($try as $candidate => $index) {
-                        $chosen[$index] = $candidate;
-                    }
-
-                    return $chosen;
-                }
-            }
-        }
-
-        $chosen = [];
-        $taken = $used;
-        $n = 2;
-        foreach ($indexes as $offset => $index) {
-            $base = $this->personInitials($names[$index]);
-            $candidate = $offset === 0 ? $base : $base.$n;
-            while (isset($taken[$candidate])) {
-                $candidate = $base.$n;
-                $n++;
-            }
-            $chosen[$index] = $candidate;
-            $taken[$candidate] = true;
-            $n++;
-        }
-
-        return $chosen;
-    }
-
-    private function personInitials(string $name, int $lastLetters = 1, int $firstLetters = 1): string
+    private function personInitials(string $name): string
     {
         $parts = preg_split('/\s+/u', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         if ($parts === []) {
             return '?';
         }
-
-        $first = $parts[0];
-        $last = $parts[count($parts) - 1];
         if (count($parts) === 1) {
-            $take = min(mb_strlen($first), max(2, $firstLetters + $lastLetters));
-
-            return mb_strtoupper(mb_substr($first, 0, $take));
+            return mb_strtoupper(mb_substr($parts[0], 0, 2));
         }
 
-        $firstTake = min(mb_strlen($first), max(1, $firstLetters));
-        $lastTake = min(mb_strlen($last), max(1, $lastLetters));
-
-        return mb_strtoupper(mb_substr($first, 0, $firstTake).mb_substr($last, 0, $lastTake));
+        return mb_strtoupper(mb_substr($parts[0], 0, 1).mb_substr($parts[count($parts) - 1], 0, 1));
     }
 
-    private function compactAway(string $away): string
+    private function firstName(string $name): string
+    {
+        $parts = preg_split('/\s+/u', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return $parts[0] ?? $name;
+    }
+
+    private function lastName(string $name): string
+    {
+        $parts = preg_split('/\s+/u', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (count($parts) < 2) {
+            return '';
+        }
+
+        return $parts[count($parts) - 1];
+    }
+
+    private function awayChip(string $away): string
     {
         return match ($away) {
-            'Vrije dag' => 'vd',
-            'Vakantie' => 'vak',
+            'Vrije dag' => 'vrije dag',
+            'Vrij op vrijdag' => 'vrije dag',
+            'Vakantie' => 'vakantie',
             'Ziek' => 'ziek',
-            'Verlof' => 'verl',
-            default => '✕',
+            'Verlof' => 'verlof',
+            'ADV' => 'adv',
+            'Cursus' => 'cursus',
+            'Overig' => 'overig',
+            'Niet beschikbaar' => 'afwezig',
+            default => mb_strtolower($away),
+        };
+    }
+
+    private function personTone(string $status, ?string $away = null): string
+    {
+        if ($status !== 'away') {
+            return match ($status) {
+                'free' => 'ok',
+                'partial' => 'partial',
+                default => 'none',
+            };
+        }
+
+        return match ($away) {
+            'Vakantie' => 'vacation',
+            'Ziek' => 'sick',
+            'Verlof' => 'leave',
+            default => 'away',
         };
     }
 
@@ -589,6 +615,27 @@ class PlanningAvailabilityService
         }
 
         return PlanningHours::uniqueHours($intervals);
+    }
+
+    private function countsTowardCapacity(CarbonInterface $day): bool
+    {
+        $isoDay = (int) $day->dayOfWeekIso;
+
+        return $isoDay >= 1 && $isoDay <= 6;
+    }
+
+    private function countsTowardCapacityFor(Worker $worker, CarbonInterface $day): bool
+    {
+        if (! $this->countsTowardCapacity($day)) {
+            return false;
+        }
+
+        if (! $day->isSaturday()) {
+            return true;
+        }
+
+        return $worker->employment_type === EmploymentType::Eigen
+            && $worker->crewPeople->isNotEmpty();
     }
 
     private function dayHeading(CarbonInterface $day, bool $withDate): string

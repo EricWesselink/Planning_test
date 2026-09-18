@@ -27,13 +27,13 @@ class PlanningAvailabilityTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('Mandagen week')
-            ->assertSee('planning-available-week-nr">37</span>', false)
+            ->assertSee('Beschikbare mandagen')
             ->assertSee('planning-available-count">5</span>', false)
             ->assertSee('planning-available-name">Kees Jansen</span>', false)
             ->assertSee('--chip-color: '.$kees->planColor(), false)
-            ->assertSee('planning-avail-day">Ma</div>', false)
-            ->assertSee('planning-avail-day">Za</div>', false)
+            ->assertSee('plan-avail-day', false)
+            ->assertSee('>Ma</div>', false)
+            ->assertSee('>Za</div>', false)
             ->assertSee('planning-avail-cell is-ok', false)
             ->assertSee('>Beschikbaar</button>', false)
             ->assertSee('planning-available-name">Peter</span>', false)
@@ -54,7 +54,7 @@ class PlanningAvailabilityTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('Mandagen week')
+            ->assertSee('Beschikbare mandagen')
             ->assertSee('planning-available-count">0</span>', false)
             ->assertSee('planning-available-name">Peter</span>', false)
             ->assertSee('>Bezet</button>', false);
@@ -68,12 +68,11 @@ class PlanningAvailabilityTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'weeks' => 2]))
             ->assertOk()
-            ->assertSee('Mandagen week')
-            ->assertSee('planning-available-week-nr">37–38</span>', false)
+            ->assertSee('Beschikbare mandagen')
             ->assertSee('planning-available-count">10</span>', false)
             ->assertSee('planning-available-name">Kees Jansen</span>', false)
-            ->assertSee('planning-avail-day">Ma 7</div>', false)
-            ->assertSee('planning-avail-day">Ma 14</div>', false)
+            ->assertSee('>Ma 7</div>', false)
+            ->assertSee('>Ma 14</div>', false)
             ->assertSee('>Beschikbaar</button>', false);
     }
 
@@ -185,10 +184,12 @@ class PlanningAvailabilityTest extends TestCase
             ->assertOk()
             ->assertSee('planning-available-count">4</span>', false)
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('>PI ✓ · JA ✓</button>', false)
-            ->assertSee('>PI ✕ · JA ✕</button>', false)
-            ->assertSee('planning-avail-cell is-none', false)
-            ->assertSee('planning-avail-cell is-ok', false);
+            ->assertSee('planning-avail-part is-ok', false)
+            ->assertSee('>PI vrij</button>', false)
+            ->assertSee('>JA vrij</button>', false)
+            ->assertSee('planning-avail-part is-none', false)
+            ->assertSee('>PI bezet</span>', false)
+            ->assertSee('>JA bezet</span>', false);
     }
 
     public function test_planning_page_counts_a_half_day_as_half_a_man_day(): void
@@ -257,7 +258,8 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('>PI ✓ · JA ✓</button>', false);
+            ->assertSee('>PI vrij</button>', false)
+            ->assertSee('>JA vrij</button>', false);
 
         $this->assign($team, $item, '2026-09-07', '2026-09-09', 2);
 
@@ -265,8 +267,62 @@ class PlanningAvailabilityTest extends TestCase
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('planning-available-name">Wespro</span>', false)
-            ->assertSee('>PI ✓ · JA ✓</button>', false)
-            ->assertSee('>PI ✕ · JA ✕</button>', false);
+            ->assertSee('>PI vrij</button>', false)
+            ->assertSee('>PI bezet</span>', false)
+            ->assertSee('>JA bezet</span>', false);
+    }
+
+    public function test_availability_day_columns_live_inside_the_board_grid(): void
+    {
+        $user = User::factory()->create();
+        $this->makeWorker('Kees Jansen');
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('Beschikbare mandagen')
+            ->assertSee('plan-line--avail', false)
+            ->assertSee('plan-days--avail', false)
+            ->assertSee('plan-frozen--avail', false)
+            ->getContent();
+
+        $this->assertNotFalse(strpos($html, 'id="plan-scroller"'));
+        $this->assertTrue(
+            strpos($html, 'id="plan-scroller"') < strpos($html, 'plan-line--avail'),
+            'Availability must live inside the scrollable board.'
+        );
+        $this->assertTrue(
+            strpos($html, 'plan-line--avail') < strpos($html, 'plan-line plan-line--head sticky-head'),
+            'Availability must sit above the day headers in the same grid.'
+        );
+        $this->assertStringNotContainsString('--avail-days', $html);
+        $this->assertStringContainsString('title="Kees Jansen"', $html);
+    }
+
+    public function test_planning_page_shows_crew_first_names_when_the_worker_is_named_after_a_person(): void
+    {
+        $user = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Eric Wesselink',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => ''],
+                ['name' => 'Harm Wesselink', 'phone' => ''],
+            ],
+            'specialty' => 'Linoleum',
+            'active' => true,
+        ]);
+        $this->giveLogin($team);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('planning-available-name">Eric / Harm</span>', false)
+            ->assertSee('>EW vrij</button>', false)
+            ->assertSee('>HW vrij</button>', false)
+            ->assertSee('title="Eric Wesselink"', false)
+            ->assertSee('title="Harm Wesselink"', false);
     }
 
     private function makeWorker(string $name, string $employmentType = 'eigen', string $specialty = 'Linoleum'): Worker

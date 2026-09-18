@@ -71,7 +71,14 @@ class Project extends Model
         $query->where(function (Builder $inner) use ($like): void {
             $inner->where('project_number', 'like', $like)
                 ->orWhere('name', 'like', $like)
-                ->orWhere('notes', 'like', $like);
+                ->orWhere('notes', 'like', $like)
+                ->orWhere('address', 'like', $like)
+                ->orWhere('postal_code', 'like', $like)
+                ->orWhere('city', 'like', $like)
+                ->orWhereHas(
+                    'customer',
+                    fn (Builder $customer) => $customer->where('name', 'like', $like),
+                );
         });
     }
 

@@ -331,27 +331,9 @@ body {
 }
 
 .planning-available {
-    display: flex;
-    align-items: stretch;
-    gap: 0.4rem 0.5rem;
     width: 100%;
-    margin-top: 0.35rem;
-    padding: 0.22rem 0.35rem;
-    border: 1px solid var(--color-nicon-line);
-    border-radius: 2px;
-    background: white;
     min-width: 0;
-    overflow-x: auto;
-}
-
-.planning-available-head {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    flex: 0 0 auto;
-    max-width: 8rem;
-    padding: 0.05rem 0.4rem 0.05rem 0.05rem;
-    border-right: 1px solid var(--color-nicon-line);
+    background: white;
 }
 
 .planning-available-title {
@@ -363,156 +345,82 @@ body {
     color: var(--color-nicon-ok);
 }
 
-.planning-available-week-nr {
-    font-weight: 800;
-    color: var(--color-nicon-ink);
-}
-
 .planning-available-count {
     font-weight: 800;
     color: var(--color-nicon-ok);
 }
 
-.planning-available-list,
-.planning-available-teams {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 0.28rem;
-    flex: 1 1 auto;
+.planning-available-name {
     min-width: 0;
-}
-
-.planning-available-chip,
-.planning-available-team {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.18rem;
-    flex: 0 1 auto;
-    min-width: 8.75rem;
-    max-width: 14rem;
-    padding: 0.28rem 0.4rem;
-    border: 1px solid var(--color-nicon-line);
-    border-radius: 2px;
-    background: var(--color-nicon-paper, #f7f6f2);
-    font-size: 0.8125rem;
-    line-height: 1.2;
-}
-
-.planning-available-team-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-width: 0;
-}
-
-.planning-available-name,
-.planning-available-summary {
-    min-width: 0;
-    max-width: 8.5rem;
+    max-width: 100%;
     overflow: hidden;
-    padding: 0.12rem 0.4rem;
+    padding: 0.08rem 0.32rem;
     border-radius: 2px;
     background: var(--chip-color, var(--color-nicon-ink));
     color: #fff;
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     font-weight: 650;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.planning-available-ratio {
-    margin-left: auto;
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-nicon-muted);
+.plan-line--avail {
+    min-height: 1.65rem;
 }
 
-.planning-available-planned {
-    font-weight: 700;
-    color: var(--chip-color, var(--color-nicon-ink));
+.plan-frozen--avail,
+.plan-board--labor .plan-frozen--avail {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
 }
 
-.planning-available-bar {
-    display: block;
-    flex: 1 1 auto;
-    min-width: 2.5rem;
-    height: 5px;
-    overflow: hidden;
-    border-radius: 99px;
-    background: var(--color-nicon-line);
+.plan-cell--avail-title,
+.plan-cell--avail-team,
+.plan-cell--avail-empty {
+    min-width: 0;
+    width: 100%;
 }
 
-.planning-available-bar-fill {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: var(--chip-color, var(--color-nicon-ink));
-}
-
-.planning-available-free {
-    flex-shrink: 0;
-    margin-left: auto;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-nicon-ok);
-    white-space: nowrap;
-}
-
-.planning-available-hint {
-    color: var(--color-nicon-muted);
-    font-size: 0.6875rem;
-}
-
-.planning-available-empty {
-    align-self: center;
+.plan-cell--avail-empty {
     font-size: 0.75rem;
     color: var(--color-nicon-muted);
 }
 
-.planning-avail-table {
-    display: grid;
-    grid-template-columns: minmax(6.25rem, 8.5rem) repeat(var(--avail-days, 6), minmax(5.5rem, 1fr));
-    gap: 1px;
-    flex: 1 1 auto;
+.plan-avail-day,
+.plan-avail-slot {
     min-width: 0;
-    background: var(--color-nicon-line);
-    font-size: 0.6875rem;
-    line-height: 1.15;
+    border-left: 1px solid transparent;
 }
 
-.planning-avail-corner,
-.planning-avail-day {
-    background: var(--color-nicon-paper, #f7f6f2);
+.plan-avail-day.day-start,
+.plan-avail-day.week-start.day-start,
+.plan-avail-slot.day-start,
+.plan-avail-slot.week-start.day-start {
+    border-left: 2px solid #9f998f;
+}
+
+.plan-avail-day {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 0.12rem 0.28rem;
+    background: var(--color-nicon-paper, #f7f6f2);
+    font-size: 0.6875rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--color-nicon-muted);
 }
 
-.planning-avail-day {
-    text-align: center;
-}
-
-.planning-avail-team {
+.plan-avail-slot {
     display: flex;
-    align-items: center;
-    min-width: 0;
+    align-items: stretch;
     background: white;
-    padding: 0.08rem 0.2rem;
 }
 
-.planning-avail-team .planning-available-name {
-    max-width: none;
-    width: 100%;
-    padding: 0.08rem 0.32rem;
-    font-size: 0.6875rem;
-}
-
-.planning-avail-slot {
-    background: white;
+.plan-avail-slot.is-saturday,
+.plan-avail-day.is-saturday {
+    background-color: rgba(120, 113, 108, 0.08);
 }
 
 .planning-avail-cell {
@@ -525,6 +433,7 @@ body {
     border: 0;
     background: transparent;
     font: inherit;
+    font-size: 0.6875rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     line-height: 1.15;
@@ -534,30 +443,80 @@ body {
 }
 
 .planning-avail-cell.is-crew {
-    justify-content: flex-start;
-    font-size: 0.625rem;
-    font-weight: 650;
-    white-space: nowrap;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+    background: transparent;
+    min-height: 1.65rem;
+    cursor: default;
 }
 
-.planning-avail-cell.is-ok {
+.planning-avail-part {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 0.08rem 0.16rem;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 0.625rem;
+    font-weight: 650;
+    line-height: 1.15;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+button.planning-avail-part {
+    cursor: pointer;
+}
+
+.planning-avail-part + .planning-avail-part {
+    border-left: 1px solid rgb(255 255 255 / 0.72);
+    box-shadow: inset 1px 0 0 var(--color-nicon-line);
+}
+
+.planning-avail-cell.is-ok,
+.planning-avail-part.is-ok {
     color: var(--color-nicon-ok);
     background: color-mix(in srgb, var(--color-nicon-ok) 12%, white);
 }
 
-.planning-avail-cell.is-partial {
+.planning-avail-cell.is-partial,
+.planning-avail-part.is-partial {
     color: var(--color-nicon-orange);
     background: color-mix(in srgb, var(--color-nicon-orange) 14%, white);
 }
 
-.planning-avail-cell.is-none {
+.planning-avail-cell.is-none,
+.planning-avail-part.is-none {
     color: var(--color-nicon-danger);
     background: color-mix(in srgb, var(--color-nicon-danger) 12%, white);
 }
 
-.planning-avail-cell.is-away {
+.planning-avail-cell.is-away,
+.planning-avail-part.is-away {
     color: var(--color-nicon-muted);
     background: #ececec;
+}
+
+.planning-avail-part.is-vacation {
+    color: #4b5d73;
+    background: color-mix(in srgb, #64748b 16%, white);
+}
+
+.planning-avail-part.is-sick {
+    color: #8a4a3b;
+    background: color-mix(in srgb, #c4a494 22%, white);
+}
+
+.planning-avail-part.is-leave {
+    color: #5b5470;
+    background: color-mix(in srgb, #8b7fa8 16%, white);
 }
 
 .planning-avail-pop {
@@ -620,26 +579,10 @@ body {
     color: var(--color-nicon-muted);
 }
 
-@media (max-width: 639px) {
-    .planning-available {
-        flex-wrap: wrap;
-    }
-
-    .planning-available-head {
-        flex-direction: row;
-        flex: 1 1 100%;
-        align-items: baseline;
-        justify-content: space-between;
-        min-width: 0;
-        padding: 0 0 0.2rem;
-        border-right: 0;
-        border-bottom: 1px solid var(--color-nicon-line);
-    }
-
-    .planning-avail-table {
-        flex: 1 1 100%;
-        overflow-x: auto;
-        min-width: 28rem;
+@media (min-width: 640px) {
+    .planning-avail-part {
+        font-size: 0.6875rem;
+        padding: 0.1rem 0.2rem;
     }
 }
 
@@ -698,6 +641,22 @@ body {
                 (var(--plan-days, 5) * var(--plan-day-min, 120px))
         )
     );
+}
+
+.plan-sticky-top {
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    background: white;
+}
+
+.plan-sticky-top .sticky-head {
+    position: relative;
+    z-index: 1;
+}
+
+.plan-sticky-top .plan-line--avail .plan-frozen {
+    z-index: 911;
 }
 
 .plan-line {

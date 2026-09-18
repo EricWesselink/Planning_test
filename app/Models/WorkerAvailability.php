@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['worker_id', 'start_date', 'end_date', 'kind'])]
+#[Fillable(['worker_id', 'crew_member_id', 'start_date', 'end_date', 'kind'])]
 class WorkerAvailability extends Model
 {
     protected function casts(): array
@@ -23,6 +23,11 @@ class WorkerAvailability extends Model
     public function worker(): BelongsTo
     {
         return $this->belongsTo(Worker::class);
+    }
+
+    public function crewMember(): BelongsTo
+    {
+        return $this->belongsTo(CrewMember::class);
     }
 
     public function covers(CarbonInterface $day): bool

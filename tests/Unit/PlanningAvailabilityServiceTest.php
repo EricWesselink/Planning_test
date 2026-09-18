@@ -309,9 +309,13 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $monday = $this->cell('Wespro', '2026-09-07');
 
-        $this->assertSame('PI ✓ · JA ✓', $monday['label']);
-        $this->assertSame('PI', $monday['people'][0]['initials']);
-        $this->assertSame('JA', $monday['people'][1]['initials']);
+        $this->assertSame('PI vrij | JA vrij', $monday['label']);
+        $this->assertSame('PI', $monday['people'][0]['given']);
+        $this->assertSame('JA', $monday['people'][1]['given']);
+        $this->assertSame('ok', $monday['people'][0]['tone']);
+        $this->assertSame('ok', $monday['people'][1]['tone']);
+        $this->assertSame('PI vrij', $monday['people'][0]['chip']);
+        $this->assertSame('JA vrij', $monday['people'][1]['chip']);
     }
 
     public function test_daily_matrix_makes_duplicate_initials_unique(): void
@@ -320,8 +324,8 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $monday = $this->cell('Ploeg', '2026-09-07');
 
-        $this->assertSame('NSE ✓ · NSM ✓', $monday['label']);
-        $this->assertSame(['NSE', 'NSM'], array_column($monday['people'], 'initials'));
+        $this->assertSame('NS vrij | NSM vrij', $monday['label']);
+        $this->assertSame(['NS', 'NSM'], array_column($monday['people'], 'given'));
     }
 
     public function test_daily_matrix_shows_vrije_dag_for_a_whole_crew(): void
@@ -329,8 +333,12 @@ class PlanningAvailabilityServiceTest extends TestCase
         $team = $this->makeWorker('Wespro', ['Piet', 'Jan']);
         $team->update(['friday_off' => true]);
 
-        $this->assertSame('Vrije dag', $this->cell('Wespro', '2026-09-11')['label']);
-        $this->assertSame('PI ✓ · JA ✓', $this->cell('Wespro', '2026-09-10')['label']);
+        $friday = $this->cell('Wespro', '2026-09-11');
+
+        $this->assertSame('PI vrije dag | JA vrije dag', $friday['label']);
+        $this->assertSame('away', $friday['people'][0]['tone']);
+        $this->assertSame('away', $friday['people'][1]['tone']);
+        $this->assertSame('PI vrij | JA vrij', $this->cell('Wespro', '2026-09-10')['label']);
     }
 
     public function test_daily_matrix_omits_zzp_teams(): void
@@ -402,13 +410,50 @@ class PlanningAvailabilityServiceTest extends TestCase
 
         $this->assertSame('partial', $tuesday['tone']);
         $this->assertSame(1, $tuesday['free_count']);
-        $this->assertSame('PI ✕ · JA ✓', $tuesday['label']);
+        $this->assertSame('PI bezet | JA vrij', $tuesday['label']);
+        $this->assertSame('none', $tuesday['people'][0]['tone']);
+        $this->assertSame('ok', $tuesday['people'][1]['tone']);
+        $this->assertSame('PI bezet', $tuesday['people'][0]['chip']);
+        $this->assertSame('JA vrij', $tuesday['people'][1]['chip']);
         $this->assertSame('Piet', $tuesday['people'][0]['name']);
         $this->assertSame('busy', $tuesday['people'][0]['status']);
         $this->assertSame('8u ingepland', $tuesday['people'][0]['detail']);
         $this->assertSame('Jan', $tuesday['people'][1]['name']);
         $this->assertSame('free', $tuesday['people'][1]['status']);
         $this->assertTrue($tuesday['people'][1]['selectable']);
+    }
+
+    public function test_daily_matrix_shows_partial_hours_on_a_crew_chip(): void
+    {
+        $team = $this->makeWorker('Wespro', ['Piet', 'Jan']);
+        $people = $team->crewPeople()->orderBy('sort_order')->get();
+        $item = $this->makeWorkItem();
+        $this->assign($team, $item, '2026-09-07', '2026-09-07', [$people[0]->id], startTime: '08:00:00', endTime: '12:00:00');
+
+        $monday = $this->cell('Wespro', '2026-09-07');
+
+        $this->assertSame('PI 4u vrij | JA vrij', $monday['label']);
+        $this->assertSame('partial', $monday['people'][0]['tone']);
+        $this->assertSame('ok', $monday['people'][1]['tone']);
+    }
+
+    public function test_daily_matrix_uses_crew_names_when_the_worker_is_named_after_a_person(): void
+    {
+        $this->makeWorker('Eric Wesselink', ['Eric Wesselink', 'Harm Wesselink']);
+
+        $this->assertSame(['Eric / Harm'], collect($this->overview()['teams'])->pluck('label')->all());
+        $monday = $this->cell('Eric / Harm', '2026-09-07');
+        $this->assertSame('EW vrij | HW vrij', $monday['label']);
+        $this->assertSame(['EW', 'HW'], array_column($monday['people'], 'given'));
+        $this->assertSame('Eric Wesselink', $monday['people'][0]['name']);
+        $this->assertSame('Harm Wesselink', $monday['people'][1]['name']);
+    }
+
+    public function test_daily_matrix_keeps_an_existing_team_name(): void
+    {
+        $this->makeWorker('Wespro', ['Piet', 'Jan']);
+
+        $this->assertSame(['Wespro'], collect($this->overview()['teams'])->pluck('label')->all());
     }
 
     /**

@@ -179,83 +179,6 @@
             @endif
 
             @if ($canManagePlanning)
-                @php
-                    $manDayWeekFirst = (int) (data_get($weekBands->first(), 'number') ?? $weekStart->isoWeek());
-                    $manDayWeekLast = (int) (data_get($weekBands->last(), 'number') ?? $manDayWeekFirst);
-                    $manDayWeekNumber = $manDayWeekFirst === $manDayWeekLast
-                        ? (string) $manDayWeekFirst
-                        : $manDayWeekFirst.'–'.$manDayWeekLast;
-                    $availabilityDays = $availabilityDays ?? [];
-                    $availabilityTeams = $teamManDays;
-                @endphp
-                <div class="planning-available" data-plan-avail @if ($availabilityDays !== []) style="--avail-days: {{ count($availabilityDays) }}" @endif>
-                    <div class="planning-available-head">
-                        <span class="planning-available-title">Mandagen week <span class="planning-available-week-nr">{{ $manDayWeekNumber }}</span> — totaal vrij: <span class="planning-available-count">{{ \App\Support\PlanningHours::manDaysLabel($availableManDays) }}</span></span>
-                    </div>
-                    @if ($availabilityTeams === [])
-                        <span class="planning-available-empty">Geen actieve teams {{ $weeks === 1 ? 'deze week' : 'in deze weken' }}</span>
-                    @else
-                        <div class="planning-avail-table">
-                            <div class="planning-avail-corner">Team</div>
-                            @foreach ($availabilityDays as $availabilityDay)
-                                <div class="planning-avail-day">{{ $availabilityDay['label'] }}</div>
-                            @endforeach
-                            @foreach ($availabilityTeams as $team)
-                                <div class="planning-avail-team" style="--chip-color: {{ $team['color'] }}" title="{{ $team['summary'] }}">
-                                    <span class="planning-available-name">{{ $team['label'] }}</span>
-                                </div>
-                                @foreach ($availabilityDays as $availabilityDay)
-                                    @php
-                                        $cell = $team['days'][$availabilityDay['date']] ?? null;
-                                        $people = $cell['people'] ?? [];
-                                        $hover = collect($people)
-                                            ->map(function (array $person) use ($people): string {
-                                                $lead = count($people) > 1 && ($person['initials'] ?? '') !== ''
-                                                    ? $person['initials'].' '
-                                                    : '';
-
-                                                return $lead.$person['mark'].' '.$person['name'].' — '.$person['detail'];
-                                            })
-                                            ->implode("\n");
-                                        $popoverId = 'avail-'.$team['worker_id'].'-'.$availabilityDay['date'];
-                                    @endphp
-                                    <div class="planning-avail-slot">
-                                        <button
-                                            type="button"
-                                            class="planning-avail-cell is-{{ $cell['tone'] ?? 'none' }}{{ count($people) > 1 ? ' is-crew' : '' }}"
-                                            popovertarget="{{ $popoverId }}"
-                                            title="{{ $hover }}"
-                                            aria-label="{{ $team['label'] }} {{ $availabilityDay['label'] }} {{ $cell['label'] ?? 'Bezet' }}"
-                                        >{{ $cell['label'] ?? 'Bezet' }}</button>
-                                        <div id="{{ $popoverId }}" popover="auto" class="planning-avail-pop">
-                                            <p class="planning-avail-pop-title">{{ $availabilityDay['label'] }} · {{ $team['label'] }}</p>
-                                            <ul class="planning-avail-people">
-                                                @foreach ($people as $person)
-                                                    <li>
-                                                        @if (! empty($person['selectable']))
-                                                            <button
-                                                                type="button"
-                                                                class="planning-avail-pick"
-                                                                data-plan-avail-pick
-                                                                data-worker-id="{{ $team['worker_id'] }}"
-                                                                data-date="{{ $availabilityDay['date'] }}"
-                                                                data-crew-id="{{ $person['id'] }}"
-                                                                data-hours="{{ $person['remaining_hours'] }}"
-                                                            >@if (count($people) > 1 && ($person['initials'] ?? '') !== ''){{ $person['initials'] }} @endif{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</button>
-                                                        @else
-                                                            <span class="planning-avail-busy">@if (count($people) > 1 && ($person['initials'] ?? '') !== ''){{ $person['initials'] }} @endif{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</span>
-                                                        @endif
-                                                    </li>
-                                                @endforeach
-                                            </ul>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            @endforeach
-                        </div>
-                    @endif
-                </div>
-
                 <p class="planning-hint">Sleep een balk horizontaal binnen de dag (snap op 2 uur) of naar een andere dag/onderdeel. Trek aan de zijkanten om 2–8 uur te maken. Klik op een tijdvak om iemand in te plannen.</p>
             @endif
         </div>
@@ -308,6 +231,131 @@
                     </script>
                 @endif
                 <div class="plan-table">
+                    <div class="plan-sticky-top">
+                    @if ($canManagePlanning)
+                        @php
+                            $availabilityDays = $availabilityDays ?? [];
+                            $availabilityTeams = $teamManDays;
+                            $availabilityDayLabels = collect($availabilityDays)->keyBy('date');
+                        @endphp
+                        <div class="planning-available" data-plan-avail>
+                            <div class="plan-line plan-line--avail plan-line--avail-head">
+                                <div class="plan-frozen plan-frozen--avail">
+                                    <div class="plan-cell plan-cell--avail-title">
+                                        <span class="planning-available-title">Beschikbare mandagen: <span class="planning-available-count">{{ \App\Support\PlanningHours::manDaysLabel($availableManDays) }}</span></span>
+                                    </div>
+                                </div>
+                                <div class="plan-days plan-days--avail">
+                                    @foreach ($days as $day)
+                                        @php
+                                            $availabilityDay = $availabilityDayLabels->get($day->toDateString());
+                                            $availabilityLabel = is_array($availabilityDay)
+                                                ? ($availabilityDay['label'] ?? $day->isoFormat('dd'))
+                                                : $day->isoFormat('dd');
+                                        @endphp
+                                        <div class="plan-avail-day{{ $loop->first ? '' : ' day-start' }}{{ $day->isMonday() && ! $loop->first ? ' week-start' : '' }}{{ $day->isSaturday() ? ' is-saturday' : '' }}">{{ $availabilityLabel }}</div>
+                                    @endforeach
+                                </div>
+                            </div>
+                            @if ($availabilityTeams === [])
+                                <div class="plan-line plan-line--avail">
+                                    <div class="plan-frozen plan-frozen--avail">
+                                        <div class="plan-cell plan-cell--avail-empty">Geen actieve teams {{ $weeks === 1 ? 'deze week' : 'in deze weken' }}</div>
+                                    </div>
+                                    <div class="plan-days plan-days--avail" aria-hidden="true">
+                                        @foreach ($days as $day)
+                                            <div class="plan-avail-slot{{ $loop->first ? '' : ' day-start' }}{{ $day->isMonday() && ! $loop->first ? ' week-start' : '' }}{{ $day->isSaturday() ? ' is-saturday' : '' }}"></div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @else
+                                @foreach ($availabilityTeams as $team)
+                                    <div class="plan-line plan-line--avail">
+                                        <div class="plan-frozen plan-frozen--avail">
+                                            <div class="plan-cell plan-cell--avail-team" style="--chip-color: {{ $team['color'] }}" title="{{ $team['summary'] }}">
+                                                <span class="planning-available-name">{{ $team['label'] }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="plan-days plan-days--avail">
+                                            @foreach ($days as $day)
+                                                @php
+                                                    $date = $day->toDateString();
+                                                    $availabilityDay = $availabilityDayLabels->get($date);
+                                                    $availabilityLabel = is_array($availabilityDay)
+                                                        ? ($availabilityDay['label'] ?? $day->isoFormat('dd'))
+                                                        : $day->isoFormat('dd');
+                                                    $cell = $team['days'][$date] ?? null;
+                                                    $people = $cell['people'] ?? [];
+                                                    $popoverId = 'avail-'.$team['worker_id'].'-'.$date;
+                                                    $isCrew = count($people) > 1;
+                                                @endphp
+                                                <div class="plan-avail-slot{{ $loop->first ? '' : ' day-start' }}{{ $day->isMonday() && ! $loop->first ? ' week-start' : '' }}{{ $day->isSaturday() ? ' is-saturday' : '' }}">
+                                                    @if ($isCrew)
+                                                        <div class="planning-avail-cell is-crew" role="group" aria-label="{{ $team['label'] }} {{ $availabilityLabel }} {{ $cell['label'] ?? '' }}">
+                                                            @foreach ($people as $person)
+                                                                @if (! empty($person['selectable']))
+                                                                    <button
+                                                                        type="button"
+                                                                        class="planning-avail-part is-{{ $person['tone'] ?? 'none' }}"
+                                                                        title="{{ $person['name'] }}"
+                                                                        data-plan-avail-pick
+                                                                        data-worker-id="{{ $team['worker_id'] }}"
+                                                                        data-date="{{ $date }}"
+                                                                        data-crew-id="{{ $person['id'] }}"
+                                                                        data-hours="{{ $person['remaining_hours'] }}"
+                                                                    >{{ $person['chip'] ?? $person['name'] }}</button>
+                                                                @else
+                                                                    <span
+                                                                        class="planning-avail-part is-{{ $person['tone'] ?? 'none' }}"
+                                                                        title="{{ $person['name'] }}"
+                                                                    >{{ $person['chip'] ?? $person['name'] }}</span>
+                                                                @endif
+                                                            @endforeach
+                                                        </div>
+                                                    @else
+                                                        @php
+                                                            $hover = collect($people)
+                                                                ->map(fn (array $person): string => $person['name'])
+                                                                ->implode("\n");
+                                                        @endphp
+                                                        <button
+                                                            type="button"
+                                                            class="planning-avail-cell is-{{ $cell['tone'] ?? 'none' }}"
+                                                            popovertarget="{{ $popoverId }}"
+                                                            title="{{ $hover }}"
+                                                            aria-label="{{ $team['label'] }} {{ $availabilityLabel }} {{ $cell['label'] ?? 'Bezet' }}"
+                                                        >{{ $cell['label'] ?? 'Bezet' }}</button>
+                                                        <div id="{{ $popoverId }}" popover="auto" class="planning-avail-pop">
+                                                            <p class="planning-avail-pop-title">{{ $availabilityLabel }} · {{ $team['label'] }}</p>
+                                                            <ul class="planning-avail-people">
+                                                                @foreach ($people as $person)
+                                                                    <li>
+                                                                        @if (! empty($person['selectable']))
+                                                                            <button
+                                                                                type="button"
+                                                                                class="planning-avail-pick"
+                                                                                data-plan-avail-pick
+                                                                                data-worker-id="{{ $team['worker_id'] }}"
+                                                                                data-date="{{ $date }}"
+                                                                                data-crew-id="{{ $person['id'] }}"
+                                                                                data-hours="{{ $person['remaining_hours'] }}"
+                                                                            >{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</button>
+                                                                        @else
+                                                                            <span class="planning-avail-busy">{{ $person['mark'] }} {{ $person['name'] }} — {{ $person['detail'] }}</span>
+                                                                        @endif
+                                                                    </li>
+                                                                @endforeach
+                                                            </ul>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endforeach
+                            @endif
+                        </div>
+                    @endif
                     <div class="plan-line plan-line--head sticky-head">
                         <div class="plan-frozen plan-frozen--head">
                             <div class="plan-week-gutter" aria-hidden="true"></div>
@@ -353,6 +401,7 @@
                                 </div>
                             @endforeach
                         </div>
+                    </div>
                     </div>
                     @foreach ($rows as $projectRow)
                         @if (($projectRow['type'] ?? '') === 'section')

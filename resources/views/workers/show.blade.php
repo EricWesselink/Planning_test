@@ -4,7 +4,8 @@
 
 @section('content')
     <a href="{{ route('workers.index') }}" class="text-sm text-nicon-muted">← Vakmensen</a>
-    <div class="mt-2 flex items-end justify-between gap-4 flex-wrap">
+    @include('workers._tabs', ['tab' => 'teams'])
+    <div class="mt-4 flex items-end justify-between gap-4 flex-wrap">
         <div>
             <h1 class="text-2xl font-semibold flex items-center gap-3">
                 <span class="inline-block size-4 shrink-0 rounded-full" style="background: {{ $worker->planColor() }}" title="Planningskleur"></span>
@@ -79,15 +80,15 @@
         @endif
     @endcan
 
-    <section class="mt-6 max-w-2xl border border-nicon-line bg-white p-5 space-y-3">
-        <h2 class="font-semibold">Beschikbaarheid</h2>
-        @if ($worker->employment_type->isExternal())
+    @if ($worker->employment_type->isExternal())
+        <section class="mt-6 max-w-2xl border border-nicon-line bg-white p-5 space-y-3">
+            <h2 class="font-semibold">Beschikbaarheid</h2>
             <p class="text-sm text-nicon-muted">
                 Zet het team helemaal uit als ze niet ingepland mogen worden, of kies periodes.
             </p>
-        @endif
-        @include('workers._availability', ['worker' => $worker])
-    </section>
+            @include('workers._availability', ['worker' => $worker])
+        </section>
+    @endif
 
     <form method="POST" action="{{ route('workers.update', $worker) }}" class="mt-6 max-w-2xl border border-nicon-line bg-white p-5 space-y-4">
         @csrf

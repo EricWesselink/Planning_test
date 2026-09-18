@@ -58,6 +58,10 @@ class WorkerProfileTest extends TestCase
             ->assertDontSee('Nog geen productie')
             ->assertDontSee('1 persoon')
             ->assertDontSee('Vink vrijdagen af')
+            ->assertDontSee('Helemaal niet beschikbaar')
+            ->assertDontSee('Beschikbaarheid')
+            ->assertSee('Afwezigheid')
+            ->assertSee('Personeel')
             ->assertSee('class="space-y-4 hidden"', false);
     }
 
@@ -158,6 +162,7 @@ class WorkerProfileTest extends TestCase
             ->assertSee('Uitgevoerd')
             ->assertSee('Open in productie')
             ->assertSee('1 persoon')
+            ->assertSee('Helemaal niet beschikbaar')
             ->assertDontSee('class="space-y-4 hidden"', false);
     }
 

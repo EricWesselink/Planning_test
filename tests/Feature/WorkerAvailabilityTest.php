@@ -30,12 +30,18 @@ class WorkerAvailabilityTest extends TestCase
             ->assertRedirect(route('workers.absence'));
 
         $this->assertTrue($peter->fresh()->friday_off);
+        $this->assertFalse($peter->fresh()->crewPeople->first()->worksOn(5));
+
+        $this->actingAs($user)
+            ->get(route('workers.personnel'))
+            ->assertOk()
+            ->assertSee('Personeel')
+            ->assertSee('Peter');
 
         $this->actingAs($user)
             ->get(route('workers.absence'))
             ->assertOk()
-            ->assertSee('Vrij op vrijdag')
-            ->assertSee('checked', false);
+            ->assertDontSee('Vrij op vrijdag');
 
         $this->actingAs($user)
             ->get(route('workers.index'))
@@ -53,14 +59,81 @@ class WorkerAvailabilityTest extends TestCase
             ->get(route('workers.absence'))
             ->assertOk()
             ->assertSee('Afwezigheid')
+            ->assertSee('Personeel')
+            ->assertSee(route('workers.personnel'), false)
             ->assertSee('Peter')
-            ->assertDontSee('Nick Seine');
+            ->assertDontSee('Nick Seine')
+            ->assertDontSee('Vrij op vrijdag');
 
         $this->actingAs($user)
             ->get(route('workers.index'))
             ->assertOk()
             ->assertSee('Peter')
             ->assertSee('Nick Seine');
+    }
+
+    public function test_own_employee_page_hides_availability_and_shows_the_absence_tab(): void
+    {
+        $user = User::factory()->create();
+        $peter = $this->makeWorker('Peter', 'eigen');
+
+        $this->actingAs($user)
+            ->get(route('workers.show', $peter))
+            ->assertOk()
+            ->assertSee('Afwezigheid')
+            ->assertSee('Personeel')
+            ->assertSee(route('workers.absence'), false)
+            ->assertSee(route('workers.personnel'), false)
+            ->assertDontSee('Helemaal niet beschikbaar')
+            ->assertDontSee('Vrij op vrijdag');
+    }
+
+    public function test_absence_overview_lists_each_person_of_a_team(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makeWorker('Team Wespro', 'eigen');
+        $team->update([
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => '0611111111'],
+                ['name' => 'Harm Wesselink', 'phone' => '0622222222'],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('workers.absence'))
+            ->assertOk()
+            ->assertSee('Eric Wesselink')
+            ->assertSee('Harm Wesselink')
+            ->assertSee('name="crew_member_id"', false)
+            ->assertDontSee('Vrij op vrijdag');
+    }
+
+    public function test_planner_can_mark_one_person_friday_off_without_the_other(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makeWorker('Team Wespro', 'eigen');
+        $team->update([
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => '0611111111'],
+                ['name' => 'Harm Wesselink', 'phone' => '0622222222'],
+            ],
+        ]);
+        $eric = $team->fresh()->crewPeople->firstWhere('name', 'Eric Wesselink');
+        $harm = $team->fresh()->crewPeople->firstWhere('name', 'Harm Wesselink');
+
+        $this->actingAs($user)
+            ->from(route('workers.absence'))
+            ->patch(route('workers.friday.update', $team), [
+                'crew_member_id' => $eric->id,
+                'friday_off' => '1',
+            ])
+            ->assertRedirect(route('workers.absence'));
+
+        $this->assertTrue($eric->fresh()->friday_off);
+        $this->assertFalse($harm->fresh()->friday_off);
+        $this->assertFalse($team->fresh()->friday_off);
     }
 
     public function test_rejects_friday_off_for_a_zzp(): void

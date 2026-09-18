@@ -55,6 +55,60 @@ class ProjectIndexSearchTest extends TestCase
             ->assertDontSee('Laakse Tuinen');
     }
 
+    public function test_search_by_opdrachtgever_shows_only_matching_work(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('11P251047 Griftland college', '251000077', customerName: 'Hegeman');
+        $this->makeProject('11P260141 Laakse Tuinen Amersfoort', '260200090', customerName: 'Karbouw v.o.f.');
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['q' => 'Karbouw']))
+            ->assertOk()
+            ->assertSee('Laakse Tuinen')
+            ->assertSee('Karbouw v.o.f.')
+            ->assertDontSee('Griftland college')
+            ->assertDontSee('Hegeman');
+    }
+
+    public function test_search_by_work_address_shows_only_matching_work(): void
+    {
+        $user = User::factory()->create();
+        $griftland = $this->makeProject('11P251047 Griftland college', '251000077', customerName: 'Hegeman');
+        $laakse = $this->makeProject('11P260141 Laakse Tuinen Amersfoort', '260200090', customerName: 'Karbouw v.o.f.');
+        $griftland->update([
+            'address' => 'Praamgracht 3',
+            'postal_code' => '3791 LA',
+            'city' => 'Soest',
+        ]);
+        $laakse->update([
+            'address' => 'Cuijkstraat 2',
+            'postal_code' => '3826 KL',
+            'city' => 'Amersfoort',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['q' => 'Praamgracht']))
+            ->assertOk()
+            ->assertSee('Griftland college')
+            ->assertSee('Praamgracht 3')
+            ->assertDontSee('Laakse Tuinen')
+            ->assertDontSee('Cuijkstraat 2');
+    }
+
+    public function test_search_by_opdrachtgever_does_not_reveal_inaccessible_projects(): void
+    {
+        $visible = $this->makeProject('11P251047 Griftland college', '251000077', customerName: 'Hegeman');
+        $this->makeProject('11P251047 Extra college', '251000099', customerName: 'Karbouw v.o.f.');
+        $user = User::factory()->limitedAccess()->create();
+        $user->projects()->attach($visible);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['q' => 'Karbouw']))
+            ->assertOk()
+            ->assertDontSee('Extra college')
+            ->assertSee('Geen projecten voor deze selectie');
+    }
+
     public function test_empty_search_shows_all_active_projects(): void
     {
         $user = User::factory()->create();
@@ -64,7 +118,7 @@ class ProjectIndexSearchTest extends TestCase
         $this->actingAs($user)
             ->get(route('projects.index'))
             ->assertOk()
-            ->assertSee('Zoek op projectnr. of werk')
+            ->assertSee('Zoek op projectnr., werk, opdrachtgever of adres')
             ->assertSee('Griftland college')
             ->assertSee('Laakse Tuinen');
     }
@@ -258,9 +312,11 @@ class ProjectIndexSearchTest extends TestCase
         ]);
     }
 
-    private function makeProject(string $name, string $number, ?string $notes = null, ?string $start = null, ProjectKind $kind = ProjectKind::Project): Project
+    private function makeProject(string $name, string $number, ?string $notes = null, ?string $start = null, ProjectKind $kind = ProjectKind::Project, ?string $customerName = null): Project
     {
-        $customer = Customer::query()->first() ?? Customer::query()->create(['name' => 'Nicon vloeren']);
+        $customer = $customerName !== null
+            ? Customer::query()->firstOrCreate(['name' => $customerName])
+            : (Customer::query()->first() ?? Customer::query()->create(['name' => 'Nicon vloeren']));
 
         return Project::query()->create([
             'project_number' => $number,

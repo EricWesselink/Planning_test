@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\AvailabilityKind;
 use App\Enums\EmploymentType;
+use App\Models\CrewMember;
 use App\Models\Worker;
 use App\Models\WorkerAvailability;
 use Illuminate\Http\RedirectResponse;
@@ -30,28 +31,35 @@ class WorkerAvailabilityController extends Controller
             abort_unless($worker->employment_type === EmploymentType::Eigen, 403);
             $payload['friday_off'] = $request->boolean('friday_off');
         }
+
+        $member = $this->requestedMember($request, $worker);
         if ($payload !== []) {
-            $worker->update($payload);
+            if ($member instanceof CrewMember) {
+                $this->updateMemberFlags($worker, $member, $payload);
+            } else {
+                $worker->update($payload);
+                $this->syncCrewFlags($worker, $payload);
+            }
         }
 
         $worker->refresh();
 
-        return back()->with('status', $this->flagsStatus($worker, $payload));
+        return back()->with('status', $this->flagsStatus($member instanceof CrewMember ? $member : $worker, $payload));
     }
 
     /**
      * @param  array<string, bool>  $payload
      */
-    private function flagsStatus(Worker $worker, array $payload): string
+    private function flagsStatus(Worker|CrewMember $subject, array $payload): string
     {
         if (array_key_exists('unavailable', $payload)) {
-            return $worker->unavailable
+            return $subject->unavailable
                 ? 'Staat nu helemaal niet beschikbaar.'
                 : 'Staat weer beschikbaar.';
         }
 
         if (array_key_exists('friday_off', $payload)) {
-            return $worker->friday_off
+            return $subject->friday_off
                 ? 'Vrijdagen staan op vrij.'
                 : 'Vrijdagen staan weer als werkdag.';
         }
@@ -67,13 +75,16 @@ class WorkerAvailabilityController extends Controller
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'kind' => ['required', Rule::enum(AvailabilityKind::class)],
+            'crew_member_id' => ['nullable', 'integer'],
         ], [
             'start_date.required' => 'Kies een begindatum.',
             'end_date.required' => 'Kies een einddatum.',
             'end_date.after_or_equal' => 'De einddatum mag niet voor de begindatum liggen.',
-            'kind.required' => 'Kies beschikbaar of niet beschikbaar.',
+            'kind.required' => 'Kies een reden.',
         ]);
 
+        $member = $this->requestedMember($request, $worker);
+        $data['crew_member_id'] = $member?->id;
         $worker->availabilities()->create($data);
 
         $kind = AvailabilityKind::from($data['kind']);
@@ -88,5 +99,75 @@ class WorkerAvailabilityController extends Controller
         $availability->delete();
 
         return back()->with('status', 'Periode verwijderd.');
+    }
+
+    /**
+     * @param  array<string, bool>  $payload
+     */
+    private function updateMemberFlags(Worker $worker, CrewMember $member, array $payload): void
+    {
+        $worker->loadMissing('crewPeople');
+        foreach ($payload as $flag => $value) {
+            if ($worker->{$flag}) {
+                foreach ($worker->crewPeople as $person) {
+                    if ((int) $person->id !== (int) $member->id) {
+                        if ($flag === 'friday_off') {
+                            $person->setRelation('worker', $worker);
+                            $person->setWorkDay(5, ! $value);
+                            $person->save();
+                        } else {
+                            $person->update([$flag => true]);
+                        }
+                    }
+                }
+                $worker->update([$flag => false]);
+            }
+            if ($flag === 'friday_off') {
+                $member->setRelation('worker', $worker);
+                $member->setWorkDay(5, ! $value);
+                $member->save();
+            } else {
+                $member->update([$flag => $value]);
+            }
+        }
+
+        if ($worker->crewPeople->count() <= 1) {
+            $worker->update($payload);
+        }
+    }
+
+    /**
+     * @param  array<string, bool>  $payload
+     */
+    private function syncCrewFlags(Worker $worker, array $payload): void
+    {
+        $worker->loadMissing('crewPeople');
+        $flags = $payload;
+        if (array_key_exists('friday_off', $flags)) {
+            $fridayOff = $flags['friday_off'];
+            unset($flags['friday_off']);
+            foreach ($worker->crewPeople as $person) {
+                $person->setRelation('worker', $worker);
+                $person->setWorkDay(5, ! $fridayOff);
+                $person->save();
+            }
+        }
+
+        if ($flags !== []) {
+            $worker->crewPeople()->update($flags);
+        }
+    }
+
+    private function requestedMember(Request $request, Worker $worker): ?CrewMember
+    {
+        $id = $request->integer('crew_member_id');
+        if ($id < 1) {
+            return null;
+        }
+
+        $member = $worker->crewPeople()->whereKey($id)->first();
+        abort_unless($member instanceof CrewMember, 404);
+
+        return $member;
     }
 }

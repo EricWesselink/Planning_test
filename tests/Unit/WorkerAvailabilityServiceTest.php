@@ -33,6 +33,26 @@ class WorkerAvailabilityServiceTest extends TestCase
         ));
     }
 
+    public function test_own_staff_with_a_fixed_weekday_off_are_away_that_day(): void
+    {
+        $peter = Worker::query()->create([
+            'name' => 'Peter',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        $member = $peter->crewPeople->first();
+        $member->setRelation('worker', $peter);
+        $member->setWorkDay(3, false);
+        $member->save();
+        $peter->unsetRelation('crewPeople');
+
+        $service = app(WorkerAvailabilityService::class);
+
+        $this->assertSame('Vrije dag', $service->awayLabelOn($peter, Carbon::parse('2026-09-09')));
+        $this->assertNull($service->awayLabelOn($peter, Carbon::parse('2026-09-08')));
+        $this->assertNull($service->awayLabelOn($peter, Carbon::parse('2026-09-11')));
+    }
+
     public function test_own_staff_with_friday_off_and_weekday_leave_are_away_all_week(): void
     {
         $peter = Worker::query()->create([
