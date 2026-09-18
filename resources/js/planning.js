@@ -1348,7 +1348,29 @@ if (board) {
     }
 
     bindLaborFold(board);
+    bindPlanningPrint();
     bindWeekplanningExport();
+}
+
+function bindPlanningPrint() {
+    const dialog = document.getElementById('planning-print-dialog');
+    const form = document.getElementById('planning-print-form');
+    const open = document.getElementById('planning-print-open');
+    const cancel = document.getElementById('planning-print-cancel');
+    const project = document.getElementById('planning-print-project');
+    const period = document.getElementById('planning-print-period');
+    if (! dialog || ! form || ! open) {
+        return;
+    }
+
+    open.addEventListener('click', () => dialog.showModal());
+    cancel?.addEventListener('click', () => dialog.close());
+    project?.addEventListener('change', () => {
+        if (project.value !== '' && period && period.value === 'week') {
+            period.value = 'work';
+        }
+    });
+    form.addEventListener('submit', () => dialog.close());
 }
 
 function bindWeekplanningExport() {

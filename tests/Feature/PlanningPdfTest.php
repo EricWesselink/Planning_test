@@ -27,8 +27,13 @@ class PlanningPdfTest extends TestCase
             ->assertSee('Week')
             ->assertSee('Maand')
             ->assertSee('Gehele werk')
+            ->assertSee('id="planning-print-open"', false)
+            ->assertSee('id="planning-print-dialog"', false)
             ->assertSee('action="'.url('/planning/pdf').'"', false)
             ->assertSee('name="period"', false)
+            ->assertSee('name="project_id"', false)
+            ->assertSee('Kies een werk')
+            ->assertSee('Printen / PDF')
             ->assertSee('Weekplanning exporteren')
             ->assertSee('action="'.url('/planning/weekplanning').'"', false)
             ->assertSee('id="weekplanning-open"', false)
@@ -36,6 +41,58 @@ class PlanningPdfTest extends TestCase
             ->assertSee('PDF maken')
             ->assertSee('Annuleren')
             ->assertDontSee('href="'.url('/planning/weekplanning?week=2026-09-07'), false);
+    }
+
+    public function test_print_dialog_lists_projects_to_export_one_work(): void
+    {
+        $user = User::factory()->create();
+        [$project] = $this->seedPlanning();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('id="planning-print-open"', false)
+            ->assertSee('value="'.$project->id.'"', false)
+            ->assertSee('Laakse Tuinen Amersfoort')
+            ->assertSee('Gehele werk')
+            ->assertSee('name="print"', false)
+            ->assertDontSee('href="'.url('/planning/pdf?week=2026-09-07'), false);
+    }
+
+    public function test_print_action_opens_the_browser_print_dialog_for_the_selected_project(): void
+    {
+        $user = User::factory()->create();
+        [$project] = $this->seedPlanning();
+
+        $this->actingAs($user)
+            ->get(route('planning.export', [
+                'week' => '2026-09-07',
+                'project_id' => $project->id,
+                'period' => 'work',
+                'intern' => 1,
+                'print' => 1,
+            ]))
+            ->assertOk()
+            ->assertSee('data-autoprint="1"', false)
+            ->assertSee('Laakse Tuinen Amersfoort')
+            ->assertSee('Albert')
+            ->assertDontSee('School Zwolle');
+    }
+
+    public function test_save_as_pdf_preview_does_not_auto_print(): void
+    {
+        $user = User::factory()->create();
+        [$project] = $this->seedPlanning();
+
+        $this->actingAs($user)
+            ->get(route('planning.export', [
+                'week' => '2026-09-07',
+                'project_id' => $project->id,
+                'intern' => 1,
+            ]))
+            ->assertOk()
+            ->assertSee('Opslaan als PDF')
+            ->assertDontSee('data-autoprint="1"', false);
     }
 
     public function test_client_pdf_hides_worker_names(): void

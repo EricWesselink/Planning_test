@@ -225,7 +225,7 @@
         }
     </style>
 </head>
-<body>
+<body @if ($autoPrint ?? false) data-autoprint="1" @endif>
     @php
         $showNames = (bool) ($showNames ?? false);
         $query = array_filter($filters, fn ($value) => $value !== null && $value !== '');
@@ -520,5 +520,12 @@
     @endif
 
     <p class="foot">Planning onder voorbehoud van voortgang op de bouw. Nicon Vloeren</p>
+    @if ($autoPrint ?? false)
+        <script>
+            window.addEventListener('load', function () {
+                window.print();
+            });
+        </script>
+    @endif
 </body>
 </html>

@@ -68,20 +68,12 @@
                         id="weekplanning-open"
                         title="Weekplanning vakmannen als PDF"
                     >Weekplanning vakmannen</button>
-                    <form method="GET" action="{{ route('planning.export') }}" target="_blank" class="planning-pdf-form">
-                        @foreach ($query as $key => $value)
-                            @if (! in_array($key, ['period', 'intern', 'week', 'week_nr', 'year'], true))
-                                <input type="hidden" name="{{ $key }}" value="{{ $value }}">
-                            @endif
-                        @endforeach
-                        <input type="hidden" name="week" value="{{ $filters['week'] ?? $weekStart->toDateString() }}">
-                        <select name="period" class="planning-btn planning-select" aria-label="Periode voor PDF" title="Periode voor PDF">
-                            <option value="week" @selected(($period ?? 'week') === 'week' || ($period ?? '') === '')>Week</option>
-                            <option value="month" @selected(($period ?? '') === 'month')>Maand</option>
-                            <option value="work" @selected(($period ?? '') === 'work')>Gehele werk</option>
-                        </select>
-                        <button type="submit" class="planning-btn" name="intern" value="1" title="Planning printen voor eigen gebruik, met namen">Intern</button>
-                    </form>
+                    <button
+                        type="button"
+                        class="planning-btn"
+                        id="planning-print-open"
+                        title="Planning printen voor eigen gebruik, met namen"
+                    >Intern</button>
                     <form method="GET" action="{{ route('planning.excel') }}" class="planning-pdf-form">
                         <select name="year" class="planning-btn planning-select" aria-label="Jaar voor intern Excel" title="Jaar voor intern Excel">
                             @for ($year = $excelYear - 2; $year <= $excelYear + 1; $year++)
@@ -719,6 +711,46 @@
                 <a id="plan-ticket-existing" href="#" class="hidden text-sm text-nicon-orange hover:underline"></a>
                 <a id="plan-ticket-link" href="#" class="text-sm text-nicon-orange hover:underline">Werkbon maken</a>
             </p>
+        </form>
+    </dialog>
+    <dialog id="planning-print-dialog" class="plan-dialog">
+        <form
+            id="planning-print-form"
+            method="GET"
+            action="{{ route('planning.export') }}"
+            target="_blank"
+            class="space-y-3"
+        >
+            <h2 class="text-base font-semibold">Planning printen</h2>
+            <p class="text-sm text-nicon-muted">
+                Kies een werk. Daarna kun je printen of in het afdrukvenster <strong>Opslaan als PDF</strong> kiezen.
+            </p>
+            <input type="hidden" name="week" value="{{ $filters['week'] ?? $weekStart->toDateString() }}">
+            <input type="hidden" name="intern" value="1">
+            <label class="block space-y-1">
+                <span class="text-[10px] uppercase tracking-wide text-nicon-muted">Werk</span>
+                <select name="project_id" id="planning-print-project" required class="w-full border border-nicon-line bg-white px-3 py-2 text-sm">
+                    <option value="">Kies een werk…</option>
+                    @foreach ($projects as $project)
+                        <option value="{{ $project->id }}" @selected((string) ($filters['project_id'] ?? '') === (string) $project->id)>
+                            {{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}
+                        </option>
+                    @endforeach
+                </select>
+            </label>
+            <label class="block space-y-1">
+                <span class="text-[10px] uppercase tracking-wide text-nicon-muted">Periode</span>
+                <select name="period" id="planning-print-period" class="w-full border border-nicon-line bg-white px-3 py-2 text-sm" aria-label="Periode voor PDF" title="Periode voor PDF">
+                    <option value="week" @selected(($period ?? '') === 'week')>Week</option>
+                    <option value="month" @selected(($period ?? '') === 'month')>Maand</option>
+                    <option value="work" @selected(($period ?? 'work') === 'work' || ($period ?? '') === '')>Gehele werk</option>
+                </select>
+            </label>
+            <input type="hidden" name="print" value="1">
+            <div class="flex flex-wrap justify-end gap-2 pt-1">
+                <button type="button" id="planning-print-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>
+                <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">Printen / PDF</button>
+            </div>
         </form>
     </dialog>
     <dialog id="weekplanning-dialog" class="plan-dialog">

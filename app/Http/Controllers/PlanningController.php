@@ -45,6 +45,7 @@ class PlanningController extends Controller
         return view('planning.pdf', array_merge($data, [
             'clientProject' => $clientProject,
             'showNames' => $request->boolean('intern'),
+            'autoPrint' => $request->boolean('print'),
             'canViewLaborCosts' => ($request->user()?->canViewLaborCosts() ?? false) && $request->boolean('intern'),
         ]));
     }
