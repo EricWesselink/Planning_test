@@ -48,6 +48,8 @@
     @endif
 
     <div class="mt-8 space-y-6">
+        @include('projects.partials.winkel-ticket')
+
         <form method="POST" action="{{ route('projects.winkel.update', $project) }}" enctype="multipart/form-data" class="space-y-4 border border-nicon-line bg-white p-4">
             @csrf
             @method('PATCH')
@@ -156,6 +158,31 @@
                 @endphp
                 @if ($assignedNames->isNotEmpty())
                     <p class="mt-2 text-sm">Ingepland: {{ $assignedNames->implode(', ') }}</p>
+                @endif
+                @if ($project->assignments->isNotEmpty())
+                    <ul class="mt-3 space-y-2 text-sm">
+                        @foreach ($project->assignments as $assignment)
+                            @php
+                                $ticket = $assignment->workTickets->first();
+                                $kindLabel = $assignment->worker
+                                    ? \App\Enums\WorkTicketKind::forWorker($assignment->worker)->label()
+                                    : 'Werkbon';
+                            @endphp
+                            @if ($ticket)
+                                <li>
+                                    <a href="{{ route('work-tickets.show', $ticket) }}" class="text-nicon-orange-dark">{{ $ticket->kind->label() }} {{ $ticket->number }}</a>
+                                    <span class="text-nicon-muted">· {{ $assignment->worker?->planName() }}</span>
+                                </li>
+                            @else
+                                @can('create', [\App\Models\WorkTicket::class, $assignment])
+                                    <li>
+                                        <a href="{{ route('projects.show', ['project' => $project, 'bon' => $assignment->id]) }}" class="text-nicon-orange-dark">{{ $kindLabel }} maken</a>
+                                        <span class="text-nicon-muted">· {{ $assignment->worker?->planName() }} · werk uit de winkel</span>
+                                    </li>
+                                @endcan
+                            @endif
+                        @endforeach
+                    </ul>
                 @endif
                 <a href="{{ route('planning', ['project_id' => $project->id]) }}" class="mt-4 inline-block bg-nicon-orange px-4 py-2 text-sm text-white">Open planning</a>
                 @if ($project->nawLine())

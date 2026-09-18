@@ -717,11 +717,103 @@ class WorkTicketTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('Opdrachtbon maken')
-            ->assertSee('Winkelwerk')
+            ->assertSee('werk uit de winkel')
             ->assertSee('PVC banen')
             ->assertSee('12,50 m²')
-            ->assertSee('data-ticket-shop-activity', false)
-            ->assertDontSee('Winkelwerk opslaan');
+            ->assertSee('name="shop_work_activity_ids[]"', false)
+            ->assertSee('Opdrachtbon opslaan')
+            ->assertSee('Winkelwerk opslaan')
+            ->assertDontSee('Bonselectie')
+            ->assertDontSee('Ruimtes selecteren')
+            ->assertDontSee('id="draw-canvas"', false);
+    }
+
+    public function test_winkel_page_offers_werkbon_maken_for_an_assigned_worker(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = WorkActivity::query()->where('slug', 'pvc-banen')->firstOrFail();
+        $project = app(ShopWorkService::class)->create([
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '12.5'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-18',
+        ], $user);
+        $worker = Worker::query()->create([
+            'name' => 'Nick Seine',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $project->workItems()->first()?->id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Werkbon maken')
+            ->assertSee('werk uit de winkel')
+            ->assertSee('Nick Seine')
+            ->assertSee(route('projects.show', ['project' => $project, 'bon' => $assignment->id], false), false)
+            ->assertDontSee('Opdrachtbon maken');
+    }
+
+    public function test_vakman_receives_the_winkel_werkbon(): void
+    {
+        Storage::fake('local');
+        $this->travelTo('2026-09-14 08:00:00');
+        $planner = User::factory()->create();
+        $pvc = WorkActivity::query()->where('slug', 'pvc-banen')->firstOrFail();
+        $project = app(ShopWorkService::class)->create([
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '12.5'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+            'planned_start_date' => '2026-09-14',
+            'planned_end_date' => '2026-09-18',
+        ], $planner);
+        $worker = Worker::query()->create([
+            'name' => 'Nick Seine',
+            'employment_type' => 'eigen',
+            'active' => true,
+        ]);
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $project->workItems()->first()?->id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($planner)
+            ->post(route('work-tickets.store', $assignment), [
+                'shop_work_activity_ids' => [$pvc->id],
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(WorkTicketKind::Werkbon, $ticket->kind);
+
+        $vakman = User::factory()->vakman($worker->id)->create();
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-14'))
+            ->assertOk()
+            ->assertSee('PVC banen')
+            ->assertSee('12,50')
+            ->assertSee('Werkbon '.$ticket->number)
+            ->assertSee(route('work-tickets.show', $ticket), false);
     }
 
     public function test_winkel_opdrachtbon_saves_the_selected_shop_activity(): void

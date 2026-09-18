@@ -245,8 +245,9 @@ class ProjectController extends Controller
 
         $ticketModeRequested = $request->integer('bon') > 0;
 
-        if ($project->isWinkel() && ! $ticketModeRequested) {
-            $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker', 'measurementForm.rows', 'measurementForm.meter']);
+        if ($project->isWinkel()) {
+            $ticketMode = $this->ticketModePayload($request, $project, $tickets);
+            $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker', 'assignments.workTickets', 'measurementForm.rows', 'measurementForm.meter']);
             $assignedIds = $project->assignments
                 ->pluck('worker_id')
                 ->map(fn (mixed $id): int => (int) $id)
@@ -274,6 +275,7 @@ class ProjectController extends Controller
                 ),
                 'selectedWorkerId' => old('worker_id', $multipleWorkers ? null : $assignedIds->first()),
                 'multiplePreferredWorkers' => $multipleWorkers,
+                'ticketMode' => $ticketMode,
                 ...$measurements->viewData($project),
             ]);
         }
