@@ -11,8 +11,6 @@
         </div>
     </div>
 
-    @include('workers._tabs', ['tab' => 'teams'])
-
     @if (session('status'))
         <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
     @endif

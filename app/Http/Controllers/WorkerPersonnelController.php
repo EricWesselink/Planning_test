@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Enums\EmploymentType;
 use App\Models\CrewMember;
 use App\Models\Worker;
+use App\Services\PersonnelWeekService;
+use App\Services\PlanningBoardService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -13,37 +15,30 @@ use Illuminate\View\View;
 
 class WorkerPersonnelController extends Controller
 {
-    public function index(): View
+    public function __construct(
+        private PlanningBoardService $board,
+        private PersonnelWeekService $weeks,
+    ) {}
+
+    public function index(Request $request): View
     {
         Gate::authorize('viewAny', Worker::class);
 
-        $workers = Worker::query()
-            ->ownStaff()
-            ->with('crewPeople')
-            ->orderByDesc('active')
-            ->orderBy('name')
-            ->get();
+        $weekStart = $this->board->weekStart(
+            $request->string('week')->toString() ?: null,
+            $request->filled('week_nr') ? $request->integer('week_nr') : null,
+            $request->filled('year') ? $request->integer('year') : null,
+        );
+        $days = $this->board->weekDays($weekStart, 1);
+        $people = $this->weeks->forDays($days);
 
-        $people = $workers
-            ->flatMap(function (Worker $worker) {
-                $members = $worker->crewPeople->isNotEmpty()
-                    ? $worker->crewPeople
-                    : collect([$worker->crewPeople()->make(['name' => $worker->name, 'sort_order' => 0])]);
-
-                return $members->map(function (CrewMember $member) use ($worker): array {
-                    $member->setRelation('worker', $worker);
-
-                    return [
-                        'worker' => $worker,
-                        'member' => $member,
-                    ];
-                });
-            })
-            ->sortBy(fn (array $row): string => mb_strtolower($row['member']->displayName()))
-            ->values();
-
-        return view('workers.personnel', [
+        return view('personnel.index', [
             'people' => $people,
+            'days' => $days,
+            'weekStart' => $weekStart,
+            'prevWeek' => $weekStart->copy()->subWeek()->toDateString(),
+            'nextWeek' => $weekStart->copy()->addWeek()->toDateString(),
+            'thisWeek' => $this->board->weekStart(null)->toDateString(),
         ]);
     }
 

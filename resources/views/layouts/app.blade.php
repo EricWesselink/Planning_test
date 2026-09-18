@@ -39,6 +39,7 @@
                         }
                         $links[] = ['href' => route('projects.archived'), 'label' => 'Archief', 'active' => request()->routeIs('projects.archived')];
                         $links[] = ['href' => route('workers.index'), 'label' => 'Vakmensen / ZZP', 'active' => request()->routeIs('workers.*')];
+                        $links[] = ['href' => route('personnel.index'), 'label' => 'Personeel', 'active' => request()->routeIs('personnel.*')];
                     }
                     if ($user?->can('viewAny', \App\Models\User::class)) {
                         $links[] = ['href' => route('users.index'), 'label' => 'Gebruikers', 'active' => request()->routeIs('users.*')];

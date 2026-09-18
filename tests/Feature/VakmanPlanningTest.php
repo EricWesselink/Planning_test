@@ -86,6 +86,7 @@ class VakmanPlanningTest extends TestCase
             ->assertDontSee('uurtarief')
             ->assertDontSee('Gebruikers')
             ->assertDontSee('Vakmensen / ZZP')
+            ->assertDontSee('Personeel')
             ->assertDontSee('Archief')
             ->assertDontSee('Werkbon')
             ->assertDontSee('Opdrachtbon')

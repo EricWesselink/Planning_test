@@ -23,23 +23,23 @@ class WorkerAvailabilityTest extends TestCase
         $peter = $this->makeWorker('Peter', 'eigen');
 
         $this->actingAs($user)
-            ->from(route('workers.absence'))
+            ->from(route('personnel.index'))
             ->patch(route('workers.friday.update', $peter), [
                 'friday_off' => '1',
             ])
-            ->assertRedirect(route('workers.absence'));
+            ->assertRedirect(route('personnel.index'));
 
         $this->assertTrue($peter->fresh()->friday_off);
         $this->assertFalse($peter->fresh()->crewPeople->first()->worksOn(5));
 
         $this->actingAs($user)
-            ->get(route('workers.personnel'))
+            ->get(route('personnel.index'))
             ->assertOk()
             ->assertSee('Personeel')
             ->assertSee('Peter');
 
         $this->actingAs($user)
-            ->get(route('workers.absence'))
+            ->get(route('personnel.index'))
             ->assertOk()
             ->assertDontSee('Vrij op vrijdag');
 
@@ -56,11 +56,11 @@ class WorkerAvailabilityTest extends TestCase
         $this->makeWorker('Nick Seine', 'zzp');
 
         $this->actingAs($user)
-            ->get(route('workers.absence'))
+            ->get(route('personnel.index'))
             ->assertOk()
             ->assertSee('Afwezigheid')
             ->assertSee('Personeel')
-            ->assertSee(route('workers.personnel'), false)
+            ->assertSee(route('personnel.index'), false)
             ->assertSee('Peter')
             ->assertDontSee('Nick Seine')
             ->assertDontSee('Vrij op vrijdag');
@@ -80,10 +80,8 @@ class WorkerAvailabilityTest extends TestCase
         $this->actingAs($user)
             ->get(route('workers.show', $peter))
             ->assertOk()
-            ->assertSee('Afwezigheid')
             ->assertSee('Personeel')
-            ->assertSee(route('workers.absence'), false)
-            ->assertSee(route('workers.personnel'), false)
+            ->assertSee(route('personnel.index'), false)
             ->assertDontSee('Helemaal niet beschikbaar')
             ->assertDontSee('Vrij op vrijdag');
     }
@@ -101,7 +99,7 @@ class WorkerAvailabilityTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get(route('workers.absence'))
+            ->get(route('personnel.index'))
             ->assertOk()
             ->assertSee('Eric Wesselink')
             ->assertSee('Harm Wesselink')
@@ -124,12 +122,12 @@ class WorkerAvailabilityTest extends TestCase
         $harm = $team->fresh()->crewPeople->firstWhere('name', 'Harm Wesselink');
 
         $this->actingAs($user)
-            ->from(route('workers.absence'))
+            ->from(route('personnel.index'))
             ->patch(route('workers.friday.update', $team), [
                 'crew_member_id' => $eric->id,
                 'friday_off' => '1',
             ])
-            ->assertRedirect(route('workers.absence'));
+            ->assertRedirect(route('personnel.index'));
 
         $this->assertTrue($eric->fresh()->friday_off);
         $this->assertFalse($harm->fresh()->friday_off);
@@ -319,7 +317,7 @@ class WorkerAvailabilityTest extends TestCase
             'unavailable' => '1',
         ])->assertRedirect(route('login'));
 
-        $this->get(route('workers.absence'))->assertRedirect(route('login'));
+        $this->get(route('personnel.index'))->assertRedirect(route('login'));
     }
 
     public function test_planning_candidates_mark_friday_off_as_unavailable(): void
@@ -430,7 +428,7 @@ class WorkerAvailabilityTest extends TestCase
 
     private function availabilityOverview(string $type): string
     {
-        return $type === 'eigen' ? route('workers.absence') : route('workers.index');
+        return $type === 'eigen' ? route('personnel.index') : route('workers.index');
     }
 
     private function makeWorker(string $name, string $type): Worker

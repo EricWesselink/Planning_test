@@ -4,7 +4,6 @@
 
 @section('content')
     <a href="{{ route('workers.index') }}" class="text-sm text-nicon-muted">← Vakmensen</a>
-    @include('workers._tabs', ['tab' => 'teams'])
     <div class="mt-4 flex items-end justify-between gap-4 flex-wrap">
         <div>
             <h1 class="text-2xl font-semibold flex items-center gap-3">

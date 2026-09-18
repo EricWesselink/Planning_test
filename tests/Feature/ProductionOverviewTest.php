@@ -36,6 +36,7 @@ class ProductionOverviewTest extends TestCase
             ->assertSee('Projecten')
             ->assertSee('Archief')
             ->assertSee('Vakmensen / ZZP')
+            ->assertSee('Personeel')
             ->assertSee('https://app.decoloop.com/dossier/floor_browse', false)
             ->assertSee('images/decoloop.png', false)
             ->assertSee('Decoloop')

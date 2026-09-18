@@ -60,7 +60,6 @@ class WorkerProfileTest extends TestCase
             ->assertDontSee('Vink vrijdagen af')
             ->assertDontSee('Helemaal niet beschikbaar')
             ->assertDontSee('Beschikbaarheid')
-            ->assertSee('Afwezigheid')
             ->assertSee('Personeel')
             ->assertSee('class="space-y-4 hidden"', false);
     }

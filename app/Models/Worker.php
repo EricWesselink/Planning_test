@@ -509,7 +509,7 @@ class Worker extends Model
     public function syncCrewPeople(): void
     {
         $members = is_array($this->crew_members)
-            ? self::normalizeCrewMembers($this->crew_members, $this->peopleCount())
+            ? self::normalizeCrewMembers($this->crew_members, max(1, (int) $this->people_count))
             : $this->crewMembers();
         $existing = CrewMember::query()
             ->where('worker_id', $this->id)
