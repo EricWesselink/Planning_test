@@ -214,27 +214,32 @@ export function printPaper(cssViewport) {
 }
 
 export function isUsablePrintImageSrc(src) {
-    return typeof src === 'string'
-        && src.startsWith('data:image/')
-        && src.includes('base64,')
-        && src.length > 64;
+    return typeof src === 'string' && (
+        src.startsWith('blob:')
+        || (src.startsWith('data:image/') && src.includes('base64,') && src.length > 64)
+    );
 }
 
-export function printImageFromCanvas(canvas) {
-    const width = Math.max(0, Math.floor(Number(canvas?.width) || 0));
-    const height = Math.max(0, Math.floor(Number(canvas?.height) || 0));
+export async function printImageFromCanvas(canvas) {
+    const source = cpuCanvasCopy(canvas);
+    const width = Math.max(0, Math.floor(Number(source?.width) || 0));
+    const height = Math.max(0, Math.floor(Number(source?.height) || 0));
     if (width < 2 || height < 2) {
         throw new Error('empty drawing canvas');
     }
+    const blobSrc = await blobSrcFromCanvas(source);
+    if (isUsablePrintImageSrc(blobSrc)) {
+        return { src: blobSrc, width, height };
+    }
     let src = '';
     try {
-        src = canvas.toDataURL('image/jpeg', 0.82);
+        src = source.toDataURL('image/jpeg', 0.85);
     } catch {
         src = '';
     }
-    if (!isUsablePrintImageSrc(src) && typeof canvas.toDataURL === 'function') {
+    if (!isUsablePrintImageSrc(src) && typeof source.toDataURL === 'function') {
         try {
-            src = canvas.toDataURL('image/png');
+            src = source.toDataURL('image/png');
         } catch {
             src = '';
         }
@@ -244,6 +249,59 @@ export function printImageFromCanvas(canvas) {
     }
 
     return { src, width, height };
+}
+
+function cpuCanvasCopy(canvas) {
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
+        return canvas;
+    }
+    const copy = document.createElement('canvas');
+    copy.width = Math.max(1, Math.floor(Number(canvas?.width) || 0));
+    copy.height = Math.max(1, Math.floor(Number(canvas?.height) || 0));
+    if (copy.width < 2 || copy.height < 2) {
+        return canvas;
+    }
+    const context = copy.getContext('2d', { alpha: false, willReadFrequently: true });
+    if (!context || typeof context.drawImage !== 'function') {
+        return canvas;
+    }
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, copy.width, copy.height);
+    context.drawImage(canvas, 0, 0);
+
+    return copy;
+}
+
+async function blobSrcFromCanvas(canvas) {
+    if (typeof canvas?.toBlob !== 'function') {
+        return '';
+    }
+    const blob = await new Promise((resolve) => {
+        try {
+            canvas.toBlob(resolve, 'image/jpeg', 0.85);
+        } catch {
+            resolve(null);
+        }
+    });
+    if (!blob || Number(blob.size) < 64) {
+        return '';
+    }
+    if (typeof FileReader === 'function') {
+        const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => resolve('');
+            reader.readAsDataURL(blob);
+        });
+        if (isUsablePrintImageSrc(dataUrl)) {
+            return dataUrl;
+        }
+    }
+    if (typeof Blob !== 'undefined' && blob instanceof Blob && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        return URL.createObjectURL(blob);
+    }
+
+    return '';
 }
 
 export function printDrawingHasSize(image) {
@@ -261,7 +319,11 @@ export async function waitForPrintImage(image) {
         throw new Error('empty drawing image');
     }
     if (typeof image.decode === 'function') {
-        await image.decode();
+        try {
+            await image.decode();
+        } catch {
+            throw new Error('empty drawing image');
+        }
     } else if (!image.complete) {
         await new Promise((resolve, reject) => {
             image.addEventListener('load', () => resolve(image), { once: true });

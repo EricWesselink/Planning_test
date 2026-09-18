@@ -583,6 +583,54 @@ class PlanningWeekplanningPdfTest extends TestCase
         $this->assertStringContainsString('Vrije dag', $text);
     }
 
+    public function test_a_tall_team_row_with_week_long_vacation_still_opens_as_pdf(): void
+    {
+        $user = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Team 3 Arek',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => ''],
+                ['name' => 'Sietse', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        $arek = $team->crewPeople->firstWhere('name', 'Arek');
+        $sietse = $team->crewPeople->firstWhere('name', 'Sietse');
+        $team->availabilities()->create([
+            'crew_member_id' => $sietse->id,
+            'start_date' => '2026-09-21',
+            'end_date' => '2026-09-25',
+            'kind' => AvailabilityKind::Vacation,
+        ]);
+        [$project, $item] = $this->makeProject(
+            'Kampen - vlekken in het tapijt + tapijt scheef gelegd waardoor patroon niet mooi uitkomt. trapprofielen moeten geplaatst worden 2 st zwart vlekken op de vloer moeten verwijderd worden met schuurmachine 2 man voor nodig.',
+            [
+                'kind' => ProjectKind::Service,
+                'city' => 'Kampen',
+                'project_number' => '2026-009',
+            ],
+        );
+        $this->assign($team, $project, $item, '2026-09-21', '2026-09-21', '14:00:00', '16:00:00', [$arek->id]);
+        [$other, $otherItem] = $this->makeProject('Dussen - IJsselmuiden', [
+            'city' => 'IJsselmuiden',
+            'project_number' => '2026-008',
+        ]);
+        $this->assign($team, $other, $otherItem, '2026-09-21', '2026-09-21', '08:00:00', '14:00:00', [$arek->id]);
+
+        $response = $this->actingAs($user)->get(route('planning.weekplanning', [
+            'week' => '2026-09-21',
+            'teams' => ['worker-'.$team->id],
+        ]));
+
+        $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
+        $this->assertStringContainsString('weekplanning-Team-3-Arek-week-39-2026.pdf', (string) $response->headers->get('Content-Disposition'));
+        $text = $this->pdfText($response);
+        $this->assertStringContainsString('Vakantie', $text);
+        $this->assertStringContainsString('Kampen', $text);
+    }
+
     public function test_vacation_without_work_that_week_stays_hidden(): void
     {
         $user = User::factory()->create();
@@ -605,7 +653,7 @@ class PlanningWeekplanningPdfTest extends TestCase
         $this->assertStringNotContainsString('AlleenVakantie', $text);
     }
 
-    public function test_empty_day_shows_a_dash_and_unscheduled_people_are_hidden(): void
+    public function test_empty_weekday_shows_volgt_nog_and_unscheduled_people_are_hidden(): void
     {
         $user = User::factory()->create();
         [$worker, $project, $item] = $this->makeProjectWorker('Peter', 'TMZ Meubelenbelt');
@@ -616,10 +664,17 @@ class PlanningWeekplanningPdfTest extends TestCase
             'active' => true,
         ]);
 
+        $request = Request::create('/planning/weekplanning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $days = collect(app(WeekplanningPdfService::class)->build($request)['days'])->keyBy('key');
+
+        $this->assertSame('Volgt nog', $days['2026-09-11']['empty_label']);
+        $this->assertSame('—', $days['2026-09-12']['empty_label']);
+
         $text = $this->pdfText($this->actingAs($user)->get(route('planning.weekplanning', ['week' => '2026-09-07'])));
 
         $this->assertStringContainsString('Peter', $text);
-        $this->assertStringContainsString('—', $text);
+        $this->assertStringContainsString('Volgt nog', $text);
         $this->assertStringNotContainsString('NietIngepland', $text);
     }
 

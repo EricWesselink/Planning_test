@@ -14,6 +14,7 @@ import {
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const PRINT_RENDER_SCALE = Math.max(VIEW_RENDER_SCALE, 4);
+const PRINT_MAX_EDGE = 3200;
 let printReady = Promise.resolve();
 let autoPrint = false;
 
@@ -158,7 +159,7 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
     if (meta) {
         meta.textContent = paper.landscape ? 'A3 liggend' : 'A3 staand';
     }
-    const renderScale = viewerRenderScale(cssViewport.width, cssViewport.height, PRINT_RENDER_SCALE, 3);
+    const renderScale = printRenderScale(cssViewport);
     const renderViewport = pdfPage.getViewport({ scale: renderScale });
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
@@ -179,7 +180,7 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
             viewport: renderViewport,
         }).promise;
     }
-    const snapshot = printImageFromCanvas(canvas);
+    const snapshot = await printImageFromCanvas(canvas);
     image.src = snapshot.src;
     await waitForPrintAssets(host, { requireDrawings: true });
     paintCalculationOverlays({
@@ -209,6 +210,18 @@ async function waitUntilPrintable(documentData = null) {
             requestAnimationFrame(() => requestAnimationFrame(resolve));
         });
     }
+}
+
+function printRenderScale(cssViewport) {
+    const width = Math.max(1, Number(cssViewport?.width) || 1);
+    const height = Math.max(1, Number(cssViewport?.height) || 1);
+    const scale = viewerRenderScale(width, height, PRINT_RENDER_SCALE, 1, PRINT_MAX_EDGE);
+    const edge = Math.max(width, height) * scale;
+    if (edge <= PRINT_MAX_EDGE) {
+        return scale;
+    }
+
+    return PRINT_MAX_EDGE / Math.max(width, height);
 }
 
 function enablePrintButton() {

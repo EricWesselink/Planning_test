@@ -229,7 +229,7 @@
             color: #6b7280;
         }
         tr.person-row {
-            page-break-inside: avoid;
+            page-break-inside: auto;
         }
     </style>
 </head>
@@ -333,7 +333,7 @@
                                     <div class="block-hours">{{ $block['hours'] }}</div>
                                 </div>
                             @empty
-                                <div class="empty">—</div>
+                                <div class="empty">{{ $day['empty_label'] }}</div>
                             @endforelse
                         </td>
                     @endforeach

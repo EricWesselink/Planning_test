@@ -6,6 +6,7 @@ import {
     overlayPlan,
     printDrawingSheets,
     printImageFromCanvas,
+    isUsablePrintImageSrc,
     printPaper,
     roomLabelAnchor,
     usableLabelHits,
@@ -165,9 +166,9 @@ test('ignores a dense legend strip of room codes above the plan', () => {
     assert.deepEqual(usableLabelHits([...hits, inRoom]).map((hit) => hit.y), [0.64]);
 });
 
-test('print snapshot keeps a jpeg data url from the rendered canvas', () => {
+test('print snapshot keeps a jpeg data url from the rendered canvas', async () => {
     const src = `data:image/jpeg;base64,${'A'.repeat(80)}`;
-    const result = printImageFromCanvas({
+    const result = await printImageFromCanvas({
         width: 120,
         height: 80,
         toDataURL(type) {
@@ -182,22 +183,22 @@ test('print snapshot keeps a jpeg data url from the rendered canvas', () => {
     assert.equal(result.height, 80);
 });
 
-test('print snapshot rejects a blank or zero-size canvas', () => {
-    assert.throws(() => printImageFromCanvas({
+test('print snapshot rejects a blank or zero-size canvas', async () => {
+    await assert.rejects(() => printImageFromCanvas({
         width: 0,
         height: 10,
         toDataURL: () => `data:image/jpeg;base64,${'A'.repeat(80)}`,
     }), /empty drawing canvas/);
-    assert.throws(() => printImageFromCanvas({
+    await assert.rejects(() => printImageFromCanvas({
         width: 10,
         height: 10,
         toDataURL: () => 'data:,',
     }), /empty drawing snapshot/);
 });
 
-test('print snapshot falls back to png when jpeg data is empty', () => {
+test('print snapshot falls back to png when jpeg data is empty', async () => {
     const png = `data:image/png;base64,${'B'.repeat(80)}`;
-    const result = printImageFromCanvas({
+    const result = await printImageFromCanvas({
         width: 20,
         height: 20,
         toDataURL(type) {
@@ -206,6 +207,21 @@ test('print snapshot falls back to png when jpeg data is empty', () => {
     });
 
     assert.equal(result.src, png);
+});
+
+test('print snapshot prefers a jpeg data url from the canvas blob', async () => {
+    const blob = new Blob([new Uint8Array(80)], { type: 'image/jpeg' });
+    const result = await printImageFromCanvas({
+        width: 120,
+        height: 80,
+        toBlob(callback) {
+            callback(blob);
+        },
+        toDataURL: () => 'data:,',
+    });
+
+    assert.equal(isUsablePrintImageSrc(result.src), true);
+    assert.ok(result.src.startsWith('data:image/') || result.src.startsWith('blob:'));
 });
 
 test('print waits until every drawing image has a non-empty size', async () => {

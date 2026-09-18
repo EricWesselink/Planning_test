@@ -90,7 +90,7 @@ class WeekplanningPdfService
      *     companyName: string,
      *     shopName: string,
      *     heading: string,
-     *     days: list<array{key: string, name: string, date: string}>,
+     *     days: list<array{key: string, name: string, date: string, empty_label: string}>,
      *     people: list<array<string, mixed>>
      * }
      */
@@ -157,6 +157,7 @@ class WeekplanningPdfService
                 'key' => $day->toDateString(),
                 'name' => Str::ucfirst($day->translatedFormat('l')),
                 'date' => $day->translatedFormat('j F'),
+                'empty_label' => $day->isWeekday() ? 'Volgt nog' : '—',
             ])->values()->all(),
             'people' => $people,
         ];
@@ -452,7 +453,7 @@ class WeekplanningPdfService
         foreach ($row['days'] as $date => $blocks) {
             $clean = [];
             foreach ($this->mergeBlocks($blocks) as $block) {
-                $who = $block['who'] ?? [];
+                $who = $this->blockWhoNames($block);
                 usort($who, static fn (string $left, string $right): int => strcasecmp($left, $right));
                 $block['who'] = $showWho
                     ? implode(' · ', array_map(fn (string $name): string => $this->shortPersonName($name), $who))
@@ -534,9 +535,14 @@ class WeekplanningPdfService
     {
         $weekdays = [];
         foreach (array_keys($days) as $date) {
-            if ((int) Carbon::parse((string) $date)->dayOfWeekIso <= 5) {
-                $weekdays[] = $date;
+            $date = (string) $date;
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+                continue;
             }
+            if ((int) Carbon::createFromFormat('Y-m-d', $date)->dayOfWeekIso > 5) {
+                continue;
+            }
+            $weekdays[] = $date;
         }
         if ($weekdays === []) {
             return [];
@@ -544,8 +550,8 @@ class WeekplanningPdfService
 
         $awayOn = [];
         foreach ($weekdays as $date) {
-            foreach ($days[$date] as $block) {
-                if (empty($block['away'])) {
+            foreach ($days[$date] ?? [] as $block) {
+                if (! is_array($block) || empty($block['away'])) {
                     continue;
                 }
                 foreach ($this->blockWhoNames($block) as $name) {
@@ -651,8 +657,8 @@ class WeekplanningPdfService
             }
 
             $merged[$key]['who'] = array_values(array_unique([
-                ...$merged[$key]['who'],
-                ...$block['who'],
+                ...$this->blockWhoNames($merged[$key]),
+                ...$this->blockWhoNames($block),
             ]));
         }
 
