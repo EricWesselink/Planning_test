@@ -40,7 +40,14 @@
                         @endif
                     </td>
                     <td class="px-3 py-2">{{ $user->email }}</td>
-                    <td class="px-3 py-2">{{ $user->role?->label() }}</td>
+                    <td class="px-3 py-2">
+                        {{ $user->role?->listLabel() }}
+                        @if ($user->role === \App\Enums\UserRole::Aangepast)
+                            <div>
+                                <a class="text-xs text-nicon-orange-dark hover:underline" href="{{ route('users.show', $user) }}#rechten">Bekijk rechten</a>
+                            </div>
+                        @endif
+                    </td>
                     <td class="px-3 py-2">
                         @if ($user->isVakman())
                             Ingeplande werken van {{ $user->worker?->planName() ?: 'dit team' }}
@@ -53,13 +60,18 @@
                     <td class="px-3 py-2">{{ $user->active ? 'Actief' : 'Uitgeschakeld' }}</td>
                     <td class="px-3 py-2 whitespace-nowrap">{{ $user->last_login_at?->format('d-m-Y H:i') ?? 'Nog niet' }}</td>
                     <td class="px-3 py-2 text-right whitespace-nowrap">
-                        @can('delete', $user)
-                            <form method="POST" action="{{ route('users.destroy', $user) }}" class="inline" onsubmit="return confirm('{{ $user->name }} verwijderen? Het team in de planning blijft bestaan.')">
-                                @csrf
-                                @method('DELETE')
-                                <button class="text-sm text-nicon-danger hover:underline">Verwijderen</button>
-                            </form>
-                        @endcan
+                        <div class="inline-flex items-center justify-end gap-3">
+                            @can('update', $user)
+                                <a class="text-sm text-nicon-orange-dark hover:underline" href="{{ route('users.show', $user) }}">Bewerken</a>
+                            @endcan
+                            @can('delete', $user)
+                                <form method="POST" action="{{ route('users.destroy', $user) }}" class="inline" onsubmit="return confirm('{{ $user->name }} verwijderen? Het team in de planning blijft bestaan.')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="text-sm text-nicon-danger hover:underline">Verwijderen</button>
+                                </form>
+                            @endcan
+                        </div>
                     </td>
                 </tr>
             @endforeach

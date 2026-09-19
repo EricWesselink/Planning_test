@@ -25,6 +25,11 @@ enum UserRole: string
         };
     }
 
+    public function listLabel(): string
+    {
+        return $this === self::Aangepast ? 'Aangepast' : $this->label();
+    }
+
     public function usesPermissionMatrix(): bool
     {
         return $this === self::AlleenLezen || $this === self::Aangepast;

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Worker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class WorkerWhatsAppContactExportTest extends TestCase
@@ -76,6 +77,107 @@ class WorkerWhatsAppContactExportTest extends TestCase
         $this->assertStringContainsString('TEL;TYPE=CELL:+31687654321', $vcf);
         $this->assertSame('06 12345678', $nick->fresh()->phone);
         $this->assertSame('06 12345678', $nick->fresh()->crewPeople->first()?->phone);
+    }
+
+    #[DataProvider('messyStoredNames')]
+    public function test_normalizes_tabs_spaces_and_inverted_last_names_in_the_vcard(string $stored, string $expected): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->ownStaff($stored, '0612345678');
+
+        $vcf = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:'.$expected, $vcf);
+        $this->assertStringContainsString('N;CHARSET=UTF-8:'.$expected.';;;;', $vcf);
+        $this->assertSame($stored, $worker->fresh()->crewPeople->first()?->name);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function messyStoredNames(): array
+    {
+        return [
+            'tab_and_initial' => ["Lukasz\tOzimek, L", 'Nicon - Lukasz Ozimek'],
+            'double_spaces' => ['Nick  Seine', 'Nicon - Nick Seine'],
+            'inverted_full_name' => ['Ozimek, Lukasz', 'Nicon - Lukasz Ozimek'],
+            'utf8' => ['José  García', 'Nicon - José García'],
+        ];
+    }
+
+    public function test_uses_the_worker_full_name_when_the_person_only_has_a_first_name(): void
+    {
+        $user = User::factory()->create();
+        Worker::query()->create([
+            'name' => 'Peter Korteschiel',
+            'employment_type' => 'eigen',
+            'phone' => '0611111111',
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => 'Peter', 'phone' => '0611111111', 'active' => true],
+            ],
+            'active' => true,
+        ]);
+
+        $vcf = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Peter Korteschiel', $vcf);
+        $this->assertStringNotContainsString('FN;CHARSET=UTF-8:Nicon - Peter\r\n', $vcf);
+    }
+
+    public function test_uses_the_login_full_name_when_the_crew_name_is_only_a_first_name(): void
+    {
+        $user = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Team 1 Nick',
+            'employment_type' => 'eigen',
+            'phone' => '0612345678',
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => 'Nick', 'phone' => '0612345678', 'active' => true],
+            ],
+            'active' => true,
+        ]);
+        $nick = $team->fresh()->crewPeople->first();
+        $this->assertNotNull($nick);
+        User::factory()->vakman($team->id, $nick->id)->create(['name' => 'Nick Seine']);
+
+        $vcf = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Nick Seine', $vcf);
+        $this->assertStringNotContainsString('Team 1 Nick', $vcf);
+    }
+
+    public function test_keeps_a_first_name_when_no_fuller_name_is_available(): void
+    {
+        $user = User::factory()->create();
+        Worker::query()->create([
+            'name' => 'Team 3 Arek',
+            'employment_type' => 'eigen',
+            'phone' => '0611111111',
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => 'Arek', 'phone' => '0611111111', 'active' => true],
+            ],
+            'active' => true,
+        ]);
+
+        $vcf = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Arek', $vcf);
+        $this->assertStringNotContainsString('Team 3 Arek', $vcf);
     }
 
     public function test_omits_zzp_and_onderaannemers(): void

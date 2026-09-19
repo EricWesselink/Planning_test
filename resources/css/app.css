@@ -5513,30 +5513,49 @@ img.calc-print-canvas {
     width: 18%;
     text-align: left;
     padding: 4px 6px;
+    border-left: 3px solid var(--color-nicon-ink);
 }
 
 .personnel-week-project-cell {
     background: var(--color-nicon-sand);
 }
 
-.personnel-week-customer {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
+.personnel-week-werk.is-shop {
+    background: #eef2f5;
+    border-left-color: #6b7c8a;
+}
+
+.personnel-week-werk.is-away {
+    background: #f3f4f6;
+    border-left-color: #9ca3af;
+}
+
+.personnel-week-type {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-nicon-muted);
     line-height: 1.2;
 }
 
 .personnel-week-title {
-    font-size: 13px;
-    font-weight: 650;
+    font-size: 14px;
+    font-weight: 700;
     color: var(--color-nicon-ink);
     line-height: 1.2;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+.personnel-week-customer {
+    font-size: 11px;
+    font-weight: 500;
+    font-style: italic;
+    color: var(--color-nicon-steel);
+    line-height: 1.2;
 }
 
 .personnel-week-meta {

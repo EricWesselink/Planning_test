@@ -70,37 +70,55 @@
         .day-date { display: block; font-weight: 500; font-size: 6.5pt; text-transform: none; letter-spacing: 0; }
         td.werk {
             border: 0.4pt solid #d5dde5;
-            padding: 4px 6px;
+            border-left: 2.2pt solid #163a5f;
+            padding: 3px 5px 3px 6px;
             background: #f4efe6;
             vertical-align: top;
             overflow-wrap: anywhere;
             word-wrap: break-word;
             word-break: break-word;
         }
+        td.werk.is-shop {
+            background: #eef2f5;
+            border-left-color: #6b7c8a;
+        }
+        td.werk.is-away {
+            background: #f3f4f6;
+            border-left-color: #9ca3af;
+        }
         td.day {
             border: 0.4pt solid #d5dde5;
             padding: 1px 2px;
             vertical-align: top;
         }
-        .customer {
-            font-size: 6.5pt;
-            font-weight: 700;
+        .type {
+            font-size: 5.5pt;
+            font-weight: 800;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
             color: #5b6570;
-            line-height: 1.35;
+            line-height: 1.2;
             padding: 0 0 1px;
         }
         .title {
-            font-size: 8pt;
+            font-size: 9pt;
             font-weight: 700;
             color: #163a5f;
-            line-height: 1.35;
+            line-height: 1.25;
+            padding: 0 0 1px;
+        }
+        .customer {
+            font-size: 7pt;
+            font-weight: 500;
+            font-style: italic;
+            color: #5b6570;
+            line-height: 1.25;
             padding: 0 0 1px;
         }
         .meta {
-            font-size: 7pt;
+            font-size: 6.5pt;
             color: #44403c;
-            line-height: 1.35;
+            line-height: 1.25;
             padding: 0 0 1px;
         }
         .work-name {
@@ -108,7 +126,7 @@
             font-weight: 700;
             color: #163a5f;
             padding-top: 2px;
-            line-height: 1.35;
+            line-height: 1.25;
         }
         .marker {
             font-size: 6pt;
@@ -216,17 +234,19 @@
                             </colgroup>
                             @foreach ($project['works'] as $workIndex => $work)
                                 <tr>
-                                    <td class="werk">
+                                    <td class="werk{{ ! empty($project['shop']) ? ' is-shop' : '' }}{{ ! empty($project['away']) ? ' is-away' : '' }}">
                                         @if ((int) $workIndex === 0)
+                                            @if (! empty($project['type_label']))
+                                                <div class="type">{{ $project['type_label'] }}</div>
+                                            @endif
+                                            @if (! empty($project['pdf_title'] ?? $project['title']))
+                                                <div class="title">{{ $project['pdf_title'] ?? $project['title'] }}</div>
+                                            @endif
                                             @if (! empty($project['customer']))
                                                 <div class="customer">{{ $project['customer'] }}</div>
                                             @endif
-                                            <div class="title">{{ $project['title'] }}</div>
-                                            @if (! empty($project['city']))
-                                                <div class="meta">{{ $project['city'] }}</div>
-                                            @endif
-                                            @if (! empty($project['address']))
-                                                <div class="meta">{{ $project['address'] }}</div>
+                                            @if (! empty($project['place']))
+                                                <div class="meta">{{ $project['place'] }}</div>
                                             @endif
                                             @if (! empty($project['number']))
                                                 <div class="meta">{{ $project['number'] }}</div>

@@ -3,12 +3,15 @@
 namespace Tests\Feature;
 
 use App\Enums\CalculationStatus;
+use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Enums\WorkTicketKind;
 use App\Models\Calculation;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\WorkActivity;
+use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkTicket;
@@ -108,6 +111,142 @@ class ReadOnlyAccessTest extends TestCase
 
         $this->actingAs($user)->get(route('users.index'))->assertForbidden();
         $this->actingAs($user)->get(route('dashboard'))->assertOk()->assertDontSee('href="'.url('/gebruikers').'"', false);
+    }
+
+    public function test_read_only_user_cannot_create_or_change_users_or_the_catalog(): void
+    {
+        $user = User::factory()->alleenLezen()->create();
+        $target = User::factory()->create([
+            'name' => 'Planner Piet',
+            'email' => 'piet@niconvloeren.nl',
+            'role' => UserRole::Planner,
+        ]);
+        $category = WorkActivityCategory::query()->create([
+            'name' => 'Vloeren',
+            'slug' => 'vloeren-readonly-test',
+            'sort_order' => 1,
+            'is_active' => true,
+        ]);
+        $activity = WorkActivity::query()->create([
+            'work_activity_category_id' => $category->id,
+            'name' => 'Linoleum',
+            'slug' => 'linoleum-readonly-test',
+            'sort_order' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user)->get(route('users.create'))->assertForbidden();
+        $this->actingAs($user)->get(route('users.show', $target))->assertForbidden();
+        $this->actingAs($user)->get(route('work-activities.index'))->assertForbidden();
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('href="'.url('/beheer/werkzaamheden').'"', false);
+
+        $this->actingAs($user)
+            ->post(route('users.store'), [
+                'name' => 'Nieuwe collega',
+                'email' => 'collega@niconvloeren.nl',
+                'password' => 'wachtwoord123',
+                'password_confirmation' => 'wachtwoord123',
+                'role' => UserRole::Planner->value,
+                'active' => '1',
+                'project_access' => 'all',
+            ])
+            ->assertForbidden();
+        $this->assertDatabaseMissing('users', ['email' => 'collega@niconvloeren.nl']);
+
+        $this->actingAs($user)
+            ->patch(route('users.update', $target), [
+                'name' => 'Hacker',
+                'email' => $target->email,
+                'role' => UserRole::Admin->value,
+                'permissions' => [Permission::UsersManage->value],
+                'active' => '1',
+                'project_access' => 'all',
+            ])
+            ->assertForbidden();
+        $target->refresh();
+        $this->assertSame('Planner Piet', $target->name);
+        $this->assertSame(UserRole::Planner, $target->role);
+
+        $this->actingAs($user)->delete(route('users.destroy', $target))->assertForbidden();
+        $this->assertModelExists($target);
+
+        $this->actingAs($user)
+            ->post(route('work-activities.store'), [
+                'work_activity_category_id' => $category->id,
+                'name' => 'Horren',
+            ])
+            ->assertForbidden();
+        $this->assertDatabaseMissing('work_activities', ['name' => 'Horren']);
+
+        $this->actingAs($user)
+            ->patch(route('work-activities.update', $activity), [
+                'work_activity_category_id' => $category->id,
+                'name' => 'Gewijzigd',
+                'sort_order' => 1,
+                'is_active' => '0',
+            ])
+            ->assertForbidden();
+        $activity->refresh();
+        $this->assertSame('Linoleum', $activity->name);
+        $this->assertTrue($activity->is_active);
+    }
+
+    public function test_admin_can_manage_users_and_the_catalog(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $target = User::factory()->create([
+            'name' => 'Gerrit',
+            'role' => UserRole::Planner,
+        ]);
+        $category = WorkActivityCategory::query()->create([
+            'name' => 'Overig',
+            'slug' => 'overig-admin-test',
+            'sort_order' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)->get(route('users.index'))->assertOk();
+        $this->actingAs($admin)->get(route('work-activities.index'))->assertOk();
+
+        $this->actingAs($admin)
+            ->post(route('users.store'), [
+                'name' => 'Uitvoerder Jan',
+                'email' => 'jan@niconvloeren.nl',
+                'password' => 'wachtwoord123',
+                'password_confirmation' => 'wachtwoord123',
+                'role' => UserRole::Uitvoerder->value,
+                'active' => '1',
+                'project_access' => 'all',
+            ])
+            ->assertRedirect();
+        $this->assertDatabaseHas('users', [
+            'email' => 'jan@niconvloeren.nl',
+            'role' => UserRole::Uitvoerder->value,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('users.update', $target), [
+                'name' => 'Gerrit Bakker',
+                'email' => $target->email,
+                'password' => '',
+                'password_confirmation' => '',
+                'role' => UserRole::Projectleider->value,
+                'active' => '1',
+                'project_access' => 'all',
+            ])
+            ->assertRedirect();
+        $this->assertSame(UserRole::Projectleider, $target->fresh()->role);
+
+        $this->actingAs($admin)
+            ->post(route('work-activities.store'), [
+                'work_activity_category_id' => $category->id,
+                'name' => 'Nicon catalogusrecht',
+            ])
+            ->assertRedirect();
+        $this->assertDatabaseHas('work_activities', ['name' => 'Nicon catalogusrecht']);
     }
 
     private function makeProject(array $overrides = []): Project

@@ -26,17 +26,19 @@
                         $rowHeight = (int) ($work['height'] ?? 16) + ($hasMarkers ? 12 : 0);
                     @endphp
                     <tr>
-                        <td class="personnel-week-werk{{ (int) $workIndex === 0 ? ' personnel-week-project-cell' : '' }}">
+                        <td class="personnel-week-werk{{ (int) $workIndex === 0 ? ' personnel-week-project-cell' : '' }}{{ ! empty($project['shop']) ? ' is-shop' : '' }}{{ ! empty($project['away']) ? ' is-away' : '' }}">
                             @if ((int) $workIndex === 0)
+                                @if (! empty($project['type_label']))
+                                    <div class="personnel-week-type">{{ $project['type_label'] }}</div>
+                                @endif
+                                @if (! empty($project['title']))
+                                    <div class="personnel-week-title">{{ $project['title'] }}</div>
+                                @endif
                                 @if (! empty($project['customer']))
                                     <div class="personnel-week-customer">{{ $project['customer'] }}</div>
                                 @endif
-                                <div class="personnel-week-title">{{ $project['title'] }}</div>
-                                @if (! empty($project['city']))
-                                    <div class="personnel-week-meta">{{ $project['city'] }}</div>
-                                @endif
-                                @if (! empty($project['address']))
-                                    <div class="personnel-week-meta">{{ $project['address'] }}</div>
+                                @if (! empty($project['place']))
+                                    <div class="personnel-week-meta">{{ $project['place'] }}</div>
                                 @endif
                                 @if (! empty($project['number']))
                                     <div class="personnel-week-meta">{{ $project['number'] }}</div>

@@ -25,7 +25,14 @@ class UserPermissionTest extends TestCase
         $this->assertFalse($user->canManageProjects());
         $this->assertFalse($user->canManagePlanning());
         $this->assertFalse($user->canEnterProgress());
+        $this->assertFalse($user->hasPermission(Permission::UsersView));
+        $this->assertFalse($user->hasPermission(Permission::UsersManage));
+        $this->assertFalse($user->hasPermission(Permission::CatalogView));
+        $this->assertFalse($user->hasPermission(Permission::CatalogManage));
+        $this->assertFalse($user->canViewUsers());
         $this->assertFalse($user->canManageUsers());
+        $this->assertFalse($user->canViewCatalog());
+        $this->assertFalse($user->canManageCatalog());
         $this->assertTrue($user->isReadOnlyOfficeUser());
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ProjectKind;
 use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\Worker;
@@ -148,16 +149,22 @@ class PersonnelWeekOverviewService
             $end = $project->planned_end_date;
             $height = array_sum(array_map(fn (array $work): int => (int) $work['height'], $works));
 
+            $workName = $this->overviewWorkName($project);
+            $city = $this->visibleOverviewText(trim((string) $project->city));
+            $address = $this->visibleOverviewText(trim((string) $project->address));
+
             $projects[] = [
                 'id' => $project->id,
                 'away' => false,
-                'customer' => $project->customer?->name,
-                'title' => $this->compactTitle($project),
-                'city' => trim((string) $project->city),
-                'address' => trim((string) $project->address) ?: null,
-                'number' => $project->isWinkel()
-                    ? $project->workNumber()
-                    : ($project->labeledNumbersLine() !== '' ? $project->labeledNumbersLine() : $project->workNumber()),
+                'shop' => $this->isShopOrService($project),
+                'type_label' => $this->overviewTypeLabel($project),
+                'customer' => $this->visibleOverviewText($project->customer?->name),
+                'title' => $this->shortenOverviewText($workName),
+                'pdf_title' => $this->shortenPdfTitle($workName),
+                'city' => $city ?? '',
+                'address' => $address,
+                'place' => $this->overviewPlace($city, $address),
+                'number' => $this->overviewWorkNumber($project),
                 'start_marker' => $this->dateMarker($start, $days),
                 'end_marker' => $this->dateMarker($end, $days),
                 'works' => $works,
@@ -533,11 +540,15 @@ class PersonnelWeekOverviewService
         return [
             'id' => 0,
             'away' => true,
+            'shop' => false,
+            'type_label' => null,
             'customer' => null,
             'title' => 'Afwezigheid',
+            'pdf_title' => 'Afwezigheid',
             'city' => '',
             'address' => null,
-            'number' => '',
+            'place' => null,
+            'number' => null,
             'start_marker' => null,
             'end_marker' => null,
             'works' => [[
@@ -749,13 +760,68 @@ class PersonnelWeekOverviewService
         ];
     }
 
-    private function compactTitle(Project $project): string
+    private function overviewWorkName(Project $project): string
     {
-        if ($project->isSmallWork()) {
-            return $this->shortenOverviewText((string) $project->name);
+        if ($project->kind === ProjectKind::Project) {
+            return $project->displayTitle();
         }
 
-        return $this->shortenOverviewText($project->displayTitle());
+        return trim((string) $project->name);
+    }
+
+    private function overviewTypeLabel(Project $project): string
+    {
+        return $this->isShopOrService($project) ? 'WINKEL / SERVICE' : 'PROJECT';
+    }
+
+    private function isShopOrService(Project $project): bool
+    {
+        return $project->kind !== ProjectKind::Project;
+    }
+
+    private function overviewWorkNumber(Project $project): ?string
+    {
+        $number = $this->visibleOverviewText($project->workNumber());
+        if ($number === null) {
+            return null;
+        }
+
+        if (preg_match('/^werk(\s|\x{00A0})/iu', $number) === 1) {
+            return $number;
+        }
+
+        return 'Werk '.$number;
+    }
+
+    private function overviewPlace(?string $city, ?string $address): ?string
+    {
+        $parts = array_values(array_filter(
+            [$city, $address],
+            fn (?string $part): bool => filled($part),
+        ));
+        if ($parts === []) {
+            return null;
+        }
+        if (count($parts) === 2 && str_contains(mb_strtolower($parts[1]), mb_strtolower((string) $parts[0]))) {
+            return $parts[1];
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    private function visibleOverviewText(?string $value): ?string
+    {
+        $clean = trim((string) $value);
+        if ($clean === '') {
+            return null;
+        }
+
+        $stripped = trim((string) preg_replace('/[?,.\s]/u', '', $clean));
+        if ($stripped === '' || strcasecmp($stripped, 'onbekend') === 0) {
+            return null;
+        }
+
+        return $clean;
     }
 
     private function shortenOverviewText(string $text): string
@@ -766,6 +832,16 @@ class PersonnelWeekOverviewService
         }
 
         return Str::limit($clean, 80);
+    }
+
+    private function shortenPdfTitle(string $text): string
+    {
+        $clean = trim(preg_replace('/\s+/u', ' ', $text) ?? '');
+        if ($clean === '') {
+            return '';
+        }
+
+        return Str::limit($clean, 80, '…');
     }
 
     private function externalName(Worker $worker): string

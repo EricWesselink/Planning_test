@@ -23,8 +23,12 @@ class WorkerWhatsAppContactExportService
 
         foreach ($this->ownStaffTeams() as $worker) {
             foreach ($this->peopleOn($worker) as $member) {
-                $name = trim((string) $member->name);
-                if ($name === '' || ! $member->isActive()) {
+                if (! $member->isActive()) {
+                    continue;
+                }
+
+                $name = $this->contactName($member, $worker);
+                if ($name === '') {
                     continue;
                 }
 
@@ -61,7 +65,7 @@ class WorkerWhatsAppContactExportService
         return Worker::query()
             ->ownStaff()
             ->where('active', true)
-            ->with('crewPeople')
+            ->with(['crewPeople.user', 'users'])
             ->orderBy('name')
             ->orderBy('id')
             ->get();
@@ -115,6 +119,121 @@ class WorkerWhatsAppContactExportService
         }
 
         return implode("\r\n", $cards)."\r\n";
+    }
+
+    private function contactName(CrewMember $member, Worker $worker): string
+    {
+        $candidates = [(string) $member->name];
+        if (trim((string) $member->user?->name) !== '') {
+            $candidates[] = (string) $member->user->name;
+        }
+        foreach ($worker->users as $user) {
+            if ($this->namesReferToSamePerson((string) $member->name, (string) $user->name)) {
+                $candidates[] = (string) $user->name;
+            }
+        }
+        if (
+            ! $this->looksLikeTeamLabel((string) $worker->name)
+            && $this->namesReferToSamePerson((string) $member->name, (string) $worker->name)
+        ) {
+            $candidates[] = (string) $worker->name;
+        }
+
+        $normalized = [];
+        foreach ($candidates as $candidate) {
+            $name = $this->normalizeDisplayName($candidate);
+            if ($name !== '' && $this->namesReferToSamePerson((string) $member->name, $name)) {
+                $normalized[] = $name;
+            }
+        }
+
+        return $this->preferFullestName($normalized);
+    }
+
+    private function normalizeDisplayName(string $value): string
+    {
+        $name = trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
+        if ($name === '') {
+            return '';
+        }
+
+        if (preg_match('/^(.+?)\s*,\s*(\p{L}{1,2})\.?$/u', $name, $matches) === 1) {
+            $before = trim($matches[1]);
+            $words = preg_split('/\s+/u', $before, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            $initial = mb_strtoupper($matches[2]);
+            if ($words !== [] && mb_strtoupper(mb_substr($words[0], 0, mb_strlen($initial))) === $initial) {
+                return $before;
+            }
+        }
+
+        if (preg_match('/^(\p{L}[\p{L}\'\-]+)\s*,\s*(\p{L}[\p{L}\'\-]{2,})$/u', $name, $matches) === 1) {
+            return trim($matches[2].' '.$matches[1]);
+        }
+
+        return $name;
+    }
+
+    /**
+     * @param  list<string>  $names
+     */
+    private function preferFullestName(array $names): string
+    {
+        $best = '';
+        $bestWords = 0;
+        foreach ($names as $name) {
+            $words = count(preg_split('/\s+/u', $name, -1, PREG_SPLIT_NO_EMPTY) ?: []);
+            if ($words > $bestWords || ($words === $bestWords && mb_strlen($name) > mb_strlen($best))) {
+                $best = $name;
+                $bestWords = $words;
+            }
+        }
+
+        return $best;
+    }
+
+    private function namesReferToSamePerson(string $left, string $right): bool
+    {
+        $left = mb_strtolower($this->normalizeDisplayName($left));
+        $right = mb_strtolower($this->normalizeDisplayName($right));
+        if ($left === '' || $right === '') {
+            return false;
+        }
+        if ($left === $right) {
+            return true;
+        }
+
+        $shorter = mb_strlen($left) <= mb_strlen($right) ? $left : $right;
+        $longer = $shorter === $left ? $right : $left;
+        $shorterFirst = explode(' ', $shorter, 2)[0];
+        $longerFirst = explode(' ', $longer, 2)[0];
+
+        return ($shorterFirst === $longerFirst && str_starts_with($longer, $shorter.' '))
+            || $this->invertedFamilyMatches($left, $right)
+            || $this->invertedFamilyMatches($right, $left);
+    }
+
+    private function invertedFamilyMatches(string $inverted, string $full): bool
+    {
+        if (preg_match('/^(.+?)\s*,\s*(\p{L}{1,2})\.?$/u', $inverted, $matches) !== 1) {
+            return false;
+        }
+
+        $family = trim($matches[1]);
+        $words = preg_split('/\s+/u', $full, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (count($words) < 2) {
+            return false;
+        }
+
+        $last = $words[count($words) - 1];
+        $initial = mb_strtoupper($matches[2]);
+
+        return $family === $last
+            && mb_strtoupper(mb_substr($words[0], 0, mb_strlen($initial))) === $initial;
+    }
+
+    private function looksLikeTeamLabel(string $name): bool
+    {
+        return preg_match('/^team(\s|\d|$)/iu', trim($name)) === 1;
     }
 
     private function escape(string $value): string

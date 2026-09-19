@@ -383,8 +383,11 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/\.title\s*\{[^}]*overflow:\s*hidden/u', $html);
         $this->assertStringContainsString('overflow-wrap: anywhere', $html);
         $this->assertStringContainsString('vlekken in het tapijt + tapijt scheef', $html);
+        $this->assertStringContainsString('WINKEL / SERVICE', $html);
+        $this->assertStringContainsString('class="werk is-shop"', $html);
         $this->assertStringContainsString('Elshoutstraat 12', $html);
         $this->assertStringContainsString('Kampen', $html);
+        $this->assertStringContainsString('Werk 2026-009', $html);
 
         $text = preg_replace(
             '/\s+/u',
@@ -399,6 +402,91 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assertStringContainsString('vlekken in het tapijt + tapijt scheef', $text);
         $this->assertStringContainsString('Elshoutstraat 12', $text);
         $this->assertStringContainsString('Kampen', $text);
+        $this->assertStringContainsString('WINKEL / SERVICE', $text);
+        $this->assertStringContainsString('POLINDER', $text);
+    }
+
+    public function test_personnel_week_pdf_leads_with_the_work_name_after_the_project_type(): void
+    {
+        $this->travelTo('2026-09-21 08:00:00');
+        $user = User::factory()->create();
+        $team = $this->makeTeam('Team 1 Nick', [
+            ['name' => 'Nick Seine', 'phone' => ''],
+        ]);
+        [$project, $item] = $this->makeProject('Laakse Tuinen Amersfoort', [
+            'kind' => ProjectKind::Project,
+            'customer' => 'Karbouw V.O.F.',
+            'address' => 'Cuijkstraat 2',
+            'city' => 'Amersfoort',
+            'project_number' => '260200090',
+        ]);
+        $this->assign($team, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$team->crewPeople()->first()->id]);
+
+        $html = $this->personnelWeekPdfHtml($user);
+
+        $this->assertMatchesRegularExpression(
+            '/class="type">PROJECT<\/div>\s*<div class="title">Laakse Tuinen Amersfoort<\/div>\s*<div class="customer">Karbouw V\.O\.F\.<\/div>\s*<div class="meta">Amersfoort · Cuijkstraat 2<\/div>\s*<div class="meta">Werk 260200090<\/div>\s*<div class="work-name">Primen &amp; Egaliseren<\/div>/u',
+            $html,
+        );
+        $this->assertStringNotContainsString('WINKEL / SERVICE', $html);
+        $this->assertStringNotContainsString('Projectnr.', $html);
+        $this->assertDoesNotMatchRegularExpression('/class="werk[^"]*is-shop/u', $html);
+    }
+
+    public function test_personnel_week_pdf_marks_winkel_work_and_skips_placeholder_address(): void
+    {
+        $this->travelTo('2026-09-21 08:00:00');
+        $user = User::factory()->create();
+        $team = $this->makeTeam('Team 5 Lukas', [
+            ['name' => 'Lukas', 'phone' => ''],
+        ]);
+        [$project, $item] = $this->makeProject('PVC klik herstellen', [
+            'kind' => ProjectKind::Winkel,
+            'customer' => 'Fam. Lokhorst',
+            'address' => '??',
+            'city' => '??, ?? ??',
+            'project_number' => '2026-012',
+        ]);
+        $this->assign($team, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$team->crewPeople()->first()->id]);
+
+        $html = $this->personnelWeekPdfHtml($user);
+
+        $this->assertStringContainsString('class="werk is-shop"', $html);
+        $this->assertMatchesRegularExpression(
+            '/class="type">WINKEL \/ SERVICE<\/div>\s*<div class="title">PVC klik herstellen<\/div>\s*<div class="customer">Fam\. Lokhorst<\/div>\s*<div class="meta">Werk 2026-012<\/div>\s*<div class="work-name">Primen &amp; Egaliseren<\/div>/u',
+            $html,
+        );
+        $this->assertStringNotContainsString('??', $html);
+        $this->assertStringNotContainsString('onbekend', $html);
+        $this->assertDoesNotMatchRegularExpression('/class="type">PROJECT</u', $html);
+        $this->assertDoesNotMatchRegularExpression('/class="meta">\s*</u', $html);
+    }
+
+    public function test_personnel_week_pdf_shortens_a_long_work_name_without_changing_the_project(): void
+    {
+        $this->travelTo('2026-09-21 08:00:00');
+        $user = User::factory()->create();
+        $team = $this->makeTeam('Team 4 Lukasz', [
+            ['name' => 'Lukasz Nowak', 'phone' => ''],
+        ]);
+        $fullName = 'vlekken in het tapijt + tapijt scheef gelegd waardoor patroon niet mooi uitkomt op de overloop';
+        [$project, $item] = $this->makeProject($fullName, [
+            'kind' => ProjectKind::Klein,
+            'customer' => 'POLINDER',
+            'city' => 'Kampen',
+            'project_number' => '2026-009',
+        ]);
+        $this->assign($team, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$team->crewPeople()->first()->id]);
+
+        $html = $this->personnelWeekPdfHtml($user);
+
+        $this->assertStringContainsString('class="title">vlekken in het tapijt + tapijt scheef gelegd', $html);
+        $this->assertStringContainsString('…', $html);
+        $this->assertStringNotContainsString('op de overloop', $html);
+        $this->assertSame($fullName, $project->fresh()->name);
     }
 
     public function test_personnel_week_pdf_repeats_the_brand_header_without_generated_on_line(): void
@@ -478,6 +566,18 @@ class PersonnelWeekOverviewTest extends TestCase
         ]);
 
         return [$project, $item];
+    }
+
+    private function personnelWeekPdfHtml(User $user, string $week = '2026-09-21'): string
+    {
+        $request = Request::create(
+            route('planning.personnel-week.pdf', ['week' => $week]),
+            'GET',
+            ['week' => $week],
+        );
+        $request->setUserResolver(fn () => $user);
+
+        return view('planning.personnel-week-pdf', app(PersonnelWeekOverviewService::class)->build($request))->render();
     }
 
     private function assign(

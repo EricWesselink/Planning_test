@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\Worker;
+use App\Support\PermissionCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -25,10 +28,24 @@ class UserManagementTest extends TestCase
     public function test_non_admin_cannot_open_user_management(UserRole $role): void
     {
         $user = User::factory()->create(['role' => $role]);
+        $target = User::factory()->create(['role' => UserRole::Planner]);
 
         $this->actingAs($user)->get(route('users.index'))->assertForbidden();
         $this->actingAs($user)->get(route('users.create'))->assertForbidden();
+        $this->actingAs($user)->get(route('users.show', $target))->assertForbidden();
         $this->actingAs($user)->post(route('users.store'), $this->payload())->assertForbidden();
+        $this->actingAs($user)
+            ->patch(route('users.update', $target), $this->payload([
+                'name' => $target->name,
+                'email' => $target->email,
+                'password' => '',
+                'password_confirmation' => '',
+                'role' => UserRole::Admin->value,
+                'permissions' => [Permission::UsersManage->value],
+            ]))
+            ->assertForbidden();
+
+        $this->assertSame(UserRole::Planner, $target->fresh()->role);
     }
 
     public function test_admin_can_view_users_and_sees_the_menu(): void
@@ -40,6 +57,7 @@ class UserManagementTest extends TestCase
             ->assertOk()
             ->assertSee('Gebruikersbeheer')
             ->assertSee('Eric')
+            ->assertSee('Bewerken')
             ->assertSee('Laatst ingelogd')
             ->assertSee('Nog niet');
 
@@ -84,6 +102,231 @@ class UserManagementTest extends TestCase
         $this->assertTrue($jan->projects->contains($projectA));
         $this->assertFalse($jan->projects->contains($projectB));
         $this->assertTrue(Hash::check('wachtwoord123', $jan->password));
+    }
+
+    public function test_user_index_shows_edit_link_and_custom_role_label(): void
+    {
+        $admin = User::factory()->admin()->create(['name' => 'Eric']);
+        $planner = User::factory()->create(['name' => 'Iris']);
+        $custom = User::factory()->aangepast([Permission::PlanningView])->create(['name' => 'Berry']);
+
+        $this->actingAs($admin)
+            ->get(route('users.index'))
+            ->assertOk()
+            ->assertSee('Bewerken')
+            ->assertSee('Verwijderen')
+            ->assertSee('Planner')
+            ->assertSee('Aangepast')
+            ->assertSee('Bekijk rechten')
+            ->assertSee(route('users.show', $planner), false)
+            ->assertSee(route('users.show', $custom).'#rechten', false)
+            ->assertDontSee('Aangepaste rechten');
+    }
+
+    public function test_edit_form_shows_existing_user_details(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $user = User::factory()->create([
+            'name' => 'Iris',
+            'email' => 'iris@niconvloeren.nl',
+            'role' => UserRole::Planner,
+        ]);
+
+        $html = $this->actingAs($admin)
+            ->get(route('users.show', $user))
+            ->assertOk()
+            ->assertSee('Gebruiker bewerken')
+            ->assertSee('value="Iris"', false)
+            ->assertSee('value="iris@niconvloeren.nl"', false)
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<option value="planner"[^>]*\bselected\b/',
+            $html,
+        );
+        $this->assertMatchesRegularExpression(
+            '/id="rechten"[^>]*\bhidden\b/',
+            $html,
+        );
+    }
+
+    public function test_admin_can_change_existing_planner_to_read_only_on_the_same_account(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $user = User::factory()->create([
+            'name' => 'Iris',
+            'email' => 'iris@niconvloeren.nl',
+            'role' => UserRole::Planner,
+        ]);
+        $userId = $user->id;
+        $count = User::query()->count();
+
+        $this->actingAs($admin)
+            ->patch(route('users.update', $user), $this->payload([
+                'name' => 'Iris',
+                'email' => 'iris@niconvloeren.nl',
+                'password' => '',
+                'password_confirmation' => '',
+                'role' => UserRole::AlleenLezen->value,
+            ]))
+            ->assertRedirect(route('users.show', $user));
+
+        $user->refresh();
+        $this->assertSame($userId, $user->id);
+        $this->assertSame($count, User::query()->count());
+        $this->assertSame('iris@niconvloeren.nl', $user->email);
+        $this->assertSame(UserRole::AlleenLezen, $user->role);
+        $this->assertNull($user->permissions);
+        $this->assertTrue($user->canViewPlanning());
+        $this->assertFalse($user->canManagePlanning());
+
+        $this->actingAs($user)->get(route('planning'))->assertOk();
+        $this->actingAs($user)
+            ->patch(route('users.update', $admin), $this->payload([
+                'name' => $admin->name,
+                'email' => $admin->email,
+                'password' => '',
+                'password_confirmation' => '',
+                'role' => UserRole::Planner->value,
+            ]))
+            ->assertForbidden();
+    }
+
+    public function test_admin_can_store_custom_permissions_on_an_existing_planner_and_reload_them(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $user = User::factory()->create([
+            'name' => 'Berry',
+            'email' => 'berry@niconvloeren.nl',
+            'role' => UserRole::Planner,
+        ]);
+        $userId = $user->id;
+
+        $this->actingAs($admin)
+            ->patch(route('users.update', $user), $this->payload([
+                'name' => 'Berry',
+                'email' => 'berry@niconvloeren.nl',
+                'password' => '',
+                'password_confirmation' => '',
+                'role' => UserRole::Aangepast->value,
+                'permissions' => [
+                    Permission::PlanningView->value,
+                    Permission::PlanningAssign->value,
+                ],
+            ]))
+            ->assertRedirect(route('users.show', $user));
+
+        $user->refresh();
+        $this->assertSame($userId, $user->id);
+        $this->assertSame(UserRole::Aangepast, $user->role);
+        $this->assertSame(
+            PermissionCatalog::sanitize([
+                Permission::PlanningView->value,
+                Permission::PlanningAssign->value,
+            ]),
+            $user->permissions,
+        );
+        $this->assertTrue($user->canAssignPlanning());
+        $this->assertFalse($user->canViewCalculations());
+
+        $html = $this->actingAs($admin)
+            ->get(route('users.show', $user))
+            ->assertOk()
+            ->assertSee('Gebruiker bewerken')
+            ->assertSee('Alles toestaan')
+            ->assertSee('Alleen lezen')
+            ->assertSee('Alles uit')
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<option value="aangepast"[^>]*\bselected\b/',
+            $html,
+        );
+        $this->assertPermissionCheckbox($html, Permission::PlanningAssign, true);
+        $this->assertPermissionCheckbox($html, Permission::PlanningView, true);
+        $this->assertPermissionCheckbox($html, Permission::CalculationsView, false);
+    }
+
+    public function test_admin_can_change_custom_user_back_to_planner(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $user = User::factory()->aangepast([
+            Permission::PlanningView,
+            Permission::PlanningAssign,
+        ])->create([
+            'name' => 'Cuno',
+            'email' => 'cuno@niconvloeren.nl',
+        ]);
+        $userId = $user->id;
+
+        $this->actingAs($admin)
+            ->patch(route('users.update', $user), $this->payload([
+                'name' => 'Cuno',
+                'email' => 'cuno@niconvloeren.nl',
+                'password' => '',
+                'password_confirmation' => '',
+                'role' => UserRole::Planner->value,
+            ]))
+            ->assertRedirect(route('users.show', $user));
+
+        $user->refresh();
+        $this->assertSame($userId, $user->id);
+        $this->assertSame(UserRole::Planner, $user->role);
+        $this->assertNull($user->permissions);
+        $this->assertTrue($user->canManagePlanning());
+    }
+
+    public function test_changing_an_office_user_does_not_alter_a_vakman_account(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Nick Seine',
+            'employment_type' => 'zzp',
+            'company' => 'Nick Seine',
+            'people_count' => 1,
+            'specialty' => 'Linoleum',
+            'active' => true,
+        ]);
+        $vakman = User::factory()->vakman($worker->id)->create([
+            'name' => 'Nick Seine',
+            'email' => 'nick@niconvloeren.nl',
+        ]);
+        $planner = User::factory()->create([
+            'name' => 'Iris',
+            'email' => 'iris@niconvloeren.nl',
+            'role' => UserRole::Planner,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('users.update', $planner), $this->payload([
+                'name' => 'Iris',
+                'email' => 'iris@niconvloeren.nl',
+                'password' => '',
+                'password_confirmation' => '',
+                'role' => UserRole::AlleenLezen->value,
+            ]))
+            ->assertRedirect(route('users.show', $planner));
+
+        $vakman->refresh();
+        $this->assertSame(UserRole::Vakman, $vakman->role);
+        $this->assertSame($worker->id, $vakman->worker_id);
+        $this->assertSame('nick@niconvloeren.nl', $vakman->email);
+        $this->assertNull($vakman->permissions);
+        $this->assertTrue($vakman->isVakman());
+
+        $html = $this->actingAs($admin)
+            ->get(route('users.show', $vakman))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<option value="vakman"[^>]*\bselected\b/',
+            $html,
+        );
+        $this->assertMatchesRegularExpression(
+            '/id="rechten"[^>]*\bhidden\b/',
+            $html,
+        );
     }
 
     public function test_admin_can_update_name_email_role_and_project_access(): void
@@ -321,6 +564,25 @@ class UserManagementTest extends TestCase
             'active' => '1',
             'project_access' => 'all',
         ], $overrides);
+    }
+
+    private function assertPermissionCheckbox(string $html, Permission $permission, bool $checked): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/<input\b[^>]*\bname="permissions\[\]"[^>]*\bvalue="'.preg_quote($permission->value, '/').'"[^>]*>/',
+            $html,
+        );
+        preg_match(
+            '/<input\b[^>]*\bname="permissions\[\]"[^>]*\bvalue="'.preg_quote($permission->value, '/').'"[^>]*>/',
+            $html,
+            $matches,
+        );
+        $tag = $matches[0] ?? '';
+        if ($checked) {
+            $this->assertMatchesRegularExpression('/\bchecked\b/', $tag);
+        } else {
+            $this->assertDoesNotMatchRegularExpression('/\bchecked\b/', $tag);
+        }
     }
 
     private function makeProject(string $name): Project

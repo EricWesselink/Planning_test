@@ -39,7 +39,7 @@
         <p class="mt-1 text-xs text-nicon-muted">Je kunt je eigen rol en rechten niet wijzigen.</p>
     @endif
 </div>
-<div data-permission-matrix @hidden(old('role', $user->role?->value) !== \App\Enums\UserRole::Aangepast->value)>
+<div id="rechten" data-permission-matrix @hidden(old('role', $user->role?->value) !== \App\Enums\UserRole::Aangepast->value)>
     <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="text-xs uppercase tracking-wide text-nicon-muted">Rechtenmatrix</div>
         <div class="flex flex-wrap gap-2">
