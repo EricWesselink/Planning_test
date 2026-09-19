@@ -76,24 +76,9 @@ class WorkerWhatsAppContactExportService
      */
     private function peopleOn(Worker $worker): Collection
     {
-        $named = $worker->crewPeople
+        return $worker->crewPeople
             ->filter(fn (CrewMember $member): bool => trim((string) $member->name) !== '')
             ->values();
-        if ($named->isNotEmpty()) {
-            return $named;
-        }
-
-        $phone = $worker->crewPeople
-            ->map(fn (CrewMember $member): string => trim((string) $member->phone))
-            ->first(fn (string $phone): bool => $phone !== '');
-
-        return collect([
-            $worker->crewPeople()->make([
-                'name' => $worker->name,
-                'phone' => $phone ?? (string) $worker->phone,
-                'active' => true,
-            ]),
-        ]);
     }
 
     /**
@@ -123,31 +108,87 @@ class WorkerWhatsAppContactExportService
 
     private function contactName(CrewMember $member, Worker $worker): string
     {
-        $candidates = [(string) $member->name];
-        if (trim((string) $member->user?->name) !== '') {
-            $candidates[] = (string) $member->user->name;
+        $vakmanName = $this->preferFullestName($this->vakmanPersonNames($member, $worker));
+        if ($this->hasFamilyName($vakmanName)) {
+            return $vakmanName;
         }
+
+        $accountName = $this->preferFullestName($this->accountNames($member, $worker));
+        if ($this->hasFamilyName($accountName)) {
+            return $accountName;
+        }
+
+        return $this->preferFullestName(array_values(array_filter([$vakmanName, $accountName])));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function vakmanPersonNames(CrewMember $member, Worker $worker): array
+    {
+        $names = [];
+        $this->pushNormalizedName($names, (string) $member->name);
+
+        foreach ($this->listedCrewNames($worker) as $listed) {
+            if ($this->isTeamName($listed, $worker)) {
+                continue;
+            }
+            if ($this->namesReferToSamePerson((string) $member->name, $listed)) {
+                $this->pushNormalizedName($names, $listed);
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function accountNames(CrewMember $member, Worker $worker): array
+    {
+        $names = [];
         foreach ($worker->users as $user) {
-            if ($this->namesReferToSamePerson((string) $member->name, (string) $user->name)) {
-                $candidates[] = (string) $user->name;
+            if ($this->isTeamName((string) $user->name, $worker)) {
+                continue;
             }
-        }
-        if (
-            ! $this->looksLikeTeamLabel((string) $worker->name)
-            && $this->namesReferToSamePerson((string) $member->name, (string) $worker->name)
-        ) {
-            $candidates[] = (string) $worker->name;
-        }
-
-        $normalized = [];
-        foreach ($candidates as $candidate) {
-            $name = $this->normalizeDisplayName($candidate);
-            if ($name !== '' && $this->namesReferToSamePerson((string) $member->name, $name)) {
-                $normalized[] = $name;
+            if (
+                (int) $user->crew_member_id === (int) $member->id
+                || $this->namesReferToSamePerson((string) $member->name, (string) $user->name)
+            ) {
+                $this->pushNormalizedName($names, (string) $user->name);
             }
         }
 
-        return $this->preferFullestName($normalized);
+        return $names;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function listedCrewNames(Worker $worker): array
+    {
+        $names = [];
+        foreach (explode(',', (string) $worker->crew_names) as $part) {
+            $this->pushNormalizedName($names, $part);
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param  list<string>  $names
+     */
+    private function pushNormalizedName(array &$names, string $value): void
+    {
+        $name = $this->normalizeDisplayName($value);
+        if ($name !== '') {
+            $names[] = $name;
+        }
+    }
+
+    private function hasFamilyName(string $name): bool
+    {
+        return count(preg_split('/\s+/u', $name, -1, PREG_SPLIT_NO_EMPTY) ?: []) >= 2;
     }
 
     private function normalizeDisplayName(string $value): string
@@ -229,6 +270,21 @@ class WorkerWhatsAppContactExportService
 
         return $family === $last
             && mb_strtoupper(mb_substr($words[0], 0, mb_strlen($initial))) === $initial;
+    }
+
+    private function isTeamName(string $value, Worker $worker): bool
+    {
+        $name = $this->normalizeDisplayName($value);
+        if ($name === '') {
+            return false;
+        }
+        if ($this->looksLikeTeamLabel($name)) {
+            return true;
+        }
+
+        $teamName = $this->normalizeDisplayName((string) $worker->name);
+
+        return $teamName !== '' && mb_strtolower($name) === mb_strtolower($teamName);
     }
 
     private function looksLikeTeamLabel(string $name): bool

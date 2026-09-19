@@ -108,10 +108,10 @@ class WorkerWhatsAppContactExportTest extends TestCase
         ];
     }
 
-    public function test_uses_the_worker_full_name_when_the_person_only_has_a_first_name(): void
+    public function test_does_not_use_the_team_name_as_a_contact_name(): void
     {
         $user = User::factory()->create();
-        Worker::query()->create([
+        $worker = Worker::query()->create([
             'name' => 'Peter Korteschiel',
             'employment_type' => 'eigen',
             'phone' => '0611111111',
@@ -127,8 +127,85 @@ class WorkerWhatsAppContactExportTest extends TestCase
             ->assertDownload('nicon-vakmannen.vcf')
             ->streamedContent();
 
-        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Peter Korteschiel', $vcf);
-        $this->assertStringNotContainsString('FN;CHARSET=UTF-8:Nicon - Peter\r\n', $vcf);
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Peter', $vcf);
+        $this->assertStringNotContainsString('Peter Korteschiel', $vcf);
+        $this->assertSame('Peter', $worker->fresh()->crewPeople->first()?->name);
+        $this->assertSame('Peter Korteschiel', $worker->fresh()->name);
+    }
+
+    public function test_does_not_export_a_team_without_named_people(): void
+    {
+        $user = User::factory()->create();
+        Worker::query()->create([
+            'name' => 'Team Wespro',
+            'employment_type' => 'eigen',
+            'phone' => '0611111111',
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => '', 'phone' => '0611111111', 'active' => true],
+            ],
+            'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('workers.index'))
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHasErrors(['whatsapp_contacts']);
+    }
+
+    public function test_does_not_use_a_login_that_copies_the_team_name(): void
+    {
+        $planner = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Team 1 Nick',
+            'employment_type' => 'eigen',
+            'phone' => '0612345678',
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => 'Nick', 'phone' => '0612345678', 'active' => true],
+            ],
+            'active' => true,
+        ]);
+        $nick = $team->fresh()->crewPeople->first();
+        $this->assertNotNull($nick);
+        User::factory()->vakman($team->id, $nick->id)->create(['name' => 'Team 1 Nick']);
+
+        $vcf = $this->actingAs($planner)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Nick', $vcf);
+        $this->assertStringNotContainsString('Team 1 Nick', $vcf);
+    }
+
+    public function test_prefers_vakman_person_name_over_a_shorter_account_name(): void
+    {
+        $planner = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Team 1 Nick',
+            'employment_type' => 'eigen',
+            'phone' => '0612345678',
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => 'Nick Seine', 'phone' => '0612345678', 'active' => true],
+            ],
+            'active' => true,
+        ]);
+        $nick = $worker->fresh()->crewPeople->first();
+        $this->assertNotNull($nick);
+        User::factory()->vakman($worker->id, $nick->id)->create(['name' => 'Nick']);
+
+        $vcf = $this->actingAs($planner)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Nick Seine', $vcf);
+        $this->assertStringNotContainsString('FN;CHARSET=UTF-8:Nicon - Nick\r\n', $vcf);
+        $this->assertSame('Nick', $nick->fresh()->user?->name);
+        $this->assertSame('Nick Seine', $nick->fresh()->name);
     }
 
     public function test_uses_the_login_full_name_when_the_crew_name_is_only_a_first_name(): void
