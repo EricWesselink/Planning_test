@@ -48,7 +48,7 @@ class LoginController extends Controller
 
         $home = $user->isVakman()
             ? route('vakman.planning')
-            : route('dashboard');
+            : route($user->officeHomeRouteName());
 
         return redirect()->intended($home);
     }

@@ -22,7 +22,7 @@ class WorkerPersonnelController extends Controller
 
     public function index(Request $request): View
     {
-        Gate::authorize('viewAny', Worker::class);
+        Gate::authorize('view-personnel');
 
         $weekStart = $this->board->weekStart(
             $request->string('week')->toString() ?: null,

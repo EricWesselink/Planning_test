@@ -63,6 +63,8 @@ class UserPolicyTest extends TestCase
             'uitvoerder' => [UserRole::Uitvoerder, false],
             'planner' => [UserRole::Planner, false],
             'vakman' => [UserRole::Vakman, false],
+            'alleen_lezen' => [UserRole::AlleenLezen, false],
+            'aangepast' => [UserRole::Aangepast, false],
         ];
     }
 }

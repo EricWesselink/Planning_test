@@ -36,7 +36,9 @@ use App\Http\Controllers\WorkerLoginInviteController;
 use App\Http\Controllers\WorkerPdfImportController;
 use App\Http\Controllers\WorkerPersonnelController;
 use App\Http\Controllers\WorkerRateController;
+use App\Http\Controllers\WorkerWhatsAppContactController;
 use App\Http\Controllers\WorkTicketController;
+use App\Http\Middleware\DenyReadOnlyWrites;
 use App\Http\Middleware\EnsureProjectAccess;
 use Illuminate\Support\Facades\Route;
 
@@ -47,7 +49,7 @@ Route::get('/', function () {
 
     return auth()->user()?->isVakman()
         ? redirect()->route('vakman.planning')
-        : redirect()->route('dashboard');
+        : redirect()->route(auth()->user()?->officeHomeRouteName() ?? 'dashboard');
 });
 
 Route::get('/login', [LoginController::class, 'create'])->name('login')->middleware('guest');
@@ -72,7 +74,7 @@ Route::middleware('throttle:public-snag-write')->group(function () {
     Route::post('/oplever/{token}/gereed', [PublicSnagController::class, 'complete'])->name('snags.public.complete');
 });
 
-Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
+Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class])->group(function () {
     Route::get('/mijn-planning', [VakmanPlanningController::class, 'index'])->name('vakman.planning');
     Route::get('/mijn-planning/dag/{date}', [VakmanPlanningController::class, 'day'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.day');
     Route::get('/mijn-planning/dag/{date}/werkbon', [VakmanPlanningController::class, 'werkbon'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.werkbon');
@@ -216,6 +218,7 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::post('/beheer/werkzaamheden/categorieen', [WorkActivityCategoryController::class, 'store'])->name('work-activity-categories.store');
     Route::patch('/beheer/werkzaamheden/categorieen/{category}', [WorkActivityCategoryController::class, 'update'])->name('work-activity-categories.update');
     Route::get('/vakmensen', [WorkerController::class, 'index'])->name('workers.index');
+    Route::get('/vakmensen/whatsapp-contacten', WorkerWhatsAppContactController::class)->name('workers.whatsapp-contacts.export');
     Route::get('/personeel', [WorkerPersonnelController::class, 'index'])->name('personnel.index');
     Route::patch('/personeel/{worker}/leden/{crewMember}/werkdagen', [WorkerPersonnelController::class, 'update'])->name('personnel.work-days.update');
     Route::redirect('/vakmensen/afwezigheid', '/personeel');

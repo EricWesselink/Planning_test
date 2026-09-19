@@ -9,19 +9,31 @@ class WorkerPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->scheduledWorkerId() === null;
+        if ($user->scheduledWorkerId() !== null) {
+            return false;
+        }
+
+        return $user->isVakman() || $user->canViewWorkers();
+    }
+
+    public function exportWhatsAppContacts(User $user): bool
+    {
+        return $user->canViewWorkers();
     }
 
     public function view(User $user, Worker $worker): bool
     {
         $workerId = $user->scheduledWorkerId();
+        if ($workerId !== null) {
+            return (int) $worker->id === $workerId;
+        }
 
-        return $workerId === null || (int) $worker->id === $workerId;
+        return $user->canViewWorkers();
     }
 
     public function create(User $user): bool
     {
-        return $user->canManageWorkers();
+        return $user->canCreateWorkers();
     }
 
     public function update(User $user, Worker $worker): bool
@@ -31,6 +43,6 @@ class WorkerPolicy
 
     public function delete(User $user, Worker $worker): bool
     {
-        return $user->canManageWorkers();
+        return $user->canDeleteWorkers();
     }
 }

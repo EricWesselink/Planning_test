@@ -65,6 +65,13 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Gate::define('manage-planning', fn (User $user) => $user->canManagePlanning());
+        Gate::define('view-planning', fn (User $user) => $user->canViewPlanning());
+        Gate::define('view-dashboard', fn (User $user) => $user->canViewDashboard());
+        Gate::define('view-production', fn (User $user) => $user->canViewProduction());
+        Gate::define('view-personnel', fn (User $user) => $user->canViewPersonnelWeek());
+        Gate::define('planning-assign', fn (User $user) => $user->canAssignPlanning());
+        Gate::define('planning-drag', fn (User $user) => $user->canDragPlanning());
+        Gate::define('planning-hours', fn (User $user) => $user->canAdjustPlanningHours());
         Gate::define('manage-catalog', fn (User $user) => $user->canManageCatalog());
         Gate::define('enter-progress', function (User $user) {
             return $user->canEnterProgress()

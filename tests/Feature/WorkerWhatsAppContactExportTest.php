@@ -1,0 +1,190 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\User;
+use App\Models\Worker;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class WorkerWhatsAppContactExportTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_guest_is_redirected_to_login(): void
+    {
+        $this->get(route('workers.whatsapp-contacts.export'))
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_vakman_is_forbidden_from_exporting_contacts(): void
+    {
+        $team = $this->ownStaff('Nick Seine', '06 12345678');
+        $user = User::factory()->vakman($team->id)->create();
+
+        $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertForbidden();
+    }
+
+    public function test_planner_sees_the_export_button_on_vakmensen(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('WhatsApp contacten exporteren')
+            ->assertSee('href="'.route('workers.whatsapp-contacts.export').'"', false);
+    }
+
+    public function test_uitvoerder_sees_the_export_button_and_can_download(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+        $this->ownStaff('Nick Seine', '0612345678');
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('WhatsApp contacten exporteren')
+            ->assertDontSee('PDF uitlezen');
+
+        $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf');
+    }
+
+    public function test_downloads_vcard_for_active_own_staff_with_normalized_mobile(): void
+    {
+        $user = User::factory()->create();
+        $nick = $this->ownStaff('Nick Seine', '06 12345678');
+        $this->ownStaff('José García', '06-87654321');
+
+        $response = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'));
+
+        $response
+            ->assertOk()
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->assertHeader('Content-Type', 'text/vcard; charset=UTF-8');
+
+        $vcf = $response->streamedContent();
+        $this->assertStringContainsString("BEGIN:VCARD\r\nVERSION:3.0\r\n", $vcf);
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - Nick Seine', $vcf);
+        $this->assertStringContainsString('TEL;TYPE=CELL:+31612345678', $vcf);
+        $this->assertStringContainsString('FN;CHARSET=UTF-8:Nicon - José García', $vcf);
+        $this->assertStringContainsString('TEL;TYPE=CELL:+31687654321', $vcf);
+        $this->assertSame('06 12345678', $nick->fresh()->phone);
+        $this->assertSame('06 12345678', $nick->fresh()->crewPeople->first()?->phone);
+    }
+
+    public function test_omits_zzp_and_onderaannemers(): void
+    {
+        $user = User::factory()->create();
+        $this->ownStaff('Peter Korteschiel', '0611111111');
+        $this->makeWorker('Sander ZZP', 'zzp', '0622222222');
+        $this->makeWorker('Bouwploeg', 'onderaannemer', '0633333333');
+
+        $vcf = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('Nicon - Peter Korteschiel', $vcf);
+        $this->assertStringContainsString('TEL;TYPE=CELL:+31611111111', $vcf);
+        $this->assertStringNotContainsString('Sander ZZP', $vcf);
+        $this->assertStringNotContainsString('Bouwploeg', $vcf);
+        $this->assertStringNotContainsString('+31622222222', $vcf);
+        $this->assertStringNotContainsString('+31633333333', $vcf);
+    }
+
+    public function test_omits_inactive_workers_and_crew_members(): void
+    {
+        $user = User::factory()->create();
+        $this->ownStaff('Arek Actief', '0611111111');
+        $this->ownStaff('Inactief Team', '0622222222', active: false);
+
+        $team = Worker::query()->create([
+            'name' => 'Team 1 Nick',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Mahmoud Khairallah Sulaiman', 'phone' => '0633333333', 'active' => true],
+                ['name' => 'Mohammed', 'phone' => '0644444444', 'active' => false],
+            ],
+            'active' => true,
+        ]);
+        $this->assertNotNull($team->id);
+
+        $vcf = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->streamedContent();
+
+        $this->assertStringContainsString('Nicon - Arek Actief', $vcf);
+        $this->assertStringContainsString('Nicon - Mahmoud Khairallah Sulaiman', $vcf);
+        $this->assertStringNotContainsString('Inactief Team', $vcf);
+        $this->assertStringNotContainsString('Mohammed', $vcf);
+        $this->assertStringNotContainsString('+31622222222', $vcf);
+        $this->assertStringNotContainsString('+31644444444', $vcf);
+    }
+
+    public function test_omits_people_without_a_phone_and_reports_their_names(): void
+    {
+        $user = User::factory()->create();
+        $this->ownStaff('Nick Seine', '06 12345678');
+        $this->ownStaff('Peter Korteschiel', '');
+
+        $response = $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'));
+
+        $vcf = $response->streamedContent();
+
+        $response
+            ->assertDownload('nicon-vakmannen.vcf')
+            ->assertSessionHas(
+                'whatsapp_contacts_skipped',
+                'Niet opgenomen (geen telefoonnummer): Peter Korteschiel.',
+            );
+
+        $this->assertStringContainsString('Nicon - Nick Seine', $vcf);
+        $this->assertStringNotContainsString('Peter Korteschiel', $vcf);
+
+        $this->actingAs($user)
+            ->get(route('workers.index'))
+            ->assertOk()
+            ->assertSee('Niet opgenomen (geen telefoonnummer): Peter Korteschiel.');
+    }
+
+    public function test_redirects_when_nobody_has_a_phone(): void
+    {
+        $user = User::factory()->create();
+        $this->ownStaff('Peter Korteschiel', '');
+
+        $this->actingAs($user)
+            ->get(route('workers.whatsapp-contacts.export'))
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHasErrors([
+                'whatsapp_contacts' => 'Geen contacten geëxporteerd. Geen telefoonnummer bij: Peter Korteschiel.',
+            ]);
+    }
+
+    private function ownStaff(string $name, string $phone, bool $active = true): Worker
+    {
+        return $this->makeWorker($name, 'eigen', $phone, $active);
+    }
+
+    private function makeWorker(string $name, string $type, string $phone, bool $active = true): Worker
+    {
+        return Worker::query()->create([
+            'name' => $name,
+            'employment_type' => $type,
+            'phone' => $phone !== '' ? $phone : null,
+            'people_count' => 1,
+            'crew_members' => [
+                ['name' => $name, 'phone' => $phone, 'active' => true],
+            ],
+            'active' => $active,
+        ]);
+    }
+}

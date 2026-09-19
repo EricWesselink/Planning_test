@@ -24,7 +24,7 @@ class PlanningActionController extends Controller
 {
     public function shift(Request $request): JsonResponse
     {
-        Gate::authorize('manage-planning');
+        Gate::authorize('planning-drag');
         $data = $request->validate([
             'type' => ['required', 'in:project,work,assignment'],
             'id' => ['required', 'integer'],
@@ -72,7 +72,7 @@ class PlanningActionController extends Controller
 
     public function moveAssignment(Request $request, ConflictService $conflicts): JsonResponse
     {
-        Gate::authorize('manage-planning');
+        Gate::authorize('planning-drag');
         $data = $request->validate([
             'assignment_id' => ['required', 'integer'],
             'from_date' => ['required', 'date'],
@@ -130,7 +130,7 @@ class PlanningActionController extends Controller
 
     public function storeAssignment(Request $request, ConflictService $conflicts, PlanningFitService $fit): JsonResponse
     {
-        Gate::authorize('manage-planning');
+        Gate::authorize('planning-assign');
         $data = $request->validate([
             'worker_id' => ['nullable', 'integer', 'exists:workers,id', 'required_without:team_id'],
             'team_id' => ['nullable', 'integer', 'exists:teams,id', 'required_without:worker_id'],
@@ -602,7 +602,7 @@ class PlanningActionController extends Controller
 
     public function candidates(Request $request, PlanningFitService $fit): JsonResponse
     {
-        Gate::authorize('manage-planning');
+        Gate::authorize('planning-assign');
         $data = $request->validate([
             'work_item_id' => ['required', 'integer', 'exists:work_items,id'],
             'start_date' => ['required', 'date'],
@@ -639,7 +639,7 @@ class PlanningActionController extends Controller
 
     public function destroyAssignment(WorkerAssignment $assignment): JsonResponse
     {
-        Gate::authorize('manage-planning');
+        Gate::authorize('planning-assign');
         Gate::authorize('view', $assignment->project);
         $assignment->delete();
 

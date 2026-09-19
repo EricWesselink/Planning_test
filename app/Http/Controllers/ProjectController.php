@@ -43,6 +43,7 @@ class ProjectController extends Controller
 {
     public function index(Request $request, ProjectOverviewPdfService $overview): View
     {
+        Gate::authorize('viewAny', Project::class);
         $filters = $overview->filters($request);
 
         return view('projects.index', [
@@ -78,6 +79,7 @@ class ProjectController extends Controller
 
     public function archived(Request $request): View
     {
+        Gate::authorize('viewAny', Project::class);
         $projects = Project::query()
             ->accessibleBy($request->user())
             ->archived()
@@ -472,7 +474,7 @@ class ProjectController extends Controller
     public function document(Request $request, Project $project, ProjectDocument $document): StreamedResponse
     {
         Gate::authorize('view', $project);
-        abort_unless($document->project_id === $project->id, 404);
+        abort_unless($request->user()?->canViewFiles() ?? false, 403);
         abort_unless(Storage::disk('local')->exists($document->file_path), 404);
         if ($document->document_type === 'calculatie') {
             abort_unless($request->user()?->canViewLaborCosts() ?? false, 403);

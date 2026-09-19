@@ -19,12 +19,14 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('users.update', $user) }}" class="mt-6 max-w-3xl border border-nicon-line bg-white p-5 space-y-4">
+    @can('update', $user)
+    <form method="POST" action="{{ route('users.update', $user) }}" class="mt-6 max-w-6xl border border-nicon-line bg-white p-5 space-y-4">
         @csrf
         @method('PATCH')
         @include('users._form', ['user' => $user, 'projects' => $projects, 'requirePassword' => false, 'specialtyCatalog' => $specialtyCatalog ?? null])
         <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Opslaan</button>
     </form>
+    @endcan
 
     @can('delete', $user)
         <form method="POST" action="{{ route('users.destroy', $user) }}" class="mt-6 max-w-2xl" onsubmit="return confirm('{{ $user->name }} verwijderen? Het team in de planning blijft bestaan.')">

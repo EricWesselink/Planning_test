@@ -5,6 +5,9 @@
     $access = old('project_access', $user->can_access_all_projects ? 'all' : 'selected');
     $selectedProjects = collect(old('project_ids', $user->projects?->pluck('id')->all() ?? []))->map(fn ($id) => (int) $id);
     $isVakmanRole = old('role', $user->role?->value) === \App\Enums\UserRole::Vakman->value;
+    $lockRights = $isSelf;
+    $selectedPermissions = collect(old('permissions', $user->permissions ?? []));
+    $permissionGroups = \App\Support\PermissionCatalog::groups();
 @endphp
 <div>
     <label class="text-xs uppercase tracking-wide text-nicon-muted">Naam</label>
@@ -16,14 +19,76 @@
 </div>
 <div>
     <label class="text-xs uppercase tracking-wide text-nicon-muted">Rol</label>
-    <select name="role" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" @disabled($lastAdmin)>
-        @foreach (\App\Enums\UserRole::cases() as $role)
-            <option value="{{ $role->value }}" @selected(old('role', $user->role?->value) === $role->value)>{{ $role->label() }}</option>
-        @endforeach
+    <select name="role" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" @disabled($lastAdmin || $lockRights)>
+        <optgroup label="Standaard rol">
+            @foreach (\App\Enums\UserRole::officeStandardCases() as $role)
+                <option value="{{ $role->value }}" @selected(old('role', $user->role?->value) === $role->value)>{{ $role->label() }}</option>
+            @endforeach
+            <option value="{{ \App\Enums\UserRole::Vakman->value }}" @selected(old('role', $user->role?->value) === \App\Enums\UserRole::Vakman->value)>{{ \App\Enums\UserRole::Vakman->label() }}</option>
+        </optgroup>
+        <optgroup label="Rechten">
+            <option value="{{ \App\Enums\UserRole::AlleenLezen->value }}" @selected(old('role', $user->role?->value) === \App\Enums\UserRole::AlleenLezen->value)>{{ \App\Enums\UserRole::AlleenLezen->label() }}</option>
+            <option value="{{ \App\Enums\UserRole::Aangepast->value }}" @selected(old('role', $user->role?->value) === \App\Enums\UserRole::Aangepast->value)>{{ \App\Enums\UserRole::Aangepast->label() }}</option>
+        </optgroup>
     </select>
     @if ($lastAdmin)
         <input type="hidden" name="role" value="{{ \App\Enums\UserRole::Admin->value }}">
         <p class="mt-1 text-xs text-nicon-muted">Dit is de laatste actieve beheerder. De rol kan niet worden gewijzigd.</p>
+    @elseif ($lockRights)
+        <input type="hidden" name="role" value="{{ $user->role?->value }}">
+        <p class="mt-1 text-xs text-nicon-muted">Je kunt je eigen rol en rechten niet wijzigen.</p>
+    @endif
+</div>
+<div data-permission-matrix @hidden(old('role', $user->role?->value) !== \App\Enums\UserRole::Aangepast->value)>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="text-xs uppercase tracking-wide text-nicon-muted">Rechtenmatrix</div>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" class="border border-nicon-line px-2 py-1 text-xs" data-permission-preset="all">Alles toestaan</button>
+            <button type="button" class="border border-nicon-line px-2 py-1 text-xs" data-permission-preset="view">Alleen lezen</button>
+            <button type="button" class="border border-nicon-line px-2 py-1 text-xs" data-permission-preset="none">Alles uit</button>
+        </div>
+    </div>
+    <p class="mt-1 text-xs text-nicon-muted">Zet eerst Zien aan. Wijzigrechten zonder Zien worden automatisch aangevuld.</p>
+    <div class="mt-3 overflow-x-auto border border-nicon-line">
+        <table class="w-full text-sm">
+            <thead class="bg-nicon-paper text-left">
+                <tr>
+                    <th class="px-3 py-2">Onderdeel</th>
+                    <th class="px-3 py-2">Rechten</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach ($permissionGroups as $group)
+                <tr class="border-t border-nicon-line align-top">
+                    <td class="px-3 py-2 font-medium whitespace-nowrap">{{ $group['label'] }}</td>
+                    <td class="px-3 py-2">
+                        <div class="flex flex-wrap gap-x-4 gap-y-2">
+                            @foreach ($group['permissions'] as $item)
+                                <label class="inline-flex items-center gap-2 text-sm">
+                                    <input
+                                        type="checkbox"
+                                        name="permissions[]"
+                                        value="{{ $item['permission']->value }}"
+                                        data-permission
+                                        data-group="{{ $group['key'] }}"
+                                        data-kind="{{ $item['kind'] }}"
+                                        @checked($selectedPermissions->contains($item['permission']->value))
+                                        @disabled($lockRights)
+                                    >
+                                    {{ $item['label'] }}
+                                </label>
+                            @endforeach
+                        </div>
+                    </td>
+                </tr>
+            @endforeach
+            </tbody>
+        </table>
+    </div>
+    @if ($lockRights)
+        @foreach ($selectedPermissions as $permission)
+            <input type="hidden" name="permissions[]" value="{{ $permission }}">
+        @endforeach
     @endif
 </div>
 <div class="grid gap-3 sm:grid-cols-2">
@@ -129,14 +194,46 @@
                 rows.append(row);
             }
         };
+        const matrix = form.querySelector('[data-permission-matrix]');
+        const boxes = () => [...(matrix?.querySelectorAll('input[data-permission]') ?? [])];
+        const applyPreset = (preset) => {
+            boxes().forEach((box) => {
+                if (preset === 'all') box.checked = true;
+                else if (preset === 'none') box.checked = false;
+                else box.checked = box.dataset.kind === 'view' || box.dataset.kind === 'extra' && /pdf|print|bekijken|zien/i.test(box.closest('label')?.textContent || '');
+            });
+            if (preset === 'view') {
+                boxes().forEach((box) => {
+                    box.checked = box.dataset.kind === 'view' || box.value.endsWith('.pdf') || box.value.endsWith('.print') || box.value === 'planning.week_pdf' || box.value === 'labor_costs.view' || box.value === 'reports.view' || box.value === 'files.view' || box.value === 'drawings.view' || box.value === 'meetstaat.view' || box.value === 'personnel_week.view';
+                    if (box.value === 'users.view' || box.value === 'catalog.view') box.checked = false;
+                });
+            }
+        };
+        const syncGroup = (group) => {
+            const groupBoxes = boxes().filter((box) => box.dataset.group === group);
+            const viewBox = groupBoxes.find((box) => box.dataset.kind === 'view');
+            const writes = groupBoxes.filter((box) => box !== viewBox);
+            if (writes.some((box) => box.checked) && viewBox && ! viewBox.checked) {
+                viewBox.checked = true;
+            }
+            if (viewBox && ! viewBox.checked) {
+                writes.forEach((box) => { box.checked = false; });
+            }
+        };
         const syncRole = () => {
             const vakman = role?.value === '{{ \App\Enums\UserRole::Vakman->value }}';
+            const custom = role?.value === '{{ \App\Enums\UserRole::Aangepast->value }}';
             if (projectAccess) projectAccess.hidden = vakman;
             if (workerAccess) workerAccess.hidden = ! vakman;
+            if (matrix) matrix.hidden = ! custom;
             radios.forEach((radio) => { radio.disabled = vakman; });
             if (countInput) countInput.required = vakman;
             if (! vakman) syncProjects();
         };
+        matrix?.querySelectorAll('[data-permission-preset]').forEach((button) => {
+            button.addEventListener('click', () => applyPreset(button.dataset.permissionPreset));
+        });
+        boxes().forEach((box) => box.addEventListener('change', () => syncGroup(box.dataset.group)));
         radios.forEach((radio) => radio.addEventListener('change', syncProjects));
         role?.addEventListener('change', syncRole);
         countInput?.addEventListener('input', renderCrew);

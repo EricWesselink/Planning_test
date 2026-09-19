@@ -8,12 +8,14 @@ use App\Models\WorkerAssignment;
 use App\Services\DashboardOverviewService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
     public function __invoke(Request $request, DashboardOverviewService $overview): View
     {
+        Gate::authorize('view-dashboard');
         $today = Carbon::parse('2026-09-10');
         $user = $request->user();
 

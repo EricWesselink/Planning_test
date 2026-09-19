@@ -19,6 +19,7 @@ class ProductionController extends Controller
 {
     public function index(Request $request, ProductionOverviewService $overview, VoucherDraftService $drafts): View
     {
+        Gate::authorize('view-production');
         $workerId = $request->integer('worker_id') ?: null;
         $projectId = $request->integer('project_id') ?: null;
         $from = $request->string('from')->toString() ?: null;

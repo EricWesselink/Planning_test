@@ -11,7 +11,6 @@ use App\Models\WorkerAvailability;
 use App\Support\PlanningHours;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 class WorkerAvailabilityController extends Controller
@@ -23,7 +22,10 @@ class WorkerAvailabilityController extends Controller
 
     public function updateFlags(Request $request, Worker $worker): RedirectResponse
     {
-        Gate::authorize('update', $worker);
+        abort_unless(
+            $request->user()?->canManageWorkers() || $request->user()?->canAdjustAbsence(),
+            403
+        );
 
         $payload = [];
         if ($request->exists('unavailable')) {
@@ -71,7 +73,10 @@ class WorkerAvailabilityController extends Controller
 
     public function store(Request $request, Worker $worker): RedirectResponse
     {
-        Gate::authorize('update', $worker);
+        abort_unless(
+            $request->user()?->canManageWorkers() || $request->user()?->canAdjustAbsence(),
+            403
+        );
 
         $data = $request->validate([
             'start_date' => ['required', 'date'],
@@ -112,7 +117,10 @@ class WorkerAvailabilityController extends Controller
 
     public function destroy(Worker $worker, WorkerAvailability $availability): RedirectResponse
     {
-        Gate::authorize('update', $worker);
+        abort_unless(
+            $request->user()?->canManageWorkers() || $request->user()?->canAdjustAbsence(),
+            403
+        );
 
         $availability->delete();
 

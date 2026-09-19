@@ -120,6 +120,7 @@ class WorkActivityAdminTest extends TestCase
             'planner' => [UserRole::Planner],
             'projectleider' => [UserRole::Projectleider],
             'uitvoerder' => [UserRole::Uitvoerder],
+            'alleen_lezen' => [UserRole::AlleenLezen],
         ];
     }
 }

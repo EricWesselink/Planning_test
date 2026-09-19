@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Enums\EmploymentType;
 use App\Enums\FlooringSpecialty;
+use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\SpecialtyOption;
 use App\Models\User;
 use App\Models\Worker;
+use App\Support\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -65,6 +67,7 @@ class UserController extends Controller
                 'email' => $data['email'],
                 'password' => $data['password'],
                 'role' => $data['role'],
+                'permissions' => $data['permissions'],
                 'active' => $data['active'],
                 'can_access_all_projects' => $data['can_access_all_projects'],
                 'worker_id' => $workerId,
@@ -107,6 +110,7 @@ class UserController extends Controller
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'role' => $data['role'],
+                'permissions' => $data['permissions'],
                 'active' => $data['active'],
                 'can_access_all_projects' => $data['can_access_all_projects'],
             ]);
@@ -168,6 +172,8 @@ class UserController extends Controller
             ],
             'password' => $passwordRules,
             'role' => ['required', Rule::enum(UserRole::class)],
+            'permissions' => ['nullable', 'array'],
+            'permissions.*' => ['string', Rule::enum(Permission::class)],
             'active' => ['sometimes', 'boolean'],
             'employment_type' => ['required_if:role,'.UserRole::Vakman->value, 'nullable', Rule::enum(EmploymentType::class)],
             'people_count' => ['required_if:role,'.UserRole::Vakman->value, 'nullable', 'integer', 'min:1', 'max:50'],
@@ -217,6 +223,11 @@ class UserController extends Controller
         $data = $validator->validate();
         $data['active'] = $request->boolean('active');
         $data['role'] = UserRole::from($data['role']);
+        if ($data['role'] === UserRole::Aangepast) {
+            $data['permissions'] = PermissionCatalog::sanitize($data['permissions'] ?? []);
+        } else {
+            $data['permissions'] = null;
+        }
         $data['crew_logins'] = [];
         if ($data['role'] === UserRole::Vakman) {
             $data['can_access_all_projects'] = false;
@@ -538,6 +549,12 @@ class UserController extends Controller
 
         if ($user->role === UserRole::Admin && $data['role'] !== UserRole::Admin) {
             Gate::authorize('demote', $user);
+        }
+
+        $roleChanged = $data['role'] !== $user->role;
+        $permissionsChanged = ($data['permissions'] ?? null) !== $user->permissions;
+        if ($roleChanged || $permissionsChanged) {
+            Gate::authorize('updatePermissions', $user);
         }
     }
 

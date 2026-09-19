@@ -301,6 +301,8 @@ class UserManagementTest extends TestCase
             'projectleider' => [UserRole::Projectleider],
             'uitvoerder' => [UserRole::Uitvoerder],
             'vakman' => [UserRole::Vakman],
+            'alleen_lezen' => [UserRole::AlleenLezen],
+            'aangepast' => [UserRole::Aangepast],
         ];
     }
 

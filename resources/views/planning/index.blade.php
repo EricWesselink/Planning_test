@@ -221,7 +221,7 @@
                  data-candidates-url="{{ route('planning.candidates') }}"
                  data-assignment-url="{{ url('/planning/assignments') }}"
                  data-ticket-url="{{ url('/planning/assignments') }}"
-                 data-readonly="{{ $canManagePlanning ? '0' : '1' }}"
+                 data-readonly="{{ ($canDragPlanning ?? $canManagePlanning) ? '0' : '1' }}"
                  data-week-year="{{ $weekStart->isoWeekYear() }}"
                  data-crews='@json($workers->mapWithKeys(fn ($worker) => [$worker->id => $worker->activeCrewPeople()->unique(function ($person) {
                     $name = trim((string) $person->name);

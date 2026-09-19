@@ -15,7 +15,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('users.store') }}" class="mt-6 max-w-3xl border border-nicon-line bg-white p-5 space-y-4">
+    <form method="POST" action="{{ route('users.store') }}" class="mt-6 max-w-6xl border border-nicon-line bg-white p-5 space-y-4">
         @csrf
         @include('users._form', ['user' => $user, 'projects' => $projects, 'requirePassword' => true, 'specialtyCatalog' => $specialtyCatalog ?? null])
         <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Opslaan</button>

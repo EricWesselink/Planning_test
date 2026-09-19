@@ -14,6 +14,9 @@
     @endphp
     <p class="toolbar no-print">
         <a href="{{ route('vakman.planning.day', $detail['date']->toDateString()) }}">← Terug naar de dag</a>
+        @if ($job['drawing_url'] ?? null)
+            <a href="{{ $job['drawing_url'] }}">Tekeningen</a>
+        @endif
         <button type="button" onclick="window.print()">Afdrukken</button>
     </p>
     @include('work-tickets._document', [

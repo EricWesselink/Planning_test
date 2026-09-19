@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 
 class TeamController extends Controller
 {
@@ -16,7 +15,7 @@ class TeamController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        Gate::authorize('manage-workers');
+        abort_unless($request->user()?->canManageTeams() ?? false, 403);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
         ]);

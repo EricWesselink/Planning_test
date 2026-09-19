@@ -37,5 +37,11 @@ class PhoneNumberTest extends TestCase
         $this->assertNull(PhoneNumber::whatsAppId(''));
         $this->assertNull(PhoneNumber::loginKey(null));
         $this->assertFalse(PhoneNumber::hasNumber(''));
+        $this->assertNull(PhoneNumber::e164(null));
+    }
+
+    public function test_formats_a_dutch_mobile_as_e164(): void
+    {
+        $this->assertSame('+31612345678', PhoneNumber::e164('06 12345678'));
     }
 }

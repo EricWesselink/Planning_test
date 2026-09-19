@@ -9,17 +9,17 @@ class ProjectPolicy
 {
     public function viewAny(User $user): bool
     {
-        return true;
+        return $user->canViewProjects();
     }
 
     public function view(User $user, Project $project): bool
     {
-        return $user->canAccessProject($project);
+        return $user->canViewProjects() && $user->canAccessProject($project);
     }
 
     public function create(User $user): bool
     {
-        return $user->canManageProjects();
+        return $user->canCreateProjects();
     }
 
     public function update(User $user, Project $project): bool

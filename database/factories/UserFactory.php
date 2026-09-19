@@ -2,8 +2,10 @@
 
 namespace Database\Factories;
 
+use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Support\PermissionCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -84,6 +86,30 @@ class UserFactory extends Factory
             'can_access_all_projects' => false,
             'worker_id' => $workerId,
             'crew_member_id' => $crewMemberId,
+        ]);
+    }
+
+    public function alleenLezen(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => UserRole::AlleenLezen,
+            'permissions' => null,
+        ]);
+    }
+
+    /**
+     * @param  list<Permission|string>  $permissions
+     */
+    public function aangepast(array $permissions = []): static
+    {
+        $keys = array_map(
+            fn (Permission|string $permission): string => $permission instanceof Permission ? $permission->value : $permission,
+            $permissions,
+        );
+
+        return $this->state(fn (array $attributes) => [
+            'role' => UserRole::Aangepast,
+            'permissions' => PermissionCatalog::sanitize($keys),
         ]);
     }
 }

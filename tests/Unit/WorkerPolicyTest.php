@@ -21,6 +21,14 @@ class WorkerPolicyTest extends TestCase
         $this->assertSame($allowed, $actor->can('delete', $worker));
     }
 
+    #[DataProvider('exportRoles')]
+    public function test_only_office_users_may_export_whatsapp_contacts(UserRole $role, bool $allowed): void
+    {
+        $actor = User::factory()->make(['role' => $role]);
+
+        $this->assertSame($allowed, $actor->can('exportWhatsAppContacts', Worker::class));
+    }
+
     /** @return array<string, array{0: UserRole, 1: bool}> */
     public static function manageRoles(): array
     {
@@ -29,6 +37,18 @@ class WorkerPolicyTest extends TestCase
             'planner' => [UserRole::Planner, true],
             'projectleider' => [UserRole::Projectleider, false],
             'uitvoerder' => [UserRole::Uitvoerder, false],
+            'vakman' => [UserRole::Vakman, false],
+        ];
+    }
+
+    /** @return array<string, array{0: UserRole, 1: bool}> */
+    public static function exportRoles(): array
+    {
+        return [
+            'admin' => [UserRole::Admin, true],
+            'planner' => [UserRole::Planner, true],
+            'projectleider' => [UserRole::Projectleider, true],
+            'uitvoerder' => [UserRole::Uitvoerder, true],
             'vakman' => [UserRole::Vakman, false],
         ];
     }

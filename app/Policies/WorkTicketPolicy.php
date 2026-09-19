@@ -12,6 +12,10 @@ class WorkTicketPolicy
 {
     public function view(User $user, WorkTicket $workTicket): bool
     {
+        if (! $user->canViewWorkTickets()) {
+            return false;
+        }
+
         $project = $workTicket->relationLoaded('project')
             ? $workTicket->project
             : $workTicket->project()->first();
@@ -27,7 +31,7 @@ class WorkTicketPolicy
 
     public function create(User $user, ?WorkerAssignment $assignment = null): bool
     {
-        if (! $user->canManagePlanning()) {
+        if (! $user->canCreateWorkTickets()) {
             return false;
         }
 
@@ -44,7 +48,20 @@ class WorkTicketPolicy
 
     public function update(User $user, WorkTicket $workTicket): bool
     {
-        return $this->create($user, $workTicket->assignment);
+        if (! $user->canUpdateWorkTickets()) {
+            return false;
+        }
+
+        $assignment = $workTicket->assignment;
+        if ($assignment === null) {
+            return $this->view($user, $workTicket);
+        }
+
+        $project = $assignment->relationLoaded('project')
+            ? $assignment->project
+            : $assignment->project()->first();
+
+        return $project !== null && $user->canAccessProject($project);
     }
 
     public function delete(User $user, WorkTicket $workTicket): bool

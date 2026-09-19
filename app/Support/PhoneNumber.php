@@ -59,6 +59,16 @@ class PhoneNumber
         return self::whatsAppId($value) !== null;
     }
 
+    /**
+     * E.164 number with a leading plus, e.g. +31612345678.
+     */
+    public static function e164(?string $value): ?string
+    {
+        $id = self::whatsAppId($value);
+
+        return $id !== null ? '+'.$id : null;
+    }
+
     private static function digits(?string $value): ?string
     {
         $digits = preg_replace('/\D+/', '', (string) $value) ?? '';

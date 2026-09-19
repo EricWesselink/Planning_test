@@ -8,6 +8,8 @@ enum UserRole: string
     case Planner = 'planner';
     case Uitvoerder = 'uitvoerder';
     case Projectleider = 'projectleider';
+    case AlleenLezen = 'alleen_lezen';
+    case Aangepast = 'aangepast';
     case Vakman = 'vakman';
 
     public function label(): string
@@ -17,8 +19,23 @@ enum UserRole: string
             self::Planner => 'Planner',
             self::Uitvoerder => 'Uitvoerder',
             self::Projectleider => 'Projectleider',
+            self::AlleenLezen => 'Alleen lezen',
+            self::Aangepast => 'Aangepaste rechten',
             self::Vakman => 'Vakman',
         };
+    }
+
+    public function usesPermissionMatrix(): bool
+    {
+        return $this === self::AlleenLezen || $this === self::Aangepast;
+    }
+
+    /**
+     * @return list<self>
+     */
+    public static function officeStandardCases(): array
+    {
+        return [self::Admin, self::Planner, self::Uitvoerder, self::Projectleider];
     }
 
     public function canManageUsers(): bool

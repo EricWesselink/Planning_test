@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\DenyReadOnlyWrites;
 use App\Http\Middleware\EnsureFirstRunSetup;
 use App\Http\Middleware\EnsureProjectAccess;
 use App\Http\Middleware\EnsureUserIsActive;
@@ -24,9 +25,11 @@ return Application::configure(basePath: dirname(__DIR__))
             return route('login');
         });
         $middleware->redirectUsersTo(function () {
-            return auth()->user()?->isVakman()
+            $user = auth()->user();
+
+            return $user?->isVakman()
                 ? route('vakman.planning')
-                : route('dashboard');
+                : route($user?->officeHomeRouteName() ?? 'dashboard');
         });
         $middleware->web(append: [
             EnsureUserIsActive::class,
@@ -34,6 +37,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'first-run' => EnsureFirstRunSetup::class,
             'project.access' => EnsureProjectAccess::class,
+            'deny-readonly-writes' => DenyReadOnlyWrites::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

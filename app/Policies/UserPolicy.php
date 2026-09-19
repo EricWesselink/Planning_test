@@ -8,12 +8,12 @@ class UserPolicy
 {
     public function viewAny(User $actor): bool
     {
-        return $actor->canManageUsers();
+        return $actor->canViewUsers();
     }
 
     public function view(User $actor, User $user): bool
     {
-        return $actor->canManageUsers();
+        return $actor->canViewUsers();
     }
 
     public function create(User $actor): bool
@@ -24,6 +24,11 @@ class UserPolicy
     public function update(User $actor, User $user): bool
     {
         return $actor->canManageUsers();
+    }
+
+    public function updatePermissions(User $actor, User $user): bool
+    {
+        return $actor->canManageUsers() && ! $actor->is($user);
     }
 
     public function deactivate(User $actor, User $user): bool

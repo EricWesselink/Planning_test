@@ -9,10 +9,16 @@
             <h1 class="text-2xl font-semibold">Vakmensen en ZZP</h1>
             <p class="text-sm text-nicon-muted">Voeg een team toe met vakkennis en grootte. Inlog via e-mail mag nu of later.</p>
         </div>
+        @can('exportWhatsAppContacts', \App\Models\Worker::class)
+            <a href="{{ route('workers.whatsapp-contacts.export') }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">WhatsApp contacten exporteren</a>
+        @endcan
     </div>
 
     @if (session('status'))
         <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
+    @endif
+    @if (session('whatsapp_contacts_skipped'))
+        <p class="mt-4 text-sm text-nicon-muted">{{ session('whatsapp_contacts_skipped') }}</p>
     @endif
     @if ($errors->any())
         <ul class="mt-4 text-sm text-nicon-danger list-disc pl-5">

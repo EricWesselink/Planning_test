@@ -848,15 +848,18 @@ class VakmanPlanningService
      */
     private function drawings(Project $project, Collection $tickets): array
     {
-        if ($tickets->isNotEmpty()) {
-            return $tickets
-                ->flatMap(fn (WorkTicket $ticket) => $ticket->documents)
-                ->unique('id')
-                ->values()
-                ->all();
+        $fromTickets = $tickets
+            ->flatMap(fn (WorkTicket $ticket) => $ticket->documents)
+            ->unique('id')
+            ->values()
+            ->all();
+        if ($fromTickets !== []) {
+            return $fromTickets;
         }
 
-        return [];
+        $drawing = $project->plattegrond();
+
+        return $drawing instanceof ProjectDocument ? [$drawing] : [];
     }
 
     /**

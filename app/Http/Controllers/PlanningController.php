@@ -20,6 +20,7 @@ class PlanningController extends Controller
 {
     public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning): View
     {
+        Gate::authorize('view-planning');
         $this->authorizeRequestedProject($request);
         $data = $board->build($request);
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
@@ -32,6 +33,8 @@ class PlanningController extends Controller
                 ->orderBy('name')
                 ->get(),
             'canManagePlanning' => $request->user()?->canManagePlanning() ?? false,
+            'canDragPlanning' => $request->user()?->canDragPlanning() ?? false,
+            'canAssignPlanning' => $request->user()?->canAssignPlanning() ?? false,
             'canViewLaborCosts' => $request->user()?->canViewLaborCosts() ?? false,
             'weekplanningTeams' => $weekplanning->scheduledGroups($request),
         ]));
@@ -39,6 +42,7 @@ class PlanningController extends Controller
 
     public function export(Request $request, PlanningBoardService $board): View
     {
+        Gate::authorize('view-planning');
         $this->authorizeRequestedProject($request);
         $data = $board->build($request);
         $clientProject = $this->clientProject($request, $data['rows']);
@@ -53,6 +57,8 @@ class PlanningController extends Controller
 
     public function weekplanning(Request $request, WeekplanningPdfService $weekplanning): Response
     {
+        Gate::authorize('view-planning');
+        abort_unless($request->user()?->canDownloadPlanningWeekPdf() ?? false, 403);
         $data = $weekplanning->build($request);
         $pdf = Pdf::loadView('planning.weekplanning', $data)
             ->setPaper('a4', 'landscape')
@@ -81,6 +87,7 @@ class PlanningController extends Controller
 
     public function personnelWeek(Request $request, PersonnelWeekOverviewService $overview): View
     {
+        Gate::authorize('view-personnel');
         $this->authorizeRequestedProject($request);
 
         return view('planning.personnel-week', $overview->build($request));
@@ -88,6 +95,8 @@ class PlanningController extends Controller
 
     public function personnelWeekPdf(Request $request, PersonnelWeekOverviewService $overview): Response
     {
+        Gate::authorize('view-personnel');
+        abort_unless($request->user()?->canDownloadPlanningWeekPdf() ?? false, 403);
         $this->authorizeRequestedProject($request);
         $data = $overview->build($request);
         $pdf = Pdf::loadView('planning.personnel-week-pdf', $data)
@@ -102,6 +111,7 @@ class PlanningController extends Controller
 
     public function excel(Request $request, InternalPlanningExcelService $excel): BinaryFileResponse
     {
+        Gate::authorize('view-planning');
         $request->validate([
             'year' => ['nullable', 'integer', 'min:'.PlanningWeek::MIN_YEAR, 'max:'.PlanningWeek::MAX_YEAR],
         ]);

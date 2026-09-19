@@ -95,6 +95,9 @@
                 </div>
                 <div class="flex flex-col gap-2 border-t border-nicon-line p-4">
                     <a href="{{ $job['project_url'] }}" class="bg-nicon-ink px-4 py-3 text-center text-sm font-medium text-white">Projectinformatie</a>
+                    @if ($job['drawing_url'] ?? null)
+                        <a href="{{ $job['drawing_url'] }}" class="border border-nicon-line px-4 py-3 text-center text-sm font-medium">Tekeningen</a>
+                    @endif
                     @forelse ($job['tickets'] as $ticket)
                         <a href="{{ route('work-tickets.show', $ticket) }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">{{ $ticket->kind->label() }} {{ $ticket->number }}</a>
                     @empty

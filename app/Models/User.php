@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\Permission;
 use App\Enums\UserRole;
+use App\Support\PermissionCatalog;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -14,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'role', 'active', 'can_access_all_projects', 'worker_id', 'crew_member_id'])]
+#[Fillable(['name', 'email', 'password', 'role', 'permissions', 'active', 'can_access_all_projects', 'worker_id', 'crew_member_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -38,6 +40,7 @@ class User extends Authenticatable
             'active' => 'boolean',
             'can_access_all_projects' => 'boolean',
             'role' => UserRole::class,
+            'permissions' => 'array',
         ];
     }
 
@@ -148,59 +151,364 @@ class User extends Authenticatable
         $query->where('role', UserRole::Admin)->where('active', true);
     }
 
+    public function usesPermissionMatrix(): bool
+    {
+        return $this->role?->usesPermissionMatrix() ?? false;
+    }
+
+    public function isReadOnlyOfficeUser(): bool
+    {
+        if ($this->role === UserRole::AlleenLezen) {
+            return true;
+        }
+
+        if ($this->role === UserRole::Aangepast) {
+            return ! PermissionCatalog::hasWrite($this->permissions);
+        }
+
+        return false;
+    }
+
+    public function canMutate(): bool
+    {
+        return ! $this->isReadOnlyOfficeUser();
+    }
+
+    public function officeHomeRouteName(): string
+    {
+        if ($this->canViewDashboard()) {
+            return 'dashboard';
+        }
+        if ($this->canViewPlanning()) {
+            return 'planning';
+        }
+        if ($this->canViewProjects()) {
+            return 'projects.index';
+        }
+        if ($this->canViewCalculations()) {
+            return 'calculations.index';
+        }
+        if ($this->canViewProduction()) {
+            return 'production.index';
+        }
+        if ($this->canViewWorkers()) {
+            return 'workers.index';
+        }
+
+        return 'dashboard';
+    }
+
+    public function hasPermission(Permission $permission): bool
+    {
+        if ($this->role === UserRole::Admin) {
+            return true;
+        }
+
+        if ($this->role === UserRole::AlleenLezen) {
+            return $permission->grantedToReadOnly();
+        }
+
+        if ($this->role !== UserRole::Aangepast) {
+            return false;
+        }
+
+        $granted = $this->permissions ?? [];
+        if (in_array($permission->value, $granted, true)) {
+            return true;
+        }
+
+        if (! $permission->isRead()) {
+            return false;
+        }
+
+        foreach ($granted as $value) {
+            $stored = Permission::tryFrom((string) $value);
+            if ($stored !== null && ! $stored->isRead() && $stored->viewPermission() === $permission) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function canManageUsers(): bool
     {
-        return $this->role?->canManageUsers() ?? false;
+        return $this->allows(Permission::UsersManage, fn (): bool => $this->role?->canManageUsers() ?? false);
+    }
+
+    public function canViewUsers(): bool
+    {
+        return $this->allows(Permission::UsersView, fn (): bool => $this->canManageUsers());
     }
 
     public function canManageCatalog(): bool
     {
-        return $this->role?->canManageCatalog() ?? false;
+        return $this->allows(Permission::CatalogManage, fn (): bool => $this->role?->canManageCatalog() ?? false);
+    }
+
+    public function canViewCatalog(): bool
+    {
+        return $this->allows(Permission::CatalogView, fn (): bool => $this->canManageCatalog());
     }
 
     public function canDeleteSnags(): bool
     {
-        return $this->role?->canDeleteSnags() ?? false;
+        return $this->allows(Permission::SnagsDelete, fn (): bool => $this->role?->canDeleteSnags() ?? false);
     }
 
     public function canPurgeProjects(): bool
     {
-        return $this->role?->canPurgeProjects() ?? false;
+        return $this->allows(Permission::ProjectsDelete, fn (): bool => $this->role?->canPurgeProjects() ?? false);
     }
 
     public function canArchiveProjects(): bool
     {
-        return $this->role?->canArchiveProjects() ?? false;
+        return $this->allows(Permission::ProjectsArchive, fn (): bool => $this->role?->canArchiveProjects() ?? false);
+    }
+
+    public function canCreateProjects(): bool
+    {
+        return $this->allows(Permission::ProjectsCreate, fn (): bool => $this->role?->canManageProjects() ?? false);
     }
 
     public function canManageProjects(): bool
     {
-        return $this->role?->canManageProjects() ?? false;
+        return $this->allows(Permission::ProjectsUpdate, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canViewProjects(): bool
+    {
+        return $this->allows(Permission::ProjectsView, fn (): bool => true);
+    }
+
+    public function canUploadProjectFiles(): bool
+    {
+        return $this->allows(Permission::FilesUpload, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canProcessRevisions(): bool
+    {
+        return $this->allows(Permission::RevisionsProcess, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canViewFiles(): bool
+    {
+        return $this->allows(Permission::FilesView, fn (): bool => true);
+    }
+
+    public function canAssignPlanning(): bool
+    {
+        return $this->allowsAny(
+            [Permission::PlanningAssign, Permission::PlanningUpdate],
+            fn (): bool => $this->role?->canManagePlanning() ?? false,
+        );
+    }
+
+    public function canDragPlanning(): bool
+    {
+        return $this->allowsAny(
+            [Permission::PlanningDrag, Permission::PlanningUpdate],
+            fn (): bool => $this->role?->canManagePlanning() ?? false,
+        );
+    }
+
+    public function canAdjustPlanningHours(): bool
+    {
+        return $this->allowsAny(
+            [Permission::PlanningHours, Permission::PlanningUpdate],
+            fn (): bool => $this->role?->canManagePlanning() ?? false,
+        );
+    }
+
+    public function canAdjustAbsence(): bool
+    {
+        return $this->allows(Permission::PlanningAbsence, fn (): bool => $this->role?->canManageWorkers() ?? false);
+    }
+
+    public function canDownloadPlanningWeekPdf(): bool
+    {
+        return $this->allows(Permission::PlanningWeekPdf, fn (): bool => true);
     }
 
     public function canManagePlanning(): bool
     {
+        if ($this->usesPermissionMatrix()) {
+            return $this->canAssignPlanning()
+                || $this->canDragPlanning()
+                || $this->canAdjustPlanningHours()
+                || $this->hasPermission(Permission::PlanningUpdate);
+        }
+
         return $this->role?->canManagePlanning() ?? false;
+    }
+
+    public function canViewPlanning(): bool
+    {
+        return $this->allows(Permission::PlanningView, fn (): bool => true);
+    }
+
+    public function canViewPersonnelWeek(): bool
+    {
+        return $this->allows(Permission::PersonnelWeekView, fn (): bool => true);
     }
 
     public function canViewLaborCosts(): bool
     {
-        return $this->role?->canViewLaborCosts() ?? false;
+        return $this->allows(Permission::LaborCostsView, fn (): bool => $this->role?->canViewLaborCosts() ?? false);
+    }
+
+    public function canCreateWorkers(): bool
+    {
+        return $this->allows(Permission::WorkersCreate, fn (): bool => $this->role?->canManageWorkers() ?? false);
+    }
+
+    public function canDeleteWorkers(): bool
+    {
+        return $this->allows(Permission::WorkersDelete, fn (): bool => $this->role?->canManageWorkers() ?? false);
     }
 
     public function canManageWorkers(): bool
     {
-        return $this->role?->canManageWorkers() ?? false;
+        return $this->allows(Permission::WorkersUpdate, fn (): bool => $this->role?->canManageWorkers() ?? false);
+    }
+
+    public function canViewWorkers(): bool
+    {
+        return $this->allows(Permission::WorkersView, fn (): bool => ! $this->isVakman());
+    }
+
+    public function canViewTeams(): bool
+    {
+        return $this->allows(Permission::TeamsView, fn (): bool => ! $this->isVakman());
+    }
+
+    public function canManageTeams(): bool
+    {
+        return $this->allows(Permission::TeamsUpdate, fn (): bool => $this->role?->canManageWorkers() ?? false);
+    }
+
+    public function canViewDashboard(): bool
+    {
+        return $this->allows(Permission::DashboardView, fn (): bool => true);
+    }
+
+    public function canViewDrawings(): bool
+    {
+        return $this->allows(Permission::DrawingsView, fn (): bool => true);
+    }
+
+    public function canViewMeetstaat(): bool
+    {
+        return $this->allows(Permission::MeetstaatView, fn (): bool => true);
+    }
+
+    public function canViewMaterials(): bool
+    {
+        return $this->allows(Permission::MaterialsView, fn (): bool => true);
+    }
+
+    public function canUpdateMaterials(): bool
+    {
+        return $this->allows(Permission::MaterialsUpdate, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canViewReports(): bool
+    {
+        return $this->allows(Permission::ReportsView, fn (): bool => true);
+    }
+
+    public function canViewCalculations(): bool
+    {
+        return $this->allows(Permission::CalculationsView, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canCreateCalculations(): bool
+    {
+        return $this->allows(Permission::CalculationsCreate, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canUpdateCalculations(): bool
+    {
+        if ($this->usesPermissionMatrix()) {
+            return $this->hasPermission(Permission::CalculationsUpdate)
+                || $this->hasPermission(Permission::CalculationsUpload)
+                || $this->hasPermission(Permission::CalculationsStatus)
+                || $this->hasPermission(Permission::CalculationsMaterials);
+        }
+
+        return $this->role?->canManageProjects() ?? false;
+    }
+
+    public function canDeleteCalculations(): bool
+    {
+        return $this->allows(Permission::CalculationsDelete, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canPrintCalculations(): bool
+    {
+        return $this->allows(Permission::CalculationsPrint, fn (): bool => $this->canViewCalculations());
+    }
+
+    public function canViewSnags(): bool
+    {
+        return $this->allows(Permission::SnagsView, fn (): bool => true);
+    }
+
+    public function canViewWorkTickets(): bool
+    {
+        return $this->allows(Permission::WorkTicketsView, fn (): bool => true);
+    }
+
+    public function canCreateWorkTickets(): bool
+    {
+        return $this->allows(Permission::WorkTicketsCreate, fn (): bool => $this->role?->canManagePlanning() ?? false);
+    }
+
+    public function canUpdateWorkTickets(): bool
+    {
+        return $this->allowsAny(
+            [Permission::WorkTicketsUpdate, Permission::WorkTicketsComplete],
+            fn (): bool => $this->role?->canManagePlanning() ?? false,
+        );
+    }
+
+    public function canViewVouchers(): bool
+    {
+        return $this->allows(Permission::VouchersView, fn (): bool => true);
+    }
+
+    public function canCreateVouchers(): bool
+    {
+        return $this->allows(Permission::VouchersCreate, fn (): bool => $this->role?->canManageProjects() ?? false);
+    }
+
+    public function canUpdateVouchers(): bool
+    {
+        return $this->allowsAny(
+            [Permission::VouchersUpdate, Permission::VouchersApprove],
+            fn (): bool => $this->role?->canManageProjects() ?? false,
+        );
+    }
+
+    public function canViewProduction(): bool
+    {
+        if ($this->usesPermissionMatrix()) {
+            return $this->canViewVouchers()
+                || $this->hasPermission(Permission::ProgressUpdate)
+                || $this->canViewProjects();
+        }
+
+        return true;
     }
 
     public function canEnterProgress(): bool
     {
-        return $this->role?->canEnterProgress() ?? false;
+        return $this->allows(Permission::ProgressUpdate, fn (): bool => $this->role?->canEnterProgress() ?? false);
     }
 
     public function canApproveProgress(): bool
     {
-        return $this->role?->canApproveProgress() ?? false;
+        return $this->allows(Permission::ProgressApprove, fn (): bool => $this->role?->canApproveProgress() ?? false);
     }
 
     public function progressNeedsApproval(): bool
@@ -210,27 +518,27 @@ class User extends Authenticatable
 
     public function canCreateSnags(): bool
     {
-        return $this->role?->canCreateSnags() ?? false;
+        return $this->allows(Permission::SnagsCreate, fn (): bool => $this->role?->canCreateSnags() ?? false);
     }
 
     public function canUpdateSnags(): bool
     {
-        return $this->role?->canUpdateSnags() ?? false;
+        return $this->allows(Permission::SnagsUpdate, fn (): bool => $this->role?->canUpdateSnags() ?? false);
     }
 
     public function canAdvanceSnagStatus(): bool
     {
-        return $this->role?->canAdvanceSnagStatus() ?? false;
+        return $this->allows(Permission::SnagsUpdate, fn (): bool => $this->role?->canAdvanceSnagStatus() ?? false);
     }
 
     public function canReportSnags(): bool
     {
-        return $this->role?->canReportSnags() ?? false;
+        return $this->allows(Permission::SnagsReport, fn (): bool => $this->role?->canReportSnags() ?? false);
     }
 
     public function canCloseSnags(): bool
     {
-        return $this->role?->canCloseSnags() ?? false;
+        return $this->allows(Permission::SnagsClose, fn (): bool => $this->role?->canCloseSnags() ?? false);
     }
 
     public function canManuallyLinkRooms(): bool
@@ -240,6 +548,42 @@ class User extends Authenticatable
 
     public function canRejectSnags(): bool
     {
-        return $this->role?->canRejectSnags() ?? false;
+        return $this->allows(Permission::SnagsReject, fn (): bool => $this->role?->canRejectSnags() ?? false);
+    }
+
+    private function allows(Permission $permission, callable $standard): bool
+    {
+        return match ($this->role) {
+            UserRole::Admin => true,
+            UserRole::AlleenLezen => $permission->grantedToReadOnly(),
+            UserRole::Aangepast => $this->hasPermission($permission),
+            default => $standard(),
+        };
+    }
+
+    /**
+     * @param  list<Permission>  $permissions
+     */
+    private function allowsAny(array $permissions, callable $standard): bool
+    {
+        if ($this->role === UserRole::Admin) {
+            return true;
+        }
+
+        if ($this->role === UserRole::AlleenLezen) {
+            return false;
+        }
+
+        if ($this->role === UserRole::Aangepast) {
+            foreach ($permissions as $permission) {
+                if ($this->hasPermission($permission)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return $standard();
     }
 }

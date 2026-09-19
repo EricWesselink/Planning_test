@@ -19,6 +19,8 @@ use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Models\WorkTicket;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
+use Tests\Support\SimplePdf;
 use Tests\TestCase;
 
 class VakmanPlanningTest extends TestCase
@@ -438,6 +440,97 @@ class VakmanPlanningTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('vakman.planning.werkbon', '2026-09-10'))
+            ->assertForbidden();
+    }
+
+    public function test_zzp_day_and_opdrachtbon_show_tekeningen_when_a_plattegrond_exists(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        Storage::fake('local');
+        $nick = $this->makeWorker('Nick Seine', 'zzp');
+        $own = $this->makeProject('Laakse Tuinen', [
+            'address' => 'Industrieweg 8',
+            'postal_code' => '8013 PM',
+            'city' => 'Zwolle',
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $nick->id,
+            'project_id' => $own->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'hours_per_day' => 8,
+        ]);
+        $path = 'projects/'.$own->id.'/plattegrond/plan.pdf';
+        Storage::disk('local')->put($path, SimplePdf::bytes('begane grond'));
+        $drawing = ProjectDocument::query()->create([
+            'project_id' => $own->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => 'fase 1 verdieping 1 (4/5).pdf',
+            'file_path' => $path,
+            'mime_type' => 'application/pdf',
+            'file_size' => 1200,
+            'parse_status' => 'done',
+        ]);
+        $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning.day', '2026-09-10'))
+            ->assertOk()
+            ->assertSee('Tekeningen')
+            ->assertSee('fase 1 verdieping 1 (4/5).pdf')
+            ->assertSee('href="'.route('projects.show', $own).'"', false)
+            ->assertSee('href="'.route('projects.documents.show', [$own, $drawing]).'"', false)
+            ->assertDontSee('€');
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning.opdrachtbon', ['date' => '2026-09-10', 'project' => $own]))
+            ->assertOk()
+            ->assertSee('Tekeningen')
+            ->assertSee('fase 1 verdieping 1 (4/5).pdf')
+            ->assertSee('href="'.route('projects.show', $own).'"', false)
+            ->assertSee('href="'.route('projects.documents.show', [$own, $drawing]).'"', false);
+    }
+
+    public function test_zzp_can_open_the_drawing_board_and_plattegrond_pdf(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        Storage::fake('local');
+        $nick = $this->makeWorker('Nick Seine', 'zzp');
+        $own = $this->makeProject('Laakse Tuinen');
+        $other = $this->makeProject('Kindcentrum Veldhoeve');
+        WorkerAssignment::query()->create([
+            'worker_id' => $nick->id,
+            'project_id' => $own->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'hours_per_day' => 8,
+        ]);
+        $path = 'projects/'.$own->id.'/plattegrond/plan.pdf';
+        Storage::disk('local')->put($path, SimplePdf::bytes('begane grond'));
+        $drawing = ProjectDocument::query()->create([
+            'project_id' => $own->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => 'Plattegrond_BG.pdf',
+            'file_path' => $path,
+            'mime_type' => 'application/pdf',
+            'file_size' => 1200,
+            'parse_status' => 'done',
+        ]);
+        $user = User::factory()->vakman($nick->id)->create();
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $own))
+            ->assertOk()
+            ->assertSee('id="draw-page"', false)
+            ->assertSee('id="project-board"', false);
+
+        $this->actingAs($user)
+            ->get(route('projects.documents.show', [$own, $drawing]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $other))
             ->assertForbidden();
     }
 

@@ -18,33 +18,53 @@
         <div class="flex items-center gap-4 px-4 py-3">
             <div class="shrink-0">
                 <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
-                <div class="text-lg font-semibold leading-tight">{{ $user?->isVakman() ? 'Mijn planning' : 'Planning' }}</div>
+                <div class="flex items-center gap-2">
+                    <div class="text-lg font-semibold leading-tight">{{ $user?->isVakman() ? 'Mijn planning' : 'Planning' }}</div>
+                    @if ($user?->isReadOnlyOfficeUser())
+                        <span class="rounded border border-white/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90">Alleen lezen</span>
+                    @endif
+                </div>
             </div>
             <nav class="flex min-w-0 grow items-center gap-1 overflow-x-auto text-sm">
                 @php
+                    $user = auth()->user();
+                    $officeLinks = [];
+                    if ($user?->canViewDashboard()) {
+                        $officeLinks[] = ['href' => route('dashboard'), 'label' => 'Dashboard', 'active' => request()->routeIs('dashboard')];
+                    }
+                    if ($user?->canViewPlanning()) {
+                        $officeLinks[] = ['href' => route('planning'), 'label' => 'Planning', 'active' => request()->routeIs('planning') || request()->routeIs('planning.personnel-week') || (request()->routeIs('work-tickets.*') && ! $user?->isVakman())];
+                    }
+                    if ($user?->canViewProduction()) {
+                        $officeLinks[] = ['href' => route('production.index'), 'label' => 'Productie', 'active' => request()->routeIs('production.*')];
+                    }
+                    if ($user?->canViewProjects()) {
+                        $officeLinks[] = ['href' => route('projects.index'), 'label' => 'Projecten', 'active' => request()->routeIs('projects.*') && ! request()->routeIs('projects.archived')];
+                    }
                     $links = $user?->isVakman()
                         ? [
                             ['href' => route('vakman.planning'), 'label' => 'Mijn planning', 'active' => request()->routeIs('vakman.planning*') || (request()->routeIs('work-tickets.*') && $user?->isVakman()), 'home' => true],
                             ['href' => route('vakman.password.edit'), 'label' => 'Wachtwoord wijzigen', 'short' => 'Wachtwoord', 'active' => request()->routeIs('vakman.password.*')],
                         ]
-                        : [
-                            ['href' => route('dashboard'), 'label' => 'Dashboard', 'active' => request()->routeIs('dashboard')],
-                            ['href' => route('planning'), 'label' => 'Planning', 'active' => request()->routeIs('planning') || request()->routeIs('planning.personnel-week') || (request()->routeIs('work-tickets.*') && ! $user?->isVakman())],
-                            ['href' => route('production.index'), 'label' => 'Productie', 'active' => request()->routeIs('production.*')],
-                            ['href' => route('projects.index'), 'label' => 'Projecten', 'active' => request()->routeIs('projects.*') && ! request()->routeIs('projects.archived')],
-                        ];
+                        : $officeLinks;
                     if (! $user?->isVakman()) {
-                        if ($user?->can('viewAny', \App\Models\Calculation::class)) {
+                        if ($user?->canViewCalculations()) {
                             $links[] = ['href' => route('calculations.index'), 'label' => 'Calculatie', 'active' => request()->routeIs('calculations.*')];
                         }
-                        $links[] = ['href' => route('projects.archived'), 'label' => 'Archief', 'active' => request()->routeIs('projects.archived')];
-                        $links[] = ['href' => route('workers.index'), 'label' => 'Vakmensen / ZZP', 'active' => request()->routeIs('workers.*')];
-                        $links[] = ['href' => route('personnel.index'), 'label' => 'Personeel', 'active' => request()->routeIs('personnel.*')];
+                        if ($user?->canViewProjects()) {
+                            $links[] = ['href' => route('projects.archived'), 'label' => 'Archief', 'active' => request()->routeIs('projects.archived')];
+                        }
+                        if ($user?->canViewWorkers()) {
+                            $links[] = ['href' => route('workers.index'), 'label' => 'Vakmensen / ZZP', 'active' => request()->routeIs('workers.*')];
+                        }
+                        if ($user?->canViewPersonnelWeek()) {
+                            $links[] = ['href' => route('personnel.index'), 'label' => 'Personeel', 'active' => request()->routeIs('personnel.*')];
+                        }
                     }
-                    if ($user?->can('viewAny', \App\Models\User::class)) {
+                    if ($user?->canViewUsers()) {
                         $links[] = ['href' => route('users.index'), 'label' => 'Gebruikers', 'active' => request()->routeIs('users.*')];
                     }
-                    if ($user?->can('manage-catalog')) {
+                    if ($user?->canManageCatalog() || $user?->canViewCatalog()) {
                         $links[] = ['href' => route('work-activities.index'), 'label' => 'Werkzaamheden', 'active' => request()->routeIs('work-activities.*') || request()->routeIs('work-activity-categories.*')];
                     }
                 @endphp

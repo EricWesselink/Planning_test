@@ -9,12 +9,12 @@ class SnagItemPolicy
 {
     public function viewAny(User $user): bool
     {
-        return true;
+        return $user->canViewSnags();
     }
 
     public function view(User $user, SnagItem $snagItem): bool
     {
-        return true;
+        return $user->canViewSnags();
     }
 
     public function create(User $user): bool

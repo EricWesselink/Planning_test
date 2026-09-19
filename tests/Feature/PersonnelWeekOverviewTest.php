@@ -354,6 +354,53 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assertStringNotContainsString('page-break-before: always', $html);
     }
 
+    public function test_personnel_week_pdf_shows_full_project_address_under_a_long_title(): void
+    {
+        $this->travelTo('2026-09-21 08:00:00');
+        $user = User::factory()->create();
+        $team = $this->makeTeam('Team 4 Lukasz', [
+            ['name' => 'Lukasz Nowak', 'phone' => ''],
+        ]);
+        [$project, $item] = $this->makeProject('vlekken in het tapijt + tapijt scheef', [
+            'kind' => ProjectKind::Klein,
+            'customer' => 'POLINDER',
+            'address' => 'Elshoutstraat 12',
+            'city' => 'Kampen',
+            'project_number' => '2026-009',
+        ]);
+        $this->assign($team, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$team->crewPeople()->first()->id]);
+
+        $request = Request::create(
+            route('planning.personnel-week.pdf', ['week' => '2026-09-21']),
+            'GET',
+            ['week' => '2026-09-21'],
+        );
+        $request->setUserResolver(fn () => $user);
+        $html = view('planning.personnel-week-pdf', app(PersonnelWeekOverviewService::class)->build($request))->render();
+
+        $this->assertStringNotContainsString('max-height:', $html);
+        $this->assertDoesNotMatchRegularExpression('/\.title\s*\{[^}]*overflow:\s*hidden/u', $html);
+        $this->assertStringContainsString('overflow-wrap: anywhere', $html);
+        $this->assertStringContainsString('vlekken in het tapijt + tapijt scheef', $html);
+        $this->assertStringContainsString('Elshoutstraat 12', $html);
+        $this->assertStringContainsString('Kampen', $html);
+
+        $text = preg_replace(
+            '/\s+/u',
+            ' ',
+            (new Parser)->parseContent(
+                $this->actingAs($user)
+                    ->get(route('planning.personnel-week.pdf', ['week' => '2026-09-21']))
+                    ->getContent()
+            )->getText()
+        ) ?? '';
+
+        $this->assertStringContainsString('vlekken in het tapijt + tapijt scheef', $text);
+        $this->assertStringContainsString('Elshoutstraat 12', $text);
+        $this->assertStringContainsString('Kampen', $text);
+    }
+
     public function test_personnel_week_pdf_repeats_the_brand_header_without_generated_on_line(): void
     {
         $user = User::factory()->create();

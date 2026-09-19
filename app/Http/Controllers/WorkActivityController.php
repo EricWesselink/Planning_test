@@ -15,7 +15,7 @@ class WorkActivityController extends Controller
 {
     public function index(): View
     {
-        Gate::authorize('manage-catalog');
+        abort_unless(auth()->user()?->canManageCatalog() || auth()->user()?->canViewCatalog(), 403);
 
         return view('work-activities.index', [
             'categories' => WorkActivityCategory::query()

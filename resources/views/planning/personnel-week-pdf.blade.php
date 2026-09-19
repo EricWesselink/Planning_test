@@ -64,15 +64,18 @@
             text-align: center;
             border: 0.4pt solid #163a5f;
         }
-        .col-werk, .day-head .werk, td.werk { width: 16%; }
+        .col-werk, .day-head .werk, td.werk { width: 20%; }
         .day-head .werk { text-align: left; padding-left: 6px; }
         .day-name { display: block; font-weight: 700; }
         .day-date { display: block; font-weight: 500; font-size: 6.5pt; text-transform: none; letter-spacing: 0; }
         td.werk {
             border: 0.4pt solid #d5dde5;
-            padding: 3px 5px;
+            padding: 4px 6px;
             background: #f4efe6;
             vertical-align: top;
+            overflow-wrap: anywhere;
+            word-wrap: break-word;
+            word-break: break-word;
         }
         td.day {
             border: 0.4pt solid #d5dde5;
@@ -82,38 +85,50 @@
         .customer {
             font-size: 6.5pt;
             font-weight: 700;
-            letter-spacing: 0.05em;
             text-transform: uppercase;
             color: #5b6570;
-            line-height: 1.15;
+            line-height: 1.35;
+            padding: 0 0 1px;
         }
         .title {
-            font-size: 8.5pt;
+            font-size: 8pt;
             font-weight: 700;
             color: #163a5f;
-            line-height: 1.15;
-            max-height: 2.3em;
-            overflow: hidden;
+            line-height: 1.35;
+            padding: 0 0 1px;
         }
-        .meta { font-size: 7pt; color: #44403c; line-height: 1.15; }
-        .work-name { font-size: 7pt; font-weight: 700; color: #163a5f; padding-top: 1px; line-height: 1.15; }
+        .meta {
+            font-size: 7pt;
+            color: #44403c;
+            line-height: 1.35;
+            padding: 0 0 1px;
+        }
+        .work-name {
+            font-size: 7pt;
+            font-weight: 700;
+            color: #163a5f;
+            padding-top: 2px;
+            line-height: 1.35;
+        }
         .marker {
             font-size: 6pt;
             font-weight: 800;
             letter-spacing: 0.03em;
             text-transform: uppercase;
-            line-height: 1.1;
+            line-height: 1.25;
             padding: 0;
         }
         .marker-start { color: #b91c1c; }
         .marker-klaar { color: #3f6212; }
         .block {
             border-radius: 1px;
-            padding: 1px 4px;
-            margin: 0 0 1px;
-            font-size: 8pt;
+            padding: 1px 4px 2px;
+            margin: 0 0 2px;
+            font-size: 7.5pt;
             font-weight: 700;
-            line-height: 1.15;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+            word-wrap: break-word;
         }
         .block.is-away { font-weight: 600; font-size: 7pt; }
         .block-time { display: block; font-weight: 500; font-size: 6.5pt; }

@@ -10,11 +10,15 @@ class VoucherPolicy
 {
     public function viewAny(User $user): bool
     {
-        return true;
+        return $user->canViewVouchers();
     }
 
     public function view(User $user, Voucher $voucher): bool
     {
+        if (! $user->canViewVouchers()) {
+            return false;
+        }
+
         $project = $voucher->relationLoaded('project')
             ? $voucher->project
             : $voucher->project()->first();
@@ -30,7 +34,7 @@ class VoucherPolicy
 
     public function create(User $user, ?Project $project = null): bool
     {
-        if (! $user->canManageProjects()) {
+        if (! $user->canCreateVouchers()) {
             return false;
         }
 
@@ -39,11 +43,15 @@ class VoucherPolicy
 
     public function update(User $user, Voucher $voucher): bool
     {
+        if (! $user->canUpdateVouchers()) {
+            return false;
+        }
+
         $project = $voucher->relationLoaded('project')
             ? $voucher->project
             : $voucher->project()->first();
 
-        return $project !== null && $this->create($user, $project);
+        return $project !== null && $user->canAccessProject($project);
     }
 
     public function send(User $user, Voucher $voucher): bool
