@@ -60,6 +60,8 @@ class VakmanUserResolver
             ->orderBy('id')
             ->get();
 
+        $teamFallback = null;
+
         foreach ($crewMembers as $member) {
             if (PhoneNumber::loginKey($member->phone) !== $key) {
                 continue;
@@ -69,10 +71,18 @@ class VakmanUserResolver
                 return $member->user;
             }
 
+            if ($teamFallback !== null) {
+                continue;
+            }
+
             $team = $member->worker === null ? null : $this->teamUser($member->worker);
             if ($team !== null) {
-                return $team;
+                $teamFallback = $team;
             }
+        }
+
+        if ($teamFallback !== null) {
+            return $teamFallback;
         }
 
         $workers = Worker::query()

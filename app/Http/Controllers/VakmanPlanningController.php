@@ -17,7 +17,7 @@ class VakmanPlanningController extends Controller
     {
         $user = $this->vakman($request);
 
-        return view('vakman.planning', [
+        return view($this->isExternal($user) ? 'vakman.planning-zzp' : 'vakman.planning', [
             'worker' => $user->worker,
             'agenda' => $planning->agenda(
                 $user,
@@ -32,7 +32,7 @@ class VakmanPlanningController extends Controller
     {
         $user = $this->vakman($request);
 
-        return view('vakman.day', [
+        return view($this->isExternal($user) ? 'vakman.day-zzp' : 'vakman.day', [
             'worker' => $user->worker,
             'detail' => $planning->day($user, $this->parseDate($date)),
             'weekUrl' => route('vakman.planning', [
@@ -45,10 +45,16 @@ class VakmanPlanningController extends Controller
     public function werkbon(Request $request, string $date, VakmanPlanningService $planning): View
     {
         $user = $this->vakman($request);
-        abort_if($user->worker?->employment_type?->isExternal() ?? false, 403);
+        abort_if($this->isExternal($user), 403);
 
         $detail = $planning->day($user, $this->parseDate($date));
         abort_if($detail['jobs'] === [], 404);
+        $jobs = array_values(array_filter(
+            $detail['jobs'],
+            fn (array $job): bool => (bool) ($job['is_work_ticket_holder'] ?? false),
+        ));
+        abort_if($jobs === [], 403);
+        $detail['jobs'] = $jobs;
 
         return view('vakman.werkbon', [
             'worker' => $user->worker,
@@ -59,7 +65,7 @@ class VakmanPlanningController extends Controller
     public function opdrachtbon(Request $request, string $date, Project $project, VakmanPlanningService $planning): View|RedirectResponse
     {
         $user = $this->vakman($request);
-        abort_unless($user->worker?->employment_type?->isExternal() ?? false, 403);
+        abort_unless($this->isExternal($user), 403);
         abort_unless($user->canAccessProject($project), 403);
 
         $detail = $planning->day($user, $this->parseDate($date));
@@ -88,6 +94,11 @@ class VakmanPlanningController extends Controller
         $user->loadMissing('worker');
 
         return $user;
+    }
+
+    private function isExternal(User $user): bool
+    {
+        return $user->worker?->employment_type?->isExternal() ?? false;
     }
 
     private function parseDate(string $date): Carbon

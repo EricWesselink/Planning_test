@@ -54,6 +54,7 @@ test('replaces stale who-options with a loading row', () => {
         selectable: false,
         disabled: false,
         selected: true,
+        external: false,
     }]);
     assert.equal(options.some((option) => option.label.includes('Wespro')), false);
 });
@@ -116,6 +117,16 @@ test('shows the clicked team immediately even before candidates load', () => {
     assert.equal(chosen?.selected, true);
     assert.equal(chosen?.label, 'Het Vloerenhuis');
     assert.equal(options[0].selected, false);
+});
+
+test('marks zzp candidates as external for the planner dialog', () => {
+    const options = whoOptionList([
+        { id: 9, name: 'ZZP Jansen', people_count: 1, selectable: true, status_label: 'Beschikbaar', external: true },
+        { id: 10, name: 'Team 2', people_count: 2, selectable: true, status_label: 'Beschikbaar', external: false },
+    ]);
+
+    assert.equal(options.find((option) => option.value === 'worker:9')?.external, true);
+    assert.equal(options.find((option) => option.value === 'worker:10')?.external, false);
 });
 
 test('reads the team name from a planning bar label', () => {

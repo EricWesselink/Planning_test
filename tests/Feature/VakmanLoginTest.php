@@ -67,6 +67,7 @@ class VakmanLoginTest extends TestCase
         return [
             'digits' => ['0612345678'],
             'spaces' => ['06 12345678'],
+            'dash' => ['06-12345678'],
             'plus' => ['+31612345678'],
         ];
     }
@@ -103,6 +104,53 @@ class VakmanLoginTest extends TestCase
             ->assertRedirect(route('vakman.planning'));
 
         $this->assertAuthenticatedAs($kees);
+    }
+
+    public function test_personal_account_wins_when_another_team_shares_the_06_number(): void
+    {
+        $other = Worker::query()->create([
+            'name' => 'Team Wespro',
+            'employment_type' => 'zzp',
+            'active' => true,
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric', 'phone' => '06 11111111'],
+                ['name' => 'Harm', 'phone' => ''],
+            ],
+        ]);
+        User::factory()->vakman($other->id)->create([
+            'name' => 'Team Wespro',
+            'email' => 'wespro@niconvloeren.nl',
+            'password' => 'ander-wachtwoord',
+        ]);
+
+        $worker = Worker::query()->create([
+            'name' => 'Eric Wesselink',
+            'employment_type' => 'eigen',
+            'active' => true,
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Eric Wesselink', 'phone' => '+31628345656'],
+                ['name' => 'Harm Wesselink', 'phone' => '+31611111111'],
+            ],
+        ]);
+        $harmMember = $worker->crewPeople()->where('name', 'Harm Wesselink')->first();
+        $this->assertNotNull($harmMember);
+        $harm = User::factory()->vakman($worker->id)->create([
+            'name' => 'Harm Wesselink',
+            'email' => '31611111111@telefoon.niconvloeren.nl',
+            'crew_member_id' => $harmMember->id,
+            'password' => 'tijdelijk1',
+        ]);
+
+        $this->from(route('vakman.login'))
+            ->post(route('vakman.login.store'), [
+                'login' => '06-11111111',
+                'password' => 'tijdelijk1',
+            ])
+            ->assertRedirect(route('vakman.planning'));
+
+        $this->assertAuthenticatedAs($harm);
     }
 
     public function test_vakman_logs_in_with_a_foreign_mobile_number(): void

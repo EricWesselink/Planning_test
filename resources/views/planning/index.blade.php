@@ -601,13 +601,27 @@
             <select name="who" id="plan-who" required class="w-full border border-nicon-line px-2 py-1.5 bg-white">
                 <option value="">Kies vakman of team</option>
                 @foreach ($workers as $worker)
-                    <option value="worker:{{ $worker->id }}" data-men="{{ $worker->peopleCount() }}">{{ $worker->planName() }}</option>
+                    <option value="worker:{{ $worker->id }}" data-men="{{ $worker->peopleCount() }}" data-external="{{ $worker->employment_type?->isExternal() ? '1' : '0' }}">{{ $worker->planName() }}</option>
                 @endforeach
             </select>
             <div id="plan-crew" class="hidden space-y-1 rounded border border-nicon-line bg-nicon-sand/40 px-2 py-1.5">
-                <div id="plan-crew-heading" class="text-[10px] uppercase tracking-wide text-nicon-muted">Wie gaat er naartoe</div>
+                <div id="plan-crew-heading" class="text-[10px] uppercase tracking-wide text-nicon-muted">Vakmannen</div>
                 <p id="plan-crew-hint" class="hidden text-xs text-nicon-muted">Niet aangevinkt blijft op het huidige werk.</p>
                 <div id="plan-crew-list" class="space-y-0.5"></div>
+            </div>
+            <div id="plan-roles" class="hidden grid grid-cols-2 gap-2">
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                    Voorman
+                    <select name="foreman_crew_member_id" id="plan-foreman" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5 bg-white">
+                        <option value="">Kies voorman</option>
+                    </select>
+                </label>
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                    Werkbon bij
+                    <select name="work_ticket_crew_member_id" id="plan-work-ticket-holder" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5 bg-white">
+                        <option value="">Kies wie de werkbon heeft</option>
+                    </select>
+                </label>
             </div>
             <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Wat gaan ze doen</label>
             <input type="hidden" name="work_item_id" id="plan-work" value="">

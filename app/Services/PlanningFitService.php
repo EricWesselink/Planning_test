@@ -270,6 +270,7 @@ class PlanningFitService
             'selectable' => $person['selectable'],
             'status' => $person['status'],
             'status_label' => $person['status_label'],
+            'external' => $worker->employment_type?->isExternal() ?? false,
             'crew' => $member instanceof CrewMember
                 ? [array_merge($person, ['id' => $member->id, 'name' => $member->label()])]
                 : [],
@@ -325,6 +326,7 @@ class PlanningFitService
             'status_label' => $suitable.'/'.$total.' geschikt en beschikbaar',
             'suitable_count' => $suitable,
             'total_count' => $total,
+            'external' => $worker->employment_type?->isExternal() ?? false,
             'crew' => $crew,
         ];
     }

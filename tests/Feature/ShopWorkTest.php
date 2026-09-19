@@ -1228,10 +1228,49 @@ class ShopWorkTest extends TestCase
             ->assertSee('nashville')
             ->assertSee('antraciet 6760.020543')
             ->assertSee('rubber')
+            ->assertSee('Vakmannen')
+            ->assertSee('Nog niet ingepland')
+            ->assertDontSee('Opdrachtnemer')
             ->assertSee('Afdrukken')
             ->assertSee('Download PDF')
             ->assertSee(route('projects.winkel.werkbon.pdf', $project, false), false)
             ->assertDontSee('€');
+    }
+
+    public function test_winkel_werkbon_lists_vakmannen_and_when_they_go(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Dussen',
+            'city' => 'IJsselmuiden',
+            'work_activity_ids' => [$pvc->id],
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+        $item = $project->workItems()->first();
+        $this->assertNotNull($item);
+        foreach (['Team 3 Arek', 'Team 4 Lukasz'] as $name) {
+            $worker = $this->makeShopWorker($name);
+            WorkerAssignment::query()->create([
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $item->id,
+                'start_date' => '2026-09-21',
+                'end_date' => '2026-09-23',
+                'hours_per_day' => 8,
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get(route('projects.winkel.werkbon', $project))
+            ->assertOk()
+            ->assertSee('Vakmannen')
+            ->assertSee('Team 3 Arek')
+            ->assertSee('Team 4 Lukasz')
+            ->assertSee('Wanneer')
+            ->assertSee('21-09 t/m 23-09-2026')
+            ->assertDontSee('Opdrachtnemer');
     }
 
     public function test_winkel_werkbon_pdf_downloads(): void

@@ -23,6 +23,7 @@
                 <a href="{{ $agenda['prevUrl'] }}" aria-label="Vorige">‹</a>
                 <div class="vakman-agenda-period">{{ $agenda['periodLabel'] }}</div>
                 <a href="{{ $agenda['nextUrl'] }}" aria-label="Volgende">›</a>
+                <a href="{{ $agenda['todayUrl'] }}" class="vakman-agenda-today">Vandaag</a>
             </div>
 
             <div class="vakman-agenda-switch">
@@ -77,18 +78,16 @@
                 </div>
             </div>
         @else
-            <div class="vakman-week">
+            <div class="vakman-week vakman-week--zzp">
                 @foreach ($agenda['days'] as $day)
                     <section class="vakman-week-day {{ $day['is_today'] ? 'is-today' : '' }}">
                         <header class="vakman-week-day-head">
-                            <span class="vakman-week-dayname">{{ $day['heading'] }}</span>
-                            @if ($day['is_today'])
-                                <span class="vakman-week-today-mark">Vandaag</span>
-                            @endif
+                            <span class="vakman-week-dayname">{{ $day['weekday'] }}</span>
+                            <span class="vakman-week-daynum">{{ $day['short'] }}</span>
                         </header>
                         <div class="vakman-week-day-body">
                             @forelse ($day['jobs'] as $job)
-                                @include('vakman._agenda-card', ['job' => $job])
+                                @include('vakman._agenda-card-zzp', ['job' => $job])
                             @empty
                                 <p class="vakman-week-empty">Vrij</p>
                             @endforelse

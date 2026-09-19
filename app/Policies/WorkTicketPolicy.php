@@ -81,7 +81,33 @@ class WorkTicketPolicy
         }
 
         return $user->isVakman()
-            && $user->scheduledWorkerId() === (int) $workTicket->worker_id
-            && $this->view($user, $workTicket);
+            && $this->view($user, $workTicket)
+            && $this->mayRecordHoursAsVakman($user, $workTicket);
+    }
+
+    private function mayRecordHoursAsVakman(User $user, WorkTicket $workTicket): bool
+    {
+        $worker = $workTicket->relationLoaded('worker')
+            ? $workTicket->worker
+            : $workTicket->worker()->first();
+
+        if ($worker?->employment_type?->isExternal() ?? false) {
+            return $user->scheduledWorkerId() === (int) $workTicket->worker_id;
+        }
+
+        return $this->isWorkTicketResponsible($user, $workTicket);
+    }
+
+    private function isWorkTicketResponsible(User $user, WorkTicket $workTicket): bool
+    {
+        $assignment = $workTicket->relationLoaded('assignment')
+            ? $workTicket->assignment
+            : $workTicket->assignment()->with('crewMembers')->first();
+
+        if ($assignment === null) {
+            return $user->scheduledWorkerId() === (int) $workTicket->worker_id;
+        }
+
+        return $assignment->isWorkTicketResponsible($user);
     }
 }

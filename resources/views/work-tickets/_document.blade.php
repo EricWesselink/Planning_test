@@ -20,6 +20,9 @@
     $drawingRender = $drawingRender ?? 'image';
     $companyPlace = trim(implode(' ', array_filter([$companyPostalCode ?? null, $companyCity ?? null])));
     $companyAddressLine = $companyAddressLine ?? trim(implode(', ', array_filter([$companyAddress ?? null, $companyPlace])));
+    $whoHeading = $whoHeading ?? 'Opdrachtnemer';
+    $whenHeading = $whenHeading ?? 'Planning';
+    $recipientCompact = $recipientCompact ?? false;
     $pdfDrawingLayers = [];
     if ($isPdf) {
         foreach ($floorLayers as $layer) {
@@ -89,13 +92,21 @@
                 @endif
             </td>
             <td>
-                <div class="block-title">Opdrachtnemer</div>
-                <p><strong>{{ $recipient }}</strong></p>
+                <div class="block-title">{{ $whoHeading }}</div>
+                <p @class(['crew-line' => $recipientCompact])>
+                    @if ($recipientCompact)
+                        {{ $recipient }}
+                    @else
+                        <strong>{{ $recipient }}</strong>
+                    @endif
+                </p>
                 @if ($recipientKind)
-                    <p>{{ $recipientKind }}</p>
+                    <p @class(['crew-line' => $recipientCompact])>{{ $recipientKind }}</p>
                 @endif
-                <div class="block-title" style="margin-top:10px">Planning</div>
-                <p>{{ $period }}</p>
+                @if (filled($period ?? null))
+                    <div class="block-title" style="margin-top:8px">{{ $whenHeading }}</div>
+                    <p @class(['crew-line' => $recipientCompact])>{{ $period }}</p>
+                @endif
             </td>
         </tr>
     </table>

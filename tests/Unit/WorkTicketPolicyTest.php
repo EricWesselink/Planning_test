@@ -64,6 +64,56 @@ class WorkTicketPolicyTest extends TestCase
         $this->assertFalse($user->can('viewPrices', $ticket));
     }
 
+    public function test_only_the_werkbon_holder_may_record_hours(): void
+    {
+        $ticket = $this->makeTicket(WorkTicketKind::Werkbon);
+        $ticket->forceFill(['billing_method' => WorkTicketBilling::Hourly, 'hourly_rate' => 40])->save();
+        $worker = $ticket->worker;
+        $worker->forceFill([
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Nick', 'phone' => ''],
+                ['name' => 'Mahmoud', 'phone' => ''],
+            ],
+        ])->save();
+        $people = $worker->fresh()->crewPeople()->orderBy('sort_order')->get();
+        $assignment = $ticket->assignment;
+        $assignment->syncPresentCrew([$people[0]->id, $people[1]->id]);
+        $assignment->applyRoles($people[0]->id, $people[0]->id);
+        $holder = User::factory()->vakman($worker->id, $people[0]->id)->create();
+        $other = User::factory()->vakman($worker->id, $people[1]->id)->create();
+        $planner = User::factory()->make(['role' => UserRole::Planner]);
+        $ticket = $ticket->fresh(['assignment.crewMembers']);
+
+        $this->assertTrue($planner->can('recordHours', $ticket));
+        $this->assertTrue($holder->can('recordHours', $ticket));
+        $this->assertFalse($other->can('recordHours', $ticket));
+    }
+
+    public function test_zzp_vakman_may_record_hours_on_own_opdrachtbon_without_being_werkbon_holder(): void
+    {
+        $ticket = $this->makeTicket(WorkTicketKind::Opdrachtbon);
+        $ticket->forceFill(['billing_method' => WorkTicketBilling::Hourly, 'hourly_rate' => 40])->save();
+        $worker = $ticket->worker;
+        $worker->forceFill([
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Nick', 'phone' => ''],
+                ['name' => 'Mahmoud', 'phone' => ''],
+            ],
+        ])->save();
+        $people = $worker->fresh()->crewPeople()->orderBy('sort_order')->get();
+        $assignment = $ticket->assignment;
+        $assignment->syncPresentCrew([$people[0]->id, $people[1]->id]);
+        $assignment->applyRoles($people[0]->id, $people[0]->id);
+        $holder = User::factory()->vakman($worker->id, $people[0]->id)->create();
+        $other = User::factory()->vakman($worker->id, $people[1]->id)->create();
+        $ticket = $ticket->fresh(['assignment.crewMembers', 'worker']);
+
+        $this->assertTrue($holder->can('recordHours', $ticket));
+        $this->assertTrue($other->can('recordHours', $ticket));
+    }
+
     /** @return array<string, array{0: UserRole, 1: bool}> */
     public static function createRoles(): array
     {

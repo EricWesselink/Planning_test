@@ -148,6 +148,8 @@ class PlanningActionController extends Controller
             'people_count' => ['nullable', 'integer', 'min:1', 'max:50', 'required_without:crew_member_ids'],
             'crew_member_ids' => ['nullable', 'array', 'max:50'],
             'crew_member_ids.*' => ['integer', 'distinct', 'exists:crew_members,id'],
+            'foreman_crew_member_id' => ['nullable', 'integer', 'exists:crew_members,id'],
+            'work_ticket_crew_member_id' => ['nullable', 'integer', 'exists:crew_members,id'],
             'crew_hours' => ['nullable', 'array'],
             'crew_hours.*' => ['numeric', 'min:2', 'max:8'],
             'hours' => ['nullable', 'numeric', 'min:2', 'max:8'],
@@ -194,6 +196,10 @@ class PlanningActionController extends Controller
         $crewIds = $teamId ? [] : $this->crewIdsForWorker($workers->first(), $data['crew_member_ids'] ?? []);
         if ($crewIds === null) {
             return response()->json(['message' => 'Deze personen horen niet bij dit team.'], 422);
+        }
+        $roles = $this->assignmentRoles($data, $crewIds ?? [], $workers->first(), (bool) $teamId);
+        if ($roles instanceof JsonResponse) {
+            return $roles;
         }
 
         if ($teamId) {
@@ -261,7 +267,7 @@ class PlanningActionController extends Controller
         foreach ($workers as $worker) {
             foreach ($groups as $group) {
                 $ids = $teamId || $workers->count() > 1 ? [] : $group['crew_ids'];
-                $this->createScheduledAssignment(
+                $created = $this->createScheduledAssignment(
                     $worker->id,
                     $item->project_id,
                     $item->id,
@@ -276,6 +282,10 @@ class PlanningActionController extends Controller
                     $includeSunday,
                     $workItemIds,
                     $isProvisional,
+                );
+                $created->applyRoles(
+                    WorkerAssignment::roleIdInCrew($roles['foreman'], $ids),
+                    WorkerAssignment::roleIdInCrew($roles['holder'], $ids),
                 );
             }
         }
@@ -303,6 +313,8 @@ class PlanningActionController extends Controller
             'people_count' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'crew_member_ids' => ['sometimes', 'nullable', 'array', 'max:50'],
             'crew_member_ids.*' => ['integer', 'distinct', 'exists:crew_members,id'],
+            'foreman_crew_member_id' => ['nullable', 'integer', 'exists:crew_members,id'],
+            'work_ticket_crew_member_id' => ['nullable', 'integer', 'exists:crew_members,id'],
             'crew_hours' => ['nullable', 'array'],
             'crew_hours.*' => ['numeric', 'min:2', 'max:8'],
             'hours' => ['nullable', 'numeric', 'min:2', 'max:8'],
@@ -342,6 +354,22 @@ class PlanningActionController extends Controller
             : $originalCrewIds;
         if ($crewIds === null) {
             return response()->json(['message' => 'Deze personen horen niet bij dit team.'], 422);
+        }
+        $roles = $this->assignmentRoles($data, $crewIds, $worker);
+        if ($roles instanceof JsonResponse) {
+            return $roles;
+        }
+        if (! ($worker->employment_type?->isExternal() ?? false)) {
+            if (! array_key_exists('foreman_crew_member_id', $data)) {
+                $roles['foreman'] = $assignment->foreman_crew_member_id
+                    ? (int) $assignment->foreman_crew_member_id
+                    : null;
+            }
+            if (! array_key_exists('work_ticket_crew_member_id', $data)) {
+                $roles['holder'] = $assignment->work_ticket_crew_member_id
+                    ? (int) $assignment->work_ticket_crew_member_id
+                    : null;
+            }
         }
 
         $targetItem = $this->targetWorkItem($assignment, $data);
@@ -461,6 +489,14 @@ class PlanningActionController extends Controller
             'include_sunday' => $assignment->includesSunday(),
             'is_provisional' => $assignment->isProvisional(),
             'hours_by_id' => $this->crewScheduleSnapshot($assignment, $stayingIds),
+            'foreman' => WorkerAssignment::roleIdInCrew(
+                $assignment->foreman_crew_member_id ? (int) $assignment->foreman_crew_member_id : null,
+                $stayingIds,
+            ),
+            'holder' => WorkerAssignment::roleIdInCrew(
+                $assignment->work_ticket_crew_member_id ? (int) $assignment->work_ticket_crew_member_id : null,
+                $stayingIds,
+            ),
         ];
 
         $originalWorkerId = (int) $assignment->worker_id;
@@ -493,6 +529,7 @@ class PlanningActionController extends Controller
             $includeSaturday,
             $includeSunday,
             $isProvisional,
+            $roles,
         ): void {
             $assignment->project_id = $targetProjectId;
             $assignment->work_item_id = $targetWorkItemId;
@@ -508,9 +545,13 @@ class PlanningActionController extends Controller
             } else {
                 $assignment->syncPresentCrew($assignment->crewMembers->modelKeys());
             }
+            $assignment->applyRoles(
+                WorkerAssignment::roleIdInCrew($roles['foreman'], $first['crew_ids']),
+                WorkerAssignment::roleIdInCrew($roles['holder'], $first['crew_ids']),
+            );
 
             foreach ($groups as $group) {
-                $this->createScheduledAssignment(
+                $created = $this->createScheduledAssignment(
                     $workerId,
                     $assignment->project_id,
                     $assignment->work_item_id,
@@ -525,6 +566,10 @@ class PlanningActionController extends Controller
                     $includeSunday,
                     $linkedWorkItemIds,
                     $isProvisional,
+                );
+                $created->applyRoles(
+                    WorkerAssignment::roleIdInCrew($roles['foreman'], $group['crew_ids']),
+                    WorkerAssignment::roleIdInCrew($roles['holder'], $group['crew_ids']),
                 );
             }
 
@@ -548,6 +593,7 @@ class PlanningActionController extends Controller
                 if ($staySnapshot['hours_by_id'] !== []) {
                     $staying->syncPresentCrew($stayingIds, $staySnapshot['hours_by_id']);
                 }
+                $staying->applyRoles($staySnapshot['foreman'], $staySnapshot['holder']);
             }
         });
 
@@ -677,6 +723,39 @@ class PlanningActionController extends Controller
         }
 
         return $ids;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<int>  $crewIds
+     * @return array{foreman: ?int, holder: ?int}|JsonResponse
+     */
+    private function assignmentRoles(array $data, array $crewIds, Worker $worker, bool $forTeam = false): array|JsonResponse
+    {
+        if ($forTeam || ($worker->employment_type?->isExternal() ?? false)) {
+            return ['foreman' => null, 'holder' => null];
+        }
+
+        $foreman = array_key_exists('foreman_crew_member_id', $data) && $data['foreman_crew_member_id'] !== null
+            ? (int) $data['foreman_crew_member_id']
+            : null;
+        $holder = array_key_exists('work_ticket_crew_member_id', $data) && $data['work_ticket_crew_member_id'] !== null
+            ? (int) $data['work_ticket_crew_member_id']
+            : null;
+
+        if ($foreman !== null && ! in_array($foreman, $crewIds, true)) {
+            return response()->json(['message' => 'Voorman moet een vakman van deze inzet zijn.'], 422);
+        }
+        if ($holder !== null && ! in_array($holder, $crewIds, true)) {
+            return response()->json(['message' => 'Werkbon bij moet een vakman van deze inzet zijn.'], 422);
+        }
+
+        if (count($crewIds) === 1) {
+            $foreman ??= $crewIds[0];
+            $holder ??= $crewIds[0];
+        }
+
+        return ['foreman' => $foreman, 'holder' => $holder];
     }
 
     /**

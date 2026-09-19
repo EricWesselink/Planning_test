@@ -154,6 +154,7 @@ class WorkTicketPdfService
             'workItems',
             'documents',
             'assignments.worker',
+            'assignments.crewMembers',
             'measurementForm.meter',
             'measurementForm.rows',
         ]);
@@ -171,11 +172,6 @@ class WorkTicketPdfService
             ])
             ->values()
             ->all();
-        $workers = $project->assignments
-            ->map(fn (WorkerAssignment $assignment): ?string => $assignment->worker?->planName())
-            ->filter()
-            ->unique()
-            ->values();
         $includeMeasurement = $includeMeasurementForm && $this->measurements->isFilled($project->measurementForm);
 
         return [
@@ -193,8 +189,11 @@ class WorkTicketPdfService
             'companyCity' => (string) config('company.city'),
             'companyEmail' => (string) config('company.email'),
             'companyPhone' => (string) config('company.phone'),
-            'recipient' => $workers->isNotEmpty() ? $workers->implode(', ') : 'Winkelwerk',
-            'recipientKind' => $workers->isNotEmpty() ? null : 'Werk uit de winkel',
+            'recipient' => $this->shopVakmanNames($project),
+            'recipientKind' => null,
+            'whoHeading' => 'Vakmannen',
+            'whenHeading' => 'Wanneer',
+            'recipientCompact' => true,
             'projectTitle' => $project->displayTitle(),
             'projectNumber' => $project->workCode(),
             'workNumber' => $project->workNumber(),
@@ -503,10 +502,33 @@ class WorkTicketPdfService
         return implode("\n\n", $notes);
     }
 
+    private function shopVakmanNames(Project $project): string
+    {
+        $names = [];
+        $seen = [];
+        foreach ($project->assignments as $assignment) {
+            $people = $assignment->presentNames();
+            if ($people === []) {
+                $label = trim((string) ($assignment->worker?->planName() ?? ''));
+                $people = $label === '' ? [] : [$label];
+            }
+            foreach ($people as $name) {
+                $key = mb_strtolower($name);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $names[] = $name;
+            }
+        }
+
+        return $names === [] ? 'Nog niet ingepland' : implode(', ', $names);
+    }
+
     private function shopPeriod(Project $project): string
     {
-        $start = $project->planned_start_date;
-        $end = $project->planned_end_date;
+        $start = $project->assignments->min('start_date') ?? $project->planned_start_date;
+        $end = $project->assignments->max('end_date') ?? $project->planned_end_date;
         if ($start === null && $end === null) {
             return '';
         }

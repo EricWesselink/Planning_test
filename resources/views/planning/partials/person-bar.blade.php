@@ -19,6 +19,8 @@
      data-people-count="{{ $personBar['people_count'] }}"
      data-planned-hours="{{ $personBar['planned_hours'] ?? 8 }}"
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"
+     data-foreman-id="{{ $personBar['foreman_id'] ?? '' }}"
+     data-work-ticket-holder-id="{{ $personBar['work_ticket_holder_id'] ?? '' }}"
      data-ticket-label="{{ $personBar['ticket_label'] ?? 'Werkbon maken' }}"
      data-ticket-existing="{{ $personBar['ticket'] ?? '' }}"
      data-ticket-show-url="{{ $personBar['ticket_url'] ?? '' }}"

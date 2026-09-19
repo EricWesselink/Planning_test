@@ -1,6 +1,6 @@
 /**
- * @typedef {{id: number, name: string, people_count?: number, selectable?: boolean, status_label?: string}} PlanWhoCandidate
- * @typedef {{value: string, label: string, peopleCount: number, selectable: boolean, disabled: boolean, selected: boolean}} PlanWhoOption
+ * @typedef {{id: number, name: string, people_count?: number, selectable?: boolean, status_label?: string, external?: boolean}} PlanWhoCandidate
+ * @typedef {{value: string, label: string, peopleCount: number, selectable: boolean, disabled: boolean, selected: boolean, external: boolean}} PlanWhoOption
  * @typedef {{name: string, people_count?: number, peopleCount?: number}} PlanWhoChoice
  */
 
@@ -72,6 +72,7 @@ export function whoLoadingOptionList() {
         selectable: false,
         disabled: false,
         selected: true,
+        external: false,
     }];
 }
 
@@ -178,6 +179,7 @@ export function whoOptionList(candidates, selectedValue = '', placeholderLabel =
             selectable: false,
             disabled: false,
             selected: current === '',
+            external: false,
         },
         ...visible.map((candidate) => {
             const value = `worker:${candidate.id}`;
@@ -189,6 +191,7 @@ export function whoOptionList(candidates, selectedValue = '', placeholderLabel =
                 selectable: Boolean(candidate.selectable),
                 disabled: false,
                 selected: value === current,
+                external: Boolean(candidate.external),
             };
         }),
     ];
@@ -201,6 +204,7 @@ export function whoOptionList(candidates, selectedValue = '', placeholderLabel =
             selectable: true,
             disabled: false,
             selected: true,
+            external: Boolean(currentChoice.external),
         });
     }
 

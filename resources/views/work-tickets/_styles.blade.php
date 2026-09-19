@@ -72,6 +72,12 @@
         margin-bottom: 4px;
     }
     .block p { margin: 0 0 2px; }
+    .blocks .crew-line {
+        font-size: 8pt;
+        font-weight: 400;
+        line-height: 1.3;
+        color: #1a1a1a;
+    }
     .section { margin-top: 14px; }
     .section-title {
         font-size: 8pt;

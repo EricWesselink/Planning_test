@@ -19,6 +19,7 @@ use Illuminate\Support\Collection;
     'start_date', 'end_date', 'start_time', 'end_time',
     'include_saturday', 'include_sunday',
     'people_count', 'hours_per_day', 'planned_hours', 'is_provisional', 'notes',
+    'foreman_crew_member_id', 'work_ticket_crew_member_id',
 ])]
 class WorkerAssignment extends Model
 {
@@ -178,6 +179,79 @@ class WorkerAssignment extends Model
             ->withTimestamps()
             ->orderBy('crew_members.sort_order')
             ->orderBy('crew_members.id');
+    }
+
+    public function foreman(): BelongsTo
+    {
+        return $this->belongsTo(CrewMember::class, 'foreman_crew_member_id');
+    }
+
+    public function workTicketHolder(): BelongsTo
+    {
+        return $this->belongsTo(CrewMember::class, 'work_ticket_crew_member_id');
+    }
+
+    public function includesCrewMember(?int $crewMemberId): bool
+    {
+        if ($crewMemberId === null) {
+            return true;
+        }
+
+        $this->loadMissing('crewMembers');
+        if ($this->crewMembers->isEmpty()) {
+            return true;
+        }
+
+        return $this->crewMembers->contains(
+            fn (CrewMember $member): bool => (int) $member->id === $crewMemberId
+        );
+    }
+
+    public function includesVakman(User $user): bool
+    {
+        $workerId = $user->scheduledWorkerId();
+        if ($workerId === null || (int) $this->worker_id !== $workerId) {
+            return false;
+        }
+
+        return $this->includesCrewMember($user->scheduledCrewMemberId());
+    }
+
+    public function isWorkTicketResponsible(User $user): bool
+    {
+        if (! $this->includesVakman($user)) {
+            return false;
+        }
+
+        $holderId = $this->work_ticket_crew_member_id;
+        if ($holderId === null) {
+            return true;
+        }
+
+        return $user->scheduledCrewMemberId() === (int) $holderId;
+    }
+
+    public function applyRoles(?int $foremanCrewMemberId, ?int $workTicketCrewMemberId): void
+    {
+        $this->loadMissing('crewMembers');
+        $ids = $this->crewMembers
+            ->map(fn (CrewMember $member): int => (int) $member->id)
+            ->all();
+        $this->foreman_crew_member_id = self::roleIdInCrew($foremanCrewMemberId, $ids);
+        $this->work_ticket_crew_member_id = self::roleIdInCrew($workTicketCrewMemberId, $ids);
+        $this->save();
+    }
+
+    /**
+     * @param  list<int>  $crewIds
+     */
+    public static function roleIdInCrew(?int $id, array $crewIds): ?int
+    {
+        if ($id === null || $id <= 0) {
+            return null;
+        }
+
+        return in_array($id, $crewIds, true) ? $id : null;
     }
 
     public function includesSaturday(): bool
@@ -590,6 +664,7 @@ class WorkerAssignment extends Model
         $this->save();
         $this->unsetRelation('crewMembers');
         $this->load('crewMembers');
+        $this->applyRoles($this->foreman_crew_member_id, $this->work_ticket_crew_member_id);
     }
 
     public function copyPresentCrewFrom(WorkerAssignment $source): void
@@ -614,5 +689,6 @@ class WorkerAssignment extends Model
         $this->crewMembers()->sync($sync);
         $this->unsetRelation('crewMembers');
         $this->load('crewMembers');
+        $this->applyRoles($source->foreman_crew_member_id, $source->work_ticket_crew_member_id);
     }
 }

@@ -91,6 +91,15 @@ class User extends Authenticatable
         return (int) $this->worker_id;
     }
 
+    public function scheduledCrewMemberId(): ?int
+    {
+        if (! $this->isVakman() || $this->crew_member_id === null) {
+            return null;
+        }
+
+        return (int) $this->crew_member_id;
+    }
+
     public function canAccessProject(Project $project): bool
     {
         $workerId = $this->scheduledWorkerId();

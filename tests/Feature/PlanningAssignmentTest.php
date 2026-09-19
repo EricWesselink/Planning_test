@@ -463,6 +463,88 @@ class PlanningAssignmentTest extends TestCase
             ->assertSee('data-focus-worker="'.$assignment->worker_id.'"', false);
     }
 
+    public function test_stores_voorman_and_werkbon_holder_from_the_selected_crew(): void
+    {
+        $user = User::factory()->create();
+        [$assignment, $eric, $harm] = $this->makeCrewAssignmentAcrossProjects();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('Voorman')
+            ->assertSee('Werkbon bij')
+            ->assertSee('Vakmannen');
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $assignment->worker_id,
+                'start_date' => '2026-09-09',
+                'end_date' => '2026-09-10',
+                'crew_member_ids' => [$eric->id, $harm->id],
+                'foreman_crew_member_id' => $eric->id,
+                'work_ticket_crew_member_id' => $harm->id,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertSame($eric->id, (int) $assignment->foreman_crew_member_id);
+        $this->assertSame($harm->id, (int) $assignment->work_ticket_crew_member_id);
+    }
+
+    public function test_rejects_a_werkbon_holder_who_is_not_on_the_assignment(): void
+    {
+        $user = User::factory()->create();
+        [$assignment, $eric, $harm] = $this->makeCrewAssignmentAcrossProjects();
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $assignment->worker_id,
+                'start_date' => '2026-09-09',
+                'end_date' => '2026-09-10',
+                'crew_member_ids' => [$eric->id],
+                'work_ticket_crew_member_id' => $harm->id,
+                'hours' => 8,
+            ])
+            ->assertUnprocessable()
+            ->assertJson(['message' => 'Werkbon bij moet een vakman van deze inzet zijn.']);
+
+        $assignment->refresh();
+        $this->assertNull($assignment->work_ticket_crew_member_id);
+    }
+
+    public function test_does_not_store_voorman_or_werkbon_holder_on_zzp_assignments(): void
+    {
+        $user = User::factory()->create();
+        [$assignment] = $this->makeAssignmentOnTwoWorkItems();
+        $worker = $assignment->worker;
+        $worker->forceFill([
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Kees', 'phone' => ''],
+                ['name' => 'Jan', 'phone' => ''],
+            ],
+        ])->save();
+        $people = $worker->fresh()->crewPeople()->orderBy('sort_order')->get();
+        $assignment->syncPresentCrew([$people[0]->id, $people[1]->id]);
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $assignment->worker_id,
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-09',
+                'crew_member_ids' => [$people[0]->id, $people[1]->id],
+                'foreman_crew_member_id' => $people[0]->id,
+                'work_ticket_crew_member_id' => $people[1]->id,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertNull($assignment->foreman_crew_member_id);
+        $this->assertNull($assignment->work_ticket_crew_member_id);
+    }
+
     /**
      * @return array{0: WorkerAssignment, 1: WorkItem, 2: WorkItem}
      */

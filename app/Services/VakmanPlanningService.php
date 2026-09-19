@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\VoucherPriceKind;
 use App\Enums\WorkUnit;
+use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\User;
@@ -36,6 +37,7 @@ class VakmanPlanningService
      */
     public function agenda(User $user, string $view, ?string $week, ?string $month): array
     {
+        $user->loadMissing(['worker', 'crewMember']);
         $view = $view === 'month' ? 'month' : 'week';
         $weekStart = $this->weekStart($week);
         $monthStart = $this->monthStart($month, $week);
@@ -85,6 +87,7 @@ class VakmanPlanningService
      */
     public function day(User $user, CarbonInterface $date): array
     {
+        $user->loadMissing(['worker', 'crewMember']);
         $day = $date->copy()->startOfDay();
         $assignments = $this->assignments($user, $day, $day);
         $colleagues = $this->colleagueAssignmentsForWindow($user, $assignments, $day, $day);
@@ -136,6 +139,8 @@ class VakmanPlanningService
                 'worker.rates',
                 'workItem.areaTasks.area.floor',
                 'crewMembers',
+                'foreman',
+                'workTicketHolder',
                 'workTickets.lines.workItem',
                 'workTickets.areas.floor',
                 'workTickets.floors',
@@ -192,25 +197,43 @@ class VakmanPlanningService
      */
     private function jobsOnDate(User $user, Collection $assignments, Collection $colleagues, CarbonInterface $date, bool $detailed): array
     {
+        $isExternal = $user->worker?->employment_type?->isExternal() ?? false;
         $own = $assignments
-            ->filter(fn (WorkerAssignment $assignment): bool => $assignment->project !== null && $assignment->coversDate($date))
+            ->filter(fn (WorkerAssignment $assignment): bool => $assignment->project !== null
+                && $assignment->coversDate($date)
+                && ($isExternal || $assignment->includesVakman($user)))
             ->values();
 
         $others = $colleagues;
 
-        return $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed): array {
+        return $own->map(function (WorkerAssignment $assignment) use ($user, $assignments, $others, $date, $detailed, $isExternal): array {
             $project = $assignment->project;
             $tickets = $this->ticketsOnDate($assignment, $date);
+            $holder = $isExternal ? null : $assignment->workTicketHolder;
             $card = [
                 'assignment' => $assignment,
                 'project' => $project,
                 'project_name' => $project->displayTitle(),
                 'city' => trim((string) $project->city),
-                'time_label' => $this->timeLabel($assignment),
+                'numbers' => $project->labeledNumbersLine(),
+                'address' => $project->nawLine(),
+                'maps_url' => $project->googleMapsUrl(),
+                'time_label' => $this->timeLabel($assignment, $isExternal),
                 'headline' => $this->headlineWork($assignment, $tickets),
-                'colleagues' => $this->colleagueNames($user, $assignment, $others, $date),
+                'team' => $isExternal ? '' : ($assignment->worker?->planName() ?? ''),
+                'colleagues' => $isExternal
+                    ? $this->colleagueNamesForExternal($user, $assignment, $others, $date)
+                    : $this->colleagueNames($user, $assignment, $assignments, $others, $date),
+                'foreman' => $isExternal ? null : $assignment->foreman?->label(),
+                'work_ticket_holder' => $holder?->label(),
+                'is_work_ticket_holder' => ! $isExternal && $assignment->isWorkTicketResponsible($user),
                 'url' => route('vakman.planning.day', $date->toDateString()),
+                'project_url' => route('projects.show', $project),
                 'tickets' => $tickets,
+                'werkbon_url' => $this->werkbonUrl($user, $assignment, $tickets, $date, $isExternal),
+                'opdrachtbon_url' => $isExternal
+                    ? route('vakman.planning.opdrachtbon', [$date->toDateString(), $project])
+                    : null,
             ];
 
             if (! $detailed) {
@@ -219,25 +242,14 @@ class VakmanPlanningService
 
             $works = $this->works($assignment, $tickets);
             $rooms = $this->rooms($assignment, $works, $tickets);
-            $isExternal = $assignment->worker?->employment_type?->isExternal()
-                ?? $user->worker?->employment_type?->isExternal()
-                ?? false;
 
             return [
                 ...$card,
-                'numbers' => $project->labeledNumbersLine(),
-                'address' => $project->nawLine(),
-                'maps_url' => $project->googleMapsUrl(),
                 'floors' => $rooms['floors'],
                 'rooms' => $rooms['rooms'],
                 'works' => $works,
                 'notes' => $this->notes($assignment, $tickets),
                 'drawings' => $this->drawings($project, $tickets),
-                'project_url' => route('projects.show', $project),
-                'werkbon_url' => $isExternal ? null : route('vakman.planning.werkbon', $date->toDateString()),
-                'opdrachtbon_url' => $isExternal
-                    ? route('vakman.planning.opdrachtbon', [$date->toDateString(), $project])
-                    : null,
                 'opdracht' => $isExternal
                     ? Voucher::latestOpdracht((int) $assignment->worker_id, (int) $project->id)
                     : null,
@@ -269,11 +281,75 @@ class VakmanPlanningService
     }
 
     /**
+     * @param  Collection<int, WorkerAssignment>  $teamAssignments
      * @param  Collection<int, WorkerAssignment>  $others
      * @return list<string>
      */
-    private function colleagueNames(User $user, WorkerAssignment $assignment, Collection $others, CarbonInterface $date): array
-    {
+    private function colleagueNames(
+        User $user,
+        WorkerAssignment $assignment,
+        Collection $teamAssignments,
+        Collection $others,
+        CarbonInterface $date,
+    ): array {
+        $ownLabels = array_values(array_filter([
+            trim((string) $user->name),
+            $assignment->worker?->planName(),
+            $user->crewMember?->label() ?? '',
+        ], fn (string $name): bool => $name !== ''));
+        $excludeId = $user->scheduledCrewMemberId();
+        $ownInterval = $assignment->intervalOnDate($date);
+
+        $fromOwnCrew = $assignment->crewMembers
+            ->filter(function (CrewMember $member) use ($excludeId, $assignment, $teamAssignments, $date, $ownInterval): bool {
+                if ($excludeId !== null && (int) $member->id === $excludeId) {
+                    return false;
+                }
+
+                return ! $this->memberIsElsewhere($member, $assignment, $teamAssignments, $date, $ownInterval);
+            })
+            ->map(fn (CrewMember $member): string => $member->label())
+            ->filter()
+            ->values();
+
+        $overlapping = $others->filter(function (WorkerAssignment $other) use ($assignment, $date, $ownInterval): bool {
+            if ((int) $other->project_id !== (int) $assignment->project_id) {
+                return false;
+            }
+            if (! $other->coversDate($date)) {
+                return false;
+            }
+
+            return $this->intervalsOverlapOnDate($ownInterval, $other->intervalOnDate($date));
+        });
+
+        return collect($fromOwnCrew->all())
+            ->concat($overlapping->flatMap(function (WorkerAssignment $row): array {
+                $names = $row->presentNames();
+                if ($names !== []) {
+                    return $names;
+                }
+
+                $team = trim((string) ($row->worker?->planName() ?? ''));
+
+                return $team !== '' ? [$team] : [];
+            }))
+            ->filter(fn (string $name): bool => $name !== '' && ! in_array($name, $ownLabels, true))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $others
+     * @return list<string>
+     */
+    private function colleagueNamesForExternal(
+        User $user,
+        WorkerAssignment $assignment,
+        Collection $others,
+        CarbonInterface $date,
+    ): array {
         $ownLabels = array_values(array_filter([
             trim((string) $user->name),
             $assignment->worker?->planName(),
@@ -299,6 +375,70 @@ class VakmanPlanningService
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $teamAssignments
+     * @param  array{0: Carbon, 1: Carbon}|null  $ownInterval
+     */
+    private function memberIsElsewhere(
+        CrewMember $member,
+        WorkerAssignment $assignment,
+        Collection $teamAssignments,
+        CarbonInterface $date,
+        ?array $ownInterval,
+    ): bool {
+        return $teamAssignments->contains(function (WorkerAssignment $other) use ($member, $assignment, $date, $ownInterval): bool {
+            if ((int) $other->id === (int) $assignment->id) {
+                return false;
+            }
+            if ((int) $other->project_id === (int) $assignment->project_id) {
+                return false;
+            }
+            if (! $other->coversDate($date) || $other->crewMembers->isEmpty()) {
+                return false;
+            }
+            if (! $other->crewMembers->contains(fn (CrewMember $row): bool => (int) $row->id === (int) $member->id)) {
+                return false;
+            }
+
+            return $this->intervalsOverlapOnDate($ownInterval, $other->intervalOnDate($date));
+        });
+    }
+
+    /**
+     * @param  array{0: Carbon, 1: Carbon}|null  $left
+     * @param  array{0: Carbon, 1: Carbon}|null  $right
+     */
+    private function intervalsOverlapOnDate(?array $left, ?array $right): bool
+    {
+        if ($left === null || $right === null) {
+            return true;
+        }
+
+        return PlanningHours::intervalsOverlap($left[0], $left[1], $right[0], $right[1]);
+    }
+
+    /**
+     * @param  Collection<int, WorkTicket>  $tickets
+     */
+    private function werkbonUrl(
+        User $user,
+        WorkerAssignment $assignment,
+        Collection $tickets,
+        CarbonInterface $date,
+        bool $isExternal,
+    ): ?string {
+        if ($isExternal || ! $assignment->isWorkTicketResponsible($user)) {
+            return null;
+        }
+
+        $ticket = $tickets->first();
+        if ($ticket !== null) {
+            return route('work-tickets.show', $ticket);
+        }
+
+        return route('vakman.planning.werkbon', $date->toDateString());
     }
 
     private function headlineWork(WorkerAssignment $assignment, Collection $tickets): string
@@ -592,11 +732,15 @@ class VakmanPlanningService
             ->values();
     }
 
-    private function timeLabel(WorkerAssignment $assignment): string
+    private function timeLabel(WorkerAssignment $assignment, bool $isExternal = false): string
     {
-        return PlanningHours::formatTime($assignment->startTimeValue())
-            .' – '
-            .PlanningHours::formatTime($assignment->endTimeValue());
+        $start = PlanningHours::formatTime($assignment->startTimeValue());
+        $end = PlanningHours::formatTime($assignment->endTimeValue());
+        if (! $isExternal && $start === PlanningHours::DAY_START && $end === PlanningHours::DAY_END) {
+            return 'Hele dag';
+        }
+
+        return $start.' – '.$end;
     }
 
     private function dayHeading(CarbonInterface $date): string

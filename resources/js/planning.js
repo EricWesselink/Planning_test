@@ -47,6 +47,9 @@ if (board) {
     const crewList = document.getElementById('plan-crew-list');
     const crewHeading = document.getElementById('plan-crew-heading');
     const crewHint = document.getElementById('plan-crew-hint');
+    const rolesBox = document.getElementById('plan-roles');
+    const foremanSelect = document.getElementById('plan-foreman');
+    const workTicketHolderSelect = document.getElementById('plan-work-ticket-holder');
     const hoursSelect = document.getElementById('plan-hours');
     const hoursWrap = document.getElementById('plan-hours-wrap');
     const datesWrap = document.getElementById('plan-dates-wrap');
@@ -78,6 +81,7 @@ if (board) {
             whoMeta[option.value] = {
                 name: option.textContent.trim(),
                 peopleCount: Number(option.dataset.men || 1),
+                external: option.dataset.external === '1',
             };
         }
     });
@@ -298,7 +302,7 @@ if (board) {
     function paintWhoOptions(options) {
         whoSelect.innerHTML = options.map((item) => {
             const extra = item.value
-                ? ` data-men="${item.peopleCount}" data-selectable="${item.selectable ? '1' : '0'}"`
+                ? ` data-men="${item.peopleCount}" data-selectable="${item.selectable ? '1' : '0'}" data-external="${item.external ? '1' : '0'}"`
                 : '';
             const disabled = item.disabled ? ' disabled' : '';
             const selected = item.selected ? ' selected' : '';
@@ -652,15 +656,74 @@ if (board) {
         menWrap.classList.add('hidden');
         menInput.readOnly = true;
         syncMenFromCrew();
+        syncRoleSelects();
+    }
+
+    function selectedRolePeople() {
+        const workerId = (whoSelect.value || '').split(':')[1];
+        const people = workerCrew(workerId);
+        if (people.length >= 2) {
+            const selected = new Set(selectedCrewIds());
+            return people.filter((person) => selected.has(Number(person.id)));
+        }
+
+        return people;
+    }
+
+    function fillRoleSelect(select, people, currentId) {
+        if (!select) {
+            return;
+        }
+        const current = currentId === undefined ? select.value : String(currentId || '');
+        const placeholder = select.options[0]?.textContent || 'Kies…';
+        select.innerHTML = '';
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = placeholder;
+        select.append(empty);
+        people.forEach((person) => {
+            const option = document.createElement('option');
+            option.value = String(person.id);
+            option.textContent = person.name;
+            select.append(option);
+        });
+        const allowed = new Set(people.map((person) => String(person.id)));
+        select.value = allowed.has(current) ? current : '';
+    }
+
+    function selectedWorkerIsExternal() {
+        const option = whoSelect.selectedOptions[0];
+        if (option?.dataset.external === '1') {
+            return true;
+        }
+        const workerId = (whoSelect.value || '').split(':')[1];
+        const candidate = candidateByWorkerId(workerId);
+
+        return Boolean(candidate?.external || whoMeta[whoSelect.value]?.external);
+    }
+
+    function syncRoleSelects(foremanId, holderId) {
+        const people = selectedRolePeople();
+        const hideRoles = selectedWorkerIsExternal() || people.length === 0;
+        if (rolesBox) {
+            rolesBox.classList.toggle('hidden', hideRoles);
+        }
+        if (hideRoles) {
+            return;
+        }
+        fillRoleSelect(foremanSelect, people, foremanId);
+        fillRoleSelect(workTicketHolderSelect, people, holderId);
     }
 
     function syncMenFromCrew() {
         const people = workerCrew((whoSelect.value || '').split(':')[1]);
         if (people.length < 2) {
+            syncRoleSelects();
             return;
         }
         const count = Math.max(1, selectedCrewIds().length || 0);
         menInput.value = String(count);
+        syncRoleSelects();
     }
 
     function syncMenFromWho() {
@@ -678,6 +741,7 @@ if (board) {
         const men = Number(option?.dataset.men || 1);
         menInput.value = String(Math.max(1, men));
         menInput.readOnly = isTeam;
+        syncRoleSelects();
     }
 
     function openAdd(projectId, workItemId, date, startTime = '08:00', hours = WORKDAY_HOURS, whoValue = '') {
@@ -695,7 +759,7 @@ if (board) {
             ticketExisting.textContent = '';
         }
         if (crewHeading) {
-            crewHeading.textContent = 'Wie gaat er naartoe';
+            crewHeading.textContent = 'Vakmannen';
         }
         crewHint?.classList.add('hidden');
         rememberWho(whoValue || '', choiceForWho(whoValue || ''));
@@ -713,6 +777,7 @@ if (board) {
         menInput.readOnly = false;
         crewBox.classList.add('hidden');
         crewList.innerHTML = '';
+        rolesBox?.classList.add('hidden');
         menWrap.classList.remove('hidden');
         setHoursUi(hours, startTime);
         if (weekYearInput) {
@@ -753,7 +818,7 @@ if (board) {
             }
         }
         if (crewHeading) {
-            crewHeading.textContent = 'Wie gaat mee naar het gekozen werk';
+            crewHeading.textContent = 'Vakmannen';
         }
         crewHint?.classList.remove('hidden');
         whoSelect.disabled = false;
@@ -790,6 +855,7 @@ if (board) {
             hoursById[id] = dayHours;
         });
         renderCrew(bar.dataset.workerId, selectedIds, hoursById);
+        syncRoleSelects(bar.dataset.foremanId, bar.dataset.workTicketHolderId);
         if (workerCrew(bar.dataset.workerId).length < 2) {
             menInput.readOnly = false;
         }
@@ -1217,6 +1283,12 @@ if (board) {
             if (!usingWeeks) {
                 body.crew_hours = selectedCrewHours();
             }
+        }
+        if (foremanSelect && !rolesBox?.classList.contains('hidden')) {
+            body.foreman_crew_member_id = foremanSelect.value ? Number(foremanSelect.value) : null;
+        }
+        if (workTicketHolderSelect && !rolesBox?.classList.contains('hidden')) {
+            body.work_ticket_crew_member_id = workTicketHolderSelect.value ? Number(workTicketHolderSelect.value) : null;
         }
         if (assignmentId) {
             body.worker_id = Number(id);

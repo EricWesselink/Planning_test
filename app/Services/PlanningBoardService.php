@@ -123,7 +123,7 @@ class PlanningBoardService
             ->values();
 
         $assignments = WorkerAssignment::query()
-            ->with(['worker', 'workItem', 'workItems', 'team', 'crewMembers', 'workTickets'])
+            ->with(['worker', 'workItem', 'workItems', 'team', 'crewMembers', 'workTickets', 'foreman', 'workTicketHolder'])
             ->whereHas('project', function ($q) use ($request, $kindFilter): void {
                 $q->active()->accessibleBy($request->user());
                 $this->constrainKind($q, $kindFilter);
@@ -898,6 +898,8 @@ class PlanningBoardService
             'work_item_ids' => $assignment->linkedWorkItemIds(),
             'people_count' => $assignment->peopleCount(),
             'crew_ids' => $crewIds,
+            'foreman_id' => $assignment->foreman_crew_member_id,
+            'work_ticket_holder_id' => $assignment->work_ticket_crew_member_id,
             'label' => $label,
             'title' => filled($ticketLabel)
                 ? $assignment->detailTitle($workName, $projectName).' · '.$ticketLabel

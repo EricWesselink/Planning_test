@@ -70,14 +70,16 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('10')
             ->assertSee('Laakse Tuinen')
             ->assertSee('Zwolle')
-            ->assertSee('08:00 – 16:00')
+            ->assertSee('Hele dag')
             ->assertSee('PVC')
             ->assertSee('Kees Jansen')
             ->assertSee('Vrij')
+            ->assertSee('Bekijk werk')
+            ->assertSee('Open werkbon')
+            ->assertSee('Route')
+            ->assertSee('Industrieweg 8')
             ->assertSee('vakman-week', false)
-            ->assertDontSee('Bekijk werk')
             ->assertDontSee('Kindcentrum Veldhoeve')
-            ->assertDontSee('Industrieweg 8')
             ->assertDontSee('Tarkett')
             ->assertDontSee('Classics-English Oak')
             ->assertDontSee('€')
@@ -88,7 +90,6 @@ class VakmanPlanningTest extends TestCase
             ->assertDontSee('Vakmensen / ZZP')
             ->assertDontSee('Personeel')
             ->assertDontSee('Archief')
-            ->assertDontSee('Werkbon')
             ->assertDontSee('Opdrachtbon')
             ->getContent();
 
@@ -149,8 +150,9 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('120')
             ->assertSee('Begane grond')
             ->assertSee('0.01 Entree')
-            ->assertSee('Projectinformatie')
-            ->assertSee('Werkbon')
+            ->assertSee('Bekijk werk')
+            ->assertSee('Open werkbon')
+            ->assertSee('Route')
             ->assertDontSee('Opdrachtbon')
             ->assertDontSee('€')
             ->assertDontSee('87,50');
@@ -272,9 +274,29 @@ class VakmanPlanningTest extends TestCase
         $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
 
         $this->actingAs($user)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Mijn planning')
+            ->assertSee('Laakse Tuinen')
+            ->assertSee('Zwolle')
+            ->assertSee('08:00 – 16:00')
+            ->assertSee('vakman-agenda-card', false)
+            ->assertSee('vakman-week--zzp', false)
+            ->assertDontSee('Hele dag')
+            ->assertDontSee('Bekijk werk')
+            ->assertDontSee('Open werkbon')
+            ->assertDontSee('Je werkt met')
+            ->assertDontSee('WERKBON')
+            ->assertDontSee('Route')
+            ->assertDontSee('Opdrachtbon');
+
+        $this->actingAs($user)
             ->get(route('vakman.planning.day', '2026-09-10'))
             ->assertOk()
             ->assertSee('Opdrachtbon')
+            ->assertSee('Projectinformatie')
+            ->assertSee('08:00 – 16:00')
+            ->assertDontSee('Bekijk werk')
             ->assertDontSee('Werkbon')
             ->assertDontSee('€');
 
@@ -341,6 +363,134 @@ class VakmanPlanningTest extends TestCase
         $this->actingAs($user)
             ->get(route('vakman.planning'))
             ->assertForbidden();
+    }
+
+    public function test_vakman_week_shows_only_own_inzet_and_actual_colleagues(): void
+    {
+        $this->travelTo('2026-09-22 08:00:00');
+        $team = Worker::query()->create([
+            'name' => 'Team 2',
+            'employment_type' => 'eigen',
+            'people_count' => 3,
+            'crew_members' => [
+                ['name' => 'Alexandr', 'phone' => ''],
+                ['name' => 'José', 'phone' => ''],
+                ['name' => 'Peter', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        $people = $team->crewPeople()->orderBy('sort_order')->get();
+        $alexandr = $people[0];
+        $jose = $people[1];
+        $peter = $people[2];
+        $amersfoort = $this->makeProject('Laakse Tuinen', [
+            'address' => 'Cujikstraat 2',
+            'postal_code' => '3826 KL',
+            'city' => 'Amersfoort',
+        ]);
+        $laren = $this->makeProject('Het Vloerenhuis', [
+            'address' => 'Eemnesserstraat 19',
+            'postal_code' => '1251 NA',
+            'city' => 'Laren',
+        ]);
+        $home = WorkerAssignment::query()->create([
+            'worker_id' => $team->id,
+            'project_id' => $amersfoort->id,
+            'start_date' => '2026-09-22',
+            'end_date' => '2026-09-22',
+            'hours_per_day' => 8,
+        ]);
+        $home->syncPresentCrew([$alexandr->id, $jose->id]);
+        $home->applyRoles($alexandr->id, $alexandr->id);
+        $away = WorkerAssignment::query()->create([
+            'worker_id' => $team->id,
+            'project_id' => $laren->id,
+            'start_date' => '2026-09-22',
+            'end_date' => '2026-09-22',
+            'hours_per_day' => 8,
+        ]);
+        $away->syncPresentCrew([$peter->id]);
+        $away->applyRoles($peter->id, $peter->id);
+        $alexandrUser = User::factory()->vakman($team->id, $alexandr->id)->create(['name' => 'Alexandr']);
+        $peterUser = User::factory()->vakman($team->id, $peter->id)->create(['name' => 'Peter']);
+
+        $this->actingAs($alexandrUser)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Laakse Tuinen')
+            ->assertSee('Cujikstraat 2')
+            ->assertSee('Je werkt met')
+            ->assertSee('José')
+            ->assertSee('WERKBON')
+            ->assertSee('Jij bent verantwoordelijk')
+            ->assertSee('Open werkbon')
+            ->assertDontSee('Het Vloerenhuis')
+            ->assertDontSee('Eemnesserstraat')
+            ->assertDontSee('Peter');
+
+        $this->actingAs($peterUser)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Het Vloerenhuis')
+            ->assertSee('Eemnesserstraat 19')
+            ->assertSee('WERKBON')
+            ->assertDontSee('Laakse Tuinen')
+            ->assertDontSee('Cujikstraat')
+            ->assertDontSee('Alexandr')
+            ->assertDontSee('José');
+    }
+
+    public function test_teammate_sees_who_has_the_werkbon_and_cannot_open_it(): void
+    {
+        $this->travelTo('2026-09-21 08:00:00');
+        $team = Worker::query()->create([
+            'name' => 'Team 1 Nick',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Nick', 'phone' => ''],
+                ['name' => 'Mahmoud', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        $people = $team->crewPeople()->orderBy('sort_order')->get();
+        $nick = $people[0];
+        $mahmoud = $people[1];
+        $project = $this->makeProject('Feringa Building', [
+            'address' => 'Nijenborgh 4',
+            'postal_code' => '9747 AG',
+            'city' => 'Groningen',
+        ]);
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $team->id,
+            'project_id' => $project->id,
+            'start_date' => '2026-09-21',
+            'end_date' => '2026-09-21',
+            'hours_per_day' => 8,
+        ]);
+        $assignment->syncPresentCrew([$nick->id, $mahmoud->id]);
+        $assignment->applyRoles($nick->id, $nick->id);
+        $nickUser = User::factory()->vakman($team->id, $nick->id)->create(['name' => 'Nick']);
+        $mahmoudUser = User::factory()->vakman($team->id, $mahmoud->id)->create(['name' => 'Mahmoud']);
+
+        $this->actingAs($mahmoudUser)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Feringa Building')
+            ->assertSee('Je werkt met')
+            ->assertSee('Nick')
+            ->assertSee('Werkbon bij: Nick')
+            ->assertDontSee('Open werkbon')
+            ->assertDontSee('Jij bent verantwoordelijk');
+
+        $this->actingAs($mahmoudUser)
+            ->get(route('vakman.planning.werkbon', '2026-09-21'))
+            ->assertForbidden();
+
+        $this->actingAs($nickUser)
+            ->get(route('vakman.planning.werkbon', '2026-09-21'))
+            ->assertOk()
+            ->assertSee('WERKBON');
     }
 
     /**

@@ -77,12 +77,13 @@ class UserFactory extends Factory
         ]);
     }
 
-    public function vakman(?int $workerId = null): static
+    public function vakman(?int $workerId = null, ?int $crewMemberId = null): static
     {
         return $this->state(fn (array $attributes) => [
             'role' => UserRole::Vakman,
             'can_access_all_projects' => false,
             'worker_id' => $workerId,
+            'crew_member_id' => $crewMemberId,
         ]);
     }
 }
