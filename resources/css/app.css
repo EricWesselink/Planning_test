@@ -4277,12 +4277,159 @@ button.plan-labor-toggle:hover {
     padding: 0.7rem;
 }
 
-.vakman-week-empty {
+.vakman-week-split {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.vakman-week-pane-title {
+    margin: 0 0 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-nicon-muted);
+}
+
+.vakman-week-board {
+    min-width: 0;
+}
+
+.vakman-week-board-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(9.75rem, 1fr));
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    -webkit-overflow-scrolling: touch;
+}
+
+.vakman-week-col {
+    min-width: 0;
+    background: white;
+    border: 1px solid var(--color-nicon-line);
+}
+
+.vakman-week-col.is-today {
+    background: var(--color-nicon-sand);
+    border-color: var(--color-nicon-steel);
+}
+
+.vakman-week-col-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.55rem 0.55rem 0.5rem;
+    border-bottom: 1px solid var(--color-nicon-line);
+}
+
+.vakman-week-col-today {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-nicon-steel);
+}
+
+.vakman-week-col-day {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+}
+
+.vakman-week-col-date {
+    font-size: 0.68rem;
+    color: var(--color-nicon-muted);
+    line-height: 1.2;
+}
+
+.vakman-week-col-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.45rem;
+}
+
+.vakman-week-job {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.12rem;
+    width: 100%;
     margin: 0;
-    padding: 0.85rem 0.4rem;
+    padding: 0.5rem 0.55rem;
+    text-align: left;
+    background: var(--color-nicon-paper);
+    border: 1px solid var(--color-nicon-line);
+    border-left: 3px solid var(--color-nicon-orange);
+    color: var(--color-nicon-ink);
+    cursor: pointer;
+}
+
+.vakman-week-job.is-selected {
+    border-color: var(--color-nicon-ink);
+    background: white;
+}
+
+.vakman-week-job-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.vakman-week-job-city,
+.vakman-week-job-time,
+.vakman-week-job-work,
+.vakman-week-job-met {
+    font-size: 0.72rem;
+    line-height: 1.3;
+    color: var(--color-nicon-steel);
+}
+
+.vakman-week-job-met {
+    color: var(--color-nicon-ink);
+}
+
+.vakman-week-job-bon {
+    margin-top: 0.15rem;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-nicon-orange);
+}
+
+.vakman-week-col-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0.55rem 0.35rem;
     text-align: center;
     color: var(--color-nicon-muted);
-    font-size: 0.9rem;
+    font-size: 0.75rem;
+    line-height: 1.3;
+}
+
+.vakman-week-col-empty.is-away span:first-child {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--color-nicon-steel);
+}
+
+.vakman-week-details {
+    min-width: 0;
+    min-height: 0;
+}
+
+.vakman-job-card.is-selected {
+    border-color: var(--color-nicon-ink);
+    box-shadow: 0 0 0 1px var(--color-nicon-ink);
 }
 
 .vakman-job-card {
@@ -4493,6 +4640,34 @@ button.plan-labor-toggle:hover {
         overflow-y: auto;
         gap: 1rem;
         max-width: 42rem;
+    }
+
+    .vakman-week-details .vakman-week {
+        max-width: none;
+    }
+
+    .vakman-week-split {
+        display: grid;
+        grid-template-columns: minmax(18rem, 35%) minmax(0, 1fr);
+        grid-template-areas: "details board";
+        gap: 1rem;
+        align-items: stretch;
+    }
+
+    .vakman-week-details {
+        grid-area: details;
+        overflow-y: auto;
+    }
+
+    .vakman-week-board {
+        grid-area: board;
+        min-height: 0;
+        overflow: auto;
+    }
+
+    .vakman-week-board-grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        overflow: visible;
     }
 
     .vakman-week-day {

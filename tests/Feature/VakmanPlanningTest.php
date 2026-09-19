@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AvailabilityKind;
 use App\Enums\WorkOrderType;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
@@ -66,21 +67,24 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Mijn planning')
             ->assertSee('Week')
             ->assertSee('Maand')
-            ->assertSee('Do')
-            ->assertSee('10')
+            ->assertSee('Mijn week')
+            ->assertSee('Details')
+            ->assertSee('DONDERDAG')
             ->assertSee('Laakse Tuinen')
             ->assertSee('Zwolle')
             ->assertSee('Hele dag')
             ->assertSee('PVC')
-            ->assertSee('Kees Jansen')
+            ->assertSee('Met: Kees')
             ->assertSee('Vrij')
+            ->assertSee('Geen planning')
             ->assertSee('Bekijk werk')
             ->assertSee('Open werkbon')
             ->assertSee('Route')
             ->assertSee('Industrieweg 8')
             ->assertSee('Werkadres')
             ->assertSee('Projecten')
-            ->assertSee('vakman-week', false)
+            ->assertSee('vakman-week-split', false)
+            ->assertSee('data-job-target', false)
             ->assertDontSee('Kindcentrum Veldhoeve')
             ->assertDontSee('Tarkett')
             ->assertDontSee('Classics-English Oak')
@@ -344,6 +348,8 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('08:00 – 16:00')
             ->assertSee('vakman-agenda-card', false)
             ->assertSee('vakman-week--zzp', false)
+            ->assertDontSee('vakman-week-split', false)
+            ->assertDontSee('Mijn week')
             ->assertDontSee('Hele dag')
             ->assertDontSee('Bekijk werk')
             ->assertDontSee('Open werkbon')
@@ -407,6 +413,38 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Wk')
             ->assertSee('vakman-month', false)
             ->assertSee(route('vakman.planning.day', '2026-09-10'), false);
+    }
+
+    public function test_week_board_marks_registered_absence_on_empty_days(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        $nick = $this->makeWorker('Nick Seine');
+        $project = $this->makeProject('Laakse Tuinen', [
+            'city' => 'Amersfoort',
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $nick->id,
+            'project_id' => $project->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-10',
+            'hours_per_day' => 8,
+        ]);
+        $nick->availabilities()->create([
+            'start_date' => '2026-09-11',
+            'end_date' => '2026-09-11',
+            'kind' => AvailabilityKind::Vacation,
+            'hours' => 8,
+        ]);
+        $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning'))
+            ->assertSee('Mijn week')
+            ->assertSee('Laakse Tuinen')
+            ->assertSee('Amersfoort')
+            ->assertSee('VAKANTIE')
+            ->assertSee('Geen planning')
+            ->assertDontSee('Team');
     }
 
     public function test_empty_vakman_planning_explains_that_nothing_is_scheduled(): void
@@ -490,7 +528,8 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('WERKBON')
             ->assertSee('Jij bent verantwoordelijk')
             ->assertSee('Open werkbon')
-            ->assertDontSee('Je werkt met')
+            ->assertSee('Met: José')
+            ->assertDontSee('Met: Alexandr')
             ->assertDontSee('Team 2')
             ->assertDontSee('Het Vloerenhuis')
             ->assertDontSee('Eemnesserstraat')
@@ -549,7 +588,8 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Nick')
             ->assertSee('Voorman')
             ->assertSee('Werkbon bij: Nick')
-            ->assertDontSee('Je werkt met')
+            ->assertSee('Met: Nick')
+            ->assertDontSee('Met: Mahmoud')
             ->assertDontSee('Open werkbon')
             ->assertDontSee('Jij bent verantwoordelijk');
 

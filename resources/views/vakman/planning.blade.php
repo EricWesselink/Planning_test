@@ -77,25 +77,65 @@
                 </div>
             </div>
         @else
-            <div class="vakman-week">
-                @foreach ($agenda['days'] as $day)
-                    <section class="vakman-week-day {{ $day['is_today'] ? 'is-today' : '' }}">
-                        <header class="vakman-week-day-head">
-                            <span class="vakman-week-dayname">{{ $day['heading'] }}</span>
-                            @if ($day['is_today'])
-                                <span class="vakman-week-today-mark">Vandaag</span>
-                            @endif
-                        </header>
-                        <div class="vakman-week-day-body">
-                            @forelse ($day['jobs'] as $job)
-                                @include('vakman._agenda-card', ['job' => $job])
-                            @empty
-                                <p class="vakman-week-empty">Vrij</p>
-                            @endforelse
-                        </div>
-                    </section>
-                @endforeach
+            <div class="vakman-week-split">
+                @include('vakman._week-board')
+                <div class="vakman-week-details">
+                    <h2 class="vakman-week-pane-title">Details</h2>
+                    <div class="vakman-week">
+                        @foreach ($agenda['days'] as $day)
+                            <section class="vakman-week-day {{ $day['is_today'] ? 'is-today' : '' }}" id="vakman-day-{{ $day['key'] }}">
+                                <header class="vakman-week-day-head">
+                                    <span class="vakman-week-dayname">{{ $day['heading'] }}</span>
+                                    @if ($day['is_today'])
+                                        <span class="vakman-week-today-mark">Vandaag</span>
+                                    @endif
+                                </header>
+                                <div class="vakman-week-day-body">
+                                    @forelse ($day['jobs'] as $job)
+                                        @include('vakman._agenda-card', ['job' => $job])
+                                    @empty
+                                        @if (! empty($day['absence']))
+                                            <p class="vakman-week-empty">{{ $day['absence']['label'] }}</p>
+                                        @else
+                                            <p class="vakman-week-empty">Vrij</p>
+                                        @endif
+                                    @endforelse
+                                </div>
+                            </section>
+                        @endforeach
+                    </div>
+                </div>
             </div>
         @endif
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        (() => {
+            const buttons = document.querySelectorAll('[data-job-target]');
+            if (buttons.length === 0) {
+                return;
+            }
+
+            const selectJob = (id, source) => {
+                document.querySelectorAll('.vakman-job-card.is-selected, .vakman-week-job.is-selected').forEach((el) => {
+                    el.classList.remove('is-selected');
+                });
+                source?.classList.add('is-selected');
+                const card = document.getElementById(id);
+                if (! (card instanceof HTMLElement)) {
+                    return;
+                }
+                card.classList.add('is-selected');
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            };
+
+            buttons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    selectJob(button.getAttribute('data-job-target') ?? '', button);
+                });
+            });
+        })();
+    </script>
+@endpush

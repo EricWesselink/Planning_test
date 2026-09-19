@@ -8,7 +8,7 @@
     $isHolder = (bool) ($job['is_work_ticket_holder'] ?? false);
     $showActions = $showActions ?? true;
 @endphp
-<div class="vakman-job-card">
+<div class="vakman-job-card{{ ! empty($selected) ? ' is-selected' : '' }}" @if (! empty($job['card_id'])) id="{{ $job['card_id'] }}" @endif>
     <div class="vakman-job-card-body">
         @if ($kindLabel !== '')
             <p class="vakman-job-card-kind {{ $kindLabel === 'Winkel' ? 'is-winkel' : '' }}">{{ $kindLabel }}</p>

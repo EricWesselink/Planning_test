@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ProjectKind;
 use App\Enums\VoucherPriceKind;
 use App\Enums\WorkUnit;
+use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\User;
@@ -21,7 +22,10 @@ use Illuminate\Support\Str;
 
 class VakmanPlanningService
 {
-    public function __construct(private VoucherPriceResolver $prices) {}
+    public function __construct(
+        private VoucherPriceResolver $prices,
+        private WorkerAvailabilityService $availability,
+    ) {}
 
     /**
      * @return array{
@@ -38,7 +42,7 @@ class VakmanPlanningService
      */
     public function agenda(User $user, string $view, ?string $week, ?string $month): array
     {
-        $user->loadMissing(['worker', 'crewMember']);
+        $user->loadMissing(['worker.crewPeople', 'worker.availabilities', 'crewMember']);
         $view = $view === 'month' ? 'month' : 'week';
         $weekStart = $this->weekStart($week);
         $monthStart = $this->monthStart($month, $week);
@@ -88,7 +92,7 @@ class VakmanPlanningService
      */
     public function day(User $user, CarbonInterface $date): array
     {
-        $user->loadMissing(['worker', 'crewMember']);
+        $user->loadMissing(['worker.crewPeople', 'worker.availabilities', 'crewMember']);
         $day = $date->copy()->startOfDay();
         $assignments = $this->assignments($user, $day, $day);
         $colleagues = $this->colleagueAssignmentsForWindow($user, $assignments, $day, $day);
@@ -138,6 +142,7 @@ class VakmanPlanningService
                 'project.documents',
                 'project.workOrders',
                 'worker.rates',
+                'worker.crewPeople',
                 'workItem.areaTasks.area.floor',
                 'crewMembers',
                 'foreman',
@@ -180,10 +185,13 @@ class VakmanPlanningService
                 'heading' => $this->dayHeading($cursor),
                 'short' => $cursor->translatedFormat('j'),
                 'weekday' => ucfirst($cursor->translatedFormat('D')),
+                'weekday_full' => Str::upper($cursor->translatedFormat('l')),
+                'date_label' => Str::upper($cursor->translatedFormat('j F')),
                 'is_today' => $cursor->isSameDay(now()),
                 'in_month' => $cursor->isSameMonth($monthStart),
                 'url' => $jobs !== [] ? route('vakman.planning.day', $cursor->toDateString()) : null,
                 'jobs' => $jobs,
+                'absence' => $jobs === [] ? $this->registeredAbsence($user, $cursor) : null,
             ]);
             $cursor->addDay();
         }
@@ -214,6 +222,7 @@ class VakmanPlanningService
             $card = [
                 'assignment' => $assignment,
                 'project' => $project,
+                'card_id' => 'vakman-job-'.$date->toDateString().'-'.$assignment->id,
                 'project_name' => $project->displayTitle(),
                 'city' => trim((string) $project->city),
                 'numbers' => $project->labeledNumbersLine(),
@@ -273,7 +282,7 @@ class VakmanPlanningService
         }
 
         return WorkerAssignment::query()
-            ->with(['worker', 'crewMembers'])
+            ->with(['worker.crewPeople', 'crewMembers'])
             ->whereIn('project_id', $projectIds)
             ->where('worker_id', '!=', $workerId)
             ->whereDate('start_date', '<=', $to)
@@ -293,11 +302,6 @@ class VakmanPlanningService
         Collection $others,
         CarbonInterface $date,
     ): array {
-        $ownLabels = array_values(array_filter([
-            trim((string) $user->name),
-            $assignment->worker?->planName(),
-            $user->crewMember?->label() ?? '',
-        ], fn (string $name): bool => $name !== ''));
         $ownInterval = $assignment->intervalOnDate($date);
 
         $overlapping = $others->filter(function (WorkerAssignment $other) use ($assignment, $date, $ownInterval): bool {
@@ -311,18 +315,9 @@ class VakmanPlanningService
             return $this->intervalsOverlapOnDate($ownInterval, $other->intervalOnDate($date));
         });
 
-        return $overlapping
-            ->flatMap(function (WorkerAssignment $row): array {
-                $names = $row->presentNames();
-                if ($names !== []) {
-                    return $names;
-                }
-
-                $team = trim((string) ($row->worker?->planName() ?? ''));
-
-                return $team !== '' ? [$team] : [];
-            })
-            ->filter(fn (string $name): bool => $name !== '' && ! in_array($name, $ownLabels, true))
+        return collect($this->personNamesOnAssignment($assignment))
+            ->concat($overlapping->flatMap(fn (WorkerAssignment $row): array => $this->personNamesOnAssignment($row)))
+            ->filter(fn (string $name): bool => $name !== '' && ! $this->isOwnColleagueName($user, $name))
             ->unique()
             ->values()
             ->all();
@@ -363,6 +358,114 @@ class VakmanPlanningService
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function personNamesOnAssignment(WorkerAssignment $assignment): array
+    {
+        $present = $assignment->presentNames();
+        if ($present !== []) {
+            return array_values(array_filter(array_map(
+                fn (string $name): ?string => $this->colleagueLabel($name),
+                $present,
+            )));
+        }
+
+        $worker = $assignment->worker;
+        if ($worker === null) {
+            return [];
+        }
+
+        if ($worker->employment_type?->isExternal()) {
+            $company = trim((string) $worker->company);
+            if ($company !== '') {
+                return [$company];
+            }
+
+            $name = $this->colleagueLabel($worker->planName());
+
+            return $name !== null ? [$name] : [];
+        }
+
+        $crew = $worker->relationLoaded('crewPeople')
+            ? $worker->activeCrewPeople()
+            : collect();
+        $named = $crew
+            ->filter(fn (CrewMember $member): bool => trim((string) $member->name) !== '')
+            ->map(fn (CrewMember $member): ?string => $this->colleagueLabel($member->label()))
+            ->filter()
+            ->values()
+            ->all();
+        if ($named !== []) {
+            return $named;
+        }
+
+        $personal = $this->colleagueLabel($worker->displayName());
+
+        return $personal !== null ? [$personal] : [];
+    }
+
+    private function colleagueLabel(string $name): ?string
+    {
+        $name = trim($name);
+        if ($name === '' || $this->looksLikeTeamLabel($name)) {
+            return null;
+        }
+
+        $parts = preg_split('/\s+/u', $name, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $short = $parts[0] ?? $name;
+        if ($this->looksLikeTeamLabel($short)) {
+            return null;
+        }
+
+        return $short;
+    }
+
+    private function looksLikeTeamLabel(string $name): bool
+    {
+        return preg_match('/^team(\s|\d|$)/iu', trim($name)) === 1;
+    }
+
+    private function isOwnColleagueName(User $user, string $name): bool
+    {
+        $needle = mb_strtolower(trim($name));
+        if ($needle === '') {
+            return false;
+        }
+
+        return collect([
+            trim((string) $user->name),
+            trim((string) ($user->crewMember?->label() ?? '')),
+        ])
+            ->filter()
+            ->flatMap(fn (string $label): array => array_filter([$label, $this->colleagueLabel($label)]))
+            ->map(fn (string $label): string => mb_strtolower(trim($label)))
+            ->contains($needle);
+    }
+
+    /**
+     * @return array{key: string, label: string}|null
+     */
+    private function registeredAbsence(User $user, CarbonInterface $date): ?array
+    {
+        $worker = $user->worker;
+        if ($worker === null) {
+            return null;
+        }
+
+        $absence = $this->availability->absenceOn($worker, $date, $user->crewMember);
+        if ($absence === null || ! empty($absence['structural']) || ! is_array($absence)) {
+            return null;
+        }
+
+        $label = $absence['label'] === 'Vrij op vrijdag' ? 'Vrije dag' : $absence['label'];
+
+        return [
+            'key' => (string) ($absence['key'] ?? 'overig'),
+            'label' => Str::upper($label),
+        ];
     }
 
     /**
