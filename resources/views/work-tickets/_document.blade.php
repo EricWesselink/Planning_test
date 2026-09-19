@@ -109,6 +109,10 @@
                 @if (filled($workTicketHolder ?? null))
                     <p @class(['crew-line' => $recipientCompact])>Werkbon bij {{ $workTicketHolder }}</p>
                 @endif
+                @if ($colleagues !== [])
+                    <div class="block-title" style="margin-top:8px">Ook aanwezig</div>
+                    <p @class(['crew-line' => $recipientCompact])>{{ implode(', ', $colleagues) }}</p>
+                @endif
                 @if (filled($period ?? null))
                     <div class="block-title" style="margin-top:8px">{{ $whenHeading }}</div>
                     <p @class(['crew-line' => $recipientCompact])>{{ $period }}</p>
@@ -256,13 +260,6 @@
         <div class="section">
             <div class="section-title">Opmerkingen / werkinstructies</div>
             <div class="notes">{{ $notesText }}</div>
-        </div>
-    @endif
-
-    @if ($colleagues !== [])
-        <div class="section">
-            <div class="section-title">Ook op het werk</div>
-            <p>{{ implode(', ', $colleagues) }}</p>
         </div>
     @endif
 

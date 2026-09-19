@@ -579,6 +579,82 @@ class VakmanPlanningTest extends TestCase
             ->assertDontSee('José');
     }
 
+    public function test_vakman_werkbon_lists_other_people_present_on_the_same_job(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        [$nick, $own] = $this->seedProjects();
+        $nick->forceFill([
+            'name' => 'Team 1 Nick',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Nick Seine', 'phone' => ''],
+                ['name' => 'Mahmoud Ali', 'phone' => ''],
+            ],
+        ])->save();
+        $crew = $nick->fresh()->crewPeople()->orderBy('sort_order')->get();
+        $assignment = WorkerAssignment::query()
+            ->where('worker_id', $nick->id)
+            ->where('project_id', $own->id)
+            ->first();
+        $assignment->syncPresentCrew([$crew[0]->id, $crew[1]->id]);
+
+        $otherTeam = Worker::query()->create([
+            'name' => 'Team 2',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Alexandr Popov', 'phone' => ''],
+                ['name' => 'José Garcia', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        $others = $otherTeam->crewPeople()->orderBy('sort_order')->get();
+        $otherAssignment = WorkerAssignment::query()->create([
+            'worker_id' => $otherTeam->id,
+            'project_id' => $own->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'hours_per_day' => 8,
+        ]);
+        $otherAssignment->syncPresentCrew([$others[0]->id, $others[1]->id]);
+
+        $zzp = Worker::query()->create([
+            'name' => 'Arek',
+            'employment_type' => 'zzp',
+            'company' => 'MO Vloeren',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $zzp->id,
+            'project_id' => $own->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'hours_per_day' => 8,
+        ]);
+
+        $user = User::factory()->vakman($nick->id, $crew[0]->id)->create(['name' => 'Nick Seine']);
+
+        $html = $this->actingAs($user)
+            ->get(route('vakman.planning.werkbon', '2026-09-10'))
+            ->assertOk()
+            ->assertSee('Vakmannen')
+            ->assertSee('Ook aanwezig')
+            ->assertSeeInOrder([
+                'Vakmannen',
+                'Nick Seine',
+                'Mahmoud Ali',
+                'Ook aanwezig',
+                'Alexandr',
+                'José',
+                'MO Vloeren',
+            ])
+            ->assertDontSee('Team 1')
+            ->assertDontSee('Team 2')
+            ->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/Ook aanwezig<\/div>\s*<p[^>]*>[^<]*Mahmoud/', $html);
+    }
+
     public function test_teammate_sees_who_has_the_werkbon_and_cannot_open_it(): void
     {
         $this->travelTo('2026-09-21 08:00:00');

@@ -78,6 +78,66 @@ class WorkTicketPdfServiceTest extends TestCase
         $this->assertSame('Mahmoud Ali', $data['workTicketHolder']);
     }
 
+    public function test_eigen_werkbon_lists_other_people_present_on_the_same_job(): void
+    {
+        $ticket = $this->makeTicket();
+        $worker = $ticket->worker;
+        $worker->forceFill([
+            'name' => 'Team 1 Nick',
+            'employment_type' => 'eigen',
+            'company' => null,
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Nick Seine', 'phone' => ''],
+                ['name' => 'Mahmoud Ali', 'phone' => ''],
+            ],
+        ])->save();
+        $people = $worker->fresh()->crewPeople()->orderBy('sort_order')->get();
+        $assignment = $ticket->assignment;
+        $assignment->syncPresentCrew([$people[0]->id, $people[1]->id]);
+        $ticket->forceFill(['kind' => WorkTicketKind::Werkbon, 'number' => 'WB-2026-0001'])->save();
+
+        $otherTeam = Worker::query()->create([
+            'name' => 'Team 2',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Alexandr Popov', 'phone' => ''],
+                ['name' => 'José Garcia', 'phone' => ''],
+            ],
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $otherTeam->id,
+            'project_id' => $ticket->project_id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $zzp = Worker::query()->create([
+            'name' => 'Arek',
+            'employment_type' => 'zzp',
+            'company' => 'MO Vloeren',
+            'active' => true,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $zzp->id,
+            'project_id' => $ticket->project_id,
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'hours_per_day' => 8,
+        ]);
+
+        $data = app(WorkTicketPdfService::class)->build($ticket->fresh([
+            'worker',
+            'assignment.crewMembers',
+            'assignment.worker.crewPeople',
+        ]), false);
+
+        $this->assertSame(['Alexandr Popov', 'José Garcia', 'MO Vloeren'], $data['colleagues']);
+    }
+
     public function test_build_uses_kloppenburg_letterhead_for_winkel_projects(): void
     {
         $ticket = $this->makeTicket();

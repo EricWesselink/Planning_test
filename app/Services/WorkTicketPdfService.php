@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
 use App\Models\AreaDrawingMarker;
+use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
@@ -79,8 +80,10 @@ class WorkTicketPdfService
             'floors',
             'documents',
             'assignment.crewMembers',
+            'assignment.worker.crewPeople',
             'assignment.foreman',
             'assignment.workTicketHolder',
+            'worker.crewPeople',
         ]);
 
         $project = $ticket->project;
@@ -277,17 +280,19 @@ class WorkTicketPdfService
      */
     public function colleagueNames(WorkTicket $ticket): array
     {
-        $ticket->loadMissing(['assignment.crewMembers', 'worker']);
+        $ticket->loadMissing(['assignment.crewMembers', 'assignment.worker.crewPeople', 'worker.crewPeople']);
 
-        $own = array_values(array_filter([
-            $ticket->worker?->planName(),
-            ...($ticket->assignment?->presentNames() ?? []),
-        ], fn (?string $name): bool => filled($name)));
+        $assignmentId = (int) ($ticket->worker_assignment_id ?? $ticket->assignment?->id ?? 0);
+        $ownKeys = $this->nameKeys([
+            ...($ticket->assignment !== null ? $this->personNamesOnAssignment($ticket->assignment) : []),
+            (string) ($ticket->worker?->planName() ?? ''),
+            (string) ($ticket->worker?->displayName() ?? ''),
+        ]);
 
         $others = WorkerAssignment::query()
-            ->with(['worker', 'crewMembers'])
+            ->with(['worker.crewPeople', 'crewMembers'])
             ->where('project_id', $ticket->project_id)
-            ->where('worker_id', '!=', $ticket->worker_id)
+            ->when($assignmentId > 0, fn ($query) => $query->where('id', '!=', $assignmentId))
             ->whereDate('end_date', '>=', $ticket->start_date)
             ->whereDate('start_date', '<=', $ticket->end_date)
             ->orderBy('start_date')
@@ -295,20 +300,96 @@ class WorkTicketPdfService
             ->get();
 
         return $others
-            ->flatMap(function (WorkerAssignment $row): array {
-                $names = $row->presentNames();
-                if ($names !== []) {
-                    return $names;
-                }
-
-                $team = trim((string) ($row->worker?->planName() ?? ''));
-
-                return $team !== '' ? [$team] : [];
-            })
-            ->filter(fn (string $name): bool => $name !== '' && ! in_array($name, $own, true))
-            ->unique()
+            ->flatMap(fn (WorkerAssignment $row): array => $this->personNamesOnAssignment($row))
+            ->filter(fn (string $name): bool => $name !== '' && ! $this->nameMatches($name, $ownKeys))
+            ->unique(fn (string $name): string => mb_strtolower(trim($name)))
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function personNamesOnAssignment(WorkerAssignment $assignment): array
+    {
+        $present = $assignment->presentNames();
+        if ($present !== []) {
+            return array_values(array_filter(
+                $present,
+                fn (string $name): bool => ! $this->looksLikeTeamLabel($name),
+            ));
+        }
+
+        $worker = $assignment->worker;
+        if ($worker === null) {
+            return [];
+        }
+
+        if ($worker->employment_type?->isExternal()) {
+            $company = trim((string) $worker->company);
+            if ($company !== '') {
+                return [$company];
+            }
+
+            $name = trim($worker->displayName());
+
+            return $name !== '' && ! $this->looksLikeTeamLabel($name) ? [$name] : [];
+        }
+
+        $fromCrew = ($worker->relationLoaded('crewPeople') ? $worker->activeCrewPeople() : collect())
+            ->map(fn (CrewMember $member): string => trim($member->label()))
+            ->filter(fn (string $name): bool => $name !== '' && ! $this->looksLikeTeamLabel($name))
+            ->values()
+            ->all();
+        if ($fromCrew !== []) {
+            return $fromCrew;
+        }
+
+        $personal = trim($worker->displayName());
+
+        return $personal !== '' && ! $this->looksLikeTeamLabel($personal) ? [$personal] : [];
+    }
+
+    /**
+     * @param  list<string>  $names
+     * @return list<string>
+     */
+    private function nameKeys(array $names): array
+    {
+        $keys = [];
+        foreach ($names as $name) {
+            $normalized = mb_strtolower(trim($name));
+            if ($normalized === '') {
+                continue;
+            }
+            $keys[] = $normalized;
+            $parts = preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            $first = $parts[0] ?? '';
+            if ($first !== '' && $first !== $normalized && ! $this->looksLikeTeamLabel($first)) {
+                $keys[] = $first;
+            }
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    private function nameMatches(string $name, array $keys): bool
+    {
+        foreach ($this->nameKeys([$name]) as $key) {
+            if (in_array($key, $keys, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function looksLikeTeamLabel(string $name): bool
+    {
+        return preg_match('/^team(\s|\d|$)/iu', trim($name)) === 1;
     }
 
     /**

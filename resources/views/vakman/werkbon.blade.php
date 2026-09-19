@@ -15,6 +15,25 @@
         @php
             $project = $job['project'];
             $logoRelative = $project->issuerLogo();
+            $people = $job['people'] ?? [];
+            $ownKeys = [];
+            foreach ($people as $person) {
+                $normalized = mb_strtolower(trim((string) $person));
+                if ($normalized === '') {
+                    continue;
+                }
+                $ownKeys[] = $normalized;
+                $ownKeys[] = explode(' ', $normalized)[0];
+            }
+            $colleagues = collect($job['colleagues'] ?? [])
+                ->reject(function (string $name) use ($ownKeys): bool {
+                    $needle = mb_strtolower(trim($name));
+                    $first = explode(' ', $needle)[0] ?? '';
+
+                    return in_array($needle, $ownKeys, true) || ($first !== '' && in_array($first, $ownKeys, true));
+                })
+                ->values()
+                ->all();
         @endphp
         @include('work-tickets._document', [
             'isPdf' => false,
@@ -31,7 +50,7 @@
             'number' => $detail['date']->format('d-m-Y'),
             'issuedOn' => $detail['date']->format('d-m-Y'),
             'whoHeading' => 'Vakmannen',
-            'recipient' => implode(', ', $job['people'] ?? []) ?: (auth()->user()?->name ?? ''),
+            'recipient' => implode(', ', $people) ?: (auth()->user()?->name ?? ''),
             'recipientKind' => null,
             'foreman' => $job['foreman'] ?? null,
             'workTicketHolder' => $job['work_ticket_holder'] ?? null,
@@ -45,7 +64,7 @@
             'ticket' => null,
             'rows' => $job['works'],
             'showPrices' => false,
-            'colleagues' => $job['colleagues'],
+            'colleagues' => $colleagues,
             'notesText' => implode("\n", $job['notes']),
             'drawingItems' => collect($job['drawings'])->map(fn ($drawing) => [
                 'name' => $drawing->original_filename ?: 'Tekening',

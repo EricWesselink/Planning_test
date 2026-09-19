@@ -66,7 +66,7 @@ class WorkerLoginInviteTest extends TestCase
         $this->assertStringContainsString('Hallo Nick,', $invite['message']);
         $this->assertStringContainsString('06-nummer: 06-57925505', $invite['message']);
         $this->assertStringContainsString(route('vakman.login'), $invite['message']);
-        $this->assertStringContainsString('https://wa.me/31657925505?text=', $invite['whatsapp_url']);
+        $this->assertStringContainsString('https://web.whatsapp.com/send?phone=31657925505&text=', $invite['whatsapp_url']);
         $this->assertMatchesRegularExpression('/Tijdelijk wachtwoord: \S{10}/', $invite['message']);
 
         preg_match('/Tijdelijk wachtwoord: (\S+)/', $invite['message'], $matches);
@@ -154,7 +154,7 @@ class WorkerLoginInviteTest extends TestCase
         $invite = session('vakman_login_invite');
         $this->assertStringContainsString('Hallo Arek,', $invite['message']);
         $this->assertStringContainsString('Telefoonnummer: 0048-690668857', $invite['message']);
-        $this->assertStringContainsString('https://wa.me/48690668857?text=', $invite['whatsapp_url']);
+        $this->assertStringContainsString('https://web.whatsapp.com/send?phone=48690668857&text=', $invite['whatsapp_url']);
     }
 
     public function test_escapes_dangerous_names_in_the_invite_panel(): void

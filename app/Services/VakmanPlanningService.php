@@ -285,7 +285,7 @@ class VakmanPlanningService
         return WorkerAssignment::query()
             ->with(['worker.crewPeople', 'crewMembers'])
             ->whereIn('project_id', $projectIds)
-            ->where('worker_id', '!=', $workerId)
+            ->whereNotIn('id', $own->modelKeys())
             ->whereDate('start_date', '<=', $to)
             ->whereDate('end_date', '>=', $from)
             ->orderBy('start_date')

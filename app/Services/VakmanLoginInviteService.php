@@ -97,7 +97,7 @@ class VakmanLoginInviteService
     {
         [$whatsAppId, $displayPhone] = $this->phoneParts($member);
         $message = $this->message($member, $displayPhone, $password);
-        $whatsAppUrl = 'https://wa.me/'.$whatsAppId.'?text='.rawurlencode($message);
+        $whatsAppUrl = 'https://web.whatsapp.com/send?phone='.$whatsAppId.'&text='.rawurlencode($message);
 
         return [
             'account' => $account,
