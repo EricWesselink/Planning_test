@@ -25,6 +25,18 @@ class UserPolicyTest extends TestCase
         $this->assertSame($allowed, $actor->can('resetPassword', $user));
     }
 
+    public function test_only_admin_may_impersonate_another_active_user(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $inactive = User::factory()->create(['active' => false]);
+        $planner = User::factory()->create(['role' => UserRole::Planner]);
+
+        $this->assertTrue($admin->can('impersonate', $planner));
+        $this->assertFalse($planner->can('impersonate', $admin));
+        $this->assertFalse($admin->can('impersonate', $admin));
+        $this->assertFalse($admin->can('impersonate', $inactive));
+    }
+
     public function test_admin_cannot_deactivate_or_delete_themselves(): void
     {
         $admin = User::factory()->admin()->create();

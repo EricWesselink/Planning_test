@@ -61,6 +61,14 @@
                     <td class="px-3 py-2 whitespace-nowrap">{{ $user->last_login_at?->format('d-m-Y H:i') ?? 'Nog niet' }}</td>
                     <td class="px-3 py-2 text-right whitespace-nowrap">
                         <div class="inline-flex items-center justify-end gap-3">
+                            @can('impersonate', $user)
+                                @unless (session()->has('impersonator_id'))
+                                    <form method="POST" action="{{ route('users.impersonate.start', $user) }}" class="inline">
+                                        @csrf
+                                        <button class="text-sm text-nicon-orange-dark hover:underline">Account overnemen</button>
+                                    </form>
+                                @endunless
+                            @endcan
                             @can('update', $user)
                                 <a class="text-sm text-nicon-orange-dark hover:underline" href="{{ route('users.show', $user) }}">Bewerken</a>
                             @endcan

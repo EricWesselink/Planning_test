@@ -19,6 +19,15 @@
         </ul>
     @endif
 
+    @can('impersonate', $user)
+        @unless (session()->has('impersonator_id'))
+            <form method="POST" action="{{ route('users.impersonate.start', $user) }}" class="mt-4">
+                @csrf
+                <button class="border border-nicon-line px-4 py-2 text-sm hover:bg-nicon-paper">Account overnemen</button>
+            </form>
+        @endunless
+    @endcan
+
     @can('update', $user)
     <form method="POST" action="{{ route('users.update', $user) }}" class="mt-6 max-w-6xl border border-nicon-line bg-white p-5 space-y-4">
         @csrf

@@ -54,4 +54,11 @@ class UserPolicy
     {
         return $actor->canManageUsers();
     }
+
+    public function impersonate(User $actor, User $user): bool
+    {
+        return $actor->canManageUsers()
+            && ! $actor->is($user)
+            && $user->active;
+    }
 }

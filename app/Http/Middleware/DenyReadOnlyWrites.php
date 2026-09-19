@@ -15,6 +15,7 @@ class DenyReadOnlyWrites
         'logout',
         'vakman.password.update',
         'projects.areas.details',
+        'users.impersonate.stop',
     ];
 
     /**

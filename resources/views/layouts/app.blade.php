@@ -13,7 +13,17 @@
 <div class="nicon-shell">
     @php
         $user = auth()->user();
+        $isImpersonating = session()->has('impersonator_id') && session()->has('impersonate_id');
     @endphp
+    @if ($isImpersonating)
+        <div class="flex items-center justify-between gap-4 bg-nicon-orange px-4 py-2 text-white">
+            <p class="text-sm font-medium">Je bekijkt het account van {{ $user?->name }}</p>
+            <form method="POST" action="{{ route('users.impersonate.stop') }}" class="shrink-0">
+                @csrf
+                <button class="bg-white px-3 py-1 text-sm font-medium text-nicon-ink">Terug naar mijn account</button>
+            </form>
+        </div>
+    @endif
     <header class="nicon-topbar bg-nicon-ink text-white{{ $user?->isVakman() ? ' nicon-topbar--vakman' : '' }}">
         <div class="flex items-center gap-4 px-4 py-3">
             <div class="shrink-0">
