@@ -10,6 +10,7 @@ use App\Models\AreaTask;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\ProjectArea;
+use App\Models\ProjectDocument;
 use App\Models\ProjectFloor;
 use App\Models\User;
 use App\Models\Worker;
@@ -85,6 +86,7 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Projecten')
             ->assertSee('vakman-week-split', false)
             ->assertSee('data-job-target', false)
+            ->assertDontSee('Tekeningen')
             ->assertDontSee('Kindcentrum Veldhoeve')
             ->assertDontSee('Tarkett')
             ->assertDontSee('Classics-English Oak')
@@ -138,7 +140,7 @@ class VakmanPlanningTest extends TestCase
             'end_date' => '2026-09-10',
             'hours_per_day' => 8,
         ]);
-        WorkTicket::query()->create([
+        $ticket = WorkTicket::query()->create([
             'number' => 'WB-2026-0008',
             'kind' => WorkTicketKind::Werkbon,
             'worker_assignment_id' => $assignment->id,
@@ -159,7 +161,36 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Nieuweweg 8, 1251 LG Laren')
             ->assertSee('Kerkstraat 12, 3811 AA Amersfoort')
             ->assertSee('Eerst egaliseren, daarna primer laten drogen.')
-            ->assertSee('Screens plaatsen en inmeten.');
+            ->assertSee('Screens plaatsen en inmeten.')
+            ->assertSee('href="'.route('work-tickets.show', $ticket).'" class="vakman-week-job-bon"', false);
+    }
+
+    public function test_tekeningen_button_opens_the_project_board_when_a_plattegrond_exists(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        [$nick, $own] = $this->seedProjects();
+        ProjectDocument::query()->create([
+            'project_id' => $own->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => 'Plattegrond_BG.pdf',
+            'file_path' => 'projects/'.$own->id.'/plattegrond/plan.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1200,
+            'parse_status' => 'done',
+        ]);
+        $user = User::factory()->vakman($nick->id)->create();
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Tekeningen')
+            ->assertSee('href="'.route('projects.show', $own).'"', false);
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning.day', '2026-09-10'))
+            ->assertOk()
+            ->assertSee('Tekeningen')
+            ->assertSee('href="'.route('projects.show', $own).'"', false);
     }
 
     public function test_vakman_day_detail_shows_address_work_and_werkbon_without_prices(): void
@@ -215,6 +246,7 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Bekijk werk')
             ->assertSee('Open werkbon')
             ->assertSee('Route')
+            ->assertDontSee('Tekeningen')
             ->assertDontSee('Opdrachtbon')
             ->assertDontSee('€')
             ->assertDontSee('87,50');

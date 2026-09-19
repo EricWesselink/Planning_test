@@ -12,26 +12,28 @@
                 </header>
                 <div class="vakman-week-col-body">
                     @forelse ($day['jobs'] as $job)
-                        <button
-                            type="button"
-                            class="vakman-week-job"
-                            data-job-target="{{ $job['card_id'] }}"
-                        >
-                            <span class="vakman-week-job-title">{{ $job['project_name'] }}</span>
-                            @if (($job['city'] ?? '') !== '')
-                                <span class="vakman-week-job-city">{{ $job['city'] }}</span>
+                        <article class="vakman-week-job">
+                            <button
+                                type="button"
+                                class="vakman-week-job-select"
+                                data-job-target="{{ $job['card_id'] }}"
+                            >
+                                <span class="vakman-week-job-title">{{ $job['project_name'] }}</span>
+                                @if (($job['city'] ?? '') !== '')
+                                    <span class="vakman-week-job-city">{{ $job['city'] }}</span>
+                                @endif
+                                <span class="vakman-week-job-time">{{ $job['time_label'] }}</span>
+                                @if (($job['headline'] ?? '') !== '')
+                                    <span class="vakman-week-job-work">{{ $job['headline'] }}</span>
+                                @endif
+                                @if (($job['colleagues'] ?? []) !== [])
+                                    <span class="vakman-week-job-met">Met: {{ implode(' · ', $job['colleagues']) }}</span>
+                                @endif
+                            </button>
+                            @if ($job['werkbon_url'] ?? null)
+                                <a href="{{ $job['werkbon_url'] }}" class="vakman-week-job-bon">Werkbon</a>
                             @endif
-                            <span class="vakman-week-job-time">{{ $job['time_label'] }}</span>
-                            @if (($job['headline'] ?? '') !== '')
-                                <span class="vakman-week-job-work">{{ $job['headline'] }}</span>
-                            @endif
-                            @if (($job['colleagues'] ?? []) !== [])
-                                <span class="vakman-week-job-met">Met: {{ implode(' · ', $job['colleagues']) }}</span>
-                            @endif
-                            @if (! empty($job['is_work_ticket_holder']))
-                                <span class="vakman-week-job-bon">Werkbon</span>
-                            @endif
-                        </button>
+                        </article>
                     @empty
                         @if (! empty($day['absence']))
                             <p class="vakman-week-col-empty is-away">

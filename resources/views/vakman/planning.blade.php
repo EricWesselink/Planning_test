@@ -112,7 +112,7 @@
 
 @push('scripts')
     <script>
-        (() => {
+        document.addEventListener('DOMContentLoaded', () => {
             const buttons = document.querySelectorAll('[data-job-target]');
             if (buttons.length === 0) {
                 return;
@@ -122,7 +122,8 @@
                 document.querySelectorAll('.vakman-job-card.is-selected, .vakman-week-job.is-selected').forEach((el) => {
                     el.classList.remove('is-selected');
                 });
-                source?.classList.add('is-selected');
+                const chip = source instanceof Element ? source.closest('.vakman-week-job') : null;
+                chip?.classList.add('is-selected');
                 const card = document.getElementById(id);
                 if (! (card instanceof HTMLElement)) {
                     return;
@@ -136,6 +137,6 @@
                     selectJob(button.getAttribute('data-job-target') ?? '', button);
                 });
             });
-        })();
+        });
     </script>
 @endpush

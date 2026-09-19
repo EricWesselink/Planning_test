@@ -241,6 +241,7 @@ class VakmanPlanningService
                 'is_work_ticket_holder' => ! $isExternal && $assignment->isWorkTicketResponsible($user),
                 'url' => route('vakman.planning.day', $date->toDateString()),
                 'project_url' => route('projects.show', $project),
+                'drawing_url' => $this->drawingUrl($project),
                 'tickets' => $tickets,
                 'werkbon_url' => $this->werkbonUrl($user, $assignment, $tickets, $date, $isExternal),
                 'opdrachtbon_url' => $isExternal
@@ -479,6 +480,15 @@ class VakmanPlanningService
         }
 
         return PlanningHours::intervalsOverlap($left[0], $left[1], $right[0], $right[1]);
+    }
+
+    private function drawingUrl(Project $project): ?string
+    {
+        if ($project->isWinkel() || $project->plattegrond() === null) {
+            return null;
+        }
+
+        return route('projects.show', $project);
     }
 
     /**

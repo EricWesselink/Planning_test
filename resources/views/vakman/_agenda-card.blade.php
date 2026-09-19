@@ -81,6 +81,9 @@
     @if ($showActions)
         <div class="vakman-job-card-actions">
             <a href="{{ $job['url'] }}" class="vakman-job-btn vakman-job-btn-ink">Bekijk werk</a>
+            @if ($job['drawing_url'] ?? null)
+                <a href="{{ $job['drawing_url'] }}" class="vakman-job-btn vakman-job-btn-ghost">Tekeningen</a>
+            @endif
             @if ($job['werkbon_url'] ?? null)
                 <a href="{{ $job['werkbon_url'] }}" class="vakman-job-btn vakman-job-btn-orange">Open werkbon</a>
             @elseif ($job['opdrachtbon_url'] ?? null)
