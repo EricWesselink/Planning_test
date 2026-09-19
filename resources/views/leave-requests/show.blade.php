@@ -20,6 +20,13 @@
 
     <div class="mt-6 max-w-3xl border border-nicon-line bg-white p-5 space-y-3 text-sm">
         <p>Aangevraagd: {{ $leaveRequest->submitted_at?->format('d-m-Y H:i') }}</p>
+        @if ($leaveRequest->hasAdjustedPeriod())
+            <p>Oorspronkelijke aanvraag: {{ $leaveRequest->originalShortPeriodLabel() }}</p>
+            <p>Afgesproken periode: {{ $leaveRequest->shortPeriodLabel() }}</p>
+            @if ($leaveRequest->periodAdjuster)
+                <p class="text-nicon-muted">Aangepast door {{ $leaveRequest->periodAdjuster->name }} op {{ $leaveRequest->period_adjusted_at?->format('d-m-Y H:i') }}</p>
+            @endif
+        @endif
         @if (filled($leaveRequest->note))
             <p>Opmerking: {{ $leaveRequest->note }}</p>
         @endif
@@ -63,6 +70,7 @@
                 @csrf
                 <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Goedkeuren</button>
             </form>
+            <a href="#overleg" class="inline-block border border-nicon-line px-5 py-3 font-medium">Vraag stellen</a>
             <form method="POST" action="{{ route('leave-requests.reject', $leaveRequest) }}" class="max-w-md space-y-2">
                 @csrf
                 <label class="text-xs uppercase tracking-wide text-nicon-muted">Reden (optioneel)</label>
@@ -71,4 +79,30 @@
             </form>
         </div>
     @endcan
+
+    @can('adjustPeriod', $leaveRequest)
+        <form method="POST" action="{{ route('leave-requests.period', $leaveRequest) }}" class="mt-6 max-w-3xl border border-nicon-line bg-white p-5 space-y-3">
+            @csrf
+            @method('PATCH')
+            <p class="font-medium">Periode aanpassen</p>
+            <p class="text-sm text-nicon-muted">De oorspronkelijke aanvraag blijft bewaard. Goedkeuren gebruikt daarna alleen de afgesproken periode.</p>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="text-xs uppercase tracking-wide text-nicon-muted">Van</label>
+                    <input type="date" name="starts_on" value="{{ old('starts_on', $leaveRequest->starts_on->toDateString()) }}" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+                </div>
+                <div>
+                    <label class="text-xs uppercase tracking-wide text-nicon-muted">Tot</label>
+                    <input type="date" name="ends_on" value="{{ old('ends_on', $leaveRequest->ends_on->toDateString()) }}" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+                </div>
+            </div>
+            <button class="bg-white border border-nicon-line px-5 py-3 font-medium">Periode aanpassen</button>
+        </form>
+    @endcan
+
+    @include('leave-requests.conversation', [
+        'leaveRequest' => $leaveRequest,
+        'messageAction' => route('leave-requests.messages', $leaveRequest),
+        'submitLabel' => 'Versturen',
+    ])
 @endsection

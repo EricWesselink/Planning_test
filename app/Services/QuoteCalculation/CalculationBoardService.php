@@ -4,11 +4,14 @@ namespace App\Services\QuoteCalculation;
 
 use App\Enums\CheckStatus;
 use App\Enums\FinishRole;
+use App\Enums\WorkUnit;
 use App\Models\Calculation;
 use App\Models\CalculationDrawing;
 use App\Models\CalculationLine;
 use App\Support\Format;
 use App\Support\MaterialColor;
+use App\Support\WorkColor;
+use App\Support\WorkType;
 
 class CalculationBoardService
 {
@@ -112,6 +115,10 @@ class CalculationBoardService
         $plinthBreakdown = PlinthLengthCalculator::breakdownFrom($plinth?->calculation_trace);
         $roomArea = is_numeric($row['room_area'] ?? null) ? (float) $row['room_area'] : ($floor?->quantity !== null ? (float) $floor->quantity : null);
         $m2 = $roomArea;
+        $needsReview = (bool) ($row['needs_review'] ?? false);
+        $groups = $this->roomMaterialGroups($finishes, $plinth, $status);
+        $groupCount = count($groups);
+        $groupsDone = $needsReview ? 0 : $groupCount;
 
         return [
             'key' => (string) $row['key'],
@@ -146,8 +153,12 @@ class CalculationBoardService
             'material_key' => mb_strtolower($code),
             'material_color' => $color,
             'material_color_soft' => $color === null ? null : MaterialColor::softBackground($color, 0.18),
+            'groups' => $groups,
+            'total' => $groupCount,
+            'done' => $groupsDone,
+            'progress' => $groupCount > 0 ? $groupsDone.'/'.$groupCount : '',
             'contour' => $this->roomContourFrom($floor?->calculation_trace),
-            'needs_review' => (bool) ($row['needs_review'] ?? false),
+            'needs_review' => $needsReview,
             'can_confirm' => (bool) ($row['can_confirm'] ?? false),
             'status' => $status->value,
             'status_label' => $status->label(),
@@ -282,6 +293,100 @@ class CalculationBoardService
 
             return $group;
         }, $groups));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $finishes
+     * @return list<array<string, mixed>>
+     */
+    private function roomMaterialGroups(array $finishes, ?CalculationLine $plinth, CheckStatus $status): array
+    {
+        $groups = [];
+        foreach ($finishes as $finish) {
+            $groups[] = $this->materialCard(
+                key: 'floor:'.($finish['id'] ?? count($groups)),
+                product: (string) ($finish['product'] ?? ''),
+                code: (string) ($finish['code'] ?? ''),
+                quantity: is_numeric($finish['quantity'] ?? null) ? (float) $finish['quantity'] : null,
+                unit: WorkUnit::SquareMeter,
+                color: is_string($finish['material_color'] ?? null) ? $finish['material_color'] : null,
+                colorSoft: is_string($finish['material_color_soft'] ?? null) ? $finish['material_color_soft'] : null,
+                groupKey: 'vloer',
+                roleLabel: ($finish['role'] ?? '') === FinishRole::Local->value ? FinishRole::Local->label() : null,
+                statusLabel: $status->label(),
+            );
+        }
+        if ($plinth instanceof CalculationLine) {
+            $code = trim((string) ($plinth->product_code ?? ''));
+            $product = trim((string) ($plinth->product ?? ''));
+            $color = $code !== ''
+                ? MaterialColor::fromCode($code, $product !== '' ? $product : null)
+                : ($product !== '' ? MaterialColor::resolve(null, $product) : null);
+            $groups[] = $this->materialCard(
+                key: 'plinth:'.$plinth->id,
+                product: $product,
+                code: $code,
+                quantity: $plinth->quantity !== null ? (float) $plinth->quantity : null,
+                unit: WorkUnit::LinearMeter,
+                color: $color,
+                colorSoft: $color === null ? null : MaterialColor::softBackground($color),
+                groupKey: 'plinth',
+                roleLabel: null,
+                statusLabel: $status->label(),
+            );
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function materialCard(
+        string $key,
+        string $product,
+        string $code,
+        ?float $quantity,
+        WorkUnit $unit,
+        ?string $color,
+        ?string $colorSoft,
+        string $groupKey,
+        ?string $roleLabel,
+        string $statusLabel,
+    ): array {
+        $product = trim($product);
+        $code = trim($code);
+        $typeLabel = $groupKey === 'plinth'
+            ? (WorkType::knownType($product) ?? 'Plinten')
+            : WorkType::knownType($product);
+        $label = $product !== '' ? $product : ($code !== '' ? $code : ($groupKey === 'plinth' ? 'Plint' : 'Vloer'));
+        if ($code !== '' && $product !== '' && ! str_contains(mb_strtolower($label), mb_strtolower($code))) {
+            $label .= ' '.$code;
+        }
+        if (is_string($typeLabel) && $typeLabel !== '' && ! str_contains($label, $typeLabel)) {
+            $label .= ', '.$typeLabel;
+        }
+        if (is_string($roleLabel) && $roleLabel !== '' && ! str_contains($label, $roleLabel)) {
+            $label .= ' · '.$roleLabel;
+        }
+        $hex = $color ?: MaterialColor::UNKNOWN;
+        $qtyLabel = $quantity === null
+            ? ''
+            : 'Opdracht '.Format::qty($quantity, 2).' '.$unit->label();
+
+        return [
+            'key' => $key,
+            'label' => $label,
+            'type_label' => $typeLabel,
+            'color_key' => WorkColor::key($groupKey, $typeLabel, $label),
+            'color_label' => WorkColor::legendLabel(WorkColor::key($groupKey, $typeLabel, $label)),
+            'display_color' => $hex,
+            'display_color_soft' => $colorSoft ?: MaterialColor::softBackground($hex),
+            'status_label' => $statusLabel,
+            'quantity_label' => $qtyLabel,
+            'progress_label' => $qtyLabel,
+            'unit' => $unit->value,
+        ];
     }
 
     /**

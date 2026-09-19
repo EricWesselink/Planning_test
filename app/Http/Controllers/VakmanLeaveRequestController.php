@@ -18,6 +18,7 @@ class VakmanLeaveRequestController extends Controller
         Gate::authorize('create', LeaveRequest::class);
 
         $requests = $user->leaveRequests()
+            ->with('messages')
             ->orderByDesc('submitted_at')
             ->orderByDesc('id')
             ->get();
@@ -60,6 +61,40 @@ class VakmanLeaveRequestController extends Controller
         return redirect()
             ->route('vakman.leave-requests.index')
             ->with('status', 'Je aanvraag is verstuurd en wacht op goedkeuring.');
+    }
+
+    public function show(Request $request, LeaveRequest $leaveRequest): View
+    {
+        $user = $this->vakman($request);
+        abort_if((int) $leaveRequest->user_id !== (int) $user->id, 404);
+        Gate::authorize('view', $leaveRequest);
+        $leaveRequest->load(['user', 'worker', 'reviewer', 'periodAdjuster', 'messages.user']);
+
+        return view('vakman.leave-request', [
+            'worker' => $user->worker,
+            'leaveRequest' => $leaveRequest,
+        ]);
+    }
+
+    public function message(Request $request, LeaveRequest $leaveRequest, LeaveRequestService $leaveRequests): RedirectResponse
+    {
+        $user = $this->vakman($request);
+        abort_if((int) $leaveRequest->user_id !== (int) $user->id, 404);
+        Gate::authorize('message', $leaveRequest);
+
+        $body = trim($request->string('body')->toString());
+        $request->merge(['body' => $body]);
+        $request->validate([
+            'body' => ['required', 'string', 'max:2000'],
+        ], [
+            'body.required' => 'Schrijf een bericht.',
+        ]);
+
+        $leaveRequests->postMessage($leaveRequest, $user, $body);
+
+        return redirect()
+            ->route('vakman.leave-requests.show', $leaveRequest)
+            ->with('status', 'Je bericht is verstuurd.');
     }
 
     public function withdraw(Request $request, LeaveRequest $leaveRequest, LeaveRequestService $leaveRequests): RedirectResponse

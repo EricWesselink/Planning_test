@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'user_id',
@@ -18,6 +19,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'crew_member_id',
     'starts_on',
     'ends_on',
+    'original_starts_on',
+    'original_ends_on',
+    'period_adjusted_by',
+    'period_adjusted_at',
     'note',
     'status',
     'submitted_at',
@@ -43,6 +48,9 @@ class LeaveRequest extends Model
         return [
             'starts_on' => 'date',
             'ends_on' => 'date',
+            'original_starts_on' => 'date',
+            'original_ends_on' => 'date',
+            'period_adjusted_at' => 'datetime',
             'status' => LeaveRequestStatus::class,
             'submitted_at' => 'datetime',
             'reviewed_at' => 'datetime',
@@ -72,6 +80,18 @@ class LeaveRequest extends Model
     public function availability(): BelongsTo
     {
         return $this->belongsTo(WorkerAvailability::class, 'worker_availability_id');
+    }
+
+    public function periodAdjuster(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'period_adjusted_by');
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(LeaveRequestMessage::class)
+            ->orderBy('created_at')
+            ->orderBy('id');
     }
 
     #[Scope]
@@ -119,11 +139,30 @@ class LeaveRequest extends Model
 
     public function shortPeriodLabel(): string
     {
-        if ($this->starts_on->isSameDay($this->ends_on)) {
-            return $this->starts_on->format('d-m-Y');
+        return $this->formatShortPeriod($this->starts_on, $this->ends_on);
+    }
+
+    public function originalShortPeriodLabel(): string
+    {
+        if ($this->original_starts_on === null || $this->original_ends_on === null) {
+            return $this->shortPeriodLabel();
         }
 
-        return $this->starts_on->format('d-m-Y').' t/m '.$this->ends_on->format('d-m-Y');
+        return $this->formatShortPeriod($this->original_starts_on, $this->original_ends_on);
+    }
+
+    public function hasAdjustedPeriod(): bool
+    {
+        return $this->original_starts_on !== null;
+    }
+
+    public function formatShortPeriod(CarbonInterface $start, CarbonInterface $end): string
+    {
+        if ($start->isSameDay($end)) {
+            return $start->format('d-m-Y');
+        }
+
+        return $start->format('d-m-Y').' t/m '.$end->format('d-m-Y');
     }
 
     public function mailSubjectPeriod(): string

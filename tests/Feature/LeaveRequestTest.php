@@ -6,10 +6,14 @@ use App\Enums\AvailabilityKind;
 use App\Enums\LeaveRequestStatus;
 use App\Enums\UserRole;
 use App\Mail\LeaveRequestApprovedMail;
+use App\Mail\LeaveRequestPeriodChangedMail;
+use App\Mail\LeaveRequestQuestionMail;
 use App\Mail\LeaveRequestRejectedMail;
+use App\Mail\LeaveRequestReplyMail;
 use App\Mail\LeaveRequestSubmittedMail;
 use App\Models\Customer;
 use App\Models\LeaveRequest;
+use App\Models\LeaveRequestMessage;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Worker;
@@ -133,11 +137,22 @@ class LeaveRequestTest extends TestCase
             ->assertNotFound();
 
         $this->actingAs($other)
+            ->get(route('vakman.leave-requests.show', $request))
+            ->assertNotFound();
+
+        $this->actingAs($other)
             ->from(route('vakman.leave-requests.index'))
             ->post(route('vakman.leave-requests.withdraw', $request))
             ->assertNotFound();
 
+        $this->actingAs($other)
+            ->post(route('vakman.leave-requests.messages', $request), [
+                'body' => 'Dit is niet mijn aanvraag.',
+            ])
+            ->assertNotFound();
+
         $this->assertTrue($request->fresh()->isPending());
+        $this->assertSame(0, LeaveRequestMessage::query()->count());
     }
 
     public function test_vakman_cannot_approve_own_request(): void
@@ -166,9 +181,19 @@ class LeaveRequestTest extends TestCase
         $this->actingAs($actor)
             ->post(route('leave-requests.reject', $request), ['rejection_reason' => 'Nee'])
             ->assertForbidden();
+        $this->actingAs($actor)
+            ->post(route('leave-requests.messages', $request), ['body' => 'Namens beheerder'])
+            ->assertForbidden();
+        $this->actingAs($actor)
+            ->patch(route('leave-requests.period', $request), [
+                'starts_on' => '2026-09-29',
+                'ends_on' => '2026-09-29',
+            ])
+            ->assertForbidden();
 
         $this->assertTrue($request->fresh()->isPending());
         $this->assertSame(0, WorkerAvailability::query()->count());
+        $this->assertSame(0, LeaveRequestMessage::query()->count());
     }
 
     public function test_planner_can_view_requests_but_not_the_review_buttons(): void
@@ -188,7 +213,10 @@ class LeaveRequestTest extends TestCase
             ->get(route('leave-requests.show', $request))
             ->assertOk()
             ->assertDontSee('>Goedkeuren</button>', false)
-            ->assertDontSee('>Afwijzen</button>', false);
+            ->assertDontSee('>Afwijzen</button>', false)
+            ->assertDontSee('>Vraag stellen</a>', false)
+            ->assertDontSee('>Periode aanpassen</button>', false)
+            ->assertDontSee('>Versturen</button>', false);
     }
 
     public function test_admin_sees_existing_planning_conflicts_before_approval(): void
@@ -371,12 +399,250 @@ class LeaveRequestTest extends TestCase
         $request = $this->makeLeaveRequest($nick, $worker);
         $request->update(['note' => '<script>alert(1)</script>']);
         $admin = $this->makeAdmin();
+        LeaveRequestMessage::factory()->create([
+            'leave_request_id' => $request->id,
+            'user_id' => $admin->id,
+            'body' => '<script>alert(2)</script>',
+        ]);
 
         $this->actingAs($admin)
             ->get(route('leave-requests.show', $request))
             ->assertOk()
             ->assertDontSee('<script>alert(1)</script>', false)
-            ->assertSee('<script>alert(1)</script>');
+            ->assertSee('<script>alert(1)</script>')
+            ->assertDontSee('<script>alert(2)</script>', false)
+            ->assertSee('<script>alert(2)</script>');
+    }
+
+    public function test_admin_can_ask_a_question_without_changing_status_or_planning(): void
+    {
+        Mail::fake();
+        $this->travelTo('2026-09-19 19:15:00');
+        [$nick, $worker] = $this->makeEigenVakman();
+        $request = $this->makeLeaveRequest($nick, $worker, '2026-09-25', '2026-09-25');
+        $admin = $this->makeAdmin();
+        $otherAdmin = User::factory()->admin()->create([
+            'name' => 'Andere Beheerder',
+            'email' => 'beheer@niconvloeren.nl',
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('leave-requests.show', $request))
+            ->post(route('leave-requests.messages', $request), [
+                'body' => 'Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?',
+            ])
+            ->assertRedirect(route('leave-requests.show', $request))
+            ->assertSessionHas('status', 'Je bericht is verstuurd.');
+
+        $request->refresh();
+        $this->assertTrue($request->isPending());
+        $this->assertSame(0, WorkerAvailability::query()->count());
+        $this->assertSame(1, LeaveRequestMessage::query()->count());
+        $message = LeaveRequestMessage::query()->first();
+        $this->assertSame($admin->id, $message->user_id);
+        $this->assertFalse($message->is_system);
+        $this->assertSame('Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?', $message->body);
+
+        $this->actingAs($admin)
+            ->get(route('leave-requests.show', $request))
+            ->assertOk()
+            ->assertSee('Overleg over aanvraag')
+            ->assertSee('19-09-2026 19:15')
+            ->assertSee('Eric Wesselink (Beheerder)')
+            ->assertSee('Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?')
+            ->assertSee('>Vraag stellen</a>', false)
+            ->assertSee('>Goedkeuren</button>', false)
+            ->assertSee('>Afwijzen</button>', false);
+
+        $this->actingAs($nick)
+            ->get(route('vakman.leave-requests.index'))
+            ->assertOk()
+            ->assertSee('Er is overleg over deze aanvraag.')
+            ->assertSee('In behandeling');
+
+        $this->actingAs($nick)
+            ->get(route('vakman.leave-requests.show', $request))
+            ->assertOk()
+            ->assertSee('Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?')
+            ->assertSee('Eric Wesselink (Beheerder)')
+            ->assertSee('>Versturen</button>', false);
+
+        Mail::assertSent(LeaveRequestQuestionMail::class, function (LeaveRequestQuestionMail $mail) use ($nick): bool {
+            $mail->assertSeeInHtml('Er is een vraag over je vrij-aanvraag voor 25 september 2026.');
+            $mail->assertSeeInHtml('Bericht van Eric Wesselink:');
+            $mail->assertSeeInHtml('Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?');
+            $mail->assertSeeInHtml('Bekijk aanvraag en reageer');
+
+            return $mail->hasTo($nick->email)
+                && $mail->envelope()->subject === 'Vraag over je vrij-aanvraag';
+        });
+        Mail::assertSent(LeaveRequestQuestionMail::class, 1);
+        Mail::assertNotSent(LeaveRequestReplyMail::class);
+        Mail::assertNotSent(LeaveRequestQuestionMail::class, fn (LeaveRequestQuestionMail $mail): bool => $mail->hasTo($admin->email) || $mail->hasTo($otherAdmin->email));
+    }
+
+    public function test_vakman_can_reply_and_admin_receives_mail(): void
+    {
+        Mail::fake();
+        $this->travelTo('2026-09-19 19:22:00');
+        [$nick, $worker] = $this->makeEigenVakman();
+        $request = $this->makeLeaveRequest($nick, $worker, '2026-09-25', '2026-09-25');
+        $admin = $this->makeAdmin();
+        $otherAdmin = User::factory()->admin()->create([
+            'name' => 'Andere Beheerder',
+            'email' => 'beheer@niconvloeren.nl',
+        ]);
+        LeaveRequestMessage::factory()->create([
+            'leave_request_id' => $request->id,
+            'user_id' => $admin->id,
+            'body' => 'Je staat vrijdag al ingepland. Kan maandag ook?',
+        ]);
+
+        $this->actingAs($nick)
+            ->from(route('vakman.leave-requests.show', $request))
+            ->post(route('vakman.leave-requests.messages', $request), [
+                'body' => 'Ja, maandag is ook goed.',
+            ])
+            ->assertRedirect(route('vakman.leave-requests.show', $request));
+
+        $request->refresh();
+        $this->assertTrue($request->isPending());
+        $this->assertSame(2, LeaveRequestMessage::query()->count());
+        $this->assertSame(0, WorkerAvailability::query()->count());
+
+        $this->actingAs($admin)
+            ->get(route('leave-requests.show', $request))
+            ->assertOk()
+            ->assertSee('Nick Seine')
+            ->assertSee('Ja, maandag is ook goed.')
+            ->assertSee('19-09-2026 19:22');
+
+        Mail::assertSent(LeaveRequestReplyMail::class, function (LeaveRequestReplyMail $mail) use ($admin): bool {
+            $mail->assertSeeInHtml('Nick Seine heeft geantwoord op de vrij-aanvraag voor 25 september 2026.');
+            $mail->assertSeeInHtml('Ja, maandag is ook goed.');
+
+            return $mail->hasTo($admin->email)
+                && $mail->envelope()->subject === 'Antwoord op vrij-aanvraag Nick Seine';
+        });
+        Mail::assertSent(LeaveRequestReplyMail::class, function (LeaveRequestReplyMail $mail) use ($otherAdmin): bool {
+            return $mail->hasTo($otherAdmin->email);
+        });
+        Mail::assertSent(LeaveRequestReplyMail::class, 2);
+        Mail::assertNotSent(LeaveRequestQuestionMail::class);
+        Mail::assertNotSent(LeaveRequestReplyMail::class, fn (LeaveRequestReplyMail $mail): bool => $mail->hasTo($nick->email));
+    }
+
+    public function test_admin_can_adjust_period_and_approval_uses_the_new_dates(): void
+    {
+        Mail::fake();
+        $this->travelTo('2026-09-19 19:30:00');
+        [$nick, $worker] = $this->makeEigenVakman();
+        $request = $this->makeLeaveRequest($nick, $worker, '2026-09-25', '2026-09-25');
+        $admin = $this->makeAdmin();
+
+        $this->actingAs($admin)
+            ->from(route('leave-requests.show', $request))
+            ->patch(route('leave-requests.period', $request), [
+                'starts_on' => '2026-09-28',
+                'ends_on' => '2026-09-28',
+            ])
+            ->assertRedirect(route('leave-requests.show', $request))
+            ->assertSessionHas('status', 'De periode is aangepast. De vakman is per e-mail op de hoogte gebracht.');
+
+        $request->refresh();
+        $this->assertTrue($request->isPending());
+        $this->assertSame('2026-09-25', $request->original_starts_on->toDateString());
+        $this->assertSame('2026-09-25', $request->original_ends_on->toDateString());
+        $this->assertSame('2026-09-28', $request->starts_on->toDateString());
+        $this->assertSame('2026-09-28', $request->ends_on->toDateString());
+        $this->assertSame($admin->id, $request->period_adjusted_by);
+        $this->assertNotNull($request->period_adjusted_at);
+        $this->assertSame(0, WorkerAvailability::query()->count());
+
+        $system = LeaveRequestMessage::query()->where('is_system', true)->first();
+        $this->assertNotNull($system);
+        $this->assertSame($admin->id, $system->user_id);
+        $this->assertSame('Eric Wesselink heeft de periode gewijzigd van 25-09-2026 naar 28-09-2026.', $system->body);
+
+        $this->actingAs($admin)
+            ->get(route('leave-requests.show', $request))
+            ->assertOk()
+            ->assertSee('Oorspronkelijke aanvraag: 25-09-2026')
+            ->assertSee('Afgesproken periode: 28-09-2026')
+            ->assertSee('Eric Wesselink heeft de periode gewijzigd van 25-09-2026 naar 28-09-2026.');
+
+        $this->actingAs($nick)
+            ->get(route('vakman.leave-requests.show', $request))
+            ->assertOk()
+            ->assertSee('Oorspronkelijke aanvraag: 25-09-2026')
+            ->assertSee('Afgesproken periode: 28-09-2026');
+
+        Mail::assertSent(LeaveRequestPeriodChangedMail::class, function (LeaveRequestPeriodChangedMail $mail) use ($nick): bool {
+            $mail->assertSeeInHtml('Oorspronkelijke aanvraag:');
+            $mail->assertSeeInHtml('25-09-2026');
+            $mail->assertSeeInHtml('Afgesproken periode:');
+            $mail->assertSeeInHtml('28-09-2026');
+
+            return $mail->hasTo($nick->email)
+                && $mail->envelope()->subject === 'Periode van je vrij-aanvraag is aangepast';
+        });
+        Mail::assertNotSent(LeaveRequestPeriodChangedMail::class, fn (LeaveRequestPeriodChangedMail $mail): bool => $mail->hasTo($admin->email));
+
+        $this->actingAs($admin)
+            ->post(route('leave-requests.approve', $request))
+            ->assertRedirect(route('leave-requests.show', $request));
+
+        $availability = WorkerAvailability::query()->first();
+        $this->assertNotNull($availability);
+        $this->assertSame('2026-09-28', $availability->start_date->toDateString());
+        $this->assertSame('2026-09-28', $availability->end_date->toDateString());
+        $this->assertSame('2026-09-25', $request->fresh()->original_starts_on->toDateString());
+        $this->assertSame(1, LeaveRequestMessage::query()->count());
+    }
+
+    public function test_messages_remain_after_approve_and_reject(): void
+    {
+        Mail::fake();
+        [$nick, $worker] = $this->makeEigenVakman();
+        $approved = $this->makeLeaveRequest($nick, $worker, '2026-09-25', '2026-09-25', 'Vrij');
+        $rejected = $this->makeLeaveRequest($nick, $worker, '2026-10-02', '2026-10-02');
+        $admin = $this->makeAdmin();
+        LeaveRequestMessage::factory()->create([
+            'leave_request_id' => $approved->id,
+            'user_id' => $admin->id,
+            'body' => 'Vraag bij goedkeuren',
+        ]);
+        LeaveRequestMessage::factory()->create([
+            'leave_request_id' => $rejected->id,
+            'user_id' => $admin->id,
+            'body' => 'Vraag bij afwijzen',
+        ]);
+
+        $this->actingAs($admin)->post(route('leave-requests.approve', $approved));
+        $this->actingAs($admin)->post(route('leave-requests.reject', $rejected), [
+            'rejection_reason' => 'Toch niet.',
+        ]);
+
+        $this->assertSame(2, LeaveRequestMessage::query()->count());
+        $this->assertTrue(LeaveRequestMessage::query()->where('body', 'Vraag bij goedkeuren')->exists());
+        $this->assertTrue(LeaveRequestMessage::query()->where('body', 'Vraag bij afwijzen')->exists());
+
+        $this->actingAs($admin)
+            ->get(route('leave-requests.show', $approved))
+            ->assertOk()
+            ->assertSee('Vraag bij goedkeuren')
+            ->assertDontSee('>Versturen</button>', false);
+
+        $this->actingAs($admin)
+            ->from(route('leave-requests.show', $approved))
+            ->post(route('leave-requests.messages', $approved), ['body' => 'Te laat'])
+            ->assertForbidden();
+
+        $this->actingAs($nick)
+            ->get(route('vakman.leave-requests.show', $rejected))
+            ->assertOk()
+            ->assertSee('Vraag bij afwijzen')
+            ->assertDontSee('>Versturen</button>', false);
     }
 
     /**

@@ -81,6 +81,8 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/mijn-planning', [VakmanPlanningController::class, 'index'])->name('vakman.planning');
     Route::get('/mijn-planning/vrij-aanvragen', [VakmanLeaveRequestController::class, 'index'])->name('vakman.leave-requests.index');
     Route::post('/mijn-planning/vrij-aanvragen', [VakmanLeaveRequestController::class, 'store'])->name('vakman.leave-requests.store');
+    Route::get('/mijn-planning/vrij-aanvragen/{leaveRequest}', [VakmanLeaveRequestController::class, 'show'])->name('vakman.leave-requests.show');
+    Route::post('/mijn-planning/vrij-aanvragen/{leaveRequest}/berichten', [VakmanLeaveRequestController::class, 'message'])->name('vakman.leave-requests.messages');
     Route::post('/mijn-planning/vrij-aanvragen/{leaveRequest}/intrekken', [VakmanLeaveRequestController::class, 'withdraw'])->name('vakman.leave-requests.withdraw');
     Route::get('/mijn-planning/dag/{date}', [VakmanPlanningController::class, 'day'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.day');
     Route::get('/mijn-planning/dag/{date}/werkbon', [VakmanPlanningController::class, 'werkbon'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.werkbon');
@@ -232,6 +234,8 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/vrij-aanvragen/{leaveRequest}', [LeaveRequestController::class, 'show'])->name('leave-requests.show');
     Route::post('/vrij-aanvragen/{leaveRequest}/goedkeuren', [LeaveRequestController::class, 'approve'])->name('leave-requests.approve');
     Route::post('/vrij-aanvragen/{leaveRequest}/afwijzen', [LeaveRequestController::class, 'reject'])->name('leave-requests.reject');
+    Route::post('/vrij-aanvragen/{leaveRequest}/berichten', [LeaveRequestController::class, 'message'])->name('leave-requests.messages');
+    Route::patch('/vrij-aanvragen/{leaveRequest}/periode', [LeaveRequestController::class, 'adjustPeriod'])->name('leave-requests.period');
     Route::patch('/personeel/{worker}/leden/{crewMember}/werkdagen', [WorkerPersonnelController::class, 'update'])->name('personnel.work-days.update');
     Route::redirect('/vakmensen/afwezigheid', '/personeel');
     Route::redirect('/vakmensen/personeel', '/personeel');

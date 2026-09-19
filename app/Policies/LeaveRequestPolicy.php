@@ -32,6 +32,20 @@ class LeaveRequestPolicy
         return $user->canReviewLeaveRequests() && $leaveRequest->isPending();
     }
 
+    public function message(User $user, LeaveRequest $leaveRequest): bool
+    {
+        if (! $leaveRequest->isPending()) {
+            return false;
+        }
+
+        return $this->owns($user, $leaveRequest) || $user->canReviewLeaveRequests();
+    }
+
+    public function adjustPeriod(User $user, LeaveRequest $leaveRequest): bool
+    {
+        return $user->canReviewLeaveRequests() && $leaveRequest->isPending();
+    }
+
     private function owns(User $user, LeaveRequest $leaveRequest): bool
     {
         return $user->isVakman() && (int) $leaveRequest->user_id === (int) $user->id;

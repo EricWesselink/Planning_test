@@ -75,7 +75,14 @@
             <tbody>
             @forelse ($requests as $leaveRequest)
                 <tr class="border-t border-nicon-line align-top">
-                    <td class="px-3 py-2 whitespace-nowrap">{{ $leaveRequest->shortPeriodLabel() }}</td>
+                    <td class="px-3 py-2">
+                        @if ($leaveRequest->hasAdjustedPeriod())
+                            <div>Afgesproken: {{ $leaveRequest->shortPeriodLabel() }}</div>
+                            <div class="text-xs text-nicon-muted">Oorspronkelijk: {{ $leaveRequest->originalShortPeriodLabel() }}</div>
+                        @else
+                            {{ $leaveRequest->shortPeriodLabel() }}
+                        @endif
+                    </td>
                     <td class="px-3 py-2">{{ $leaveRequest->workdayCount() }}</td>
                     <td class="px-3 py-2">{{ $leaveRequest->status->label() }}</td>
                     <td class="px-3 py-2">
@@ -86,8 +93,12 @@
                         @else
                             —
                         @endif
+                        @if ($leaveRequest->messages->isNotEmpty())
+                            <div class="mt-1 text-nicon-muted">Er is overleg over deze aanvraag.</div>
+                        @endif
                     </td>
-                    <td class="px-3 py-2 text-right">
+                    <td class="px-3 py-2 text-right space-y-1">
+                        <a class="block text-sm text-nicon-orange-dark hover:underline" href="{{ route('vakman.leave-requests.show', $leaveRequest) }}">Bekijken</a>
                         @can('withdraw', $leaveRequest)
                             <form method="POST" action="{{ route('vakman.leave-requests.withdraw', $leaveRequest) }}">
                                 @csrf
