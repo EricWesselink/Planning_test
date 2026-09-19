@@ -474,6 +474,7 @@ class MeasurementFormTest extends TestCase
         $this->assertGreaterThan($drawingPos, $measurementPos);
         $this->assertStringContainsString('Slaapkamer', $html);
         $this->assertStringContainsString('INMEETFORMULIER', $html);
+        $this->assertStringContainsString('doc-title--compact', $html);
         $this->assertStringContainsString('data:image/png;base64,', substr($html, $drawingPos, $measurementPos - $drawingPos));
 
         $without = view(

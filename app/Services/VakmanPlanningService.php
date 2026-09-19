@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
+use App\Enums\ProjectKind;
 use App\Enums\VoucherPriceKind;
 use App\Enums\WorkUnit;
-use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\User;
@@ -17,6 +17,7 @@ use App\Support\PlanningHours;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class VakmanPlanningService
 {
@@ -206,7 +207,7 @@ class VakmanPlanningService
 
         $others = $colleagues;
 
-        return $own->map(function (WorkerAssignment $assignment) use ($user, $assignments, $others, $date, $detailed, $isExternal): array {
+        return $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed, $isExternal): array {
             $project = $assignment->project;
             $tickets = $this->ticketsOnDate($assignment, $date);
             $holder = $isExternal ? null : $assignment->workTicketHolder;
@@ -218,12 +219,14 @@ class VakmanPlanningService
                 'numbers' => $project->labeledNumbersLine(),
                 'address' => $project->nawLine(),
                 'maps_url' => $project->googleMapsUrl(),
+                'kind_label' => $isExternal ? null : $this->kindLabel($project),
                 'time_label' => $this->timeLabel($assignment, $isExternal),
                 'headline' => $this->headlineWork($assignment, $tickets),
-                'team' => $isExternal ? '' : ($assignment->worker?->planName() ?? ''),
+                'summary' => $isExternal ? null : $this->workSummary($assignment, $tickets),
+                'people' => $isExternal ? [] : $this->peopleOnAssignment($user, $assignment),
                 'colleagues' => $isExternal
                     ? $this->colleagueNamesForExternal($user, $assignment, $others, $date)
-                    : $this->colleagueNames($user, $assignment, $assignments, $others, $date),
+                    : $this->colleagueNames($user, $assignment, $others, $date),
                 'foreman' => $isExternal ? null : $assignment->foreman?->label(),
                 'work_ticket_holder' => $holder?->label(),
                 'is_work_ticket_holder' => ! $isExternal && $assignment->isWorkTicketResponsible($user),
@@ -281,14 +284,12 @@ class VakmanPlanningService
     }
 
     /**
-     * @param  Collection<int, WorkerAssignment>  $teamAssignments
      * @param  Collection<int, WorkerAssignment>  $others
      * @return list<string>
      */
     private function colleagueNames(
         User $user,
         WorkerAssignment $assignment,
-        Collection $teamAssignments,
         Collection $others,
         CarbonInterface $date,
     ): array {
@@ -297,20 +298,7 @@ class VakmanPlanningService
             $assignment->worker?->planName(),
             $user->crewMember?->label() ?? '',
         ], fn (string $name): bool => $name !== ''));
-        $excludeId = $user->scheduledCrewMemberId();
         $ownInterval = $assignment->intervalOnDate($date);
-
-        $fromOwnCrew = $assignment->crewMembers
-            ->filter(function (CrewMember $member) use ($excludeId, $assignment, $teamAssignments, $date, $ownInterval): bool {
-                if ($excludeId !== null && (int) $member->id === $excludeId) {
-                    return false;
-                }
-
-                return ! $this->memberIsElsewhere($member, $assignment, $teamAssignments, $date, $ownInterval);
-            })
-            ->map(fn (CrewMember $member): string => $member->label())
-            ->filter()
-            ->values();
 
         $overlapping = $others->filter(function (WorkerAssignment $other) use ($assignment, $date, $ownInterval): bool {
             if ((int) $other->project_id !== (int) $assignment->project_id) {
@@ -323,8 +311,8 @@ class VakmanPlanningService
             return $this->intervalsOverlapOnDate($ownInterval, $other->intervalOnDate($date));
         });
 
-        return collect($fromOwnCrew->all())
-            ->concat($overlapping->flatMap(function (WorkerAssignment $row): array {
+        return $overlapping
+            ->flatMap(function (WorkerAssignment $row): array {
                 $names = $row->presentNames();
                 if ($names !== []) {
                     return $names;
@@ -333,7 +321,7 @@ class VakmanPlanningService
                 $team = trim((string) ($row->worker?->planName() ?? ''));
 
                 return $team !== '' ? [$team] : [];
-            }))
+            })
             ->filter(fn (string $name): bool => $name !== '' && ! in_array($name, $ownLabels, true))
             ->unique()
             ->values()
@@ -378,35 +366,6 @@ class VakmanPlanningService
     }
 
     /**
-     * @param  Collection<int, WorkerAssignment>  $teamAssignments
-     * @param  array{0: Carbon, 1: Carbon}|null  $ownInterval
-     */
-    private function memberIsElsewhere(
-        CrewMember $member,
-        WorkerAssignment $assignment,
-        Collection $teamAssignments,
-        CarbonInterface $date,
-        ?array $ownInterval,
-    ): bool {
-        return $teamAssignments->contains(function (WorkerAssignment $other) use ($member, $assignment, $date, $ownInterval): bool {
-            if ((int) $other->id === (int) $assignment->id) {
-                return false;
-            }
-            if ((int) $other->project_id === (int) $assignment->project_id) {
-                return false;
-            }
-            if (! $other->coversDate($date) || $other->crewMembers->isEmpty()) {
-                return false;
-            }
-            if (! $other->crewMembers->contains(fn (CrewMember $row): bool => (int) $row->id === (int) $member->id)) {
-                return false;
-            }
-
-            return $this->intervalsOverlapOnDate($ownInterval, $other->intervalOnDate($date));
-        });
-    }
-
-    /**
      * @param  array{0: Carbon, 1: Carbon}|null  $left
      * @param  array{0: Carbon, 1: Carbon}|null  $right
      */
@@ -439,6 +398,75 @@ class VakmanPlanningService
         }
 
         return route('vakman.planning.werkbon', $date->toDateString());
+    }
+
+    private function kindLabel(Project $project): string
+    {
+        return match ($project->kind) {
+            ProjectKind::Winkel => 'Winkel',
+            ProjectKind::Service => 'Service',
+            ProjectKind::Klein => 'Klein werk',
+            default => 'Projecten',
+        };
+    }
+
+    /**
+     * @param  Collection<int, WorkTicket>  $tickets
+     */
+    private function workSummary(WorkerAssignment $assignment, Collection $tickets): ?string
+    {
+        $headline = $this->headlineWork($assignment, $tickets);
+        foreach ($tickets as $ticket) {
+            $text = $this->shortenDescription((string) ($ticket->notes ?? ''));
+            if ($text !== null && mb_strtolower($text) !== mb_strtolower($headline)) {
+                return $text;
+            }
+        }
+
+        $own = $this->shortenDescription((string) ($assignment->notes ?? ''));
+        if ($own !== null && mb_strtolower($own) !== mb_strtolower($headline)) {
+            return $own;
+        }
+
+        $project = $assignment->project;
+        $description = $this->shortenDescription((string) ($project?->work_description ?? ''));
+        if ($description !== null && mb_strtolower($description) !== mb_strtolower($headline)) {
+            return $description;
+        }
+
+        if ($project?->isWinkel()) {
+            $shop = $this->shortenDescription((string) ($project->shopWorkLine() ?? ''));
+            if ($shop !== null && mb_strtolower($shop) !== mb_strtolower($headline)) {
+                return $shop;
+            }
+        }
+
+        return null;
+    }
+
+    private function shortenDescription(string $text): ?string
+    {
+        $clean = trim(preg_replace('/\s+/u', ' ', $text) ?? '');
+        if ($clean === '') {
+            return null;
+        }
+
+        return Str::limit($clean, 140);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function peopleOnAssignment(User $user, WorkerAssignment $assignment): array
+    {
+        $names = $assignment->presentNames();
+        if ($names !== []) {
+            return $names;
+        }
+
+        $own = trim((string) ($user->name ?: $assignment->worker?->displayName() ?: ''));
+
+        return $own !== '' ? [$own] : [];
     }
 
     private function headlineWork(WorkerAssignment $assignment, Collection $tickets): string

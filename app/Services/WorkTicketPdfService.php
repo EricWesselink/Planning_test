@@ -12,7 +12,6 @@ use App\Models\WorkActivity;
 use App\Models\WorkerAssignment;
 use App\Models\WorkTicket;
 use App\Support\Format;
-use App\Support\PlanningHours;
 use Illuminate\Support\Facades\Storage;
 
 class WorkTicketPdfService
@@ -41,6 +40,8 @@ class WorkTicketPdfService
      *     companyPhone: string,
      *     recipient: string,
      *     recipientKind: ?string,
+     *     foreman: ?string,
+     *     workTicketHolder: ?string,
      *     kindLabel: string,
      *     issuedOn: string,
      *     projectTitle: string,
@@ -78,6 +79,8 @@ class WorkTicketPdfService
             'floors',
             'documents',
             'assignment.crewMembers',
+            'assignment.foreman',
+            'assignment.workTicketHolder',
         ]);
 
         $project = $ticket->project;
@@ -111,7 +114,12 @@ class WorkTicketPdfService
             'companyEmail' => (string) config('company.email'),
             'companyPhone' => (string) config('company.phone'),
             'recipient' => $this->recipientName($ticket),
-            'recipientKind' => $ticket->worker?->employment_type?->label(),
+            'recipientKind' => $ticket->worker?->employment_type?->isExternal()
+                ? $ticket->worker->employment_type->label()
+                : null,
+            'foreman' => $ticket->assignment?->foreman?->label(),
+            'workTicketHolder' => $ticket->assignment?->workTicketHolder?->label(),
+            'whoHeading' => $ticket->worker?->employment_type?->isExternal() ? 'Opdrachtnemer' : 'Vakmannen',
             'projectTitle' => $project?->displayTitle() ?? (string) $project?->name,
             'projectNumber' => $project?->workCode(),
             'workNumber' => $project?->workNumber() ?? '',
@@ -155,6 +163,8 @@ class WorkTicketPdfService
             'documents',
             'assignments.worker',
             'assignments.crewMembers',
+            'assignments.foreman',
+            'assignments.workTicketHolder',
             'measurementForm.meter',
             'measurementForm.rows',
         ]);
@@ -191,6 +201,8 @@ class WorkTicketPdfService
             'companyPhone' => (string) config('company.phone'),
             'recipient' => $this->shopVakmanNames($project),
             'recipientKind' => null,
+            'foreman' => $this->shopRoleNames($project, 'foreman'),
+            'workTicketHolder' => $this->shopRoleNames($project, 'workTicketHolder'),
             'whoHeading' => 'Vakmannen',
             'whenHeading' => 'Wanneer',
             'recipientCompact' => true,
@@ -435,8 +447,13 @@ class WorkTicketPdfService
             return '';
         }
 
-        if ($worker->employment_type?->isExternal() && filled($worker->company)) {
-            return trim((string) $worker->company);
+        if ($worker->employment_type?->isExternal()) {
+            return filled($worker->company) ? trim((string) $worker->company) : $worker->displayName();
+        }
+
+        $names = $ticket->assignment?->presentNames() ?? [];
+        if ($names !== []) {
+            return implode(', ', $names);
         }
 
         return $worker->displayName();
@@ -447,28 +464,20 @@ class WorkTicketPdfService
      */
     private function shopRows(Project $project): array
     {
-        $hoursByActivity = $project->workItems
-            ->filter(fn ($item): bool => (int) $item->work_activity_id > 0)
-            ->mapWithKeys(fn ($item): array => [(int) $item->work_activity_id => (float) $item->begrote_uren]);
-
         return $project->workActivities
             ->sortBy(fn (WorkActivity $activity): array => [
                 (int) ($activity->pivot?->sort_order ?? 0),
                 (int) $activity->id,
             ])
-            ->map(function (WorkActivity $activity) use ($hoursByActivity): array {
+            ->map(function (WorkActivity $activity): array {
                 $quantity = $activity->pivot?->quantity;
                 $unit = $activity->pivot?->unit;
                 $hasQuantity = $quantity !== null && (float) $quantity > 0.0001;
-                $hours = (float) ($hoursByActivity[(int) $activity->id] ?? 0);
                 $parts = [];
                 if ($hasQuantity) {
                     $qty = Format::qty($quantity, fmod((float) $quantity, 1.0) === 0.0 ? 0 : 2);
                     $label = $unit instanceof WorkUnit ? $unit->label() : '';
                     $parts[] = trim($qty.' '.$label);
-                }
-                if ($hours > 0.0001) {
-                    $parts[] = PlanningHours::hoursLabel($hours);
                 }
                 $note = trim((string) ($activity->pivot?->notes ?? ''));
                 $title = $activity->name;
@@ -523,6 +532,21 @@ class WorkTicketPdfService
         }
 
         return $names === [] ? 'Nog niet ingepland' : implode(', ', $names);
+    }
+
+    private function shopRoleNames(Project $project, string $relation): ?string
+    {
+        $names = $project->assignments
+            ->map(function (WorkerAssignment $assignment) use ($relation): string {
+                $person = $assignment->{$relation};
+
+                return trim((string) ($person?->label() ?? ''));
+            })
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $names->isEmpty() ? null : $names->implode(', ');
     }
 
     private function shopPeriod(Project $project): string

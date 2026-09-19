@@ -4300,6 +4300,19 @@ button.plan-labor-toggle:hover {
     padding: 0.85rem 0.9rem 0.75rem;
 }
 
+.vakman-job-card-kind {
+    margin: 0;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-nicon-orange);
+}
+
+.vakman-job-card-kind.is-winkel {
+    color: var(--color-nicon-steel);
+}
+
 .vakman-job-card-title {
     margin: 0;
     font-weight: 700;
@@ -5030,4 +5043,163 @@ img.calc-print-canvas {
         max-width: none;
         object-fit: fill;
     }
+}
+
+.personnel-week-page {
+    min-height: 0;
+}
+
+.personnel-week-board {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    background: white;
+}
+
+.personnel-week-board th,
+.personnel-week-board td {
+    border: 1px solid var(--color-nicon-line);
+    vertical-align: top;
+}
+
+.personnel-week-board thead th {
+    background: var(--color-nicon-ink);
+    color: white;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 8px 6px;
+    text-align: center;
+}
+
+.personnel-week-werk {
+    width: 24%;
+    text-align: left;
+    padding: 8px 10px;
+}
+
+.personnel-week-project-cell {
+    background: var(--color-nicon-sand);
+}
+
+.personnel-week-customer {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-nicon-muted);
+}
+
+.personnel-week-title {
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--color-nicon-ink);
+}
+
+.personnel-week-meta {
+    font-size: 12px;
+    color: var(--color-nicon-steel);
+}
+
+.personnel-week-activities {
+    margin: 6px 0 0;
+    padding: 0 0 0 1rem;
+    color: var(--color-nicon-steel);
+    font-size: 12px;
+}
+
+.personnel-week-work-title {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+}
+
+.personnel-week-days {
+    position: relative;
+    min-height: 28px;
+}
+
+.personnel-week-grid {
+    display: grid;
+    position: absolute;
+    inset: 0;
+}
+
+.personnel-week-grid i {
+    border-left: 1px solid var(--color-nicon-line);
+    display: block;
+}
+
+.personnel-week-grid i:first-child {
+    border-left: none;
+}
+
+.personnel-week-bars {
+    position: relative;
+}
+
+.personnel-week-bar {
+    position: absolute;
+    height: 20px;
+    border-radius: 2px;
+    font-size: 11px;
+    line-height: 20px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-weight: 650;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
+
+.personnel-week-bar.is-away {
+    font-weight: 600;
+}
+
+.personnel-week-bar-name {
+    display: block;
+    padding: 0 6px;
+}
+
+.personnel-week-bar-time {
+    font-weight: 500;
+    opacity: 0.9;
+}
+
+.personnel-week-marker {
+    position: absolute;
+    top: 3px;
+    color: #b91c1c;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.personnel-week-marker.is-klaar {
+    color: #3f6212;
+    top: 16px;
+}
+
+.personnel-week-empty {
+    padding: 16px;
+    color: var(--color-nicon-muted);
+}
+
+.personnel-week-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 14px;
+    font-size: 12px;
+}
+
+.personnel-week-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    display: inline-block;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
 }

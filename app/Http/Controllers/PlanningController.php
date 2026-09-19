@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\Worker;
 use App\Services\InternalPlanningExcelService;
+use App\Services\PersonnelWeekOverviewService;
 use App\Services\PlanningBoardService;
 use App\Services\WeekplanningPdfService;
 use App\Support\PlanningWeek;
@@ -73,6 +74,42 @@ class PlanningController extends Controller
                 $muted,
             );
             $pdf->getCanvas()->page_text(700, 18, 'Pagina {PAGE_NUM} van {PAGE_COUNT}', $font, 8, $muted);
+        }
+
+        return $pdf->stream($data['filename']);
+    }
+
+    public function personnelWeek(Request $request, PersonnelWeekOverviewService $overview): View
+    {
+        $this->authorizeRequestedProject($request);
+
+        return view('planning.personnel-week', $overview->build($request));
+    }
+
+    public function personnelWeekPdf(Request $request, PersonnelWeekOverviewService $overview): Response
+    {
+        $this->authorizeRequestedProject($request);
+        $data = $overview->build($request);
+        $pdf = Pdf::loadView('planning.personnel-week-pdf', $data)
+            ->setPaper('a3', 'landscape')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['heading'].' · Week '.$data['weekNumber'].' · '.$data['weekYear'],
+        ]);
+        $pdf->render();
+
+        $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
+        if ($font) {
+            $muted = [0.35, 0.35, 0.38];
+            $pdf->getCanvas()->page_text(
+                28,
+                18,
+                'NICON VLOEREN | Weekplanning personeel | Gegenereerd op '.$data['generatedOn'],
+                $font,
+                8,
+                $muted,
+            );
+            $pdf->getCanvas()->page_text(1050, 18, 'Pagina {PAGE_NUM} van {PAGE_COUNT}', $font, 8, $muted);
         }
 
         return $pdf->stream($data['filename']);

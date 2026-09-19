@@ -103,6 +103,12 @@
                 @if ($recipientKind)
                     <p @class(['crew-line' => $recipientCompact])>{{ $recipientKind }}</p>
                 @endif
+                @if (filled($foreman ?? null))
+                    <p @class(['crew-line' => $recipientCompact])>Voorman {{ $foreman }}</p>
+                @endif
+                @if (filled($workTicketHolder ?? null))
+                    <p @class(['crew-line' => $recipientCompact])>Werkbon bij {{ $workTicketHolder }}</p>
+                @endif
                 @if (filled($period ?? null))
                     <div class="block-title" style="margin-top:8px">{{ $whenHeading }}</div>
                     <p @class(['crew-line' => $recipientCompact])>{{ $period }}</p>

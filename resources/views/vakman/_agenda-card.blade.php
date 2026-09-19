@@ -2,13 +2,17 @@
     $title = trim((string) $job['project_name']);
     $city = trim((string) ($job['city'] ?? ''));
     $address = $job['address'] ?? null;
-    $colleagues = $job['colleagues'] ?? [];
+    $kindLabel = trim((string) ($job['kind_label'] ?? ''));
+    $summary = trim((string) ($job['summary'] ?? ''));
     $holder = $job['work_ticket_holder'] ?? null;
     $isHolder = (bool) ($job['is_work_ticket_holder'] ?? false);
     $showActions = $showActions ?? true;
 @endphp
 <div class="vakman-job-card">
     <div class="vakman-job-card-body">
+        @if ($kindLabel !== '')
+            <p class="vakman-job-card-kind {{ $kindLabel === 'Winkel' ? 'is-winkel' : '' }}">{{ $kindLabel }}</p>
+        @endif
         <h2 class="vakman-job-card-title">{{ $title }}</h2>
         @if (($job['numbers'] ?? '') !== '')
             <p class="vakman-job-card-numbers">{{ $job['numbers'] }}</p>
@@ -18,7 +22,7 @@
 
         @if ($address)
             <p class="vakman-job-card-row">
-                <span class="vakman-job-card-label">Adres</span>
+                <span class="vakman-job-card-label">Werkadres</span>
                 @if ($job['maps_url'] ?? null)
                     <a href="{{ $job['maps_url'] }}" target="_blank" rel="noopener noreferrer">{{ $address }}</a>
                 @else
@@ -27,7 +31,7 @@
             </p>
         @elseif ($city !== '')
             <p class="vakman-job-card-row">
-                <span class="vakman-job-card-label">Plaats</span>
+                <span class="vakman-job-card-label">Werkadres</span>
                 {{ $city }}
             </p>
         @endif
@@ -39,21 +43,26 @@
             </p>
         @endif
 
-        @if (($job['team'] ?? '') !== '')
+        @if ($showActions && $summary !== '')
             <p class="vakman-job-card-row">
-                <span class="vakman-job-card-label">Team</span>
-                {{ $job['team'] }}
+                <span class="vakman-job-card-label">Omschrijving</span>
+                {{ $summary }}
             </p>
         @endif
 
-        <p class="vakman-job-card-row">
-            <span class="vakman-job-card-label">Je werkt met</span>
-            @if ($colleagues !== [])
-                {{ implode(', ', $colleagues) }}
-            @else
-                Alleen
-            @endif
-        </p>
+        @if (($job['people'] ?? []) !== [])
+            <p class="vakman-job-card-row">
+                <span class="vakman-job-card-label">Vakmannen</span>
+                {{ implode(', ', $job['people']) }}
+            </p>
+        @endif
+
+        @if (($job['colleagues'] ?? []) !== [])
+            <p class="vakman-job-card-row">
+                <span class="vakman-job-card-label">Je werkt met</span>
+                {{ implode(', ', $job['colleagues']) }}
+            </p>
+        @endif
 
         @if (($job['foreman'] ?? null) !== null && $job['foreman'] !== '')
             <p class="vakman-job-card-row">

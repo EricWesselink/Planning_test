@@ -16,7 +16,7 @@
             <div class="vakman-agenda-title">
                 <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Vakman</div>
                 <h1 class="text-xl font-semibold leading-tight sm:text-2xl">Mijn planning</h1>
-                <p class="text-sm text-nicon-muted">{{ $worker?->planName() ?? auth()->user()?->name }}</p>
+                <p class="text-sm text-nicon-muted">{{ auth()->user()?->name ?? $worker?->displayName() }}</p>
             </div>
 
             <div class="vakman-agenda-nav">

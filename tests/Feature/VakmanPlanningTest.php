@@ -78,6 +78,8 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Open werkbon')
             ->assertSee('Route')
             ->assertSee('Industrieweg 8')
+            ->assertSee('Werkadres')
+            ->assertSee('Projecten')
             ->assertSee('vakman-week', false)
             ->assertDontSee('Kindcentrum Veldhoeve')
             ->assertDontSee('Tarkett')
@@ -100,6 +102,60 @@ class VakmanPlanningTest extends TestCase
         $this->assertStringNotContainsString('href="'.url('/gebruikers').'"', $html);
         $this->assertStringNotContainsString('images/decoloop.png', $html);
         $this->assertStringNotContainsString((string) $other->name, $html);
+    }
+
+    public function test_vakman_week_shows_werkbon_summary_and_marks_winkelwerk(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        $nick = $this->makeWorker('Nick Seine');
+        $project = $this->makeProject('Gezondheidscentrum Laren', [
+            'address' => 'Nieuweweg 8',
+            'postal_code' => '1251 LG',
+            'city' => 'Laren',
+        ]);
+        $shop = $this->makeProject('Gordijnen Janssen', [
+            'kind' => 'winkel',
+            'address' => 'Kerkstraat 12',
+            'postal_code' => '3811 AA',
+            'city' => 'Amersfoort',
+            'work_description' => 'Screens plaatsen en inmeten.',
+        ]);
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $nick->id,
+            'project_id' => $project->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'hours_per_day' => 8,
+        ]);
+        WorkerAssignment::query()->create([
+            'worker_id' => $nick->id,
+            'project_id' => $shop->id,
+            'start_date' => '2026-09-10',
+            'end_date' => '2026-09-10',
+            'hours_per_day' => 8,
+        ]);
+        WorkTicket::query()->create([
+            'number' => 'WB-2026-0008',
+            'kind' => WorkTicketKind::Werkbon,
+            'worker_assignment_id' => $assignment->id,
+            'project_id' => $project->id,
+            'worker_id' => $nick->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'notes' => 'Eerst egaliseren, daarna primer laten drogen.',
+        ]);
+        $user = User::factory()->vakman($nick->id)->create();
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Projecten')
+            ->assertSee('Winkel')
+            ->assertSee('Werkadres')
+            ->assertSee('Nieuweweg 8, 1251 LG Laren')
+            ->assertSee('Kerkstraat 12, 3811 AA Amersfoort')
+            ->assertSee('Eerst egaliseren, daarna primer laten drogen.')
+            ->assertSee('Screens plaatsen en inmeten.');
     }
 
     public function test_vakman_day_detail_shows_address_work_and_werkbon_without_prices(): void
@@ -146,6 +202,8 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('Donderdag 10 september')
             ->assertSee('Laakse Tuinen')
             ->assertSee('Industrieweg 8, 8013 PM Zwolle')
+            ->assertSee('Werkadres')
+            ->assertSee('Projecten')
             ->assertSee('PVC')
             ->assertSee('120')
             ->assertSee('Begane grond')
@@ -166,6 +224,10 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('images/nicon-vloeren.png', false)
             ->assertSee('Laakse Tuinen')
             ->assertSee('PVC')
+            ->assertSee('Vakmannen')
+            ->assertSee('Nick Seine')
+            ->assertDontSee('Eigen medewerker')
+            ->assertDontSee('Opdrachtnemer')
             ->assertDontSee('€')
             ->assertDontSee('87,50')
             ->assertDontSee('Opdrachtbon');
@@ -288,7 +350,10 @@ class VakmanPlanningTest extends TestCase
             ->assertDontSee('Je werkt met')
             ->assertDontSee('WERKBON')
             ->assertDontSee('Route')
-            ->assertDontSee('Opdrachtbon');
+            ->assertDontSee('Opdrachtbon')
+            ->assertDontSee('Werkadres')
+            ->assertDontSee('Projecten')
+            ->assertDontSee('Omschrijving');
 
         $this->actingAs($user)
             ->get(route('vakman.planning.day', '2026-09-10'))
@@ -419,11 +484,14 @@ class VakmanPlanningTest extends TestCase
             ->assertOk()
             ->assertSee('Laakse Tuinen')
             ->assertSee('Cujikstraat 2')
-            ->assertSee('Je werkt met')
+            ->assertSee('Vakmannen')
+            ->assertSee('Alexandr')
             ->assertSee('José')
             ->assertSee('WERKBON')
             ->assertSee('Jij bent verantwoordelijk')
             ->assertSee('Open werkbon')
+            ->assertDontSee('Je werkt met')
+            ->assertDontSee('Team 2')
             ->assertDontSee('Het Vloerenhuis')
             ->assertDontSee('Eemnesserstraat')
             ->assertDontSee('Peter');
@@ -477,9 +545,11 @@ class VakmanPlanningTest extends TestCase
             ->get(route('vakman.planning'))
             ->assertOk()
             ->assertSee('Feringa Building')
-            ->assertSee('Je werkt met')
+            ->assertSee('Vakmannen')
             ->assertSee('Nick')
+            ->assertSee('Voorman')
             ->assertSee('Werkbon bij: Nick')
+            ->assertDontSee('Je werkt met')
             ->assertDontSee('Open werkbon')
             ->assertDontSee('Jij bent verantwoordelijk');
 
@@ -490,7 +560,15 @@ class VakmanPlanningTest extends TestCase
         $this->actingAs($nickUser)
             ->get(route('vakman.planning.werkbon', '2026-09-21'))
             ->assertOk()
-            ->assertSee('WERKBON');
+            ->assertSee('WERKBON')
+            ->assertSee('Vakmannen')
+            ->assertSee('Nick')
+            ->assertSee('Mahmoud')
+            ->assertSee('Voorman Nick')
+            ->assertSee('Werkbon bij Nick')
+            ->assertDontSee('Team 1')
+            ->assertDontSee('Eigen medewerker')
+            ->assertDontSee('Opdrachtnemer');
     }
 
     /**

@@ -52,6 +52,11 @@
         line-height: 1.1;
         padding-top: 2px;
     }
+    .doc-title--compact {
+        font-size: 13pt;
+        letter-spacing: 0.03em;
+        line-height: 1.2;
+    }
     .doc-meta { font-size: 8.5pt; color: #5b6570; padding-top: 3px; }
     .brand-side { text-align: right; font-size: 8pt; color: #5b6570; line-height: 1.4; }
     .brand-side strong { color: #163a5f; font-size: 9pt; }
@@ -203,6 +208,7 @@
         .ticket-page { margin: 0 auto; }
         .logo img { width: 132px; height: auto; }
         .doc-title { font-size: 26px; }
+        .doc-title--compact { font-size: 20px; }
     }
     @media print {
         .no-print { display: none !important; }

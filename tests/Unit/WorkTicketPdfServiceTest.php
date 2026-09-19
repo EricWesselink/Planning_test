@@ -49,6 +49,35 @@ class WorkTicketPdfServiceTest extends TestCase
         $this->assertStringContainsString('nicon-vloeren.png', $data['logoUrl']);
     }
 
+    public function test_eigen_werkbon_lists_vakman_names_and_roles_without_the_team_label(): void
+    {
+        $ticket = $this->makeTicket();
+        $worker = $ticket->worker;
+        $worker->forceFill([
+            'name' => 'Team 1 Nick',
+            'employment_type' => 'eigen',
+            'company' => null,
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Nick Seine', 'phone' => ''],
+                ['name' => 'Mahmoud Ali', 'phone' => ''],
+            ],
+        ])->save();
+        $people = $worker->fresh()->crewPeople()->orderBy('sort_order')->get();
+        $assignment = $ticket->assignment;
+        $assignment->syncPresentCrew([$people[0]->id, $people[1]->id]);
+        $assignment->applyRoles($people[0]->id, $people[1]->id);
+        $ticket->forceFill(['kind' => WorkTicketKind::Werkbon, 'number' => 'WB-2026-0001'])->save();
+
+        $data = app(WorkTicketPdfService::class)->build($ticket->fresh(['worker', 'assignment.crewMembers', 'assignment.foreman', 'assignment.workTicketHolder']), false);
+
+        $this->assertSame('Nick Seine, Mahmoud Ali', $data['recipient']);
+        $this->assertNull($data['recipientKind']);
+        $this->assertSame('Vakmannen', $data['whoHeading']);
+        $this->assertSame('Nick Seine', $data['foreman']);
+        $this->assertSame('Mahmoud Ali', $data['workTicketHolder']);
+    }
+
     public function test_build_uses_kloppenburg_letterhead_for_winkel_projects(): void
     {
         $ticket = $this->makeTicket();

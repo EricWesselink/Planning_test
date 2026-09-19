@@ -13,7 +13,7 @@
             </td>
             <td>
                 <div class="brand-name">{{ $companyName }}</div>
-                <div class="doc-title">{{ $documentTitle }}</div>
+                <div class="doc-title doc-title--compact">{{ $documentTitle }}</div>
             </td>
             <td class="brand-side">
                 <strong>{{ $companyName }}</strong><br>

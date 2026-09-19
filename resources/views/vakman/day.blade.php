@@ -8,7 +8,7 @@
     <div class="mx-auto max-w-lg">
         <a href="{{ $weekUrl }}" class="text-sm text-nicon-orange">← Weekoverzicht</a>
         <h1 class="mt-2 text-2xl font-semibold">{{ $detail['heading'] }}</h1>
-        <p class="text-sm text-nicon-muted">{{ $worker?->planName() ?? auth()->user()?->name }}</p>
+        <p class="text-sm text-nicon-muted">{{ auth()->user()?->name ?? $worker?->displayName() }}</p>
 
         @forelse ($detail['jobs'] as $job)
             @php

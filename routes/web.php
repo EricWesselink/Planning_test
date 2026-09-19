@@ -84,6 +84,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::get('/planning/candidates', [PlanningActionController::class, 'candidates'])->name('planning.candidates');
     Route::get('/planning/pdf', [PlanningController::class, 'export'])->name('planning.export');
     Route::get('/planning/weekplanning', [PlanningController::class, 'weekplanning'])->name('planning.weekplanning');
+    Route::get('/planning/weekplanning-personeel', [PlanningController::class, 'personnelWeek'])->name('planning.personnel-week');
+    Route::get('/planning/weekplanning-personeel/pdf', [PlanningController::class, 'personnelWeekPdf'])->name('planning.personnel-week.pdf');
     Route::get('/planning/excel', [PlanningController::class, 'excel'])->name('planning.excel');
     Route::post('/planning/shift', [PlanningActionController::class, 'shift'])->name('planning.shift');
     Route::post('/planning/assignments/move', [PlanningActionController::class, 'moveAssignment'])->name('planning.assignments.move');

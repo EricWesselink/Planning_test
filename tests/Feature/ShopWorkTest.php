@@ -1218,11 +1218,13 @@ class ShopWorkTest extends TestCase
             ->assertSee('Tel. 0612345678')
             ->assertSee('wesselinkeric@hotmail.com')
             ->assertSee('PVC banen — rechterplank donker eiken')
-            ->assertSee('18,77 m² · 16u')
+            ->assertSee('18,77 m²')
             ->assertSee('Tapijt')
-            ->assertSee('6,25 m² · 16u')
+            ->assertSee('6,25 m²')
             ->assertSee('Plinten')
-            ->assertSee('12,50 m¹ · 3u')
+            ->assertSee('12,50 m¹')
+            ->assertDontSee(' · 16u')
+            ->assertDontSee(' · 3u')
             ->assertSee('PVC en tapijt in de woning')
             ->assertSee('dichte trap')
             ->assertSee('nashville')
@@ -1250,24 +1252,57 @@ class ShopWorkTest extends TestCase
         $this->assertNotNull($project);
         $item = $project->workItems()->first();
         $this->assertNotNull($item);
-        foreach (['Team 3 Arek', 'Team 4 Lukasz'] as $name) {
-            $worker = $this->makeShopWorker($name);
-            WorkerAssignment::query()->create([
-                'worker_id' => $worker->id,
-                'project_id' => $project->id,
-                'work_item_id' => $item->id,
-                'start_date' => '2026-09-21',
-                'end_date' => '2026-09-23',
-                'hours_per_day' => 8,
-            ]);
-        }
+        $arek = Worker::query()->create([
+            'name' => 'Team 3 Arek',
+            'employment_type' => 'eigen',
+            'specialty' => 'PVC',
+            'people_count' => 1,
+            'crew_members' => [['name' => 'Arek Kowalski', 'phone' => '']],
+            'active' => true,
+        ]);
+        $lukasz = Worker::query()->create([
+            'name' => 'Team 4 Lukasz',
+            'employment_type' => 'eigen',
+            'specialty' => 'PVC',
+            'people_count' => 1,
+            'crew_members' => [['name' => 'Lukasz Nowak', 'phone' => '']],
+            'active' => true,
+        ]);
+        $arekPerson = $arek->crewPeople()->first();
+        $lukaszPerson = $lukasz->crewPeople()->first();
+        $this->assertNotNull($arekPerson);
+        $this->assertNotNull($lukaszPerson);
+        $arekAssignment = WorkerAssignment::query()->create([
+            'worker_id' => $arek->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'start_date' => '2026-09-21',
+            'end_date' => '2026-09-23',
+            'hours_per_day' => 8,
+        ]);
+        $arekAssignment->syncPresentCrew([$arekPerson->id]);
+        $arekAssignment->applyRoles($arekPerson->id, $arekPerson->id);
+        $lukaszAssignment = WorkerAssignment::query()->create([
+            'worker_id' => $lukasz->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'start_date' => '2026-09-21',
+            'end_date' => '2026-09-23',
+            'hours_per_day' => 8,
+        ]);
+        $lukaszAssignment->syncPresentCrew([$lukaszPerson->id]);
+        $lukaszAssignment->applyRoles($lukaszPerson->id, $lukaszPerson->id);
 
         $this->actingAs($user)
             ->get(route('projects.winkel.werkbon', $project))
             ->assertOk()
             ->assertSee('Vakmannen')
-            ->assertSee('Team 3 Arek')
-            ->assertSee('Team 4 Lukasz')
+            ->assertSee('Arek Kowalski')
+            ->assertSee('Lukasz Nowak')
+            ->assertSee('Voorman')
+            ->assertSee('Werkbon bij')
+            ->assertDontSee('Team 3 Arek')
+            ->assertDontSee('Team 4 Lukasz')
             ->assertSee('Wanneer')
             ->assertSee('21-09 t/m 23-09-2026')
             ->assertDontSee('Opdrachtnemer');

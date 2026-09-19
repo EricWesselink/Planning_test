@@ -68,6 +68,11 @@
                         id="weekplanning-open"
                         title="Weekplanning vakmannen als PDF"
                     >Weekplanning vakmannen</button>
+                    <a
+                        class="planning-btn"
+                        href="{{ route('planning.personnel-week', ['week' => $weekStart->toDateString()]) }}"
+                        title="Weekplanning personeel"
+                    >Weekplanning personeel</a>
                     <button
                         type="button"
                         class="planning-btn"
