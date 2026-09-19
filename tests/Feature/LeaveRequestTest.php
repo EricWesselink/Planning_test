@@ -448,7 +448,7 @@ class LeaveRequestTest extends TestCase
             ->assertOk()
             ->assertSee('Overleg over aanvraag')
             ->assertSee('19-09-2026 19:15')
-            ->assertSee('Eric Wesselink (Beheerder)')
+            ->assertSee('Eric Wesselink Projectleider/Uitvoerder')
             ->assertSee('Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?')
             ->assertSee('>Vraag stellen</button>', false)
             ->assertSee('>Goedkeuren</button>', false)
@@ -464,7 +464,7 @@ class LeaveRequestTest extends TestCase
             ->get(route('vakman.leave-requests.show', $request))
             ->assertOk()
             ->assertSee('Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?')
-            ->assertSee('Eric Wesselink (Beheerder)')
+            ->assertSee('Eric Wesselink Projectleider/Uitvoerder')
             ->assertSee('>Versturen</button>', false);
 
         Mail::assertSent(LeaveRequestQuestionMail::class, function (LeaveRequestQuestionMail $mail) use ($nick): bool {

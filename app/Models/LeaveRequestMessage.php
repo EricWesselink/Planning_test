@@ -50,8 +50,6 @@ class LeaveRequestMessage extends Model
             return $name;
         }
 
-        $role = $this->user?->role?->label();
-
-        return $role ? $name.' ('.$role.')' : $name;
+        return $name.' Projectleider/Uitvoerder';
     }
 }
