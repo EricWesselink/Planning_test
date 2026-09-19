@@ -404,6 +404,7 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('08:00 – 16:00')
             ->assertSee('vakman-agenda-card', false)
             ->assertSee('vakman-week--zzp', false)
+            ->assertSee('class="vakman-agenda-today"', false)
             ->assertDontSee('vakman-week-split', false)
             ->assertDontSee('Mijn week')
             ->assertDontSee('Hele dag')
@@ -441,6 +442,25 @@ class VakmanPlanningTest extends TestCase
         $this->actingAs($user)
             ->get(route('vakman.planning.werkbon', '2026-09-10'))
             ->assertForbidden();
+    }
+
+    public function test_zzp_today_link_sits_outside_the_week_arrows(): void
+    {
+        $this->travelTo('2026-09-19 10:00:00');
+        $worker = $this->makeWorker('MT Woning', 'zzp');
+        $user = User::factory()->vakman($worker->id)->create(['name' => 'Michael Tooren']);
+
+        $html = $this->actingAs($user)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Vandaag')
+            ->assertSee('vakman-week-day is-today', false)
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/aria-label="Volgende">[^<]*<\/a>\s*<\/div>\s*<a href="[^"]+" class="vakman-agenda-today">Vandaag<\/a>/s',
+            $html,
+        );
     }
 
     public function test_zzp_day_and_opdrachtbon_show_tekeningen_when_a_plattegrond_exists(): void

@@ -23,8 +23,8 @@
                 <a href="{{ $agenda['prevUrl'] }}" aria-label="Vorige">‹</a>
                 <div class="vakman-agenda-period">{{ $agenda['periodLabel'] }}</div>
                 <a href="{{ $agenda['nextUrl'] }}" aria-label="Volgende">›</a>
-                <a href="{{ $agenda['todayUrl'] }}" class="vakman-agenda-today">Vandaag</a>
             </div>
+            <a href="{{ $agenda['todayUrl'] }}" class="vakman-agenda-today">Vandaag</a>
 
             <div class="vakman-agenda-switch">
                 <a href="{{ route('vakman.planning', $weekQuery) }}" class="{{ $view === 'week' ? 'is-active' : '' }}">Week</a>

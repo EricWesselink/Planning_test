@@ -4216,6 +4216,11 @@ button.plan-labor-toggle:hover {
 }
 
 .vakman-agenda-today {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    border: none;
+    background: transparent;
     color: var(--color-nicon-orange);
 }
 
