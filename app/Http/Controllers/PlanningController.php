@@ -96,21 +96,6 @@ class PlanningController extends Controller
         $pdf->addInfo([
             'Title' => $data['heading'].' · Week '.$data['weekNumber'].' · '.$data['weekYear'],
         ]);
-        $pdf->render();
-
-        $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
-        if ($font) {
-            $muted = [0.35, 0.35, 0.38];
-            $pdf->getCanvas()->page_text(
-                28,
-                18,
-                'NICON VLOEREN | Weekplanning personeel | Gegenereerd op '.$data['generatedOn'],
-                $font,
-                8,
-                $muted,
-            );
-            $pdf->getCanvas()->page_text(1050, 18, 'Pagina {PAGE_NUM} van {PAGE_COUNT}', $font, 8, $muted);
-        }
 
         return $pdf->stream($data['filename']);
     }

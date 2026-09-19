@@ -110,6 +110,28 @@ class VakmanPlanningTest extends TestCase
         $this->assertStringNotContainsString((string) $other->name, $html);
     }
 
+    public function test_vakman_week_renders_a_day_picker_with_today_selected(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        [$nick] = $this->seedProjects();
+        $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
+
+        $html = $this->actingAs($user)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('vakman-day-strip', false)
+            ->assertSee('data-day-target="2026-09-07"', false)
+            ->assertSee('data-day-target="2026-09-10"', false)
+            ->assertSee('data-day-target="2026-09-12"', false)
+            ->assertSee('data-day-key="2026-09-10"', false)
+            ->assertSee('Week 37')
+            ->getContent();
+
+        $this->assertSame(1, substr_count($html, 'vakman-week-day is-today is-active'));
+        $this->assertSame(1, substr_count($html, 'vakman-day-strip-btn is-selected is-today has-jobs'));
+        $this->assertStringContainsString('aria-pressed="true"', $html);
+    }
+
     public function test_vakman_week_shows_werkbon_summary_and_marks_winkelwerk(): void
     {
         $this->travelTo('2026-09-10 08:00:00');

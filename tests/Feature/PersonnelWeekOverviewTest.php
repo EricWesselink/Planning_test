@@ -314,6 +314,8 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assign($team, $project, $item, '2026-09-21', '2026-09-23', '08:00:00', '16:00:00')
             ->syncPresentCrew([$people[0]->id, $people[1]->id]);
 
+        $this->travelTo('2026-09-19 13:37:00');
+
         $response = $this->actingAs($user)
             ->get(route('planning.personnel-week.pdf', ['week' => '2026-09-21']));
 
@@ -330,8 +332,12 @@ class PersonnelWeekOverviewTest extends TestCase
         $pdf = (new Parser)->parseContent($response->getContent());
         $text = preg_replace('/\s+/u', ' ', $pdf->getText()) ?? '';
         $this->assertStringContainsString('Weekplanning personeel', $text);
+        $this->assertStringContainsString('Week 39', $text);
         $this->assertStringContainsString('Arek', $text);
         $this->assertStringContainsString('Mohammed', $text);
+        $this->assertStringNotContainsString('Gegenereerd op', $text);
+        $this->assertStringNotContainsString('NICON VLOEREN | Weekplanning personeel', $text);
+        $this->assertDoesNotMatchRegularExpression('/Pagina\s+\d+\s+van\s+\d+/u', $text);
         $this->assertStringNotContainsString('€', $text);
         $this->assertStringNotContainsString('Hele dag', $text);
         $this->assertSame(1, count($pdf->getPages()));
@@ -346,6 +352,38 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assertStringContainsString('page-break-inside: avoid', $html);
         $this->assertStringContainsString('tr class="keep"', $html);
         $this->assertStringNotContainsString('page-break-before: always', $html);
+    }
+
+    public function test_personnel_week_pdf_repeats_the_brand_header_without_generated_on_line(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makeTeam('Team 1', [
+            ['name' => 'Peter', 'phone' => ''],
+        ]);
+        $person = $team->crewPeople()->first();
+        for ($index = 1; $index <= 24; $index++) {
+            [$project, $item] = $this->makeProject('Werk '.sprintf('%02d', $index), [
+                'project_number' => '2026-'.sprintf('%03d', $index),
+            ]);
+            $this->assign($team, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+                ->syncPresentCrew([$person->id]);
+        }
+
+        $this->travelTo('2026-09-19 13:37:00');
+
+        $response = $this->actingAs($user)
+            ->get(route('planning.personnel-week.pdf', ['week' => '2026-09-21']));
+        $document = (new Parser)->parseContent($response->getContent());
+        $pages = $document->getPages();
+
+        $this->assertGreaterThan(1, count($pages));
+        foreach ($pages as $page) {
+            $text = preg_replace('/\s+/u', ' ', $page->getText()) ?? '';
+            $this->assertStringContainsString('Weekplanning personeel', $text);
+            $this->assertStringContainsString('Week 39', $text);
+            $this->assertStringNotContainsString('Gegenereerd op', $text);
+            $this->assertDoesNotMatchRegularExpression('/Pagina\s+\d+\s+van\s+\d+/u', $text);
+        }
     }
 
     /**

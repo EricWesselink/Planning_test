@@ -16,27 +16,44 @@
         .brand-cell {
             border: none;
             border-bottom: 0.6pt solid #163a5f;
-            padding: 0 0 5px;
+            padding: 0 0 6px;
             vertical-align: middle;
         }
         .brand { width: 100%; border-collapse: collapse; }
         .brand td { border: none; vertical-align: middle; padding: 0; }
         .logo { width: 88px; padding-right: 10px; }
         .logo img { width: 80px; height: 39px; display: block; }
+        .brand-copy {
+            width: auto;
+            border-collapse: collapse;
+        }
+        .brand-copy td {
+            border: none;
+            vertical-align: top;
+            padding: 0;
+        }
         .brand-name {
             font-size: 8pt;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: #163a5f;
+            line-height: 1.3;
+            padding: 0 0 3px;
         }
         .brand-title {
             font-size: 12pt;
             font-weight: 700;
             color: #163a5f;
-            padding-top: 1px;
+            line-height: 1.25;
+            padding: 3px 0;
         }
-        .brand-week { font-size: 8pt; color: #163a5f; padding-top: 1px; }
+        .brand-week {
+            font-size: 8pt;
+            color: #163a5f;
+            line-height: 1.3;
+            padding: 3px 0 0;
+        }
         .day-head th {
             background: #163a5f;
             color: #fff;
@@ -145,9 +162,17 @@
                                 </td>
                             @endif
                             <td>
-                                <div class="brand-name">{{ $companyName }}</div>
-                                <div class="brand-title">{{ $heading }}</div>
-                                <div class="brand-week">{{ $weekLabel }} · {{ $weekRange }}</div>
+                                <table class="brand-copy">
+                                    <tr>
+                                        <td class="brand-name">{{ $companyName }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="brand-title">{{ $heading }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="brand-week">{{ $weekLabel }} · {{ $weekRange }}</td>
+                                    </tr>
+                                </table>
                             </td>
                         </tr>
                     </table>

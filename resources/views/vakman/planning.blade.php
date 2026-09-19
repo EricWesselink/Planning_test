@@ -10,18 +10,30 @@
         $weekQuery = ['view' => 'week', 'week' => $agenda['weekStart']->toDateString()];
         $monthQuery = ['view' => 'month', 'month' => $agenda['monthStart']->format('Y-m')];
         $monthWeeks = $view === 'month' ? $agenda['days']->chunk(7) : collect();
+        $weekEnd = $agenda['weekStart']->copy()->addDays(5);
+        $selectedDay = $agenda['days']->firstWhere('is_today')
+            ?? $agenda['days']->first(fn (array $day): bool => $day['jobs'] !== [])
+            ?? $agenda['days']->first();
+        $selectedDayKey = is_array($selectedDay) ? ($selectedDay['key'] ?? '') : '';
     @endphp
-    <div class="vakman-agenda">
+    <div class="vakman-agenda{{ $view === 'week' ? ' vakman-agenda--split' : '' }}">
         <div class="vakman-agenda-toolbar">
             <div class="vakman-agenda-title">
-                <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Vakman</div>
+                <div class="vakman-agenda-kicker">Vakman</div>
                 <h1 class="text-xl font-semibold leading-tight sm:text-2xl">Mijn planning</h1>
                 <p class="text-sm text-nicon-muted">{{ auth()->user()?->name ?? $worker?->displayName() }}</p>
             </div>
 
             <div class="vakman-agenda-nav">
                 <a href="{{ $agenda['prevUrl'] }}" aria-label="Vorige">‹</a>
-                <div class="vakman-agenda-period">{{ $agenda['periodLabel'] }}</div>
+                <div class="vakman-agenda-period">
+                    @if ($view === 'week')
+                        <span class="vakman-agenda-weeknr">Week {{ $agenda['weekStart']->isoWeek() }}</span>
+                        <span class="vakman-agenda-dates">{{ $agenda['weekStart']->translatedFormat('j M') }} – {{ $weekEnd->translatedFormat('j M Y') }}</span>
+                    @else
+                        {{ $agenda['periodLabel'] }}
+                    @endif
+                </div>
                 <a href="{{ $agenda['nextUrl'] }}" aria-label="Volgende">›</a>
             </div>
 
@@ -78,12 +90,32 @@
             </div>
         @else
             <div class="vakman-week-split">
+                <nav class="vakman-day-strip" aria-label="Dagen">
+                    @foreach ($agenda['days'] as $day)
+                        @php
+                            $isSelected = $day['key'] === $selectedDayKey;
+                        @endphp
+                        <button
+                            type="button"
+                            class="vakman-day-strip-btn{{ $isSelected ? ' is-selected' : '' }}{{ $day['is_today'] ? ' is-today' : '' }}{{ $day['jobs'] !== [] ? ' has-jobs' : '' }}"
+                            data-day-target="{{ $day['key'] }}"
+                            aria-pressed="{{ $isSelected ? 'true' : 'false' }}"
+                        >
+                            <span class="vakman-day-strip-name">{{ str_replace('.', '', mb_strtoupper($day['weekday'])) }}</span>
+                            <span class="vakman-day-strip-num">{{ $day['short'] }}</span>
+                        </button>
+                    @endforeach
+                </nav>
                 @include('vakman._week-board')
                 <div class="vakman-week-details">
                     <h2 class="vakman-week-pane-title">Details</h2>
                     <div class="vakman-week">
                         @foreach ($agenda['days'] as $day)
-                            <section class="vakman-week-day {{ $day['is_today'] ? 'is-today' : '' }}" id="vakman-day-{{ $day['key'] }}">
+                            <section
+                                class="vakman-week-day{{ $day['is_today'] ? ' is-today' : '' }}{{ $day['key'] === $selectedDayKey ? ' is-active' : '' }}"
+                                id="vakman-day-{{ $day['key'] }}"
+                                data-day-key="{{ $day['key'] }}"
+                            >
                                 <header class="vakman-week-day-head">
                                     <span class="vakman-week-dayname">{{ $day['heading'] }}</span>
                                     @if ($day['is_today'])
@@ -113,8 +145,27 @@
 @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const buttons = document.querySelectorAll('[data-job-target]');
-            if (buttons.length === 0) {
+            const dayButtons = document.querySelectorAll('[data-day-target]');
+            const jobButtons = document.querySelectorAll('[data-job-target]');
+
+            const selectDay = (key) => {
+                document.querySelectorAll('.vakman-week-day').forEach((el) => {
+                    el.classList.toggle('is-active', el.getAttribute('data-day-key') === key);
+                });
+                dayButtons.forEach((button) => {
+                    const selected = button.getAttribute('data-day-target') === key;
+                    button.classList.toggle('is-selected', selected);
+                    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                });
+            };
+
+            dayButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    selectDay(button.getAttribute('data-day-target') ?? '');
+                });
+            });
+
+            if (jobButtons.length === 0) {
                 return;
             }
 
@@ -129,10 +180,14 @@
                     return;
                 }
                 card.classList.add('is-selected');
+                const day = card.closest('.vakman-week-day');
+                if (day instanceof HTMLElement) {
+                    selectDay(day.getAttribute('data-day-key') ?? '');
+                }
                 card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             };
 
-            buttons.forEach((button) => {
+            jobButtons.forEach((button) => {
                 button.addEventListener('click', () => {
                     selectJob(button.getAttribute('data-job-target') ?? '', button);
                 });

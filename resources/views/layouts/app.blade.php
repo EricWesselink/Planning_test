@@ -11,11 +11,11 @@
 </head>
 <body class="antialiased">
 <div class="nicon-shell">
-    <header class="nicon-topbar bg-nicon-ink text-white">
+    @php
+        $user = auth()->user();
+    @endphp
+    <header class="nicon-topbar bg-nicon-ink text-white{{ $user?->isVakman() ? ' nicon-topbar--vakman' : '' }}">
         <div class="flex items-center gap-4 px-4 py-3">
-            @php
-                $user = auth()->user();
-            @endphp
             <div class="shrink-0">
                 <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
                 <div class="text-lg font-semibold leading-tight">{{ $user?->isVakman() ? 'Mijn planning' : 'Planning' }}</div>
@@ -24,8 +24,8 @@
                 @php
                     $links = $user?->isVakman()
                         ? [
-                            ['href' => route('vakman.planning'), 'label' => 'Mijn planning', 'active' => request()->routeIs('vakman.planning*') || (request()->routeIs('work-tickets.*') && $user?->isVakman())],
-                            ['href' => route('vakman.password.edit'), 'label' => 'Wachtwoord wijzigen', 'active' => request()->routeIs('vakman.password.*')],
+                            ['href' => route('vakman.planning'), 'label' => 'Mijn planning', 'active' => request()->routeIs('vakman.planning*') || (request()->routeIs('work-tickets.*') && $user?->isVakman()), 'home' => true],
+                            ['href' => route('vakman.password.edit'), 'label' => 'Wachtwoord wijzigen', 'short' => 'Wachtwoord', 'active' => request()->routeIs('vakman.password.*')],
                         ]
                         : [
                             ['href' => route('dashboard'), 'label' => 'Dashboard', 'active' => request()->routeIs('dashboard')],
@@ -49,8 +49,13 @@
                     }
                 @endphp
                 @foreach ($links as $link)
-                    <a href="{{ $link['href'] }}" class="rounded px-3 py-2 whitespace-nowrap {{ $link['active'] ? 'active' : 'text-white/80 hover:bg-white/10' }}">
-                        {{ $link['label'] }}
+                    <a href="{{ $link['href'] }}" class="rounded px-3 py-2 whitespace-nowrap {{ $link['active'] ? 'active' : 'text-white/80 hover:bg-white/10' }}{{ ! empty($link['home']) ? ' nicon-topbar-home' : '' }}">
+                        @if (! empty($link['short']))
+                            <span class="nicon-topbar-full">{{ $link['label'] }}</span>
+                            <span class="nicon-topbar-short">{{ $link['short'] }}</span>
+                        @else
+                            {{ $link['label'] }}
+                        @endif
                     </a>
                 @endforeach
                 @unless ($user?->isVakman())
