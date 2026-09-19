@@ -152,9 +152,9 @@ class PersonnelWeekOverviewService
                 'id' => $project->id,
                 'away' => false,
                 'customer' => $project->customer?->name,
-                'title' => $project->displayTitle(),
+                'title' => $this->compactTitle($project),
                 'city' => trim((string) $project->city),
-                'address' => $project->nawLine(),
+                'address' => trim((string) $project->address) ?: null,
                 'number' => $project->isWinkel()
                     ? $project->workNumber()
                     : ($project->labeledNumbersLine() !== '' ? $project->labeledNumbersLine() : $project->workNumber()),
@@ -210,7 +210,7 @@ class PersonnelWeekOverviewService
             $stack = 1 + (int) collect($packed)->max('stack');
 
             $rows[] = [
-                'title' => $first->workItem?->planningTitle() ?? 'Inzet',
+                'title' => $this->shortenOverviewText($first->workItem?->planningTitle() ?? 'Inzet'),
                 'bars' => $packed,
                 'cells' => [],
                 'stack' => $stack,
@@ -749,15 +749,33 @@ class PersonnelWeekOverviewService
         ];
     }
 
+    private function compactTitle(Project $project): string
+    {
+        if ($project->isSmallWork()) {
+            return $this->shortenOverviewText((string) $project->name);
+        }
+
+        return $this->shortenOverviewText($project->displayTitle());
+    }
+
+    private function shortenOverviewText(string $text): string
+    {
+        $clean = trim(preg_replace('/\s+/u', ' ', $text) ?? '');
+        if ($clean === '') {
+            return '';
+        }
+
+        return Str::limit($clean, 80);
+    }
+
     private function externalName(Worker $worker): string
     {
         $company = trim((string) $worker->company);
-        $name = $this->personShortName($worker->planName()) ?? '';
-        if ($company !== '' && $name !== '' && strcasecmp($company, $worker->planName()) !== 0) {
-            return $company.' · '.$name;
+        if ($company !== '') {
+            return $company;
         }
 
-        return $company !== '' ? $company : $name;
+        return $this->personShortName($worker->planName()) ?? trim($worker->planName());
     }
 
     private function eigenPersonalName(Worker $worker): ?string

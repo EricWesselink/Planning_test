@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\AvailabilityKind;
+use App\Enums\ProjectKind;
 use App\Enums\WorkUnit;
 use App\Models\Customer;
 use App\Models\Project;
@@ -252,7 +253,7 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assertStringNotContainsString('uurtarief', strtolower($html));
     }
 
-    public function test_zzp_shows_company_and_name(): void
+    public function test_zzp_shows_the_company_name_in_the_bar(): void
     {
         $user = User::factory()->create();
         $zzp = Worker::query()->create([
@@ -264,11 +265,39 @@ class PersonnelWeekOverviewTest extends TestCase
         [$project, $item] = $this->makeProject('Gezondheidscentrum Laren');
         $this->assign($zzp, $project, $item, '2026-09-21', '2026-09-23', '08:00:00', '16:00:00');
 
+        $html = $this->actingAs($user)
+            ->get(route('planning.personnel-week', ['week' => '2026-09-21']))
+            ->assertSee('Het Vloerenhuis')
+            ->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/personnel-week-bar-name">\s*Het Vloerenhuis · Kees/u', $html);
+        $this->assertDoesNotMatchRegularExpression('/personnel-week-bar-name">\s*Kees\s*</u', $html);
+    }
+
+    public function test_long_service_description_is_shortened_without_changing_the_project(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeTeam('Team 5', [
+            ['name' => 'Peter', 'phone' => ''],
+        ]);
+        $description = 'vlekken in het tapijt + tapijt scheef gelegd waardoor de naad openstaat en herstel nodig is in de voordeurkamer';
+        [$project, $item] = $this->makeProject($description, [
+            'kind' => ProjectKind::Service,
+            'city' => 'Kampen',
+            'address' => 'Burgwal 12',
+        ]);
+        $this->assign($worker, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$worker->crewPeople()->first()->id]);
+
         $this->actingAs($user)
             ->get(route('planning.personnel-week', ['week' => '2026-09-21']))
-            ->assertOk()
-            ->assertSee('Het Vloerenhuis')
-            ->assertSee('Kees');
+            ->assertSee('Kampen')
+            ->assertSee('Burgwal 12')
+            ->assertSee('vlekken in het tapijt')
+            ->assertDontSee('voordeurkamer')
+            ->assertSee('Peter');
+
+        $this->assertSame($description, $project->fresh()->name);
     }
 
     public function test_pdf_downloads_the_personnel_week_overview(): void

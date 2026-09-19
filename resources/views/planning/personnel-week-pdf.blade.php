@@ -70,7 +70,14 @@
             color: #5b6570;
             line-height: 1.15;
         }
-        .title { font-size: 8.5pt; font-weight: 700; color: #163a5f; line-height: 1.15; }
+        .title {
+            font-size: 8.5pt;
+            font-weight: 700;
+            color: #163a5f;
+            line-height: 1.15;
+            max-height: 2.3em;
+            overflow: hidden;
+        }
         .meta { font-size: 7pt; color: #44403c; line-height: 1.15; }
         .work-name { font-size: 7pt; font-weight: 700; color: #163a5f; padding-top: 1px; line-height: 1.15; }
         .marker {
