@@ -54,6 +54,10 @@ class CalculationBoardTest extends TestCase
             ->assertSee('Controleren')
             ->assertSee('Ruimtenaam')
             ->assertSee('Vloercode')
+            ->assertSee('Gegevens wijzigen')
+            ->assertSee('id="room-groups"', false)
+            ->assertSee('id="work-legend"', false)
+            ->assertSee('room-panel-head', false)
             ->assertSee('is-review', false)
             ->assertSee('data-filter="floors"', false)
             ->assertSee('id="calculation-board"', false);
@@ -69,6 +73,9 @@ class CalculationBoardTest extends TestCase
         $this->assertStringContainsString('roomOverlayContent', $js);
         $this->assertStringContainsString('keepView: true', $js);
         $this->assertStringContainsString('Alle materialen', $js);
+        $this->assertStringContainsString('groupCardHtml', $js);
+        $this->assertStringContainsString('class="work-group"', $js);
+        $this->assertStringContainsString('renderWorkLegend', $js);
         $this->assertStringNotContainsString("className = 'room-name-overlay'", $js);
         $this->assertStringContainsString("style.fill = 'transparent'", $js);
         $this->assertStringContainsString('.calc-code-chip', $css);

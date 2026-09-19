@@ -214,7 +214,7 @@ class LeaveRequestTest extends TestCase
             ->assertOk()
             ->assertDontSee('>Goedkeuren</button>', false)
             ->assertDontSee('>Afwijzen</button>', false)
-            ->assertDontSee('>Vraag stellen</a>', false)
+            ->assertDontSee('>Vraag stellen</button>', false)
             ->assertDontSee('>Periode aanpassen</button>', false)
             ->assertDontSee('>Versturen</button>', false);
     }
@@ -450,7 +450,7 @@ class LeaveRequestTest extends TestCase
             ->assertSee('19-09-2026 19:15')
             ->assertSee('Eric Wesselink (Beheerder)')
             ->assertSee('Je staat deze dag al ingepland op een werk. Kun je eventueel een andere dag vrij nemen?')
-            ->assertSee('>Vraag stellen</a>', false)
+            ->assertSee('>Vraag stellen</button>', false)
             ->assertSee('>Goedkeuren</button>', false)
             ->assertSee('>Afwijzen</button>', false);
 

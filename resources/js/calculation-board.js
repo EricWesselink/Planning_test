@@ -564,19 +564,96 @@ function boot() {
         setHint('');
     }
 
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function setRoomProgressBar(percent, done) {
+        const bar = document.getElementById('room-progress-bar');
+        if (!bar) {
+            return;
+        }
+        bar.style.width = `${percent}%`;
+        bar.classList.toggle('is-done', Boolean(done));
+        bar.classList.toggle('bg-nicon-ok', Boolean(done));
+        bar.classList.toggle('bg-nicon-orange', !done);
+    }
+
+    function groupCardHtml(group) {
+        const typeLabel = group.type_label && !String(group.label || '').includes(group.type_label)
+            ? group.type_label
+            : '';
+        const metaParts = [group.progress_label || group.quantity_label || '', typeLabel].filter(Boolean);
+
+        return `
+            <section class="work-group" data-kind="${escapeHtml(group.color_key || 'overige')}" style="--material-color: ${escapeHtml(group.display_color || '#9ca3af')}; --work-accent: ${escapeHtml(group.display_color || '#9ca3af')}; --work-bg: ${escapeHtml(group.display_color_soft || 'rgba(156, 163, 175, 0.14)')};">
+                <button type="button" class="group-head" disabled data-group="${escapeHtml(group.key)}" data-label="${escapeHtml(group.label)}">
+                    <span class="task-check"></span>
+                    <span class="work-card-copy">
+                        <span class="work-card-title"><i class="work-swatch" aria-hidden="true"></i>${escapeHtml(group.label)}</span>
+                        <span class="work-card-meta">${escapeHtml(metaParts.join(' · '))}</span>
+                    </span>
+                    <span class="group-status text-nicon-muted">${escapeHtml(group.status_label || '')}</span>
+                </button>
+            </section>`;
+    }
+
+    function renderWorkLegend(groups) {
+        const legend = document.getElementById('work-legend');
+        if (!legend) {
+            return;
+        }
+        legend.innerHTML = (groups || []).map((group) => {
+            const key = group.color_key || 'overige';
+            const label = group.label || group.color_label || group.type_label || key;
+            const color = group.display_color || '#9ca3af';
+
+            return `<span data-kind="${escapeHtml(key)}" style="--work-accent: ${escapeHtml(color)}"><i></i>${escapeHtml(label)}</span>`;
+        }).join('');
+    }
+
+    function renderRoomGroups(room) {
+        const groupsEl = document.getElementById('room-groups');
+        if (!groupsEl) {
+            return;
+        }
+        const groups = room?.groups || [];
+        groupsEl.innerHTML = groups.length
+            ? groups.map((group) => groupCardHtml(group)).join('')
+            : (room ? '<p class="text-sm text-nicon-muted">Geen materialen in deze ruimte.</p>' : '');
+        renderWorkLegend(groups);
+    }
+
     function paintPanel(room) {
         const empty = document.getElementById('calc-room-empty');
         const fields = document.getElementById('calc-room-fields');
+        const groupsEl = document.getElementById('room-groups');
         document.getElementById('room-drawing').textContent = room?.group || '';
         document.getElementById('room-title').textContent = room
             ? `${room.number || '—'} ${room.name || ''}`.trim()
             : 'Kies een ruimte';
         document.getElementById('room-m2').textContent = room?.m2_label || '';
-        const status = document.getElementById('room-status');
-        status.textContent = room?.status_label || '';
-        status.className = `mt-1 text-sm ${room?.needs_review ? 'text-nicon-warn' : 'text-nicon-ok'}`;
+        const status = document.getElementById('room-progress-label');
+        if (status) {
+            status.textContent = room
+                ? (room.progress ? `${room.progress} · ${room.status_label || ''}` : (room.status_label || ''))
+                : '';
+            status.className = `text-sm ${room?.needs_review ? 'text-nicon-warn' : (room ? 'text-nicon-ok' : '')}`;
+        }
+        setRoomProgressBar(
+            room?.total ? Math.round((Number(room.done || 0) / Number(room.total)) * 100) : 0,
+            Boolean(room) && !room.needs_review && Number(room.total || 0) > 0,
+        );
         empty.classList.toggle('hidden', Boolean(room));
         fields.classList.toggle('hidden', !room);
+        form?.classList.toggle('hidden', !room);
+        groupsEl?.classList.toggle('hidden', !room);
+        renderRoomGroups(room);
         if (!room || !form) {
             return;
         }

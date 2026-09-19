@@ -370,6 +370,7 @@ class CalculationBoardService
             $label .= ' · '.$roleLabel;
         }
         $hex = $color ?: MaterialColor::UNKNOWN;
+        $colorKey = WorkColor::key($groupKey, $typeLabel, $label);
         $qtyLabel = $quantity === null
             ? ''
             : 'Opdracht '.Format::qty($quantity, 2).' '.$unit->label();
@@ -378,8 +379,8 @@ class CalculationBoardService
             'key' => $key,
             'label' => $label,
             'type_label' => $typeLabel,
-            'color_key' => WorkColor::key($groupKey, $typeLabel, $label),
-            'color_label' => WorkColor::legendLabel(WorkColor::key($groupKey, $typeLabel, $label)),
+            'color_key' => $colorKey,
+            'color_label' => WorkColor::legendLabel($colorKey),
             'display_color' => $hex,
             'display_color_soft' => $colorSoft ?: MaterialColor::softBackground($hex),
             'status_label' => $statusLabel,

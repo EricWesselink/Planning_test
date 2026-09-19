@@ -154,59 +154,69 @@
         </section>
 
         <aside class="board-right" id="room-panel">
-            <div class="px-4 pt-4 pb-2">
-                <p id="room-drawing" class="text-xs text-nicon-muted"></p>
-                <h2 id="room-title" class="text-lg font-semibold leading-tight">Kies een ruimte</h2>
-                <p id="room-m2" class="text-sm text-nicon-muted"></p>
-                <p id="room-status" class="mt-1 text-sm"></p>
+            <div class="room-panel-head">
+                <div class="text-xs text-nicon-muted" id="room-drawing"></div>
+                <h2 class="text-xl font-semibold" id="room-title">Kies een ruimte</h2>
+                <div class="text-sm text-nicon-muted" id="room-m2"></div>
+                <div class="room-progress-row">
+                    <div class="text-sm" id="room-progress-label"></div>
+                </div>
+                <div class="room-progress-track"><div id="room-progress-bar" class="room-progress-fill bg-nicon-orange" style="width: 0%"></div></div>
+                <div id="work-legend" class="work-legend"></div>
             </div>
-            <form id="calc-room-form" class="overflow-auto flex-1 px-4 pb-4 space-y-2 text-sm">
-                <p id="calc-room-empty" class="text-sm text-nicon-muted">Klik een ruimte in de lijst of op de tekening.</p>
-                <div id="calc-room-fields" class="hidden space-y-2">
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Ruimtenummer</span>
-                        <input name="room_number" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Ruimtenaam</span>
-                        <input name="room_name" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <div>
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloerafwerkingen</span>
-                        <ul id="floor-finishes" class="mt-1 space-y-1 text-sm"></ul>
-                        <p id="floor-finishes-total" class="mt-1 text-xs text-nicon-muted"></p>
-                    </div>
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">m² hoofdvloer</span>
-                        <input name="floor_quantity" inputmode="decimal" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloercode</span>
-                        <input name="floor_code" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloerproduct</span>
-                        <input name="floor_product" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Plintcode</span>
-                        <input name="plinth_code" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Plintproduct</span>
-                        <input name="plinth_product" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <label class="block">
-                        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Plint m¹</span>
-                        <input name="plinth_quantity" inputmode="decimal" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                    </label>
-                    <p class="text-[11px] uppercase tracking-wide text-nicon-muted">Status m¹</p>
-                    <p id="plinth-status" class="text-xs text-nicon-muted"></p>
-                    <p id="pdf-source" class="text-xs text-nicon-muted"></p>
-                    <p id="excel-source" class="text-xs text-nicon-muted"></p>
-                    <div class="flex flex-wrap gap-2 pt-2">
-                        <button type="submit" class="bg-nicon-ink px-3 py-1.5 text-xs text-white">Opslaan</button>
-                        <button type="button" id="calc-confirm" class="border border-nicon-line bg-white px-3 py-1.5 text-xs">Bevestigen</button>
+            <p id="calc-room-empty" class="px-4 text-sm text-nicon-muted">Klik een ruimte in de lijst of op de tekening.</p>
+            <div id="room-groups" class="room-groups hidden"></div>
+            <form id="calc-room-form" class="complete-form hidden">
+                <div id="calc-room-fields" class="space-y-2">
+                    <details class="calc-room-edit">
+                        <summary>Gegevens wijzigen</summary>
+                        <div class="mt-2 space-y-2">
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Ruimtenummer</span>
+                                <input name="room_number" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Ruimtenaam</span>
+                                <input name="room_name" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <div>
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloerafwerkingen</span>
+                                <ul id="floor-finishes" class="mt-1 space-y-1 text-sm"></ul>
+                                <p id="floor-finishes-total" class="mt-1 text-xs text-nicon-muted"></p>
+                            </div>
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">m² hoofdvloer</span>
+                                <input name="floor_quantity" inputmode="decimal" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloercode</span>
+                                <input name="floor_code" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloerproduct</span>
+                                <input name="floor_product" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Plintcode</span>
+                                <input name="plinth_code" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Plintproduct</span>
+                                <input name="plinth_product" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <label class="block">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Plint m¹</span>
+                                <input name="plinth_quantity" inputmode="decimal" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                            </label>
+                            <p class="text-[11px] uppercase tracking-wide text-nicon-muted">Status m¹</p>
+                            <p id="plinth-status" class="text-xs text-nicon-muted"></p>
+                            <p id="pdf-source" class="text-xs text-nicon-muted"></p>
+                            <p id="excel-source" class="text-xs text-nicon-muted"></p>
+                        </div>
+                    </details>
+                    <div class="flex flex-wrap gap-2 pt-1">
+                        <button type="submit" class="complete-form-submit bg-nicon-ink px-3 py-1.5 text-xs text-white">Opslaan</button>
+                        <button type="button" id="calc-confirm" class="complete-form-reopen border border-nicon-line bg-white px-3 py-1.5 text-xs">Bevestigen</button>
                     </div>
                     <p id="calc-room-message" class="text-xs text-nicon-ok hidden"></p>
                     <p id="calc-room-error" class="text-xs text-nicon-danger hidden"></p>

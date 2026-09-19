@@ -70,7 +70,12 @@
                 @csrf
                 <button class="bg-nicon-orange text-white px-5 py-3 font-medium">Goedkeuren</button>
             </form>
-            <a href="#overleg" class="inline-block border border-nicon-line px-5 py-3 font-medium">Vraag stellen</a>
+            <form method="POST" action="{{ route('leave-requests.messages', $leaveRequest) }}" class="max-w-md space-y-2">
+                @csrf
+                <label class="text-xs uppercase tracking-wide text-nicon-muted">Vraag aan de vakman</label>
+                <textarea name="body" rows="3" class="w-full border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="Bijvoorbeeld: je staat deze dag al ingepland. Kan een andere dag ook?">{{ old('body') }}</textarea>
+                <button class="border border-nicon-line px-5 py-3 font-medium">Vraag stellen</button>
+            </form>
             <form method="POST" action="{{ route('leave-requests.reject', $leaveRequest) }}" class="max-w-md space-y-2">
                 @csrf
                 <label class="text-xs uppercase tracking-wide text-nicon-muted">Reden (optioneel)</label>

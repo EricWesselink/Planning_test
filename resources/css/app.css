@@ -5142,6 +5142,26 @@ button.plan-labor-toggle:hover {
     gap: 0.4rem;
 }
 
+.calc-board .complete-form {
+    max-height: 46%;
+    overflow: auto;
+}
+
+.calc-board .complete-form.hidden,
+.calc-board .room-groups.hidden {
+    display: none;
+}
+
+.calc-board .calc-room-edit summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--color-nicon-muted);
+}
+
+.calc-board .calc-room-edit[open] summary {
+    color: var(--color-nicon-ink);
+}
+
 #draw-hit .calc-fill {
     pointer-events: fill;
     cursor: pointer;
