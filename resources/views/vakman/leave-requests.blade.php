@@ -24,7 +24,10 @@
 
     <form method="POST" action="{{ route('vakman.leave-requests.store') }}" class="mt-6 max-w-xl border border-nicon-line bg-white p-5 space-y-4">
         @csrf
-        @php $span = old('span', 'single'); @endphp
+        @php
+            $span = old('span', 'single');
+            $today = now()->toDateString();
+        @endphp
         <fieldset class="space-y-2 text-sm">
             <legend class="text-xs uppercase tracking-wide text-nicon-muted">Periode</legend>
             <label class="flex items-center gap-2">
@@ -38,7 +41,7 @@
         </fieldset>
         <div data-single-day @hidden($span === 'range')>
             <label class="text-xs uppercase tracking-wide text-nicon-muted">Datum</label>
-            <input type="date" name="date" value="{{ old('date') }}" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+            <input type="date" name="date" value="{{ old('date', $today) }}" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
         </div>
         <div data-range-days class="grid gap-3 sm:grid-cols-2" @hidden($span !== 'range')>
             <div>

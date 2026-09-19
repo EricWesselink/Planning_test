@@ -39,6 +39,13 @@ class LeaveRequestTest extends TestCase
             ->assertSee('Vrij aanvragen');
 
         $this->actingAs($nick)
+            ->get(route('vakman.leave-requests.index'))
+            ->assertOk()
+            ->assertSee('name="date" value="2026-09-19"', false)
+            ->assertDontSee('name="starts_on" value="2026-09-19"', false)
+            ->assertDontSee('name="ends_on" value="2026-09-19"', false);
+
+        $this->actingAs($nick)
             ->from(route('vakman.leave-requests.index'))
             ->post(route('vakman.leave-requests.store'), [
                 'span' => 'single',
