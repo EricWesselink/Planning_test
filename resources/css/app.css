@@ -5069,14 +5069,14 @@ img.calc-print-canvas {
     letter-spacing: 0.04em;
     text-transform: uppercase;
     font-weight: 600;
-    padding: 8px 6px;
+    padding: 5px 4px;
     text-align: center;
 }
 
 .personnel-week-werk {
-    width: 24%;
+    width: 18%;
     text-align: left;
-    padding: 8px 10px;
+    padding: 4px 6px;
 }
 
 .personnel-week-project-cell {
@@ -5086,38 +5086,49 @@ img.calc-print-canvas {
 .personnel-week-customer {
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--color-nicon-muted);
+    line-height: 1.2;
 }
 
 .personnel-week-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 650;
     color: var(--color-nicon-ink);
+    line-height: 1.2;
 }
 
 .personnel-week-meta {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--color-nicon-steel);
-}
-
-.personnel-week-activities {
-    margin: 6px 0 0;
-    padding: 0 0 0 1rem;
-    color: var(--color-nicon-steel);
-    font-size: 12px;
+    line-height: 1.2;
 }
 
 .personnel-week-work-title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 6px 10px;
+    padding: 1px 0 0;
+    line-height: 1.2;
 }
 
 .personnel-week-days {
     position: relative;
-    min-height: 28px;
+    min-height: 16px;
+}
+
+.personnel-week-unresolved {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid #f0d4a8;
+    background: #fff8ee;
+    color: var(--color-nicon-ink);
+    font-size: 13px;
+}
+
+.personnel-week-unresolved ul {
+    margin: 6px 0 0;
+    padding-left: 1.1rem;
 }
 
 .personnel-week-grid {
@@ -5141,10 +5152,9 @@ img.calc-print-canvas {
 
 .personnel-week-bar {
     position: absolute;
-    height: 20px;
     border-radius: 2px;
     font-size: 11px;
-    line-height: 20px;
+    line-height: 1.15;
     overflow: hidden;
     white-space: nowrap;
     font-weight: 650;
@@ -5154,32 +5164,36 @@ img.calc-print-canvas {
 
 .personnel-week-bar.is-away {
     font-weight: 600;
+    font-size: 10px;
 }
 
 .personnel-week-bar-name {
     display: block;
-    padding: 0 6px;
+    padding: 1px 5px;
 }
 
 .personnel-week-bar-time {
+    display: block;
     font-weight: 500;
+    font-size: 10px;
     opacity: 0.9;
 }
 
 .personnel-week-marker {
     position: absolute;
-    top: 3px;
+    top: 1px;
     color: #b91c1c;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 800;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     white-space: nowrap;
+    z-index: 1;
 }
 
 .personnel-week-marker.is-klaar {
     color: #3f6212;
-    top: 16px;
+    top: 1px;
 }
 
 .personnel-week-empty {

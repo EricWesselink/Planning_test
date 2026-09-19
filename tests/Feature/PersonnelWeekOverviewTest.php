@@ -10,7 +10,9 @@ use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
+use App\Services\PersonnelWeekOverviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Smalot\PdfParser\Parser;
 use Tests\TestCase;
 
@@ -70,7 +72,98 @@ class PersonnelWeekOverviewTest extends TestCase
             ->assertSee('Weekplanning personeel PDF')
             ->assertDontSee('Peter')
             ->assertDontSee('6u')
+            ->assertDontSee('Hele dag')
             ->assertDontSee('€');
+    }
+
+    public function test_team_assignment_without_synced_crew_shows_member_names_not_team(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makeTeam('Team 3 Arek', [
+            ['name' => 'Arek Kowalski', 'phone' => ''],
+            ['name' => 'Lukasz Nowak', 'phone' => ''],
+        ]);
+        [$project, $item] = $this->makeProject('Dussen - IJsselmuiden');
+        $this->assign($team, $project, $item, '2026-09-21', '2026-09-23', '08:00:00', '16:00:00');
+
+        $html = $this->actingAs($user)
+            ->get(route('planning.personnel-week', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->assertSee('Arek')
+            ->assertSee('Lukasz')
+            ->assertDontSee('geen gekoppelde vakman')
+            ->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/personnel-week-bar-name">\s*Team\s*</u', $html);
+    }
+
+    public function test_project_without_personnel_this_week_is_omitted(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('Zonder inzet');
+        $worker = $this->makeTeam('Team 5', [
+            ['name' => 'Peter', 'phone' => ''],
+        ]);
+        [$planned, $item] = $this->makeProject('Met inzet');
+        $this->assign($worker, $planned, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$worker->crewPeople()->first()->id]);
+
+        $this->actingAs($user)
+            ->get(route('planning.personnel-week', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->assertSee('Met inzet')
+            ->assertDontSee('Zonder inzet')
+            ->assertViewHas('omittedWithoutInzet', 0);
+    }
+
+    public function test_work_item_without_personnel_is_not_listed(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeTeam('Team 4', [
+            ['name' => 'Sietse', 'phone' => ''],
+        ]);
+        [$project, $item] = $this->makeProject('Laakse Tuinen');
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plinten plaatsen',
+            'unit' => WorkUnit::SquareMeter,
+            'ordered_quantity' => 20,
+            'planned_start_date' => $project->planned_start_date,
+            'planned_end_date' => $project->planned_end_date,
+            'status' => 'in_uitvoering',
+        ]);
+        $this->assign($worker, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$worker->crewPeople()->first()->id]);
+
+        $this->actingAs($user)
+            ->get(route('planning.personnel-week', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertDontSee('Plinten plaatsen');
+    }
+
+    public function test_assignment_without_linked_vakman_is_reported_instead_of_team(): void
+    {
+        $user = User::factory()->create();
+        $team = Worker::query()->create([
+            'name' => 'Team 9',
+            'employment_type' => 'eigen',
+            'people_count' => 1,
+            'crew_members' => [],
+            'active' => true,
+        ]);
+        [$project, $item] = $this->makeProject('Onbekende inzet');
+        $assignment = $this->assign($team, $project, $item, '2026-09-21', '2026-09-21', '08:00:00', '16:00:00');
+
+        $html = $this->actingAs($user)
+            ->get(route('planning.personnel-week', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->assertSee('geen gekoppelde vakman')
+            ->assertSee((string) $assignment->id)
+            ->assertViewHas('omittedWithoutInzet', 1)
+            ->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/personnel-week-bar-name">\s*Team\s*</u', $html);
     }
 
     public function test_teammate_on_another_job_is_not_listed_on_this_work(): void
@@ -205,11 +298,25 @@ class PersonnelWeekOverviewTest extends TestCase
         );
         $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
 
-        $text = preg_replace('/\s+/u', ' ', (new Parser)->parseContent($response->getContent())->getText()) ?? '';
+        $pdf = (new Parser)->parseContent($response->getContent());
+        $text = preg_replace('/\s+/u', ' ', $pdf->getText()) ?? '';
         $this->assertStringContainsString('Weekplanning personeel', $text);
         $this->assertStringContainsString('Arek', $text);
         $this->assertStringContainsString('Mohammed', $text);
         $this->assertStringNotContainsString('€', $text);
+        $this->assertStringNotContainsString('Hele dag', $text);
+        $this->assertSame(1, count($pdf->getPages()));
+
+        $request = Request::create(
+            route('planning.personnel-week.pdf', ['week' => '2026-09-21']),
+            'GET',
+            ['week' => '2026-09-21'],
+        );
+        $request->setUserResolver(fn () => $user);
+        $html = view('planning.personnel-week-pdf', app(PersonnelWeekOverviewService::class)->build($request))->render();
+        $this->assertStringContainsString('page-break-inside: avoid', $html);
+        $this->assertStringContainsString('tr class="keep"', $html);
+        $this->assertStringNotContainsString('page-break-before: always', $html);
     }
 
     /**

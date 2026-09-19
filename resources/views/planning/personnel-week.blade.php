@@ -24,6 +24,23 @@
             </div>
         </div>
 
+        @if (($unresolved ?? []) !== [])
+            <div class="personnel-week-unresolved" role="status">
+                <p>Deze inzetten hebben geen gekoppelde vakman en staan daarom niet als naam in de weekplanning. “Team” wordt niet als vervanging getoond.</p>
+                <ul>
+                    @foreach ($unresolved as $row)
+                        <li>
+                            Inzet #{{ $row['assignment_id'] }}
+                            · {{ $row['project'] ?? 'onbekend werk' }}
+                            · {{ $row['worker'] ?? 'onbekende vakman' }}
+                            · {{ $row['start'] }}–{{ $row['end'] }}
+                            ({{ $row['reason'] }})
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
         <div class="mt-4 overflow-x-auto border border-nicon-line bg-white">
             @include('planning.partials.personnel-week-board')
         </div>
