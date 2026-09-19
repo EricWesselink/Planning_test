@@ -505,6 +505,42 @@ class UserManagementTest extends TestCase
             ->assertSee('Nog niet');
     }
 
+    public function test_user_index_lists_recent_logins_first_and_never_logged_in_last(): void
+    {
+        $this->freezeTime();
+        $admin = User::factory()->admin()->create([
+            'name' => 'Eric Wesselink',
+            'last_login_at' => now()->setTime(7, 24),
+        ]);
+        User::factory()->create([
+            'name' => 'Lukas',
+            'last_login_at' => now()->setTime(16, 42),
+        ]);
+        User::factory()->create([
+            'name' => 'Nick',
+            'last_login_at' => now()->setTime(15, 15),
+        ]);
+        User::factory()->create([
+            'name' => 'Ada',
+            'last_login_at' => null,
+        ]);
+        User::factory()->create([
+            'name' => 'Berry Meijberg',
+            'last_login_at' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('users.index'))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Lukas',
+                'Nick',
+                'Eric Wesselink',
+                'Ada',
+                'Berry Meijberg',
+            ]);
+    }
+
     public function test_successful_login_records_last_login_at(): void
     {
         $this->freezeTime();

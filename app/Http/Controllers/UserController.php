@@ -29,6 +29,8 @@ class UserController extends Controller
 
         $users = User::query()
             ->with(['projects', 'worker', 'crewMember'])
+            ->orderByRaw('last_login_at is null')
+            ->orderByDesc('last_login_at')
             ->orderBy('name')
             ->orderBy('id')
             ->get();
