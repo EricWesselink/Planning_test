@@ -587,6 +587,11 @@ class Worker extends Model
             ->orderBy('id');
     }
 
+    public function leaveRequests(): HasMany
+    {
+        return $this->hasMany(LeaveRequest::class);
+    }
+
     public function syncCrewPeople(): void
     {
         $members = is_array($this->crew_members)

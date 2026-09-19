@@ -11,6 +11,7 @@ use App\Http\Controllers\CalculationWorkbookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DrawingController;
 use App\Http\Controllers\ImpersonateController;
+use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\MeetstaatImportController;
 use App\Http\Controllers\PlanningActionController;
 use App\Http\Controllers\PlanningController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\SnagController;
 use App\Http\Controllers\SourceUpdateController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VakmanLeaveRequestController;
 use App\Http\Controllers\VakmanPlanningController;
 use App\Http\Controllers\VoucherController;
 use App\Http\Controllers\WorkActivityCategoryController;
@@ -77,6 +79,9 @@ Route::middleware('throttle:public-snag-write')->group(function () {
 
 Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class])->group(function () {
     Route::get('/mijn-planning', [VakmanPlanningController::class, 'index'])->name('vakman.planning');
+    Route::get('/mijn-planning/vrij-aanvragen', [VakmanLeaveRequestController::class, 'index'])->name('vakman.leave-requests.index');
+    Route::post('/mijn-planning/vrij-aanvragen', [VakmanLeaveRequestController::class, 'store'])->name('vakman.leave-requests.store');
+    Route::post('/mijn-planning/vrij-aanvragen/{leaveRequest}/intrekken', [VakmanLeaveRequestController::class, 'withdraw'])->name('vakman.leave-requests.withdraw');
     Route::get('/mijn-planning/dag/{date}', [VakmanPlanningController::class, 'day'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.day');
     Route::get('/mijn-planning/dag/{date}/werkbon', [VakmanPlanningController::class, 'werkbon'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.werkbon');
     Route::get('/mijn-planning/dag/{date}/opdrachtbon/{project}', [VakmanPlanningController::class, 'opdrachtbon'])->where('date', '\d{4}-\d{2}-\d{2}')->name('vakman.planning.opdrachtbon');
@@ -223,6 +228,10 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/vakmensen', [WorkerController::class, 'index'])->name('workers.index');
     Route::get('/vakmensen/whatsapp-contacten', WorkerWhatsAppContactController::class)->name('workers.whatsapp-contacts.export');
     Route::get('/personeel', [WorkerPersonnelController::class, 'index'])->name('personnel.index');
+    Route::get('/vrij-aanvragen', [LeaveRequestController::class, 'index'])->name('leave-requests.index');
+    Route::get('/vrij-aanvragen/{leaveRequest}', [LeaveRequestController::class, 'show'])->name('leave-requests.show');
+    Route::post('/vrij-aanvragen/{leaveRequest}/goedkeuren', [LeaveRequestController::class, 'approve'])->name('leave-requests.approve');
+    Route::post('/vrij-aanvragen/{leaveRequest}/afwijzen', [LeaveRequestController::class, 'reject'])->name('leave-requests.reject');
     Route::patch('/personeel/{worker}/leden/{crewMember}/werkdagen', [WorkerPersonnelController::class, 'update'])->name('personnel.work-days.update');
     Route::redirect('/vakmensen/afwezigheid', '/personeel');
     Route::redirect('/vakmensen/personeel', '/personeel');

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\EmploymentType;
 use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Support\PermissionCatalog;
@@ -323,6 +324,33 @@ class User extends Authenticatable
     public function canAdjustAbsence(): bool
     {
         return $this->allows(Permission::PlanningAbsence, fn (): bool => $this->role?->canManageWorkers() ?? false);
+    }
+
+    public function canViewLeaveRequests(): bool
+    {
+        return $this->canManageUsers() || $this->canAdjustAbsence();
+    }
+
+    public function canReviewLeaveRequests(): bool
+    {
+        return $this->canManageUsers();
+    }
+
+    public function canRequestLeave(): bool
+    {
+        if (! $this->isVakman()) {
+            return false;
+        }
+
+        $this->loadMissing('worker');
+
+        return $this->worker !== null
+            && $this->worker->employment_type === EmploymentType::Eigen;
+    }
+
+    public function leaveRequests(): HasMany
+    {
+        return $this->hasMany(LeaveRequest::class);
     }
 
     public function canDownloadPlanningWeekPdf(): bool

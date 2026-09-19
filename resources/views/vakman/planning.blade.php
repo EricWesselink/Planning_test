@@ -42,6 +42,11 @@
                 <a href="{{ route('vakman.planning', $monthQuery) }}" class="{{ $view === 'month' ? 'is-active' : '' }}">Maand</a>
             </div>
         </div>
+        @can('create', \App\Models\LeaveRequest::class)
+            <div>
+                <a href="{{ route('vakman.leave-requests.index') }}" class="inline-flex bg-nicon-orange px-4 py-2 text-sm font-medium text-white">Vrij aanvragen</a>
+            </div>
+        @endcan
 
         @if (! $agenda['hasJobs'])
             <p class="border border-nicon-line bg-white px-4 py-3 text-sm text-nicon-muted">

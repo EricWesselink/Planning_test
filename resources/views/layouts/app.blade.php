@@ -57,6 +57,9 @@
                             ['href' => route('vakman.password.edit'), 'label' => 'Wachtwoord wijzigen', 'short' => 'Wachtwoord', 'active' => request()->routeIs('vakman.password.*')],
                         ]
                         : $officeLinks;
+                    if ($user?->isVakman() && $user->canRequestLeave()) {
+                        $links[] = ['href' => route('vakman.leave-requests.index'), 'label' => 'Vrij aanvragen', 'active' => request()->routeIs('vakman.leave-requests.*')];
+                    }
                     if (! $user?->isVakman()) {
                         if ($user?->canViewCalculations()) {
                             $links[] = ['href' => route('calculations.index'), 'label' => 'Calculatie', 'active' => request()->routeIs('calculations.*')];
@@ -69,6 +72,12 @@
                         }
                         if ($user?->canViewPersonnelWeek()) {
                             $links[] = ['href' => route('personnel.index'), 'label' => 'Personeel', 'active' => request()->routeIs('personnel.*')];
+                        }
+                        if ($user?->canViewLeaveRequests()) {
+                            $leaveLabel = ($pendingLeaveRequestCount ?? 0) > 0
+                                ? 'Vrij-aanvragen ('.$pendingLeaveRequestCount.')'
+                                : 'Vrij-aanvragen';
+                            $links[] = ['href' => route('leave-requests.index'), 'label' => $leaveLabel, 'active' => request()->routeIs('leave-requests.*')];
                         }
                     }
                     if ($user?->canViewUsers()) {

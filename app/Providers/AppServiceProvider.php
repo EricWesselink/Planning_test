@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Contracts\SnagNotifier;
+use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Services\MailSnagNotifier;
 use Carbon\Carbon;
@@ -11,6 +12,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 
@@ -84,5 +86,15 @@ class AppServiceProvider extends ServiceProvider
                 : Response::deny('Je mag dit werk niet definitief maken.');
         });
         Gate::define('manage-workers', fn (User $user) => $user->canManageWorkers());
+
+        View::composer('layouts.app', function ($view): void {
+            $user = auth()->user();
+            $pendingLeaveRequestCount = 0;
+            if ($user?->canViewLeaveRequests()) {
+                $pendingLeaveRequestCount = LeaveRequest::query()->pending()->count();
+            }
+
+            $view->with('pendingLeaveRequestCount', $pendingLeaveRequestCount);
+        });
     }
 }
