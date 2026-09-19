@@ -32,15 +32,22 @@ export function roomFinishes(room) {
     return [];
 }
 
+export function roomsForDrawing(rooms, drawingId) {
+    const id = Number(drawingId);
+    if (! Number.isFinite(id)) {
+        return [];
+    }
+
+    return (rooms || []).filter((room) => Number(room.drawing_id) === id);
+}
+
 export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
     if (!pdfDoc) {
         return;
     }
+    const drawingRooms = roomsForDrawing(rooms, drawingId);
     const { extractPageTextItems } = await import('./pdf-text-layer.js');
-    const known = rooms
-        .filter((room) => Number(room.drawing_id) === Number(drawingId))
-        .map((room) => room.number)
-        .filter(Boolean);
+    const known = drawingRooms.map((room) => room.number).filter(Boolean);
     const hits = [];
     const finishItems = [];
     for (let number = 1; number <= pdfDoc.numPages; number += 1) {
@@ -51,22 +58,20 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
         hits.push(...assessTextLayer(items, known).hits);
         finishItems.push(...items);
     }
-    placeBoardRooms(rooms, drawingId, hits);
-    assignFinishHits(rooms, drawingId, finishItems);
+    placeBoardRooms(drawingRooms, drawingId, hits);
+    assignFinishHits(drawingRooms, drawingId, finishItems);
 }
 
 export function placeBoardRooms(rooms, drawingId, hits) {
-    rooms
-        .filter((room) => Number(room.drawing_id) === Number(drawingId))
-        .forEach((room) => {
-            applyRoomGeometry(room);
-            if (roomLabelAnchor(room)) {
-                return;
-            }
-            const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
-                || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
-            assignHit(room, hit);
-        });
+    roomsForDrawing(rooms, drawingId).forEach((room) => {
+        applyRoomGeometry(room);
+        if (roomLabelAnchor(room)) {
+            return;
+        }
+        const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
+            || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
+        assignHit(room, hit);
+    });
 }
 
 export function usableLabelHits(hits) {
@@ -166,10 +171,7 @@ export function overlayChipText(room, options = {}) {
 }
 
 export function overlayRoomsOnPage(rooms, drawingId, page) {
-    return rooms.filter((room) => {
-        if (Number(room.drawing_id) !== Number(drawingId)) {
-            return false;
-        }
+    return roomsForDrawing(rooms, drawingId).filter((room) => {
         const roomPage = Number(room.contour?.page || room.marker?.page || room.jump_target?.page);
         if (roomPage !== Number(page)) {
             return false;
@@ -183,6 +185,7 @@ export function overlayPlan(rooms, drawingId, page, options = {}) {
     return overlayRoomsOnPage(rooms, drawingId, page).map((room) => ({
         key: room.key,
         number: room.number,
+        drawing_id: Number(room.drawing_id),
         box: roomLabelAnchor(room),
         text: overlayChipText(room, options),
         colored: Boolean(options.colored),
@@ -205,15 +208,48 @@ export function printDrawingSheets(drawings) {
     });
 }
 
+export function printedMaterialCodes(room) {
+    const codes = [];
+    const seen = new Set();
+    const add = (value) => {
+        const code = String(value || '').trim();
+        if (code === '') {
+            return;
+        }
+        const key = code.toLowerCase();
+        if (seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        codes.push(code);
+    };
+    String(room?.floor_codes_label || '').split('+').forEach((part) => add(part));
+    roomFinishes(room).forEach((finish) => add(finish.code));
+    add(room?.floor_code);
+    (room?.material_keys || []).forEach((key) => add(key));
+
+    return codes;
+}
+
+export function materialCodesInOverlayText(text) {
+    const value = String(text || '').trim();
+    if (value === '') {
+        return [];
+    }
+    const codePart = value.includes('·')
+        ? value.slice(value.indexOf('·') + 1)
+        : value;
+
+    return codePart.split('+').map((part) => part.trim()).filter(Boolean);
+}
+
 export function legendFromRooms(rooms) {
     const groups = {};
     (rooms || []).forEach((room) => {
-        roomFinishes(room).forEach((finish) => {
-            const code = String(finish.code || '').trim();
-            if (code === '') {
-                return;
-            }
+        const finishes = roomFinishes(room);
+        printedMaterialCodes(room).forEach((code) => {
             const key = code.toLowerCase();
+            const finish = finishes.find((item) => String(item.code || '').trim().toLowerCase() === key) || {};
             if (! groups[key]) {
                 groups[key] = {
                     key,
@@ -229,6 +265,9 @@ export function legendFromRooms(rooms) {
             }
             if (groups[key].product === '' && finish.product) {
                 groups[key].product = String(finish.product).trim();
+            }
+            if (! groups[key].color && (finish.material_color || room.material_color)) {
+                groups[key].color = finish.material_color || room.material_color;
             }
         });
     });
@@ -419,7 +458,7 @@ export function paintCalculationOverlays({
     hitEl.replaceChildren();
     markersEl.replaceChildren();
     const materialSet = new Set(materialKeys);
-    overlayRoomsOnPage(rooms, drawingId, page).forEach((room) => {
+    overlayRoomsOnPage(roomsForDrawing(rooms, drawingId), drawingId, page).forEach((room) => {
         const state = roomDrawingState(room, {
             selectedKey,
             materialKeys,
@@ -523,7 +562,7 @@ function assignHit(room, hit) {
 }
 
 function assignFinishHits(rooms, drawingId, items) {
-    const placed = rooms.filter((room) => Number(room.drawing_id) === Number(drawingId) && room.marker);
+    const placed = roomsForDrawing(rooms, drawingId).filter((room) => room.marker);
     placed.forEach((room) => {
         (room.floors || []).forEach((finish) => {
             const code = String(finish.code || '').toLowerCase();

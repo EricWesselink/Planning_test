@@ -3,12 +3,16 @@
 namespace App\Services;
 
 use App\Enums\WorkTicketKind;
+use App\Enums\WorkUnit;
 use App\Models\AreaDrawingMarker;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
+use App\Models\WorkActivity;
 use App\Models\WorkerAssignment;
 use App\Models\WorkTicket;
+use App\Support\Format;
+use App\Support\PlanningHours;
 use Illuminate\Support\Facades\Storage;
 
 class WorkTicketPdfService
@@ -137,6 +141,104 @@ class WorkTicketPdfService
                 ? $this->measurements->pdfData($ticket->project)
                 : null,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildForShop(Project $project, bool $embedDrawings = true, bool $includeMeasurementForm = false): array
+    {
+        $project->loadMissing([
+            'customer',
+            'workActivities',
+            'workItems',
+            'documents',
+            'assignments.worker',
+            'measurementForm.meter',
+            'measurementForm.rows',
+        ]);
+
+        $logoRelative = $project->issuerLogo();
+        $documents = $project->documents
+            ->where('document_type', ShopWorkService::ATTACHMENT_TYPE)
+            ->values();
+        $drawingItems = $documents
+            ->map(fn (ProjectDocument $document): array => [
+                'name' => (string) $document->original_filename,
+                'url' => route('projects.documents.show', [$project, $document]),
+                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
+                'is_image' => $document->isImage(),
+            ])
+            ->values()
+            ->all();
+        $workers = $project->assignments
+            ->map(fn (WorkerAssignment $assignment): ?string => $assignment->worker?->planName())
+            ->filter()
+            ->unique()
+            ->values();
+        $includeMeasurement = $includeMeasurementForm && $this->measurements->isFilled($project->measurementForm);
+
+        return [
+            'ticket' => null,
+            'filename' => $this->shopFilename($project),
+            'documentTitle' => 'WERKBON',
+            'kindLabel' => 'Werkbon',
+            'number' => $project->workNumber(),
+            'issuedOn' => ($project->planned_start_date ?? $project->created_at)?->format('d-m-Y') ?? now()->format('d-m-Y'),
+            'logo' => $this->publicImagePath($logoRelative),
+            'logoUrl' => asset($logoRelative),
+            'companyName' => $project->issuerName(),
+            'companyAddress' => (string) config('company.address'),
+            'companyPostalCode' => (string) config('company.postal_code'),
+            'companyCity' => (string) config('company.city'),
+            'companyEmail' => (string) config('company.email'),
+            'companyPhone' => (string) config('company.phone'),
+            'recipient' => $workers->isNotEmpty() ? $workers->implode(', ') : 'Winkelwerk',
+            'recipientKind' => $workers->isNotEmpty() ? null : 'Werk uit de winkel',
+            'projectTitle' => $project->displayTitle(),
+            'projectNumber' => $project->workCode(),
+            'workNumber' => $project->workNumber(),
+            'address' => $project->nawLine(),
+            'contactPhone' => $project->contact_phone ?: $project->customer?->phone,
+            'contactEmail' => $project->contact_email ?: $project->customer?->email,
+            'period' => $this->shopPeriod($project),
+            'floors' => '',
+            'rooms' => '',
+            'rows' => $this->shopRows($project),
+            'notesText' => $this->shopNotes($project),
+            'drawings' => $documents
+                ->map(fn (ProjectDocument $document): string => (string) $document->original_filename)
+                ->filter()
+                ->values()
+                ->all(),
+            'drawingItems' => $drawingItems,
+            'drawingEmbeds' => $drawingItems,
+            'drawingUrl' => null,
+            'drawingIsPdf' => false,
+            'drawingIsImage' => false,
+            'drawingName' => null,
+            'floorLayers' => [],
+            'drawingRender' => 'image',
+            'colleagues' => [],
+            'showPrices' => false,
+            'includeMeasurementForm' => $includeMeasurement,
+            'measurementForm' => $includeMeasurement ? $this->measurements->pdfData($project) : null,
+        ];
+    }
+
+    public function shopFilename(Project $project): string
+    {
+        $parts = [
+            'Werkbon',
+            $project->displayTitle(),
+            $project->workNumber(),
+        ];
+        $safe = collect($parts)
+            ->map(fn (mixed $part): string => $this->safeSegment((string) $part))
+            ->filter()
+            ->implode('_');
+
+        return ($safe !== '' ? $safe : 'werkbon').'.pdf';
     }
 
     public function filename(WorkTicket $ticket): string
@@ -339,6 +441,83 @@ class WorkTicketPdfService
         }
 
         return $worker->displayName();
+    }
+
+    /**
+     * @return list<array{title: string, quantity: string, unit: string}>
+     */
+    private function shopRows(Project $project): array
+    {
+        $hoursByActivity = $project->workItems
+            ->filter(fn ($item): bool => (int) $item->work_activity_id > 0)
+            ->mapWithKeys(fn ($item): array => [(int) $item->work_activity_id => (float) $item->begrote_uren]);
+
+        return $project->workActivities
+            ->sortBy(fn (WorkActivity $activity): array => [
+                (int) ($activity->pivot?->sort_order ?? 0),
+                (int) $activity->id,
+            ])
+            ->map(function (WorkActivity $activity) use ($hoursByActivity): array {
+                $quantity = $activity->pivot?->quantity;
+                $unit = $activity->pivot?->unit;
+                $hasQuantity = $quantity !== null && (float) $quantity > 0.0001;
+                $hours = (float) ($hoursByActivity[(int) $activity->id] ?? 0);
+                $parts = [];
+                if ($hasQuantity) {
+                    $qty = Format::qty($quantity, fmod((float) $quantity, 1.0) === 0.0 ? 0 : 2);
+                    $label = $unit instanceof WorkUnit ? $unit->label() : '';
+                    $parts[] = trim($qty.' '.$label);
+                }
+                if ($hours > 0.0001) {
+                    $parts[] = PlanningHours::hoursLabel($hours);
+                }
+                $note = trim((string) ($activity->pivot?->notes ?? ''));
+                $title = $activity->name;
+                if ($note !== '') {
+                    $title .= ' — '.$note;
+                }
+
+                return [
+                    'title' => $title,
+                    'quantity' => implode(' · ', $parts),
+                    'unit' => '',
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function shopNotes(Project $project): string
+    {
+        $notes = [];
+        if (filled($project->work_description)) {
+            $notes[] = trim((string) $project->work_description);
+        }
+        foreach ($project->workActivities as $activity) {
+            $note = trim((string) ($activity->pivot?->notes ?? ''));
+            if ($note !== '') {
+                $notes[] = $activity->name.': '.$note;
+            }
+        }
+
+        return implode("\n\n", $notes);
+    }
+
+    private function shopPeriod(Project $project): string
+    {
+        $start = $project->planned_start_date;
+        $end = $project->planned_end_date;
+        if ($start === null && $end === null) {
+            return '';
+        }
+        if ($start !== null && $end !== null && $start->isSameDay($end)) {
+            return $start->translatedFormat('j-m-Y');
+        }
+        if ($start !== null && $end !== null) {
+            return $start->translatedFormat('j-m').' t/m '.$end->translatedFormat('j-m-Y');
+        }
+
+        return ($start ?? $end)->translatedFormat('j-m-Y');
     }
 
     private function safeSegment(string $value): string

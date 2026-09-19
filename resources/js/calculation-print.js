@@ -11,6 +11,7 @@ import {
     waitForPrintAssets,
     overlayRoomsOnPage,
     legendFromRooms,
+    roomsForDrawing,
 } from './calculation-board-overlay';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -83,11 +84,12 @@ async function boot(documentData) {
 
     for (const drawing of documentData.drawings || []) {
         const pdf = await pdfjsLib.getDocument({ url: drawing.url, withCredentials: true }).promise;
-        await hydrateRoomMarkers(pdf, rooms, drawing.id);
+        const drawingRooms = roomsForDrawing(drawing.rooms || rooms, drawing.id);
+        await hydrateRoomMarkers(pdf, drawingRooms, drawing.id);
         for (const sheet of printDrawingSheets([{ ...drawing, pageCount: pdf.numPages }])) {
             const host = createDrawingPage(sheets, documentData, drawing, sheet.page, sheet.pageCount);
             await renderDrawingPage(host, pdf, sheet.page, {
-                rooms,
+                rooms: drawingRooms,
                 drawingId: drawing.id,
                 materialKeys,
                 colored: Boolean(include.colored),
@@ -201,8 +203,7 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
     const legend = host.querySelector('.calc-print-legend');
     if (legend) {
         const sheetRooms = overlayRoomsOnPage(paint.rooms, paint.drawingId, pageNumber);
-        const drawingRooms = paint.rooms.filter((room) => Number(room.drawing_id) === Number(paint.drawingId));
-        legend.outerHTML = legendMarkup(legendFromRooms(sheetRooms.length > 0 ? sheetRooms : drawingRooms));
+        legend.outerHTML = legendMarkup(legendFromRooms(sheetRooms));
     }
 }
 

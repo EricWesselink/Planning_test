@@ -30,6 +30,8 @@ class ShopWorkTest extends TestCase
     {
         $this->get(route('projects.winkel.create'))->assertRedirect(route('login'));
         $this->post(route('projects.winkel.store'), [])->assertRedirect(route('login'));
+        $this->get(route('projects.winkel.werkbon', 1))->assertRedirect(route('login'));
+        $this->get(route('projects.winkel.werkbon.pdf', 1))->assertRedirect(route('login'));
     }
 
     public function test_uitvoerder_cannot_open_or_create_winkelwerk(): void
@@ -1110,6 +1112,160 @@ class ShopWorkTest extends TestCase
         $user = User::factory()->create(['role' => $role]);
 
         $this->actingAs($user)->get(route('projects.winkel.create'))->assertOk();
+    }
+
+    public function test_winkelwerk_page_offers_werkbon_view_and_pdf(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Eric Wesselink',
+            'city' => 'Keijenborg',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '12.5'],
+            'activity_units' => [$pvc->id => WorkUnit::SquareMeter->value],
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('>Werkbon</a>', false)
+            ->assertSee('Download PDF')
+            ->assertSee(route('projects.winkel.werkbon', $project, false), false)
+            ->assertSee(route('projects.winkel.werkbon.pdf', $project, false), false);
+    }
+
+    public function test_winkel_werkbon_shows_shop_work_and_print_download(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $meterWorker = Worker::query()->create([
+            'name' => 'Inmeter Jansen',
+            'employment_type' => 'eigen',
+            'specialty' => 'Inmeten',
+            'active' => true,
+        ]);
+        $meter = User::factory()->create([
+            'name' => 'Inmeter Jansen',
+            'worker_id' => $meterWorker->id,
+        ]);
+        $pvc = $this->activity('pvc-banen');
+        $tapijt = $this->activity('tapijt');
+        $plinten = $this->activity('plinten');
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Eric Wesselink',
+            'city' => 'Keijenborg',
+            'address' => 'Wolsinkweg 4',
+            'postal_code' => '7256 KA',
+            'contact_phone' => '0612345678',
+            'contact_email' => 'wesselinkeric@hotmail.com',
+            'work_description' => 'PVC en tapijt in de woning',
+            'work_activity_ids' => [$pvc->id, $tapijt->id, $plinten->id],
+            'activity_quantities' => [
+                $pvc->id => '18.77',
+                $tapijt->id => '6.25',
+                $plinten->id => '12.50',
+            ],
+            'activity_units' => [
+                $pvc->id => WorkUnit::SquareMeter->value,
+                $tapijt->id => WorkUnit::SquareMeter->value,
+                $plinten->id => WorkUnit::LinearMeter->value,
+            ],
+            'activity_hours' => [
+                $pvc->id => '16',
+                $tapijt->id => '16',
+                $plinten->id => '3',
+            ],
+            'activity_notes' => [
+                $pvc->id => 'rechterplank donker eiken',
+            ],
+            'measurement' => [
+                'meter_user_id' => $meter->id,
+                'ordered_at' => '2026-09-10',
+                'installation_at' => '2026-09-20',
+                'rows' => [
+                    [
+                        'room' => 'dichte trap',
+                        'product' => 'Tapijt',
+                        'brand' => 'ambiant',
+                        'type' => 'nashville',
+                        'color_number' => 'antraciet 6760.020543',
+                        'quantity' => '3.00',
+                        'unit' => WorkUnit::SquareMeter->value,
+                        'underlay' => 'rubber',
+                        'skirting' => '',
+                        'steps' => '',
+                        'profile' => '',
+                        'available_on_site' => '1',
+                        'available_location' => 'nicon',
+                    ],
+                ],
+            ],
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.winkel.werkbon', $project))
+            ->assertOk()
+            ->assertSee('WERKBON')
+            ->assertSee('Kloppenburg Interieur')
+            ->assertSee('Eric Wesselink - Keijenborg')
+            ->assertSee('Wolsinkweg 4')
+            ->assertSee('Tel. 0612345678')
+            ->assertSee('wesselinkeric@hotmail.com')
+            ->assertSee('PVC banen — rechterplank donker eiken')
+            ->assertSee('18,77 m² · 16u')
+            ->assertSee('Tapijt')
+            ->assertSee('6,25 m² · 16u')
+            ->assertSee('Plinten')
+            ->assertSee('12,50 m¹ · 3u')
+            ->assertSee('PVC en tapijt in de woning')
+            ->assertSee('dichte trap')
+            ->assertSee('nashville')
+            ->assertSee('antraciet 6760.020543')
+            ->assertSee('rubber')
+            ->assertSee('Afdrukken')
+            ->assertSee('Download PDF')
+            ->assertSee(route('projects.winkel.werkbon.pdf', $project, false), false)
+            ->assertDontSee('€');
+    }
+
+    public function test_winkel_werkbon_pdf_downloads(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pvc = $this->activity('pvc-banen');
+        $this->actingAs($user)->post(route('projects.winkel.store'), [
+            'customer_name' => 'Eric Wesselink',
+            'city' => 'Keijenborg',
+            'work_activity_ids' => [$pvc->id],
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Winkel)->first();
+        $this->assertNotNull($project);
+
+        $response = $this->actingAs($user)->get(route('projects.winkel.werkbon.pdf', $project));
+        $response->assertOk();
+        $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
+        $response->assertDownload();
+    }
+
+    public function test_construction_project_has_no_winkel_werkbon(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'Bouwbedrijf']);
+        $project = Project::query()->create([
+            'project_number' => '250100099',
+            'customer_id' => $customer->id,
+            'name' => 'Nieuwbouw',
+            'status' => 'gepland',
+        ]);
+
+        $this->actingAs($user)->get(route('projects.winkel.werkbon', $project))->assertNotFound();
+        $this->actingAs($user)->get(route('projects.winkel.werkbon.pdf', $project))->assertNotFound();
     }
 
     /** @return array<string, array{0: UserRole}> */

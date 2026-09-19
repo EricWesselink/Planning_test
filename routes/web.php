@@ -160,6 +160,8 @@ Route::middleware(['auth', EnsureProjectAccess::class])->group(function () {
     Route::patch('/projecten/{project}', [ProjectController::class, 'update'])->name('projects.update');
     Route::patch('/projecten/{project}/winkel', [ShopProjectController::class, 'update'])->name('projects.winkel.update');
     Route::get('/projecten/{project}/winkel/inmeetformulier.pdf', [ShopProjectController::class, 'measurementPdf'])->name('projects.winkel.measurement.pdf');
+    Route::get('/projecten/{project}/winkel/werkbon', [ShopProjectController::class, 'werkbon'])->name('projects.winkel.werkbon');
+    Route::get('/projecten/{project}/winkel/werkbon.pdf', [ShopProjectController::class, 'werkbonPdf'])->name('projects.winkel.werkbon.pdf');
     Route::post('/projecten/{project}/winkel/bijlagen', [ShopProjectController::class, 'storeAttachments'])->name('projects.winkel.attachments.store');
     Route::delete('/projecten/{project}/winkel/bijlagen/{document}', [ShopProjectController::class, 'destroyAttachment'])->name('projects.winkel.attachments.destroy');
     Route::post('/projecten/{project}/archiveren', [ProjectController::class, 'archive'])->name('projects.archive');

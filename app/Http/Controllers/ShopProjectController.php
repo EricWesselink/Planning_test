@@ -14,6 +14,7 @@ use App\Models\Worker;
 use App\Services\MeasurementFormService;
 use App\Services\PlanningFitService;
 use App\Services\ShopWorkService;
+use App\Services\WorkTicketPdfService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -147,6 +148,54 @@ class ShopProjectController extends Controller
         ]);
 
         return $pdf->download($data['filename']);
+    }
+
+    public function werkbon(Request $request, Project $project, WorkTicketPdfService $pdfs, MeasurementFormService $measurements): View
+    {
+        Gate::authorize('view', $project);
+        abort_unless($project->isWinkel(), 404);
+        $project->loadMissing(['measurementForm']);
+        $includeMeasurement = $this->shouldIncludeMeasurement($project, $request, $measurements);
+
+        return view('work-tickets.shop', [
+            ...$pdfs->buildForShop($project, embedDrawings: false, includeMeasurementForm: $includeMeasurement),
+            'project' => $project,
+            'hasMeasurementForm' => $measurements->isFilled($project->measurementForm),
+            'includeMeasurementForm' => $includeMeasurement,
+        ]);
+    }
+
+    public function werkbonPdf(Request $request, Project $project, WorkTicketPdfService $pdfs, MeasurementFormService $measurements): Response
+    {
+        Gate::authorize('view', $project);
+        abort_unless($project->isWinkel(), 404);
+        $project->loadMissing(['measurementForm']);
+        $includeMeasurement = $this->shouldIncludeMeasurement($project, $request, $measurements);
+        $data = $pdfs->buildForShop($project, includeMeasurementForm: $includeMeasurement);
+
+        $pdf = Pdf::loadView('work-tickets.pdf', $data)
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['documentTitle'].' '.$data['number'],
+            'Author' => $data['companyName'],
+        ]);
+
+        return $pdf->download($data['filename']);
+    }
+
+    private function shouldIncludeMeasurement(Project $project, Request $request, MeasurementFormService $measurements): bool
+    {
+        $filled = $measurements->isFilled($project->measurementForm);
+        if (! $filled) {
+            return false;
+        }
+
+        if ($request->has('inmeetformulier')) {
+            return $request->boolean('inmeetformulier');
+        }
+
+        return true;
     }
 
     /**

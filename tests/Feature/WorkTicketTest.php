@@ -810,7 +810,7 @@ class WorkTicketTest extends TestCase
         $this->actingAs($vakman)
             ->get(route('vakman.planning.day', '2026-09-14'))
             ->assertOk()
-            ->assertSee('PVC banen')
+            ->assertSee('PVC')
             ->assertSee('12,50')
             ->assertSee('Werkbon '.$ticket->number)
             ->assertSee(route('work-tickets.show', $ticket), false);

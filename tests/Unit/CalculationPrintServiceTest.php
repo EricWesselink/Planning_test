@@ -235,6 +235,73 @@ class CalculationPrintServiceTest extends TestCase
         $this->assertFalse(in_array('A-00-15', array_column($print['rooms'], 'number'), true));
     }
 
+    public function test_print_keeps_each_drawing_page_to_that_drawing_rooms_and_codes(): void
+    {
+        $user = User::factory()->create();
+        $calculation = Calculation::query()->create([
+            'name' => 'COA Oisterwijk 3 gebouwen',
+            'dated_on' => '2026-03-06',
+            'created_by' => $user->id,
+        ]);
+        $k00 = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => '2401531_TEK_BK5_1_K_00.pdf',
+            'file_path' => 'calculations/1/k00.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1,
+        ]);
+        $k01 = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => '2401531_TEK_BK5_1_K_01.pdf',
+            'file_path' => 'calculations/1/k01.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1,
+        ]);
+        $a02 = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => '2401531_TEK_BK5_1_A_02.pdf',
+            'file_path' => 'calculations/1/a02.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1,
+        ]);
+        $this->floor($calculation, $k00, 'K-00-01', 'berging', 'v04', 10.0, 'Gietvloer');
+        $this->floor($calculation, $k01, 'K-01-18', 'hal', 'v08', 6.4, 'PVC');
+        $this->floor($calculation, $k01, 'K-01-26', 'kast', 'v09', 2.1, 'Schoonloopmat');
+        $this->floor($calculation, $k01, 'K-01-29', 'technisch', 'v04', 3.3, 'Gietvloer');
+        $this->floor($calculation, $a02, 'A-02-03', 'slaapkamer', 'v01.g', 12.0, 'Marmoleum');
+
+        $fresh = $calculation->fresh(['lines.drawing', 'drawings']);
+        $board = app(CalculationBoardService::class)->payload($fresh);
+        $print = app(CalculationPrintService::class)->document($fresh, [
+            'include' => ['colored', 'rooms', 'codes', 'legend'],
+            'drawing_ids' => [$k00->id, $k01->id, $a02->id],
+            'material_keys' => [],
+            'output' => 'pdf',
+        ]);
+        $pages = collect($print['drawings'])->keyBy('id');
+
+        foreach ($print['drawings'] as $drawing) {
+            foreach ($drawing['rooms'] as $room) {
+                $this->assertSame((int) $drawing['id'], (int) $room['drawing_id']);
+            }
+        }
+        $this->assertSame(['K-00-01'], collect($pages[$k00->id]['rooms'])->pluck('number')->sort()->values()->all());
+        $this->assertSame([], array_values(array_intersect(
+            array_column($pages[$k00->id]['rooms'], 'number'),
+            ['A-02-03', 'K-01-26', 'K-01-29'],
+        )));
+        $this->assertSame(['K-01-18', 'K-01-26', 'K-01-29'], collect($pages[$k01->id]['rooms'])->pluck('number')->sort()->values()->all());
+        $this->assertContains('v08', array_column($pages[$k01->id]['materials'], 'code'));
+        $this->assertSame(
+            $this->assignments($board['rooms'], $k01->id),
+            $this->assignments($pages[$k01->id]['rooms'], $k01->id),
+        );
+        $this->assertSame(
+            $this->assignments($board['rooms'], $k01->id),
+            $this->assignments($print['rooms'], $k01->id),
+        );
+    }
+
     /**
      * @param  list<array<string, mixed>>  $rooms
      * @return list<array{key: string, number: string, codes: string}>

@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
     <meta charset="utf-8">
-    <title>{{ $documentTitle }} {{ $ticket->number }}</title>
+    <title>{{ $documentTitle }}{{ filled($number ?? '') ? ' '.$number : '' }}</title>
     @include('work-tickets._styles')
 </head>
 <body>

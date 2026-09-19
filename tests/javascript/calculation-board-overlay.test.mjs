@@ -7,6 +7,8 @@ import {
     overlayRoomsOnPage,
     placeBoardRooms,
     legendFromRooms,
+    materialCodesInOverlayText,
+    roomsForDrawing,
     printDrawingSheets,
     printImageFromCanvas,
     isUsablePrintImageSrc,
@@ -254,6 +256,112 @@ test('legend totals come from the rooms on that sheet, not the whole calculation
 
     assert.deepEqual(legend.map((item) => item.code), ['v04', 'v09']);
     assert.equal(legend.find((item) => item.code === 'v04').m2_label, '12,70 m²');
+    assert.equal(legend.some((item) => item.code === 'v01.g'), false);
+});
+
+test('print overlay keeps rooms on their own drawing_id and never guesses from the room number', () => {
+    const k00 = 340;
+    const rooms = [
+        room({
+            key: 'k-00-01',
+            drawing_id: k00,
+            number: 'K-00-01',
+            floor_codes_label: 'v04',
+            contour: { page: 1, reliable: true, rects: [{ x: 0.2, y: 0.5, w: 0.1, h: 0.08 }] },
+        }),
+        room({
+            key: 'a-02-03',
+            drawing_id: 342,
+            number: 'A-02-03',
+            floor_codes_label: 'v01.g',
+            contour: { page: 1, reliable: true, rects: [{ x: 0.12, y: 0.18, w: 0.08, h: 0.06 }] },
+            marker: { page: 1, x: 0.12, y: 0.18, width: 0.08, height: 0.06, source: 'text' },
+        }),
+        room({
+            key: 'k-01-26',
+            drawing_id: 341,
+            number: 'K-01-26',
+            floor_codes_label: 'v09',
+            marker: { page: 1, x: 0.44, y: 0.22, width: 0.05, height: 0.02, source: 'text' },
+            jump_target: { page: 1, bbox: { x: 0.44, y: 0.22, w: 0.05, h: 0.02 }, geometry: 'label' },
+        }),
+        room({
+            key: 'k-01-29',
+            drawing_id: 341,
+            number: 'K-01-29',
+            floor_codes_label: 'v04',
+            marker: { page: 1, x: 0.62, y: 0.31, width: 0.05, height: 0.02, source: 'text' },
+            jump_target: { page: 1, bbox: { x: 0.62, y: 0.31, w: 0.05, h: 0.02 }, geometry: 'label' },
+        }),
+    ];
+    const hits = rooms.map((item, index) => ({
+        number: item.number,
+        page: 1,
+        x: 0.1 + index * 0.15,
+        y: 0.2,
+        w: 0.05,
+        h: 0.02,
+        source: 'text',
+    }));
+
+    placeBoardRooms(rooms, k00, hits);
+    const printed = overlayRoomsOnPage(rooms, k00, 1);
+    const plan = overlayPlan(rooms, k00, 1, { roomLabels: true, materialCodes: true });
+
+    assert.deepEqual(roomsForDrawing(rooms, k00).map((item) => item.number), ['K-00-01']);
+    assert.deepEqual(printed.map((item) => item.number), ['K-00-01']);
+    assert.ok(printed.every((item) => Number(item.drawing_id) === k00));
+    assert.deepEqual(plan.map((item) => item.number), ['K-00-01']);
+    assert.ok(plan.every((item) => item.drawing_id === k00));
+    assert.equal(plan.some((item) => ['A-02-03', 'K-01-26', 'K-01-29'].includes(item.number)), false);
+});
+
+test('page legend contains every material code that a printed label shows', () => {
+    const rooms = [
+        room({
+            key: 'k-01-18',
+            number: 'K-01-18',
+            floor_code: '',
+            floor_codes_label: 'v08',
+            floors: [],
+            material_color: '#7c3aed',
+            contour: { page: 1, reliable: true, rects: [{ x: 0.3, y: 0.5, w: 0.1, h: 0.08 }] },
+        }),
+        room({
+            key: 'k-01-12',
+            number: 'K-01-12',
+            floor_code: 'v06.b',
+            floor_codes_label: 'v06.b + v01.i + v01.d',
+            material_color: '#c2410c',
+            floors: [
+                { code: 'v06.b', product: 'PVC', quantity: 40, material_color: '#c2410c' },
+                { code: 'v01.i', product: 'Marmoleum', quantity: 20, material_color: '#7c3aed' },
+                { code: 'v01.d', product: 'Marmoleum', quantity: 18.9, material_color: '#0f766e' },
+            ],
+            contour: { page: 1, reliable: true, rects: [{ x: 0.5, y: 0.5, w: 0.1, h: 0.08 }] },
+        }),
+        room({
+            key: 'a-02-03',
+            drawing_id: 337,
+            number: 'A-02-03',
+            floor_codes_label: 'v01.g',
+            floors: [{ code: 'v01.g', product: 'Marmoleum', quantity: 12, material_color: '#15803d' }],
+            contour: { page: 1, reliable: true, rects: [{ x: 0.1, y: 0.2, w: 0.1, h: 0.08 }] },
+        }),
+    ];
+    const printed = overlayRoomsOnPage(rooms, 336, 1);
+    const plan = overlayPlan(rooms, 336, 1, { roomLabels: true, materialCodes: true });
+    const legend = legendFromRooms(printed);
+    const legendCodes = legend.map((item) => item.code);
+    const labelCodes = [...new Set(plan.flatMap((item) => materialCodesInOverlayText(item.text)))];
+
+    assert.equal(plan.find((item) => item.number === 'K-01-18').text, 'K-01-18 · v08');
+    assert.equal(plan.find((item) => item.number === 'K-01-12').text, 'K-01-12 · v06.b + v01.i + v01.d');
+    assert.equal(plan.some((item) => item.number === 'A-02-03'), false);
+    assert.ok(legendCodes.includes('v08'));
+    assert.deepEqual(legendCodes, ['v01.d', 'v01.i', 'v06.b', 'v08']);
+    assert.ok(labelCodes.every((code) => legendCodes.includes(code)));
+    assert.equal(legend.find((item) => item.code === 'v08').color, '#7c3aed');
     assert.equal(legend.some((item) => item.code === 'v01.g'), false);
 });
 

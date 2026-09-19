@@ -107,6 +107,7 @@ class CalculationPrintService
                 $rooms,
                 fn (array $room): bool => (int) ($room['drawing_id'] ?? 0) === (int) $drawing['id'],
             ));
+            $drawing['rooms'] = $drawingRooms;
             $drawing['materials'] = $this->board->materials($drawingRooms);
 
             return $drawing;
