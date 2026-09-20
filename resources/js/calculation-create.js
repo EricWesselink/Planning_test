@@ -1,3 +1,34 @@
+export function chosenFilesLabel(files) {
+    const list = [...(files ?? [])];
+
+    if (list.length === 0) {
+        return 'Geen bestanden geselecteerd.';
+    }
+
+    if (list.length === 1) {
+        return list[0].name;
+    }
+
+    return `${list.length} bestanden geselecteerd.`;
+}
+
+export function bindFileInputs(root) {
+    root?.querySelectorAll('[data-file-input]').forEach((input) => {
+        const label = root.querySelector(`[data-file-chosen="${input.id}"]`);
+
+        if (! label) {
+            return;
+        }
+
+        const sync = () => {
+            label.textContent = chosenFilesLabel(input.files);
+        };
+
+        input.addEventListener('change', sync);
+        sync();
+    });
+}
+
 export function fileCounts(form) {
     const drawings = form?.querySelector('#drawings')?.files?.length ?? 0;
     const workbooks = form?.querySelector('#workbooks')?.files?.length ?? 0;
@@ -95,4 +126,5 @@ if (typeof document !== 'undefined') {
         document.querySelector('[data-calculation-create]'),
         document.querySelector('[data-calculation-progress]'),
     );
+    bindFileInputs(document);
 }

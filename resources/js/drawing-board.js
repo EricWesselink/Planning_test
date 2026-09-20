@@ -1734,6 +1734,7 @@ function boot() {
         const panel = document.getElementById('room-panel');
         if (panel) {
             panel.dataset.areaId = String(area.id);
+            panel.classList.toggle('has-room', Boolean(area.id));
         }
         document.getElementById('room-floor').textContent = area.floor || '';
         document.getElementById('room-title').textContent = roomTitle(area);
@@ -1830,6 +1831,19 @@ function boot() {
         renderWorkLegend(detail.groups || []);
     }
 
+    function workCardQtyHtml(label) {
+        const text = String(label || '').trim();
+        if (!text) {
+            return '';
+        }
+        const parts = text.split(/\s*\|\s*/).filter(Boolean);
+        const inner = parts.map((part, index) => (
+            `<span class="work-card-qty-part">${escapeHtml(index ? `| ${part}` : part)}</span>`
+        )).join('');
+
+        return `<span class="work-card-qty" title="${escapeHtml(text)}">${inner}</span>`;
+    }
+
     function groupCardHtml(group) {
         const worker = group.done ? (group.tasks || []).map((task) => task.worker).find(Boolean) : '';
         const openIds = (group.open_task_ids || []).join(',');
@@ -1842,7 +1856,7 @@ function boot() {
             ? `${group.room_count || 1} ${(group.room_count || 1) === 1 ? 'ruimte' : 'ruimtes'}`
             : '';
         const progressLabel = group.progress_label || group.quantity_label || group.tasks?.[0]?.progress_label || group.tasks?.[0]?.quantity_label || '';
-        const metaParts = [progressLabel, typeLabel, worker, roomsLabel].filter(Boolean);
+        const metaParts = [typeLabel, worker, roomsLabel].filter(Boolean);
 
         return `
             <section class="work-group ${group.done ? 'is-done' : group.partial ? 'is-partial' : ''}${group.provisional ? ' is-provisional' : ''}" data-kind="${escapeHtml(group.color_key || 'overige')}" style="--material-color: ${escapeHtml(group.display_color || '#9ca3af')}; --work-accent: ${escapeHtml(group.display_color || '#9ca3af')}; --work-bg: ${escapeHtml(group.display_color_soft || 'rgba(156, 163, 175, 0.14)')};">
@@ -1850,7 +1864,8 @@ function boot() {
                     <span class="task-check">${group.done ? '✓' : ''}</span>
                     <span class="work-card-copy">
                         <span class="work-card-title"><i class="work-swatch" aria-hidden="true"></i>${escapeHtml(group.label)}</span>
-                        <span class="work-card-meta">${escapeHtml(metaParts.join(' · '))}</span>
+                        ${workCardQtyHtml(progressLabel)}
+                        ${metaParts.length ? `<span class="work-card-meta">${escapeHtml(metaParts.join(' · '))}</span>` : ''}
                     </span>
                     <span class="group-status ${group.done && !group.provisional ? 'text-nicon-ok' : 'text-nicon-muted'}">${escapeHtml(group.status_label)}</span>
                 </button>
@@ -2051,6 +2066,7 @@ function boot() {
         const panel = document.getElementById('room-panel');
         if (panel) {
             panel.dataset.areaId = String(selectedId || ids[0] || '');
+            panel.classList.toggle('has-room', ids.length > 0);
         }
         document.getElementById('room-floor').textContent = floors.length === 1
             ? floors[0]

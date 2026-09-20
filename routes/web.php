@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AreaTaskController;
+use App\Http\Controllers\AreaWithoutM2TrialController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\SetupController;
 use App\Http\Controllers\Auth\VakmanLoginController;
@@ -123,6 +124,10 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/calculaties', [CalculationController::class, 'index'])->name('calculations.index');
     Route::get('/calculaties/nieuw', [CalculationController::class, 'create'])->name('calculations.create');
     Route::post('/calculaties', [CalculationController::class, 'store'])->name('calculations.store');
+    Route::get('/calculaties/zonder-m2', [AreaWithoutM2TrialController::class, 'create'])->name('calculations.area-without-m2.create');
+    Route::post('/calculaties/zonder-m2', [AreaWithoutM2TrialController::class, 'store'])->name('calculations.area-without-m2.store');
+    Route::get('/calculaties/zonder-m2/{trial}', [AreaWithoutM2TrialController::class, 'show'])->name('calculations.area-without-m2.show')->where('trial', '[0-9a-fA-F-]{36}');
+    Route::get('/calculaties/zonder-m2/{trial}/preview', [AreaWithoutM2TrialController::class, 'preview'])->name('calculations.area-without-m2.preview')->where('trial', '[0-9a-fA-F-]{36}');
     Route::get('/calculaties/{calculation}/verwerken', [CalculationController::class, 'processing'])->name('calculations.processing');
     Route::get('/calculaties/{calculation}/verwerken/status', [CalculationController::class, 'importStatus'])->name('calculations.import-status');
     Route::get('/calculaties/{calculation}', [CalculationController::class, 'show'])->name('calculations.show');
@@ -236,6 +241,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::post('/vrij-aanvragen/{leaveRequest}/afwijzen', [LeaveRequestController::class, 'reject'])->name('leave-requests.reject');
     Route::post('/vrij-aanvragen/{leaveRequest}/berichten', [LeaveRequestController::class, 'message'])->name('leave-requests.messages');
     Route::patch('/vrij-aanvragen/{leaveRequest}/periode', [LeaveRequestController::class, 'adjustPeriod'])->name('leave-requests.period');
+    Route::delete('/vrij-aanvragen/{leaveRequest}', [LeaveRequestController::class, 'destroy'])->name('leave-requests.destroy');
     Route::patch('/personeel/{worker}/leden/{crewMember}/werkdagen', [WorkerPersonnelController::class, 'update'])->name('personnel.work-days.update');
     Route::redirect('/vakmensen/afwezigheid', '/personeel');
     Route::redirect('/vakmensen/personeel', '/personeel');

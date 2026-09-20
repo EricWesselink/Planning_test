@@ -35,12 +35,20 @@
         </div>
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="drawings">PDF-tekeningen</label>
-            <input id="drawings" type="file" name="drawings[]" accept=".pdf,application/pdf" multiple class="mt-1 w-full text-sm">
+            <div class="mt-1 flex flex-wrap items-center gap-3">
+                <label for="drawings" class="cursor-pointer bg-nicon-orange px-3 py-1.5 text-sm font-medium text-white hover:bg-nicon-orange-dark">Bladeren</label>
+                <span class="text-sm text-nicon-muted" data-file-chosen="drawings">Geen bestanden geselecteerd.</span>
+                <input id="drawings" type="file" name="drawings[]" accept=".pdf,application/pdf" multiple class="sr-only" data-file-input>
+            </div>
             <p class="mt-1 text-xs text-nicon-muted">Meerdere plattegronden mag. Max. {{ $maxFileMegabytes }} MB per bestand. Originelen blijven bij de calculatie bewaard.</p>
         </div>
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="workbooks">Excelbestanden</label>
-            <input id="workbooks" type="file" name="workbooks[]" accept=".xlsx,.xlsm,.xls,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" multiple class="mt-1 w-full text-sm">
+            <div class="mt-1 flex flex-wrap items-center gap-3">
+                <label for="workbooks" class="cursor-pointer bg-nicon-orange px-3 py-1.5 text-sm font-medium text-white hover:bg-nicon-orange-dark">Bladeren</label>
+                <span class="text-sm text-nicon-muted" data-file-chosen="workbooks">Geen bestanden geselecteerd.</span>
+                <input id="workbooks" type="file" name="workbooks[]" accept=".xlsx,.xlsm,.xls,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" multiple class="sr-only" data-file-input>
+            </div>
             <p class="mt-1 text-xs text-nicon-muted">Optioneel. Afwerkstaat, ruimtestaat of calculatie — kolomnamen mogen per project verschillen. Wandtabbladen worden automatisch overgeslagen.</p>
         </div>
         <button type="submit" data-calculation-submit class="bg-nicon-ink px-5 py-3 font-medium text-white">Doorgaan</button>

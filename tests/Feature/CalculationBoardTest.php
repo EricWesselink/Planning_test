@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Enums\FinishRole;
 use App\Enums\QuantitySource;
 use App\Enums\WorkUnit;
 use App\Models\Calculation;
 use App\Models\CalculationDrawing;
 use App\Models\CalculationLine;
 use App\Models\User;
+use App\Services\QuoteCalculation\CalculationTotals;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -21,6 +23,16 @@ class CalculationBoardTest extends TestCase
 
         $this->get(route('calculations.board', $calculation))
             ->assertRedirect(route('login'));
+    }
+
+    public function test_guest_cannot_update_a_board_room(): void
+    {
+        $calculation = $this->makeCalculation();
+        $floor = $calculation->lines()->where('unit', WorkUnit::SquareMeter)->first();
+
+        $this->patchJson(route('calculations.board.rooms.update', [$calculation, $floor]), [
+            'floor_quantity' => '4,20',
+        ])->assertUnauthorized();
     }
 
     public function test_vakman_is_forbidden_from_the_calculation_board(): void
@@ -57,6 +69,7 @@ class CalculationBoardTest extends TestCase
             ->assertSee('Gegevens wijzigen')
             ->assertSee('id="room-groups"', false)
             ->assertSee('id="work-legend"', false)
+            ->assertSee('id="room-status"', false)
             ->assertSee('room-panel-head', false)
             ->assertSee('is-review', false)
             ->assertSee('data-filter="floors"', false)
@@ -74,8 +87,22 @@ class CalculationBoardTest extends TestCase
         $this->assertStringContainsString('keepView: true', $js);
         $this->assertStringContainsString('Alle materialen', $js);
         $this->assertStringContainsString('groupCardHtml', $js);
-        $this->assertStringContainsString('class="work-group"', $js);
+        $this->assertStringContainsString('class="work-group', $js);
+        $this->assertStringContainsString('work-card-qty', $js);
+        $this->assertStringContainsString('function workCardQtyHtml', $js);
+        $this->assertStringContainsString('work-card-qty-part', $js);
+        $this->assertStringContainsString('.work-card-qty', $css);
+        $this->assertStringContainsString('.work-card-qty-part', $css);
+        $this->assertDoesNotMatchRegularExpression('/\.work-card-title\s*\{[^}]*line-clamp/s', $css);
+        $this->assertMatchesRegularExpression('/\.work-card-title\s*\{[^}]*font-size:\s*0\.75rem/s', $css);
+        $this->assertMatchesRegularExpression('/\.work-card-qty-part\s*\{[^}]*white-space:\s*nowrap/s', $css);
+        $this->assertMatchesRegularExpression('/\.group-status\s*\{[^}]*border-radius:\s*999px/s', $css);
+        $this->assertStringContainsString('Oppervlakte deelvlak', $js);
+        $this->assertStringContainsString('local-area-form', $js);
+        $this->assertStringContainsString('work-role', $js);
         $this->assertStringContainsString('renderWorkLegend', $js);
+        $this->assertStringContainsString("classList.toggle('has-room'", $js);
+        $this->assertStringContainsString('roomMaterialGroups', $js);
         $this->assertStringNotContainsString("className = 'room-name-overlay'", $js);
         $this->assertStringContainsString("style.fill = 'transparent'", $js);
         $this->assertStringContainsString('.calc-code-chip', $css);
@@ -145,6 +172,159 @@ class CalculationBoardTest extends TestCase
         ));
     }
 
+    public function test_board_subtracts_a_new_local_floor_area_from_the_main_floor_that_still_has_the_room_area(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeSplitFloorCalculation($user);
+        $main = $calculation->lines()->where('product_code', 'v01.g')->first();
+        $local = $calculation->lines()->where('product_code', 'v09')->where('room_number', 'A-00-18')->first();
+        $other = $calculation->lines()->where('product_code', 'v09')->where('room_number', 'A-00-01')->first();
+
+        $response = $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $local]), [
+                'floors' => [
+                    ['id' => $local->id, 'quantity' => '4,20'],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('room.groups.1.progress_label', 'Calc. 4,20 m²')
+            ->assertJsonPath('room.groups.1.needs_local_area', false)
+            ->assertJsonPath('room.groups.1.is_local', true)
+            ->assertJsonPath('room.groups.0.progress_label', 'Calc. 27,70 m²');
+
+        $local->refresh();
+        $main->refresh();
+        $other->refresh();
+        $this->assertEqualsWithDelta(4.2, (float) $local->quantity, 0.001);
+        $this->assertSame(QuantitySource::Manual, $local->source);
+        $this->assertEqualsWithDelta(27.7, (float) $main->quantity, 0.001);
+        $this->assertSame(QuantitySource::Manual, $main->source);
+        $this->assertNull($other->quantity);
+        $this->assertSame(QuantitySource::Review, $other->source);
+        $this->assertEqualsWithDelta(31.9, (float) $response->json('room.m2'), 0.001);
+
+        $totals = app(CalculationTotals::class)->grouped($calculation->fresh()->lines);
+        $byCode = collect($totals)->keyBy(fn (array $row) => mb_strtolower((string) $row['product_code']));
+        $this->assertEqualsWithDelta(27.7, (float) $byCode['v01.g']['quantity'], 0.001);
+        $this->assertEqualsWithDelta(4.2, (float) $byCode['v09']['quantity'], 0.001);
+    }
+
+    public function test_board_does_not_subtract_from_a_main_floor_that_was_already_changed(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeSplitFloorCalculation($user);
+        $main = $calculation->lines()->where('product_code', 'v01.g')->first();
+        $local = $calculation->lines()->where('product_code', 'v09')->where('room_number', 'A-00-18')->first();
+        $main->update(['quantity' => 30.0, 'source' => QuantitySource::Manual]);
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $local]), [
+                'floors' => [
+                    ['id' => $local->id, 'quantity' => '4,20'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('room.groups.1.progress_label', 'Calc. 4,20 m²')
+            ->assertJsonPath('room.groups.0.progress_label', 'Calc. 30,00 m²');
+
+        $local->refresh();
+        $main->refresh();
+        $this->assertEqualsWithDelta(4.2, (float) $local->quantity, 0.001);
+        $this->assertEqualsWithDelta(30.0, (float) $main->quantity, 0.001);
+    }
+
+    public function test_board_subtracts_a_second_local_floor_area_from_the_remaining_main_floor(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeSplitFloorCalculation($user);
+        $main = $calculation->lines()->where('product_code', 'v01.g')->first();
+        $local = $calculation->lines()->where('product_code', 'v09')->where('room_number', 'A-00-18')->first();
+        $second = CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $local->calculation_drawing_id,
+            'sort_order' => 4,
+            'room_number' => 'A-00-18',
+            'room_name' => 'ENTREE',
+            'product_code' => 'v10',
+            'product' => 'Extra deelvlak',
+            'quantity' => null,
+            'room_area' => 31.9,
+            'unit' => WorkUnit::SquareMeter,
+            'finish_role' => FinishRole::Local,
+            'source' => QuantitySource::Review,
+        ]);
+        $local->update(['quantity' => 4.2, 'source' => QuantitySource::Manual]);
+        $main->update(['quantity' => 27.7, 'source' => QuantitySource::Manual]);
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $second]), [
+                'floors' => [
+                    ['id' => $second->id, 'quantity' => '2,00'],
+                ],
+            ])
+            ->assertOk();
+
+        $main->refresh();
+        $second->refresh();
+        $local->refresh();
+        $this->assertEqualsWithDelta(2.0, (float) $second->quantity, 0.001);
+        $this->assertEqualsWithDelta(25.7, (float) $main->quantity, 0.001);
+        $this->assertEqualsWithDelta(4.2, (float) $local->quantity, 0.001);
+    }
+
+    public function test_board_does_not_overwrite_an_existing_local_floor_area(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeSplitFloorCalculation($user);
+        $local = $calculation->lines()->where('product_code', 'v09')->where('room_number', 'A-00-18')->first();
+        $local->update(['quantity' => 4.2, 'source' => QuantitySource::Manual]);
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $local]), [
+                'floors' => [
+                    ['id' => $local->id, 'quantity' => '9,99'],
+                ],
+            ])
+            ->assertOk();
+
+        $local->refresh();
+        $this->assertEqualsWithDelta(4.2, (float) $local->quantity, 0.001);
+    }
+
+    public function test_board_rejects_a_non_numeric_local_floor_area(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeSplitFloorCalculation($user);
+        $local = $calculation->lines()->where('product_code', 'v09')->where('room_number', 'A-00-18')->first();
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $local]), [
+                'floors' => [
+                    ['id' => $local->id, 'quantity' => 'abc'],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('floors.0.quantity');
+
+        $local->refresh();
+        $this->assertNull($local->quantity);
+    }
+
+    public function test_vakman_is_forbidden_from_updating_a_board_room(): void
+    {
+        $user = User::factory()->vakman()->create();
+        $calculation = $this->makeCalculation();
+        $floor = $calculation->lines()->where('unit', WorkUnit::SquareMeter)->first();
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $floor]), [
+                'floor_quantity' => '4,20',
+            ])
+            ->assertForbidden();
+    }
+
     public function test_board_room_confirm_rejects_incomplete_rooms(): void
     {
         $user = User::factory()->create();
@@ -211,6 +391,67 @@ class CalculationBoardTest extends TestCase
             'product' => 'Holplint',
             'quantity' => null,
             'unit' => WorkUnit::LinearMeter,
+            'source' => QuantitySource::Review,
+        ]);
+
+        return $calculation->fresh(['lines', 'drawings']) ?? $calculation;
+    }
+
+    private function makeSplitFloorCalculation(User $user): Calculation
+    {
+        $calculation = Calculation::query()->create([
+            'name' => 'COA Oisterwijk 3 gebouwen',
+            'dated_on' => '2026-09-16',
+            'created_by' => $user->id,
+        ]);
+        $drawing = CalculationDrawing::query()->create([
+            'calculation_id' => $calculation->id,
+            'original_filename' => 'bg.pdf',
+            'file_path' => 'calculations/1/bg.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 12,
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => 1,
+            'room_number' => 'A-00-18',
+            'room_name' => 'ENTREE',
+            'product_code' => 'v01.g',
+            'product' => 'Marmoleum - Forbo 3752',
+            'quantity' => 31.9,
+            'room_area' => 31.9,
+            'unit' => WorkUnit::SquareMeter,
+            'finish_role' => FinishRole::Main,
+            'source' => QuantitySource::FromDrawing,
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => 2,
+            'room_number' => 'A-00-18',
+            'room_name' => 'ENTREE',
+            'product_code' => 'v09',
+            'product' => 'Schoonloopmat',
+            'quantity' => null,
+            'room_area' => 31.9,
+            'unit' => WorkUnit::SquareMeter,
+            'finish_role' => FinishRole::Local,
+            'source' => QuantitySource::Review,
+            'note' => 'Deelvlak zonder eigen m²; niet de volledige ruimteoppervlakte.',
+        ]);
+        CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => 3,
+            'room_number' => 'A-00-01',
+            'room_name' => 'RECREATIE',
+            'product_code' => 'v09',
+            'product' => 'Schoonloopmat',
+            'quantity' => null,
+            'room_area' => 78.9,
+            'unit' => WorkUnit::SquareMeter,
+            'finish_role' => FinishRole::Local,
             'source' => QuantitySource::Review,
         ]);
 

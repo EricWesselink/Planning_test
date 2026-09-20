@@ -122,3 +122,26 @@ export function qtyInput(value) {
 
     return String(number).replace('.', ',');
 }
+
+export function needsLocalAreaInput(group, canUpdate = false) {
+    if (!canUpdate || !group) {
+        return false;
+    }
+    if (group.needs_local_area === true) {
+        return true;
+    }
+    if (group.needs_local_area === false) {
+        return false;
+    }
+
+    return String(group.role || '') === 'local' && (group.quantity == null || group.quantity === '');
+}
+
+export function localAreaPatchBody(finishId, quantity) {
+    return {
+        floors: [{
+            id: Number(finishId),
+            quantity,
+        }],
+    };
+}

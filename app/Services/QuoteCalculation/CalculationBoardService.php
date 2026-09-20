@@ -303,6 +303,7 @@ class CalculationBoardService
     {
         $groups = [];
         foreach ($finishes as $finish) {
+            $role = (string) ($finish['role'] ?? FinishRole::Main->value);
             $groups[] = $this->materialCard(
                 key: 'floor:'.($finish['id'] ?? count($groups)),
                 product: (string) ($finish['product'] ?? ''),
@@ -312,8 +313,10 @@ class CalculationBoardService
                 color: is_string($finish['material_color'] ?? null) ? $finish['material_color'] : null,
                 colorSoft: is_string($finish['material_color_soft'] ?? null) ? $finish['material_color_soft'] : null,
                 groupKey: 'vloer',
-                roleLabel: ($finish['role'] ?? '') === FinishRole::Local->value ? FinishRole::Local->label() : null,
+                roleLabel: $role === FinishRole::Local->value ? FinishRole::Local->label() : null,
                 statusLabel: $status->label(),
+                finishId: isset($finish['id']) ? (int) $finish['id'] : null,
+                role: $role,
             );
         }
         if ($plinth instanceof CalculationLine) {
@@ -333,6 +336,8 @@ class CalculationBoardService
                 groupKey: 'plinth',
                 roleLabel: null,
                 statusLabel: $status->label(),
+                finishId: (int) $plinth->id,
+                role: 'plinth',
             );
         }
 
@@ -353,6 +358,8 @@ class CalculationBoardService
         string $groupKey,
         ?string $roleLabel,
         string $statusLabel,
+        ?int $finishId = null,
+        string $role = 'main',
     ): array {
         $product = trim($product);
         $code = trim($code);
@@ -371,12 +378,17 @@ class CalculationBoardService
         }
         $hex = $color ?: MaterialColor::UNKNOWN;
         $colorKey = WorkColor::key($groupKey, $typeLabel, $label);
+        $isLocal = $role === FinishRole::Local->value;
         $qtyLabel = $quantity === null
-            ? ''
-            : 'Opdracht '.Format::qty($quantity, 2).' '.$unit->label();
+            ? ($isLocal ? 'Geen m²' : '')
+            : 'Calc. '.Format::qty($quantity, 2).' '.$unit->label();
 
         return [
             'key' => $key,
+            'finish_id' => $finishId,
+            'role' => $role,
+            'is_local' => $isLocal,
+            'needs_local_area' => $isLocal && $quantity === null,
             'label' => $label,
             'type_label' => $typeLabel,
             'color_key' => $colorKey,
@@ -384,6 +396,7 @@ class CalculationBoardService
             'display_color' => $hex,
             'display_color_soft' => $colorSoft ?: MaterialColor::softBackground($hex),
             'status_label' => $statusLabel,
+            'quantity' => $quantity,
             'quantity_label' => $qtyLabel,
             'progress_label' => $qtyLabel,
             'unit' => $unit->value,

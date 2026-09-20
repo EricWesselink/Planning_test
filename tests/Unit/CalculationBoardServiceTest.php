@@ -89,8 +89,10 @@ class CalculationBoardServiceTest extends TestCase
         $this->assertStringContainsString('v09', $room['floor_codes_label']);
         $this->assertCount(2, $room['groups']);
         $this->assertSame('Marmoleum v01.d, Linoleum', $room['groups'][0]['label']);
-        $this->assertSame('Opdracht 74,70 m²', $room['groups'][0]['progress_label']);
+        $this->assertSame('Calc. 74,70 m²', $room['groups'][0]['progress_label']);
         $this->assertSame('Schoonloopmat v09, Entreemat · Deelvlak', $room['groups'][1]['label']);
+        $this->assertFalse($room['groups'][1]['needs_local_area']);
+        $this->assertSame('local', $room['groups'][1]['role']);
         $v09 = collect($payload['materials'])->firstWhere('key', 'v09');
         $this->assertEqualsWithDelta(4.2, (float) $v09['m2'], 0.001);
     }
@@ -173,6 +175,9 @@ class CalculationBoardServiceTest extends TestCase
         $this->assertSame(MaterialColor::fromCode('v09'), $room['floors'][1]['material_color']);
         $this->assertNull($room['floors'][1]['overlay']);
         $this->assertNull($room['contour']);
+        $this->assertTrue($room['groups'][1]['needs_local_area']);
+        $this->assertSame('Geen m²', $room['groups'][1]['progress_label']);
+        $this->assertSame('Schoonloopmat v09, Entreemat · Deelvlak', $room['groups'][1]['label']);
         $this->assertTrue(collect($payload['materials'])->contains(fn (array $material) => $material['key'] === 'v09'));
     }
 
@@ -273,7 +278,7 @@ class CalculationBoardServiceTest extends TestCase
         $this->assertSame('v02', $updated['materials'][0]['key']);
         $this->assertEqualsWithDelta(10.0, (float) $updated['materials'][0]['m2'], 0.001);
         $this->assertSame('Marmoleum v02, Linoleum', $updated['room']['groups'][0]['label']);
-        $this->assertSame('Opdracht 10,00 m²', $updated['room']['groups'][0]['progress_label']);
+        $this->assertSame('Calc. 10,00 m²', $updated['room']['groups'][0]['progress_label']);
         $this->assertSame('linoleum', $updated['room']['groups'][0]['color_key']);
     }
 
@@ -313,11 +318,11 @@ class CalculationBoardServiceTest extends TestCase
         $this->assertCount(2, $room['groups']);
         $this->assertSame('Gietvloer v04', $room['groups'][0]['label']);
         $this->assertSame('gietvloer', $room['groups'][0]['color_key']);
-        $this->assertSame('Opdracht 12,70 m²', $room['groups'][0]['progress_label']);
+        $this->assertSame('Calc. 12,70 m²', $room['groups'][0]['progress_label']);
         $this->assertSame(MaterialColor::fromCode('v04'), $room['groups'][0]['display_color']);
         $this->assertSame('Holplint pl02, Plinten', $room['groups'][1]['label']);
         $this->assertSame('plinten', $room['groups'][1]['color_key']);
-        $this->assertSame('Opdracht 15,39 m¹', $room['groups'][1]['progress_label']);
+        $this->assertSame('Calc. 15,39 m¹', $room['groups'][1]['progress_label']);
         $this->assertSame('2/2', $room['progress']);
         $this->assertSame(2, $room['total']);
         $this->assertSame(2, $room['done']);

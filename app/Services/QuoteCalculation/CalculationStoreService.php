@@ -14,6 +14,7 @@ use App\Models\CalculationDrawing;
 use App\Models\CalculationLine;
 use App\Models\CalculationWorkbook;
 use App\Models\User;
+use App\Support\DutchNumber;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -522,6 +523,15 @@ class CalculationStoreService
                 $incomingById[(int) $finish['id']] = $finish;
             }
         }
+        if ($this->isLocalAreaOnly($fields)) {
+            return $this->update($calculation, [
+                'name' => $calculation->name,
+                'client_name' => $calculation->client_name,
+                'project_name' => $calculation->project_name,
+                'dated_on' => $calculation->dated_on,
+                'status' => $calculation->status,
+            ], $this->localAreaOnlyLines($floors, $incomingById));
+        }
         foreach ($floors as $offset => $floor) {
             if (! $floor instanceof CalculationLine) {
                 continue;
@@ -928,6 +938,88 @@ class CalculationStoreService
         }
 
         return array_values(array_unique($ids));
+    }
+
+    /**
+     * @param  array<string, mixed>  $fields
+     */
+    private function isLocalAreaOnly(array $fields): bool
+    {
+        return array_keys($fields) === ['floors'];
+    }
+
+    /**
+     * Fill empty local floor areas and subtract them from the main floor when
+     * that main quantity is still the unused remainder of the room.
+     *
+     * @param  list<mixed>  $floors
+     * @param  array<int, array<string, mixed>>  $incomingById
+     * @return list<array{id: int, quantity: mixed}>
+     */
+    private function localAreaOnlyLines(array $floors, array $incomingById): array
+    {
+        $main = null;
+        $locals = [];
+        foreach ($floors as $floor) {
+            if (! $floor instanceof CalculationLine || $floor->unit !== WorkUnit::SquareMeter) {
+                continue;
+            }
+            if ($floor->finish_role === FinishRole::Main) {
+                $main = $floor;
+
+                continue;
+            }
+            if ($floor->finish_role === FinishRole::Local) {
+                $locals[] = $floor;
+            }
+        }
+
+        $lines = [];
+        $added = 0.0;
+        foreach ($locals as $local) {
+            if ($local->quantity !== null) {
+                continue;
+            }
+            $finish = $incomingById[$local->id] ?? null;
+            if (! is_array($finish) || ! array_key_exists('quantity', $finish)) {
+                continue;
+            }
+            $parsed = is_numeric($finish['quantity'])
+                ? (float) $finish['quantity']
+                : DutchNumber::parse($finish['quantity']);
+            if ($parsed === null) {
+                continue;
+            }
+            $lines[] = [
+                'id' => $local->id,
+                'quantity' => $finish['quantity'],
+            ];
+            $added += $parsed;
+        }
+
+        if ($lines === [] || $main === null || $main->quantity === null || $added <= 0 || $main->room_area === null) {
+            return $lines;
+        }
+
+        $known = 0.0;
+        foreach ($locals as $local) {
+            if ($local->quantity !== null) {
+                $known += (float) $local->quantity;
+            }
+        }
+
+        $expectedMain = round((float) $main->room_area - $known, 2);
+        if (abs((float) $main->quantity - $expectedMain) > 0.05) {
+            return $lines;
+        }
+
+        $remainder = round($expectedMain - $added, 2);
+        $lines[] = [
+            'id' => $main->id,
+            'quantity' => $remainder < 0 ? 0 : $remainder,
+        ];
+
+        return $lines;
     }
 
     /**

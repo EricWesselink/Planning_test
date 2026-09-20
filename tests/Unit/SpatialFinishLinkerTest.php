@@ -215,6 +215,82 @@ class SpatialFinishLinkerTest extends TestCase
         $this->assertEqualsWithDelta(78.9, (float) $linked[0]['square_meters'], 0.001);
     }
 
+    public function test_uses_nearby_millimetre_sides_when_a_local_floor_has_no_square_metres(): void
+    {
+        $rooms = [[
+            'room_number' => 'A-00-01',
+            'room_name' => 'RECREATIE',
+            'square_meters' => 78.9,
+            'floor_code' => null,
+            'plinth_code' => null,
+            'needs_review' => true,
+        ]];
+        $pages = [[
+            'page' => 1,
+            'width' => 1684.0,
+            'height' => 2979.0,
+            'texts' => [
+                $this->item('RECREATIE', 520, 776),
+                $this->item('A-00-01', 503, 787),
+                $this->item('78.9', 497, 797),
+                $this->item('m²', 512, 797),
+                $this->item('w01', 516, 842),
+                $this->item('p01', 516, 851),
+                $this->item('v01.d', 516, 858),
+                $this->item('pl01', 516, 866),
+                $this->item('v09', 448, 829),
+                $this->item('3020', 470, 754),
+                $this->item('3240', 414, 754),
+                $this->item('2000', 406, 675),
+                $this->item('240', 430, 820),
+                $this->item('260', 460, 820),
+            ],
+        ]];
+
+        $linked = (new SpatialFinishLinker)->link($rooms, '', $pages);
+
+        $this->assertSame('v09', $linked[0]['floors'][1]['code']);
+        $this->assertEqualsWithDelta(6.04, (float) $linked[0]['floors'][1]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(72.86, (float) $linked[0]['floors'][0]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(78.9, (float) $linked[0]['square_meters'], 0.001);
+    }
+
+    public function test_ignores_a_door_mark_when_pairing_millimetre_sides_for_a_local_floor(): void
+    {
+        $rooms = [[
+            'room_number' => 'A-00-18',
+            'room_name' => 'ENTREE',
+            'square_meters' => 31.9,
+            'floor_code' => null,
+            'plinth_code' => null,
+            'needs_review' => true,
+        ]];
+        $pages = [[
+            'page' => 1,
+            'width' => 1684.0,
+            'height' => 2979.0,
+            'texts' => [
+                $this->item('ENTREE', 1699, 751),
+                $this->item('A-00-18', 1692, 763),
+                $this->item('31.9', 1686, 773),
+                $this->item('m²', 1701, 773),
+                $this->item('v01.g', 1695, 619),
+                $this->item('pl01', 1695, 626),
+                $this->item('v09', 1762, 674),
+                $this->item('3190', 1686, 672),
+                $this->item('3240', 1762, 820),
+                $this->item('1900', 1791, 747),
+                $this->item('dm', 1791, 764),
+            ],
+        ]];
+
+        $linked = (new SpatialFinishLinker)->link($rooms, '', $pages);
+
+        $this->assertSame('v09', $linked[0]['floors'][1]['code']);
+        $this->assertEqualsWithDelta(10.34, (float) $linked[0]['floors'][1]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(21.56, (float) $linked[0]['floors'][0]['quantity'], 0.001);
+    }
+
     public function test_skips_finish_codes_that_sit_in_a_legend_column(): void
     {
         $rooms = [[

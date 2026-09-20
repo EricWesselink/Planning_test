@@ -190,6 +190,9 @@ class LeaveRequestTest extends TestCase
                 'ends_on' => '2026-09-29',
             ])
             ->assertForbidden();
+        $this->actingAs($actor)
+            ->delete(route('leave-requests.destroy', $request))
+            ->assertForbidden();
 
         $this->assertTrue($request->fresh()->isPending());
         $this->assertSame(0, WorkerAvailability::query()->count());
@@ -216,7 +219,8 @@ class LeaveRequestTest extends TestCase
             ->assertDontSee('>Afwijzen</button>', false)
             ->assertDontSee('>Vraag stellen</button>', false)
             ->assertDontSee('>Periode aanpassen</button>', false)
-            ->assertDontSee('>Versturen</button>', false);
+            ->assertDontSee('>Versturen</button>', false)
+            ->assertDontSee('>Verwijderen</button>', false);
     }
 
     public function test_admin_sees_existing_planning_conflicts_before_approval(): void
@@ -365,6 +369,64 @@ class LeaveRequestTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame(LeaveRequestStatus::Approved, $approved->fresh()->status);
+    }
+
+    public function test_admin_can_delete_a_withdrawn_request(): void
+    {
+        [$nick, $worker] = $this->makeEigenVakman();
+        $request = $this->makeLeaveRequest($nick, $worker, '2026-09-19', '2026-09-19');
+        $request->update([
+            'status' => LeaveRequestStatus::Withdrawn,
+            'reviewed_at' => now(),
+        ]);
+        $admin = $this->makeAdmin();
+        LeaveRequestMessage::factory()->create([
+            'leave_request_id' => $request->id,
+            'user_id' => $admin->id,
+            'body' => 'Oude vraag',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('leave-requests.index'))
+            ->assertOk()
+            ->assertSee('Nick Seine')
+            ->assertSee('Ingetrokken')
+            ->assertSee('>Verwijderen</button>', false);
+
+        $this->actingAs($admin)
+            ->from(route('leave-requests.index'))
+            ->delete(route('leave-requests.destroy', $request))
+            ->assertRedirect(route('leave-requests.index'))
+            ->assertSessionHas('status', 'De aanvraag is verwijderd.');
+
+        $this->assertModelMissing($request);
+        $this->assertSame(0, LeaveRequestMessage::query()->count());
+
+        $this->actingAs($admin)
+            ->get(route('leave-requests.index'))
+            ->assertOk()
+            ->assertSee('Nog geen vrij-aanvragen.');
+    }
+
+    public function test_admin_cannot_delete_a_pending_or_approved_request(): void
+    {
+        Mail::fake();
+        [$nick, $worker] = $this->makeEigenVakman();
+        $pending = $this->makeLeaveRequest($nick, $worker, '2026-09-19', '2026-09-19');
+        $approved = $this->makeLeaveRequest($nick, $worker, '2026-09-28', '2026-09-28');
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin)->post(route('leave-requests.approve', $approved));
+
+        $this->actingAs($admin)
+            ->delete(route('leave-requests.destroy', $pending))
+            ->assertForbidden();
+        $this->actingAs($admin)
+            ->delete(route('leave-requests.destroy', $approved))
+            ->assertForbidden();
+
+        $this->assertModelExists($pending);
+        $this->assertModelExists($approved);
+        $this->assertSame(1, WorkerAvailability::query()->count());
     }
 
     public function test_zzp_vakman_cannot_request_leave(): void

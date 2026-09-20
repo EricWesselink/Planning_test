@@ -17,6 +17,7 @@ export default defineConfig({
                 "resources/js/measurement-form.js",
                 "resources/js/project-upload.js",
                 "resources/js/calculation-create.js",
+                "resources/js/area-without-m2-create.js",
                 "resources/js/calculation-import-progress.js",
                 "resources/js/calculation-board.js",
                 "resources/js/calculation-print-dialog.js",

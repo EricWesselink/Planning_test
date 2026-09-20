@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+    localAreaPatchBody,
     materialFillBox,
     materialLabel,
+    needsLocalAreaInput,
     overlayContrast,
     qtyInput,
     roomDrawingState,
@@ -101,4 +103,19 @@ test('alle materialen highlights every room and a single code isolates its fill'
     assert.ok(all.fillAlpha > isolated.fillAlpha);
     assert.equal(overlayContrast('#2563eb').fg, '#fff');
     assert.equal(materialFillBox({ x: 0.4, y: 0.3, w: 0.04, h: 0.012 }).w > 0.04, true);
+});
+
+test('a local finish without m2 can be filled by hand', () => {
+    const empty = { role: 'local', needs_local_area: true, quantity: null };
+    const filled = { role: 'local', needs_local_area: false, quantity: 4.2 };
+    const main = { role: 'main', needs_local_area: false, quantity: 31.9 };
+
+    assert.equal(needsLocalAreaInput(empty, true), true);
+    assert.equal(needsLocalAreaInput(empty, false), false);
+    assert.equal(needsLocalAreaInput(filled, true), false);
+    assert.equal(needsLocalAreaInput(main, true), false);
+    assert.deepEqual(localAreaPatchBody(11595, '4,20'), {
+        floors: [{ id: 11595, quantity: '4,20' }],
+    });
+    assert.equal(Object.hasOwn(localAreaPatchBody(11595, '4,20'), 'floor_quantity'), false);
 });

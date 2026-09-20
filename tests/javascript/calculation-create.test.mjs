@@ -1,6 +1,41 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bindCalculationCreate, overallPercent, statusLabel, summaryLabel } from '../../resources/js/calculation-create.js';
+import { bindCalculationCreate, bindFileInputs, chosenFilesLabel, overallPercent, statusLabel, summaryLabel } from '../../resources/js/calculation-create.js';
+
+test('names chosen files next to the browse button', () => {
+    assert.equal(chosenFilesLabel([]), 'Geen bestanden geselecteerd.');
+    assert.equal(chosenFilesLabel([{ name: 'bg.pdf' }]), 'bg.pdf');
+    assert.equal(chosenFilesLabel([{ name: 'bg.pdf' }, { name: '1e.xlsx' }]), '2 bestanden geselecteerd.');
+});
+
+test('syncs the chosen-file label when the input changes', () => {
+    const label = { textContent: '' };
+    const listeners = {};
+    const input = {
+        id: 'drawings',
+        files: [],
+        addEventListener(event, handler) {
+            listeners[event] = handler;
+        },
+    };
+    const root = {
+        querySelectorAll(selector) {
+            return selector === '[data-file-input]' ? [input] : [];
+        },
+        querySelector(selector) {
+            return selector === '[data-file-chosen="drawings"]' ? label : null;
+        },
+    };
+
+    bindFileInputs(root);
+
+    assert.equal(label.textContent, 'Geen bestanden geselecteerd.');
+
+    input.files = [{ name: 'bg.pdf' }];
+    listeners.change();
+
+    assert.equal(label.textContent, 'bg.pdf');
+});
 
 test('summarizes selected drawings and workbooks in Dutch', () => {
     assert.equal(summaryLabel({ drawings: 7, workbooks: 1 }), '7 tekeningen en 1 Excelbestand. Dit kan een paar minuten duren.');

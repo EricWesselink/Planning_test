@@ -94,7 +94,7 @@ async function boot(documentData) {
                 materialKeys,
                 colored: Boolean(include.colored),
                 roomLabels: Boolean(include.rooms),
-                materialCodes: Boolean(include.codes),
+                materialCodes: Boolean(include.codes) || Boolean(include.colored),
             });
         }
     }

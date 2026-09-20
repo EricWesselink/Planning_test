@@ -106,9 +106,13 @@ class DrawingBoardTest extends TestCase
             ->assertSee('class="room-panel-head"', false)
             ->assertSee('class="room-groups"', false)
             ->assertSee('class="work-card-title"', false)
-            ->assertSee('class="work-card-meta"', false)
+            ->assertSee('class="work-card-qty"', false)
+            ->assertSee('class="work-card-qty-part"', false)
             ->assertSee('class="complete-form"', false)
+            ->assertSee('class="complete-form-title"', false)
             ->assertSee('class="complete-form-who"', false)
+            ->assertSee('has-room', false)
+            ->assertSee('class="group-status', false)
             ->assertSee('Primen & Egaliseren')
             ->assertSee('Marmoleum')
             ->assertSee('Opdracht 50,97 | Gereed 0,00 | Rest 50,97 m²')
@@ -119,6 +123,25 @@ class DrawingBoardTest extends TestCase
             ->assertSee('id="complete-worker"', false)
             ->assertSee('id="complete-date"', false)
             ->assertSee('Opslaan en verwerken');
+    }
+
+    public function test_work_cards_keep_quantities_together_and_status_as_badge(): void
+    {
+        $js = file_get_contents(resource_path('js/drawing-board.js'));
+        $css = file_get_contents(resource_path('css/app.css'));
+        $view = file_get_contents(resource_path('views/projects/show.blade.php'));
+
+        $this->assertStringContainsString('function workCardQtyHtml', $js);
+        $this->assertStringContainsString('work-card-qty-part', $js);
+        $this->assertStringContainsString("classList.toggle('has-room'", $js);
+        $this->assertStringContainsString('work-card-qty-part', $view);
+        $this->assertStringContainsString('complete-form-title', $view);
+        $this->assertDoesNotMatchRegularExpression('/\.work-card-title\s*\{[^}]*line-clamp/s', $css);
+        $this->assertMatchesRegularExpression('/\.work-card-title\s*\{[^}]*font-size:\s*0\.75rem/s', $css);
+        $this->assertMatchesRegularExpression('/\.work-card-qty-part\s*\{[^}]*white-space:\s*nowrap/s', $css);
+        $this->assertMatchesRegularExpression('/\.group-status\s*\{[^}]*border-radius:\s*999px/s', $css);
+        $this->assertStringContainsString('.complete-form-title', $css);
+        $this->assertStringContainsString('#room-panel.has-room .room-panel-head', $css);
     }
 
     public function test_planner_sees_progress_read_only_without_input_fields(): void
@@ -360,6 +383,9 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('groupedWorkFilters', $js);
         $this->assertStringContainsString('floorAreas', $js);
         $this->assertStringContainsString("querySelectorAll('.draw-work-qty')", $js);
+        $this->assertStringContainsString('work-card-qty', $js);
+        $this->assertStringContainsString('work-card-qty-part', $js);
+        $this->assertStringContainsString('function workCardQtyHtml', $js);
         $this->assertStringContainsString('function prunePickedToFilter', $js);
         $this->assertStringContainsString('document.body.appendChild', $js);
         $this->assertStringContainsString("classList.add('is-open')", $js);
@@ -370,6 +396,8 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('.room-name-overlay.is-filtered-out', $css);
         $this->assertStringContainsString('.status-badge.is-filtered-out', $css);
         $this->assertStringContainsString('.board-left.is-work-filter', $css);
+        $this->assertStringContainsString('.work-card-qty', $css);
+        $this->assertStringContainsString('.work-card-qty-part', $css);
         $this->assertStringContainsString('.draw-work-qty', $css);
         $this->assertStringContainsString('.draw-work-menu', $css);
         $this->assertStringContainsString('.draw-work-panel', $css);

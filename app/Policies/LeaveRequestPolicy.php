@@ -46,6 +46,11 @@ class LeaveRequestPolicy
         return $user->canReviewLeaveRequests() && $leaveRequest->isPending();
     }
 
+    public function delete(User $user, LeaveRequest $leaveRequest): bool
+    {
+        return $user->canReviewLeaveRequests() && $leaveRequest->isDeletable();
+    }
+
     private function owns(User $user, LeaveRequest $leaveRequest): bool
     {
         return $user->isVakman() && (int) $leaveRequest->user_id === (int) $user->id;

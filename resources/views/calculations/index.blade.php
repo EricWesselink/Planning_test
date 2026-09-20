@@ -9,7 +9,10 @@
             <p class="text-sm text-nicon-muted">Hoeveelheden uit bouwtekeningen voor een offerte. Los van projecten en planning.</p>
         </div>
         @can('create', \App\Models\Calculation::class)
-            <a href="{{ route('calculations.create') }}" class="bg-nicon-orange px-4 py-2 text-sm text-white">Nieuwe calculatie</a>
+            <div class="flex flex-wrap gap-2">
+                <a href="{{ route('calculations.create') }}" class="bg-nicon-orange px-4 py-2 text-sm text-white">Nieuwe calculatie</a>
+                <a href="{{ route('calculations.area-without-m2.create') }}" class="border border-nicon-line bg-white px-4 py-2 text-sm text-nicon-ink">Calculatie zonder m² (proef)</a>
+            </div>
         @endcan
     </div>
     @if (session('status'))

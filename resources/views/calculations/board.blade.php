@@ -160,13 +160,14 @@
                 <div class="text-sm text-nicon-muted" id="room-m2"></div>
                 <div class="room-progress-row">
                     <div class="text-sm" id="room-progress-label"></div>
+                    <div id="room-status" hidden></div>
                 </div>
                 <div class="room-progress-track"><div id="room-progress-bar" class="room-progress-fill bg-nicon-orange" style="width: 0%"></div></div>
                 <div id="work-legend" class="work-legend"></div>
             </div>
             <p id="calc-room-empty" class="px-4 text-sm text-nicon-muted">Klik een ruimte in de lijst of op de tekening.</p>
-            <div id="room-groups" class="room-groups hidden"></div>
-            <form id="calc-room-form" class="complete-form hidden">
+            <div id="room-groups" class="room-groups"></div>
+            <form id="calc-room-form" class="complete-form">
                 <div id="calc-room-fields" class="space-y-2">
                     <details class="calc-room-edit">
                         <summary>Gegevens wijzigen</summary>

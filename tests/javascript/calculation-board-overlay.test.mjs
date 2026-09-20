@@ -10,10 +10,13 @@ import {
     materialCodesInOverlayText,
     roomsForDrawing,
     printDrawingSheets,
+    printFillContour,
     printImageFromCanvas,
     isUsablePrintImageSrc,
     printPaper,
     roomLabelAnchor,
+    clampPrintLabelCenter,
+    separatePrintLabelCenters,
     usableLabelHits,
     waitForPrintAssets,
     waitForPrintImage,
@@ -116,6 +119,7 @@ test('rooms codes colored and legend flags stay independent', () => {
     const plain = overlayPlan([kitchen], 336, 1, { colored: false, roomLabels: true, materialCodes: false });
 
     assert.equal(colored[0].colored, true);
+    assert.equal(colored[0].fill, null);
     assert.equal(colored[0].text, 'v04');
     assert.equal(plain[0].colored, false);
     assert.equal(plain[0].text, 'A-01-01');
@@ -453,4 +457,103 @@ test('print does not treat a missing or empty drawing image as ready', async () 
     await assert.rejects(() => waitForPrintAssets({
         querySelectorAll: () => [],
     }, { requireDrawings: true }), /no print drawings/);
+});
+
+test('print does not fill from rects, text boxes or title-block strips', () => {
+    const strip = room({
+        key: 'a-01-13',
+        number: 'A-01-13',
+        floor_codes_label: 'v04',
+        contour: {
+            page: 1,
+            reliable: true,
+            rects: [{ x: 0.72, y: 0.06, w: 0.16, h: 0.58 }],
+        },
+        marker: { page: 1, x: 0.46, y: 0.41, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.46, y: 0.41, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+    const textPoly = room({
+        key: 'a-01-12',
+        number: 'A-01-12',
+        floor_codes_label: 'v06.c + v01.i + v01.f',
+        contour: {
+            page: 1,
+            reliable: true,
+            polygon: [
+                { x: 0.20, y: 0.30 },
+                { x: 0.25, y: 0.30 },
+                { x: 0.25, y: 0.32 },
+                { x: 0.20, y: 0.32 },
+            ],
+        },
+        marker: { page: 1, x: 0.20, y: 0.30, width: 0.05, height: 0.02, source: 'text' },
+    });
+    const empty = room({
+        key: 'a-02-01',
+        drawing_id: 338,
+        number: 'A-02-01',
+        floor_code: '',
+        floor_codes_label: '',
+        contour: null,
+        marker: null,
+    });
+
+    const plan = overlayPlan([strip, textPoly], 336, 1, { colored: true, roomLabels: true, materialCodes: true });
+    const center = clampPrintLabelCenter(plan.find((item) => item.number === 'A-01-13').box);
+
+    assert.equal(printFillContour(strip), null);
+    assert.equal(printFillContour(textPoly), null);
+    assert.equal(plan.every((item) => item.fill === null), true);
+    assert.equal(plan.find((item) => item.number === 'A-01-13').text, 'A-01-13 · v04');
+    assert.equal(plan.find((item) => item.number === 'A-01-12').text, 'A-01-12 · v06.c + v01.i + v01.f');
+    assert.ok(plan.find((item) => item.number === 'A-01-13').box.x < 0.55);
+    assert.ok(center.x <= 0.80);
+    assert.equal(overlayRoomsOnPage([empty], 338, 1).length, 0);
+});
+
+test('print fills only an explicit reliable room polygon', () => {
+    const polygon = room({
+        contour: {
+            page: 1,
+            reliable: true,
+            polygon: [
+                { x: 0.20, y: 0.40 },
+                { x: 0.34, y: 0.40 },
+                { x: 0.34, y: 0.54 },
+                { x: 0.28, y: 0.54 },
+                { x: 0.20, y: 0.48 },
+            ],
+        },
+    });
+    const rects = room({
+        key: 'a-01-04',
+        number: 'A-01-04',
+        contour: {
+            page: 1,
+            reliable: true,
+            rects: [{ x: 0.22, y: 0.44, w: 0.10, h: 0.08 }],
+        },
+    });
+
+    const filled = overlayPlan([polygon], 336, 1, { colored: true, roomLabels: true, materialCodes: true });
+    const labeled = overlayPlan([rects], 336, 1, { colored: true, roomLabels: true, materialCodes: true });
+
+    assert.equal(filled[0].fill.type, 'polygon');
+    assert.equal(filled[0].fill.points.length, 5);
+    assert.equal(labeled[0].fill, null);
+    assert.equal(labeled[0].text, 'A-01-04 · v04');
+});
+
+test('print nudges overlapping labels and keeps them on the drawing', () => {
+    const centers = separatePrintLabelCenters([
+        { x: 0.40, y: 0.40 },
+        { x: 0.41, y: 0.40 },
+        { x: 0.96, y: 0.12 },
+    ]);
+    const clamped = clampPrintLabelCenter({ x: 0.92, y: 0.08, w: 0.12, h: 0.50 });
+
+    assert.ok(Math.abs(centers[1].y - centers[0].y) >= 0.03);
+    assert.equal(clamped.x, 0.80);
+    assert.ok(clamped.y >= 0.05);
+    assert.ok(clamped.y <= 0.93);
 });

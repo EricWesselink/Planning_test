@@ -36,6 +36,13 @@
         @if (filled($leaveRequest->rejection_reason))
             <p>Reden afwijzing: {{ $leaveRequest->rejection_reason }}</p>
         @endif
+        @can('delete', $leaveRequest)
+            <form method="POST" action="{{ route('leave-requests.destroy', $leaveRequest) }}" onsubmit="return confirm({{ json_encode('Deze vrij-aanvraag verwijderen?') }})">
+                @csrf
+                @method('DELETE')
+                <button class="text-sm text-nicon-danger hover:underline">Verwijderen</button>
+            </form>
+        @endcan
     </div>
 
     @if ($conflicts !== [])

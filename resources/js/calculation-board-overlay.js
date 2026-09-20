@@ -4,11 +4,10 @@ import {
     contourBox,
     exactRoomHitForArea,
     normalizeRoomNumber,
-    roomVisualContour,
+    roomFocusBox,
     storedJumpTarget,
 } from './room-geometry.js';
 import {
-    materialFillBox,
     overlayContrast,
     roomDrawingState,
     roomOverlayContent,
@@ -49,26 +48,25 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
     const { extractPageTextItems } = await import('./pdf-text-layer.js');
     const known = drawingRooms.map((room) => room.number).filter(Boolean);
     const hits = [];
-    const finishItems = [];
     for (let number = 1; number <= pdfDoc.numPages; number += 1) {
         const pdfPage = await pdfDoc.getPage(number);
         const viewport = pdfPage.getViewport({ scale: 1 });
         const content = await pdfPage.getTextContent();
         const items = extractPageTextItems(content, viewport, number);
         hits.push(...assessTextLayer(items, known).hits);
-        finishItems.push(...items);
     }
     placeBoardRooms(drawingRooms, drawingId, hits);
-    assignFinishHits(drawingRooms, drawingId, finishItems);
 }
 
 export function placeBoardRooms(rooms, drawingId, hits) {
+    const usable = usableLabelHits(hits);
     roomsForDrawing(rooms, drawingId).forEach((room) => {
-        applyRoomGeometry(room);
         if (roomLabelAnchor(room)) {
             return;
         }
-        const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
+        const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, usable)
+            || usable.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number))
+            || exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
             || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
         assignHit(room, hit);
     });
@@ -136,25 +134,97 @@ export function applyRoomGeometry(room) {
     return true;
 }
 
-export function roomContourFor(room) {
-    const trace = roomTraceContour(room);
-    if (trace) {
-        return trace;
+export function isPlausibleRoomBox(box) {
+    if (!box) {
+        return false;
     }
-    const visual = roomVisualContour(room);
-    if (visual) {
-        return { ...visual, room };
+    const width = Number(box.w) || 0;
+    const height = Number(box.h) || 0;
+    if (width < 0.02 || height < 0.015) {
+        return false;
     }
-    const jump = storedJumpTarget(room);
-    if (!jump?.box) {
+    const area = width * height;
+    const ratio = width >= height ? width / height : height / width;
+    if (area > 0.10 || ratio > 3.5) {
+        return false;
+    }
+
+    return true;
+}
+
+export function isCompactLabelBox(box) {
+    if (!box) {
+        return false;
+    }
+
+    return (Number(box.w) || 0) <= 0.18 && (Number(box.h) || 0) <= 0.07;
+}
+
+export function printFillContour(room) {
+    const points = Array.isArray(room?.contour?.polygon) ? room.contour.polygon : null;
+    if (room?.contour?.reliable !== true || !points || points.length < 3) {
+        return null;
+    }
+    const box = contourBox({ type: 'polygon', points });
+    if (!isPlausibleRoomBox(box) || isCompactLabelBox(box)) {
         return null;
     }
 
-    return { type: 'box', box: jump.box, room };
+    return { type: 'polygon', points, room };
 }
 
 export function roomLabelAnchor(room) {
-    return contourBox(roomContourFor(room)) || storedJumpTarget(room)?.box || null;
+    const fillBox = contourBox(printFillContour(room));
+    if (fillBox) {
+        return fillBox;
+    }
+    const contour = contourBox(roomTraceContour(room));
+    if (isPlausibleRoomBox(contour)) {
+        return contour;
+    }
+    const stored = storedJumpTarget(room)?.box;
+    if (isCompactLabelBox(stored)) {
+        return stored;
+    }
+    const marker = roomFocusBox(room.marker);
+    if (marker && room.marker?.source !== 'contour') {
+        return marker;
+    }
+    if (stored) {
+        return stored;
+    }
+
+    return marker || null;
+}
+
+export function clampPrintLabelCenter(box) {
+    const width = Number(box?.w) || 0;
+    const height = Number(box?.h) || 0;
+    const x = clampRange((Number(box?.x) || 0) + width / 2, 0.04, 0.80);
+    const y = clampRange((Number(box?.y) || 0) + height / 2, 0.05, 0.93);
+
+    return { x, y };
+}
+
+export function separatePrintLabelCenters(centers) {
+    const placed = (centers || []).map((center) => ({
+        x: Number(center?.x) || 0,
+        y: Number(center?.y) || 0,
+    }));
+    placed.forEach((center, index) => {
+        for (let previous = 0; previous < index; previous += 1) {
+            const other = placed[previous];
+            if (Math.abs(center.x - other.x) < 0.08 && Math.abs(center.y - other.y) < 0.028) {
+                center.y = clampRange(other.y + 0.032, 0.05, 0.93);
+            }
+        }
+    });
+
+    return placed;
+}
+
+function clampRange(value, min, max) {
+    return Math.max(min, Math.min(max, Number(value) || 0));
 }
 
 export function overlayChipText(room, options = {}) {
@@ -189,7 +259,8 @@ export function overlayPlan(rooms, drawingId, page, options = {}) {
         box: roomLabelAnchor(room),
         text: overlayChipText(room, options),
         colored: Boolean(options.colored),
-        source: reliableTraceRects(room.contour).length > 0
+        fill: options.colored ? printFillContour(room) : null,
+        source: isPlausibleRoomBox(contourBox(roomTraceContour(room)))
             ? 'contour'
             : (room.marker?.source || room.jump_target?.geometry || 'label'),
     }));
@@ -457,7 +528,7 @@ export function paintCalculationOverlays({
     }
     hitEl.replaceChildren();
     markersEl.replaceChildren();
-    const materialSet = new Set(materialKeys);
+    const placedCenters = [];
     overlayRoomsOnPage(roomsForDrawing(rooms, drawingId), drawingId, page).forEach((room) => {
         const state = roomDrawingState(room, {
             selectedKey,
@@ -468,73 +539,36 @@ export function paintCalculationOverlays({
         if (!state.show) {
             return;
         }
-        const contour = roomContourFor(room);
         const box = roomLabelAnchor(room);
-        if (!contour || !box) {
+        if (!box) {
             return;
         }
-        const finishes = roomFinishes(room);
-        finishes.forEach((finish) => {
-            const finishOn = materialSet.size === 0 || materialSet.has(String(finish.material_key || '').toLowerCase());
-            if (!finishOn && !state.selected) {
-                return;
+        if (colored) {
+            const fillContour = printFillContour(room);
+            if (fillContour) {
+                appendFill(hitEl, { ...room, material_color: room.material_color }, fillContour, state, onRoomPointer);
             }
-            const finishState = {
-                ...state,
-                highlighted: finishOn,
-                filteredOut: !finishOn && !state.selected,
-            };
-            const isLocal = finish.role === 'local' && finishes.length > 1;
-            let finishContour = contour;
-            if (isLocal && Array.isArray(finish.marker?.polygon) && finish.marker.polygon.length >= 3) {
-                finishContour = { type: 'polygon', points: finish.marker.polygon, room };
-            } else if (isLocal) {
-                const localTrace = roomTraceContour({ contour: finish.overlay });
-                if (localTrace) {
-                    finishContour = localTrace;
-                } else if (finish.overlay && Number(finish.overlay.w) > 0 && Number(finish.overlay.h) > 0) {
-                    finishContour = { type: 'box', box: finish.overlay, room };
-                } else {
-                    return;
-                }
-            }
-            if (colored) {
-                appendFill(hitEl, { ...room, material_color: finish.material_color || room.material_color }, finishContour, finishState, onRoomPointer);
-            }
-            if (isLocal) {
-                const localBox = contourBox(finishContour);
-                if (localBox) {
-                    appendCodeChip(markersEl, {
-                        ...room,
-                        floor_code: finish.code,
-                        floor_codes_label: finish.code,
-                        material_color: finish.material_color || room.material_color,
-                    }, localBox, { ...finishState, highlighted: true }, {
-                        roomLabels,
-                        materialCodes,
-                        chipTag,
-                        chipTransform,
-                        onRoomPointer,
-                        showChips,
-                    });
-                }
+        }
+        const center = clampPrintLabelCenter(box);
+        placedCenters.forEach((other) => {
+            if (Math.abs(center.x - other.x) < 0.08 && Math.abs(center.y - other.y) < 0.028) {
+                center.y = Math.max(0.05, Math.min(0.93, other.y + 0.032));
             }
         });
-        if (finishes.length <= 1 || materialSet.size === 0 || materialSet.has(String(room.material_key || '').toLowerCase())) {
-            appendCodeChip(markersEl, room, box, state, {
-                roomLabels,
-                materialCodes,
-                chipTag,
-                chipTransform,
-                onRoomPointer,
-                showChips,
-            });
-        }
+        placedCenters.push(center);
+        appendCodeChip(markersEl, room, { x: center.x, y: center.y, w: 0, h: 0 }, state, {
+            roomLabels,
+            materialCodes,
+            chipTag,
+            chipTransform,
+            onRoomPointer,
+            showChips,
+        });
     });
 }
 
 function assignHit(room, hit) {
-    if (!hit || applyRoomGeometry(room)) {
+    if (!hit) {
         return;
     }
     const width = Math.max(0.02, Number(hit.w) || Number(hit.width) || 0.04);
@@ -561,67 +595,8 @@ function assignHit(room, hit) {
     room.number_raw = room.number;
 }
 
-function assignFinishHits(rooms, drawingId, items) {
-    const placed = roomsForDrawing(rooms, drawingId).filter((room) => room.marker);
-    placed.forEach((room) => {
-        (room.floors || []).forEach((finish) => {
-            const code = String(finish.code || '').toLowerCase();
-            if (code === '') {
-                return;
-            }
-            let best = null;
-            let bestDistance = Infinity;
-            items.forEach((item) => {
-                if (String(item.text || '').toLowerCase().trim() !== code) {
-                    return;
-                }
-                if (Number(item.page) !== Number(room.marker.page)) {
-                    return;
-                }
-                const distance = Math.hypot(Number(item.x) - Number(room.marker.x), Number(item.y) - Number(room.marker.y));
-                const closerOther = placed.some((other) => {
-                    if (other === room || Number(other.marker?.page) !== Number(item.page)) {
-                        return false;
-                    }
-                    return Math.hypot(Number(item.x) - Number(other.marker.x), Number(item.y) - Number(other.marker.y)) + 0.01 < distance;
-                });
-                if (closerOther || distance > 0.22) {
-                    return;
-                }
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    best = item;
-                }
-            });
-            if (!best) {
-                return;
-            }
-            const width = Math.max(0.035, Number(best.w) || 0.04);
-            const height = Math.max(0.03, Number(best.h) || 0.03);
-            const x = clamp(Number(best.x));
-            const y = clamp(Number(best.y));
-            finish.marker = {
-                page: Number(best.page),
-                x,
-                y,
-                width,
-                height,
-                polygon: [
-                    { x, y },
-                    { x: clamp(x + width), y },
-                    { x: clamp(x + width), y: clamp(y + height) },
-                    { x, y: clamp(y + height) },
-                ],
-            };
-        });
-    });
-}
-
 function appendFill(hitEl, room, contour, state, onRoomPointer) {
-    const fillContour = state.highlighted || state.selected
-        ? (contour.type === 'box' ? { type: 'box', box: materialFillBox(contour.box) || contour.box } : contour)
-        : contour;
-    fillShapes(fillContour).forEach((shape) => {
+    fillShapes(contour).forEach((shape) => {
         const classes = ['calc-fill', 'room-label'];
         if (state.selected) {
             classes.push('is-on');

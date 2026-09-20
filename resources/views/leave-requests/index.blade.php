@@ -46,7 +46,16 @@
                         @endif
                     </td>
                     <td class="px-3 py-2 text-right">
-                        <a class="text-sm text-nicon-orange-dark hover:underline" href="{{ route('leave-requests.show', $leaveRequest) }}">Bekijken</a>
+                        <div class="flex flex-col items-end gap-1">
+                            <a class="text-sm text-nicon-orange-dark hover:underline" href="{{ route('leave-requests.show', $leaveRequest) }}">Bekijken</a>
+                            @can('delete', $leaveRequest)
+                                <form method="POST" action="{{ route('leave-requests.destroy', $leaveRequest) }}" onsubmit="return confirm({{ json_encode('Deze vrij-aanvraag van '.$leaveRequest->workerName().' verwijderen?') }})">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="text-sm text-nicon-danger hover:underline">Verwijderen</button>
+                                </form>
+                            @endcan
+                        </div>
                     </td>
                 </tr>
             @empty

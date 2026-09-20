@@ -47,6 +47,67 @@ class ImageOnlyPdf
             $y += $lineHeight;
         }
 
+        return self::jpegPdf($image);
+    }
+
+    /**
+     * Scanned plattegrond: gesloten ruimtecontour met lokale maatlijnen, zonder tekstlaag.
+     */
+    public static function dimensionedRoomPath(): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'nicon-imgpdf-');
+        if ($path === false) {
+            throw new \RuntimeException('Kon tijdelijk PDF-pad niet aanmaken.');
+        }
+        file_put_contents($path, self::dimensionedRoomBytes());
+
+        return $path;
+    }
+
+    public static function dimensionedRoomBytes(): string
+    {
+        $width = 800;
+        $height = 600;
+        $image = imagecreatetruecolor($width, $height);
+        if ($image === false) {
+            throw new \RuntimeException('GD kon geen afbeelding maken.');
+        }
+
+        $white = imagecolorallocate($image, 255, 255, 255);
+        $black = imagecolorallocate($image, 0, 0, 0);
+        imagefilledrectangle($image, 0, 0, $width, $height, $white);
+        imagesetthickness($image, 3);
+        imagerectangle($image, 150, 180, 500, 380, $black);
+
+        $font = self::fontPath();
+        self::drawLabel($image, 'OPSLAG', 250, 250, $black, $font);
+        self::drawLabel($image, 'A-00-03', 250, 295, $black, $font);
+        self::drawLabel($image, '99 m2', 250, 340, $black, $font);
+        self::drawLabel($image, '3500', 280, 415, $black, $font);
+        self::drawLabel($image, '2000', 40, 290, $black, $font);
+
+        return self::jpegPdf($image);
+    }
+
+    /**
+     * @param  \GdImage  $image
+     */
+    private static function drawLabel($image, string $text, int $x, int $y, int $color, ?string $font): void
+    {
+        if ($font !== null) {
+            imagettftext($image, 22, 0, $x, $y, $color, $font, $text);
+
+            return;
+        }
+
+        self::drawScaledLine($image, $text, $x, $y - 22, $color);
+    }
+
+    /**
+     * @param  \GdImage  $image
+     */
+    private static function jpegPdf($image): string
+    {
         $jpgPath = tempnam(sys_get_temp_dir(), 'nicon-jpg-');
         if ($jpgPath === false) {
             imagedestroy($image);

@@ -111,4 +111,15 @@ class LeaveRequestController extends Controller
             ->route('leave-requests.show', $leaveRequest)
             ->with('status', 'De periode is aangepast. De vakman is per e-mail op de hoogte gebracht.');
     }
+
+    public function destroy(LeaveRequest $leaveRequest): RedirectResponse
+    {
+        Gate::authorize('delete', $leaveRequest);
+
+        $leaveRequest->delete();
+
+        return redirect()
+            ->route('leave-requests.index')
+            ->with('status', 'De aanvraag is verwijderd.');
+    }
 }

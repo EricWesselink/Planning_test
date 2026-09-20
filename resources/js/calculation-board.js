@@ -18,8 +18,10 @@ import {
     extractPageTextItems,
 } from './pdf-text-layer';
 import {
+    localAreaPatchBody,
     materialFillBox,
     materialLabel,
+    needsLocalAreaInput,
     overlayContrast,
     qtyInput,
     roomDrawingState,
@@ -584,23 +586,56 @@ function boot() {
         bar.classList.toggle('bg-nicon-orange', !done);
     }
 
+    function workCardQtyHtml(label) {
+        const text = String(label || '').trim();
+        if (!text) {
+            return '';
+        }
+        const parts = text.split(/\s*\|\s*/).filter(Boolean);
+        const inner = parts.map((part, index) => (
+            `<span class="work-card-qty-part">${escapeHtml(index ? `| ${part}` : part)}</span>`
+        )).join('');
+
+        return `<span class="work-card-qty" title="${escapeHtml(text)}">${inner}</span>`;
+    }
+
     function groupCardHtml(group) {
         const typeLabel = group.type_label && !String(group.label || '').includes(group.type_label)
             ? group.type_label
             : '';
-        const metaParts = [group.progress_label || group.quantity_label || '', typeLabel].filter(Boolean);
+        const qty = group.progress_label || group.quantity_label || '';
+        const metaParts = [typeLabel].filter(Boolean);
+        const isLocal = Boolean(group.is_local) || group.role === 'local';
+        const showInput = needsLocalAreaInput(group, Boolean(data.can_update));
+        const finishId = group.finish_id || '';
 
         return `
-            <section class="work-group" data-kind="${escapeHtml(group.color_key || 'overige')}" style="--material-color: ${escapeHtml(group.display_color || '#9ca3af')}; --work-accent: ${escapeHtml(group.display_color || '#9ca3af')}; --work-bg: ${escapeHtml(group.display_color_soft || 'rgba(156, 163, 175, 0.14)')};">
+            <section class="work-group${isLocal ? ' is-local' : ''}" data-kind="${escapeHtml(group.color_key || 'overige')}" data-role="${escapeHtml(group.role || '')}" data-finish-id="${escapeHtml(finishId)}" style="--material-color: ${escapeHtml(group.display_color || '#9ca3af')}; --work-accent: ${escapeHtml(group.display_color || '#9ca3af')}; --work-bg: ${escapeHtml(group.display_color_soft || 'rgba(156, 163, 175, 0.14)')};">
                 <button type="button" class="group-head" disabled data-group="${escapeHtml(group.key)}" data-label="${escapeHtml(group.label)}">
                     <span class="task-check"></span>
                     <span class="work-card-copy">
                         <span class="work-card-title"><i class="work-swatch" aria-hidden="true"></i>${escapeHtml(group.label)}</span>
-                        <span class="work-card-meta">${escapeHtml(metaParts.join(' · '))}</span>
+                        ${workCardQtyHtml(qty)}
+                        ${metaParts.length ? `<span class="work-card-meta">${escapeHtml(metaParts.join(' · '))}</span>` : ''}
                     </span>
-                    <span class="group-status text-nicon-muted">${escapeHtml(group.status_label || '')}</span>
+                    <span class="group-status text-nicon-muted">${isLocal ? '<span class="work-role">Deelvlak</span>' : ''}${escapeHtml(group.status_label || '')}</span>
                 </button>
+                ${showInput ? localAreaFormHtml(finishId) : ''}
             </section>`;
+    }
+
+    function localAreaFormHtml(finishId) {
+        return `
+            <form class="local-area-form" data-finish-id="${escapeHtml(finishId)}">
+                <label>
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Oppervlakte deelvlak</span>
+                    <span class="local-area-input-row">
+                        <input name="local_area" inputmode="decimal" class="border border-nicon-line bg-white px-2 py-1" aria-label="Oppervlakte deelvlak">
+                        <span class="text-xs text-nicon-muted">m²</span>
+                    </span>
+                </label>
+                <button type="submit" class="bg-nicon-ink px-3 py-1.5 text-xs text-white">Opslaan</button>
+            </form>`;
     }
 
     function renderWorkLegend(groups) {
@@ -617,28 +652,85 @@ function boot() {
         }).join('');
     }
 
+    function roomMaterialGroups(room) {
+        if (Array.isArray(room?.groups) && room.groups.length > 0) {
+            return room.groups;
+        }
+        const groups = roomFinishes(room).map((finish) => {
+            const label = [finish.product, finish.code].filter(Boolean).join(' ') || 'Vloer';
+
+            return {
+                key: `floor:${finish.id || finish.code || label}`,
+                finish_id: finish.id || null,
+                role: finish.role || 'main',
+                is_local: finish.role === 'local',
+                needs_local_area: finish.role === 'local' && (finish.quantity == null || finish.quantity === ''),
+                label,
+                quantity: finish.quantity ?? null,
+                progress_label: finish.quantity_label || '',
+                quantity_label: finish.quantity_label || '',
+                display_color: finish.material_color || room.material_color || '#9ca3af',
+                display_color_soft: finish.material_color_soft || room.material_color_soft || 'rgba(156, 163, 175, 0.14)',
+                color_key: 'vloer',
+                status_label: room.status_label || '',
+            };
+        });
+        if (room?.has_plinth || room?.plinth_code || room?.plinth_product) {
+            groups.push({
+                key: `plinth:${room.plinth_id || room.plinth_code || 'plinth'}`,
+                label: [room.plinth_product, room.plinth_code].filter(Boolean).join(' ') || 'Plint',
+                progress_label: room.plinth_quantity_label || '',
+                quantity_label: room.plinth_quantity_label || '',
+                display_color: '#65a30d',
+                display_color_soft: 'rgba(101, 163, 13, 0.14)',
+                color_key: 'plinten',
+                status_label: room.status_label || '',
+            });
+        }
+
+        return groups;
+    }
+
     function renderRoomGroups(room) {
         const groupsEl = document.getElementById('room-groups');
         if (!groupsEl) {
             return;
         }
-        const groups = room?.groups || [];
+        const groups = room ? roomMaterialGroups(room) : [];
         groupsEl.innerHTML = groups.length
             ? groups.map((group) => groupCardHtml(group)).join('')
             : (room ? '<p class="text-sm text-nicon-muted">Geen materialen in deze ruimte.</p>' : '');
         renderWorkLegend(groups);
+        groupsEl.querySelectorAll('.local-area-form').forEach((localForm) => {
+            localForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                saveLocalArea(room, localForm);
+            });
+        });
     }
 
     function paintPanel(room) {
+        const panel = document.getElementById('room-panel');
         const empty = document.getElementById('calc-room-empty');
         const fields = document.getElementById('calc-room-fields');
         const groupsEl = document.getElementById('room-groups');
-        document.getElementById('room-drawing').textContent = room?.group || '';
-        document.getElementById('room-title').textContent = room
-            ? `${room.number || '—'} ${room.name || ''}`.trim()
-            : 'Kies een ruimte';
-        document.getElementById('room-m2').textContent = room?.m2_label || '';
-        const status = document.getElementById('room-progress-label');
+        panel?.classList.toggle('has-room', Boolean(room));
+        const drawingEl = document.getElementById('room-drawing');
+        if (drawingEl) {
+            drawingEl.textContent = room?.group || '';
+        }
+        const titleEl = document.getElementById('room-title');
+        if (titleEl) {
+            titleEl.textContent = room
+                ? `${room.number || '—'} ${room.name || ''}`.trim()
+                : 'Kies een ruimte';
+        }
+        const m2El = document.getElementById('room-m2');
+        if (m2El) {
+            m2El.textContent = room?.m2_label || '';
+        }
+        const status = document.getElementById('room-progress-label') || document.getElementById('room-status');
         if (status) {
             status.textContent = room
                 ? (room.progress ? `${room.progress} · ${room.status_label || ''}` : (room.status_label || ''))
@@ -649,9 +741,12 @@ function boot() {
             room?.total ? Math.round((Number(room.done || 0) / Number(room.total)) * 100) : 0,
             Boolean(room) && !room.needs_review && Number(room.total || 0) > 0,
         );
-        empty.classList.toggle('hidden', Boolean(room));
-        fields.classList.toggle('hidden', !room);
-        form?.classList.toggle('hidden', !room);
+        empty?.classList.toggle('hidden', Boolean(room));
+        fields?.classList.toggle('hidden', !room);
+        if (form) {
+            form.hidden = !room;
+            form.classList.toggle('hidden', !room);
+        }
         groupsEl?.classList.toggle('hidden', !room);
         renderRoomGroups(room);
         if (!room || !form) {
@@ -681,8 +776,14 @@ function boot() {
                 ? `totaal vloerafwerkingen → ${room.m2_label || '—'}`
                 : '';
         }
-        document.getElementById('plinth-status').textContent = room.plinth_status_label || '—';
-        document.getElementById('pdf-source').textContent = room.pdf_source ? `PDF-bron: ${room.pdf_source}` : '';
+        const plinthStatus = document.getElementById('plinth-status');
+        if (plinthStatus) {
+            plinthStatus.textContent = room.plinth_status_label || '—';
+        }
+        const pdfSource = document.getElementById('pdf-source');
+        if (pdfSource) {
+            pdfSource.textContent = room.pdf_source ? `PDF-bron: ${room.pdf_source}` : '';
+        }
         const excelBits = [];
         if (room.excel_source) {
             excelBits.push(`Excel-bron: ${room.excel_source}`);
@@ -695,23 +796,80 @@ function boot() {
         if (room.excel_code_conflict && room.excel_product_code) {
             excelBits.push(`Excel-code ${room.excel_product_code}`);
         }
-        document.getElementById('excel-source').textContent = excelBits.join(' · ');
+        const excelSource = document.getElementById('excel-source');
+        if (excelSource) {
+            excelSource.textContent = excelBits.join(' · ');
+        }
         const confirmBtn = document.getElementById('calc-confirm');
-        confirmBtn.hidden = !room.can_confirm;
+        if (confirmBtn) {
+            confirmBtn.hidden = !room.can_confirm;
+        }
         setMessage('');
         setError('');
     }
 
     function setMessage(text) {
         const el = document.getElementById('calc-room-message');
+        if (!el) {
+            return;
+        }
         el.textContent = text;
         el.classList.toggle('hidden', !text);
     }
 
     function setError(text) {
         const el = document.getElementById('calc-room-error');
+        if (!el) {
+            return;
+        }
         el.textContent = text;
         el.classList.toggle('hidden', !text);
+    }
+
+    function typedLocalArea(finishId) {
+        const input = document.querySelector(`.local-area-form[data-finish-id="${CSS.escape(String(finishId))}"] [name="local_area"]`);
+        if (!input) {
+            return null;
+        }
+        const value = String(input.value || '').trim();
+
+        return value === '' ? null : value;
+    }
+
+    async function saveLocalArea(room, localForm) {
+        if (!room?.id || !data.can_update) {
+            return;
+        }
+        const finishId = Number(localForm.dataset.finishId);
+        const quantity = typedLocalArea(finishId);
+        if (quantity == null) {
+            setError('Vul de oppervlakte van het deelvlak in.');
+            return;
+        }
+        await saveRoom(room, localAreaPatchBody(finishId, quantity), 'Deelvlak opgeslagen.');
+    }
+
+    async function saveRoom(room, body, message = 'Opgeslagen.') {
+        setError('');
+        const response = await fetch(route('update_room', room.id), {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': csrf,
+            },
+            body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            setError(payload.message || Object.values(payload.errors || {}).flat().join(' ') || 'Opslaan mislukt.');
+            return;
+        }
+        if (payload.room) {
+            payload.room.materials = payload.materials;
+            applyRoomUpdate(payload.room);
+        }
+        setMessage(message);
     }
 
     function applyRoomUpdate(next) {
@@ -1052,8 +1210,7 @@ function boot() {
         if (!room?.id || !data.can_update) {
             return;
         }
-        setError('');
-        const body = {
+        await saveRoom(room, {
             room_number: form.room_number.value,
             room_name: form.room_name.value,
             floor_code: form.floor_code.value,
@@ -1063,31 +1220,12 @@ function boot() {
                 id: finish.id,
                 code: finish.role === 'main' ? form.floor_code.value : finish.code,
                 product: finish.role === 'main' ? form.floor_product.value : finish.product,
-                quantity: finish.role === 'main' ? form.floor_quantity.value : finish.quantity,
+                quantity: finish.role === 'main' ? form.floor_quantity.value : (typedLocalArea(finish.id) ?? finish.quantity),
             })),
             plinth_code: form.plinth_code.value,
             plinth_product: form.plinth_product.value,
             plinth_quantity: form.plinth_quantity.value,
-        };
-        const response = await fetch(route('update_room', room.id), {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                'X-CSRF-TOKEN': csrf,
-            },
-            body: JSON.stringify(body),
         });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            setError(payload.message || Object.values(payload.errors || {}).flat().join(' ') || 'Opslaan mislukt.');
-            return;
-        }
-        if (payload.room) {
-            payload.room.materials = payload.materials;
-            applyRoomUpdate(payload.room);
-        }
-        setMessage('Opgeslagen.');
     });
     document.getElementById('calc-confirm')?.addEventListener('click', async () => {
         const room = roomByKey(selectedKey);
@@ -1115,11 +1253,15 @@ function boot() {
 
     stage.classList.add('is-grab');
     refreshMaterialPanel();
+    paintPanel(selectedKey ? roomByKey(selectedKey) : null);
     loadDrawing().then(() => {
         if (selectedKey) {
             selectRoom(selectedKey);
         }
     }).catch(() => {
         setHint('Tekening kon niet worden geladen.');
+        if (selectedKey) {
+            paintPanel(roomByKey(selectedKey));
+        }
     });
 }

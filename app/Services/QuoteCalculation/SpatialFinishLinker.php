@@ -587,7 +587,151 @@ class SpatialFinishLinker
             $best = $value;
         }
 
-        return $best;
+        return $best ?? $this->localAreaFromMillimetres($code, $items, $roomArea);
+    }
+
+    /**
+     * @param  array{x: float, y: float, page: int}  $code
+     * @param  list<array{text: string, x: float, y: float, page: int}>  $items
+     */
+    private function localAreaFromMillimetres(array $code, array $items, ?float $roomArea): ?float
+    {
+        $horizontal = null;
+        $vertical = null;
+        $fallback = [];
+        foreach ($items as $item) {
+            $candidate = $this->nearbyMillimetre($code, $item, $items);
+            if ($candidate === null) {
+                continue;
+            }
+            $fallback[] = $candidate;
+            if (abs($candidate['dx']) >= abs($candidate['dy'])) {
+                if ($horizontal === null || $candidate['distance'] < $horizontal['distance']) {
+                    $horizontal = $candidate;
+                }
+            } elseif ($vertical === null || $candidate['distance'] < $vertical['distance']) {
+                $vertical = $candidate;
+            }
+        }
+
+        $area = null;
+        if ($horizontal !== null && $vertical !== null && $horizontal['mm'] !== $vertical['mm']) {
+            $area = $this->millimetrePairArea($horizontal['mm'], $vertical['mm']);
+        }
+        if ($area === null || ! $this->isPlausibleLocalArea($area, $roomArea)) {
+            $area = $this->closestMillimetrePairArea($fallback);
+        }
+        if ($area === null || ! $this->isPlausibleLocalArea($area, $roomArea)) {
+            return null;
+        }
+
+        return $area;
+    }
+
+    /**
+     * @param  array{x: float, y: float, page: int}  $code
+     * @param  array{text: string, x: float, y: float, page: int}  $item
+     * @param  list<array{text: string, x: float, y: float, page: int}>  $items
+     * @return array{mm: int, x: float, y: float, dx: float, dy: float, distance: float}|null
+     */
+    private function nearbyMillimetre(array $code, array $item, array $items): ?array
+    {
+        if ((int) $item['page'] !== (int) $code['page'] || ! preg_match('/^\d{3,5}$/u', (string) $item['text'])) {
+            return null;
+        }
+        $mm = (int) $item['text'];
+        if ($mm < 400 || $mm > 12000) {
+            return null;
+        }
+        $dx = (float) $item['x'] - (float) $code['x'];
+        $dy = (float) $item['y'] - (float) $code['y'];
+        $distance = hypot($dx, $dy);
+        if ($distance > 200) {
+            return null;
+        }
+        if ($this->nearDoorMark($item, $items)) {
+            return null;
+        }
+
+        return [
+            'mm' => $mm,
+            'x' => (float) $item['x'],
+            'y' => (float) $item['y'],
+            'dx' => $dx,
+            'dy' => $dy,
+            'distance' => $distance,
+        ];
+    }
+
+    /**
+     * @param  list<array{mm: int, x: float, y: float, dx: float, dy: float, distance: float}>  $candidates
+     */
+    private function closestMillimetrePairArea(array $candidates): ?float
+    {
+        usort($candidates, fn (array $left, array $right): int => $left['distance'] <=> $right['distance']);
+        if ($candidates === []) {
+            return null;
+        }
+        $first = $candidates[0];
+        foreach ($candidates as $candidate) {
+            if ($candidate['mm'] === $first['mm'] || $this->millimetresShareAChain($first, $candidate)) {
+                continue;
+            }
+
+            return $this->millimetrePairArea($first['mm'], $candidate['mm']);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{x: float, y: float}  $left
+     * @param  array{x: float, y: float}  $right
+     */
+    private function millimetresShareAChain(array $left, array $right): bool
+    {
+        return abs($left['x'] - $right['x']) <= 12 || abs($left['y'] - $right['y']) <= 12;
+    }
+
+    private function millimetrePairArea(int $length, int $width): float
+    {
+        return round(($length / 1000) * ($width / 1000), 2);
+    }
+
+    private function isPlausibleLocalArea(float $area, ?float $roomArea): bool
+    {
+        if ($area < 0.2) {
+            return false;
+        }
+        if ($roomArea === null) {
+            return true;
+        }
+        if (abs($area - $roomArea) < 0.05) {
+            return false;
+        }
+
+        return $area <= $roomArea * 0.5;
+    }
+
+    /**
+     * @param  array{text: string, x: float, y: float, page: int}  $item
+     * @param  list<array{text: string, x: float, y: float, page: int}>  $items
+     */
+    private function nearDoorMark(array $item, array $items): bool
+    {
+        foreach ($items as $other) {
+            if ((int) $other['page'] !== (int) $item['page']) {
+                continue;
+            }
+            if (! preg_match('/^dm$/iu', trim((string) $other['text']))) {
+                continue;
+            }
+            if (hypot((float) $other['x'] - (float) $item['x'], (float) $other['y'] - (float) $item['y']) <= 24) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

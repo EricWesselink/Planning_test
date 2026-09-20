@@ -497,7 +497,7 @@
                     </div>
                 </div>
             @endif
-            <div id="room-panel" class="{{ $canEnterProgress ? '' : 'is-readonly' }}{{ $ticketMode ? ' hidden' : '' }}" data-area-id="{{ $first['id'] ?? '' }}">
+            <div id="room-panel" class="{{ $canEnterProgress ? '' : 'is-readonly' }}{{ $ticketMode ? ' hidden' : '' }}{{ $first ? ' has-room' : '' }}" data-area-id="{{ $first['id'] ?? '' }}">
             <div class="room-panel-head">
                 <div class="text-xs text-nicon-muted" id="room-floor">{{ $first['floor'] ?? '' }}</div>
                 <h2 class="text-xl font-semibold" id="room-title">{{ $first['number'] ?? '' }} {{ $first['unique_name'] ?? $first['name'] ?? 'Kies een ruimte' }}</h2>
@@ -522,14 +522,30 @@
                         $doneIds = $group['done_task_ids'] ?? [];
                         $ids = ! empty($group['done']) ? ($group['task_ids'] ?? $doneIds) : $openIds;
                         $progressLabel = $group['progress_label'] ?? $group['quantity_label'] ?? ($group['tasks'][0]['progress_label'] ?? $group['tasks'][0]['quantity_label'] ?? '');
+                        $qtyParts = filled($progressLabel)
+                            ? preg_split('/\s*\|\s*/', (string) $progressLabel, -1, PREG_SPLIT_NO_EMPTY)
+                            : [];
                         $workerLabel = ! empty($group['done']) ? collect($group['tasks'] ?? [])->pluck('worker')->first(fn ($name) => filled($name)) : null;
+                        $typeLabel = (! empty($group['type_label']) && ! str_contains((string) $group['label'], (string) $group['type_label']))
+                            ? $group['type_label']
+                            : null;
+                        $metaParts = collect([$typeLabel, $workerLabel])->filter();
                     @endphp
                     <section class="work-group {{ ! empty($group['done']) ? 'is-done' : (! empty($group['partial']) ? 'is-partial' : '') }}{{ ! empty($group['provisional']) ? ' is-provisional' : '' }}" data-kind="{{ $group['color_key'] ?? 'overige' }}" style="--material-color: {{ $group['display_color'] ?? '#9ca3af' }}; --work-accent: {{ $group['display_color'] ?? '#9ca3af' }}; --work-bg: {{ $group['display_color_soft'] ?? 'rgba(156, 163, 175, 0.14)' }};">
                         <button type="button" class="group-head" data-group="{{ $group['key'] }}" data-label="{{ $group['label'] }}" data-task-ids="{{ implode(',', $ids) }}" data-open-task-ids="{{ implode(',', $openIds) }}" data-done-task-ids="{{ implode(',', $doneIds) }}" data-remaining="{{ $group['remaining'] ?? '' }}" data-ordered="{{ $group['ordered'] ?? '' }}" data-unit="{{ $group['unit'] ?? '' }}" title="{{ $canEnterProgress && ! empty($group['done']) ? (! empty($group['provisional']) && $canApproveProgress ? 'Klik om akkoord te geven' : 'Klik om gereed uit te zetten') : '' }}" @disabled(! $canEnterProgress)>
                             <span class="task-check">{{ ! empty($group['done']) ? '✓' : '' }}</span>
                             <span class="work-card-copy">
                                 <span class="work-card-title"><i class="work-swatch" aria-hidden="true"></i>{{ $group['label'] }}</span>
-                                <span class="work-card-meta">{{ collect([$progressLabel, (! empty($group['type_label']) && ! str_contains((string) $group['label'], (string) $group['type_label'])) ? $group['type_label'] : null, $workerLabel])->filter()->implode(' · ') }}</span>
+                                @if ($qtyParts !== [])
+                                    <span class="work-card-qty" title="{{ $progressLabel }}">
+                                        @foreach ($qtyParts as $index => $qtyPart)
+                                            <span class="work-card-qty-part">{{ $index > 0 ? '| '.$qtyPart : $qtyPart }}</span>
+                                        @endforeach
+                                    </span>
+                                @endif
+                                @if ($metaParts->isNotEmpty())
+                                    <span class="work-card-meta">{{ $metaParts->implode(' · ') }}</span>
+                                @endif
                             </span>
                             <span class="group-status {{ ! empty($group['done']) && empty($group['provisional']) ? 'text-nicon-ok' : 'text-nicon-muted' }}">{{ $group['status_label'] ?? 'Open' }}</span>
                         </button>
@@ -538,7 +554,7 @@
             </div>
             @if ($showProgressTools)
                 <form id="complete-form" class="complete-form">
-                    <div class="text-sm font-medium leading-snug" id="complete-task-name">Kies een of meer werkzaamheden</div>
+                    <div class="complete-form-title" id="complete-task-name">Kies een of meer werkzaamheden</div>
                     @if ($lockedWorkerId)
                         <p class="complete-form-note">Klaar blijft voorlopig tot de projectleider akkoord geeft.</p>
                     @endif

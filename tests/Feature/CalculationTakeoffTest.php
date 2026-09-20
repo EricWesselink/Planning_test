@@ -62,6 +62,19 @@ class CalculationTakeoffTest extends TestCase
             ->assertSee('data-calculation-progress', false);
     }
 
+    public function test_create_form_shows_orange_browse_buttons_for_drawings_and_workbooks(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('calculations.create'))
+            ->assertOk()
+            ->assertSee('Bladeren')
+            ->assertSee('Geen bestanden geselecteerd.')
+            ->assertSee('bg-nicon-orange', false)
+            ->assertSee('data-file-input', false);
+    }
+
     public function test_create_review_correct_totals_and_excel_flow(): void
     {
         Storage::fake('local');

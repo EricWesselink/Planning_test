@@ -105,6 +105,12 @@ class LeaveRequest extends Model
         return $this->status === LeaveRequestStatus::Pending;
     }
 
+    public function isDeletable(): bool
+    {
+        return $this->status === LeaveRequestStatus::Withdrawn
+            || $this->status === LeaveRequestStatus::Rejected;
+    }
+
     public function workerName(): string
     {
         return $this->user?->name

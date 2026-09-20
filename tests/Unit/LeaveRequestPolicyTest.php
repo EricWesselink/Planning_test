@@ -48,6 +48,7 @@ class LeaveRequestPolicyTest extends TestCase
         $this->assertTrue($admin->can('adjustPeriod', $request));
         $this->assertFalse($planner->can('adjustPeriod', $request));
         $this->assertFalse($vakman->can('adjustPeriod', $request));
+        $this->assertFalse($admin->can('delete', $request));
 
         $request->update(['status' => 'goedgekeurd']);
         $this->assertFalse($admin->can('review', $request->fresh()));
@@ -55,6 +56,16 @@ class LeaveRequestPolicyTest extends TestCase
         $this->assertFalse($admin->can('message', $request->fresh()));
         $this->assertFalse($vakman->can('message', $request->fresh()));
         $this->assertFalse($admin->can('adjustPeriod', $request->fresh()));
+        $this->assertFalse($admin->can('delete', $request->fresh()));
+
+        $request->update(['status' => 'ingetrokken']);
+        $this->assertTrue($admin->can('delete', $request->fresh()));
+        $this->assertFalse($planner->can('delete', $request->fresh()));
+        $this->assertFalse($vakman->can('delete', $request->fresh()));
+
+        $request->update(['status' => 'afgewezen']);
+        $this->assertTrue($admin->can('delete', $request->fresh()));
+        $this->assertFalse($planner->can('delete', $request->fresh()));
     }
 
     public function test_another_vakman_cannot_view_or_withdraw_the_request(): void
