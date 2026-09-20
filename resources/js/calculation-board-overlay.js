@@ -47,6 +47,7 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId, drawingLabel 
         return;
     }
     const drawingRooms = roomsOnDrawing(rooms, drawingId, drawingLabel);
+    applyStoredChips(drawingRooms);
     const { extractPageTextItems } = await import('./pdf-text-layer.js');
     const known = drawingRooms.map((room) => room.number).filter(Boolean);
     const hits = [];
@@ -61,6 +62,7 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId, drawingLabel 
     }
     placeBoardRooms(drawingRooms, drawingId, hits, drawingLabel);
     attachRoomCaptions(drawingRooms, allItems);
+    applyStoredChips(drawingRooms);
 }
 
 export function drawingStoreyPrefix(label) {
@@ -86,11 +88,43 @@ export function roomsOnDrawing(rooms, drawingId, drawingLabel = '') {
 export function placeBoardRooms(rooms, drawingId, hits, drawingLabel = '') {
     const usable = usableLabelHits(hits);
     roomsOnDrawing(rooms, drawingId, drawingLabel).forEach((room) => {
-        if (isDrawingAreaBox(boardChipBox(room))) {
+        if (roomHasManualChip(room) || isDrawingAreaBox(boardChipBox(room))) {
             return;
         }
         assignHit(room, pickRoomLabelHit(room, usable));
     });
+}
+
+export function applyStoredChips(rooms) {
+    (rooms || []).forEach((room) => applyStoredChip(room));
+}
+
+export function applyStoredChip(room) {
+    const chip = room?.chip;
+    if (!chip || chip.manual === false || !Number.isFinite(Number(chip.x)) || !Number.isFinite(Number(chip.y))) {
+        return;
+    }
+    const x = Number(chip.x);
+    const y = Number(chip.y);
+    const page = Math.max(1, Number(chip.page) || 1);
+    room.marker = {
+        page,
+        x,
+        y,
+        width: 0.01,
+        height: 0.01,
+        source: 'user',
+    };
+    room.has_position = true;
+    room.jump_target = {
+        page,
+        bbox: { x, y, w: 0.01, h: 0.01 },
+        geometry: 'label',
+    };
+}
+
+export function roomHasManualChip(room) {
+    return String(room?.marker?.source || '') === 'user' || room?.chip?.manual === true;
 }
 
 export function usableLabelHits(hits) {
@@ -502,6 +536,10 @@ export function attachRoomCaptions(rooms, items) {
 }
 
 export function chipAnchorInRoom(room, options = {}) {
+    const stored = storedManualChipPoint(room);
+    if (stored) {
+        return pointBox(stored);
+    }
     const text = options.text ?? overlayChipText(room, options);
     const chip = chipHalfSizeForText(text);
     let floor = options.interior && isRoomFloorBox(options.interior)
@@ -517,10 +555,6 @@ export function chipAnchorInRoom(room, options = {}) {
     if (floor) {
         const inset = insetInterior(floor, chip);
         const bounds = inset.degenerate ? floor : inset;
-        const manual = manualChipPoint(room);
-        if (manual && pointInBox(manual, bounds)) {
-            return pointBox(manual);
-        }
         if (caption && captionIsInFloor(caption, floor)) {
             const clipped = intersectBoxes(glue, bounds) || glue;
 
@@ -535,10 +569,6 @@ export function chipAnchorInRoom(room, options = {}) {
             || room.caption_bounds
             || captionRoomBounds(room, neighbors, caption, items, chip);
         const bounds = intersectBoxes(glue, obstacles) || glue;
-        const manual = manualChipPoint(room);
-        if (manual && pointInBox(manual, bounds)) {
-            return pointBox(manual);
-        }
 
         return pointBox(captionChipPoint(caption, chip, bounds));
     }
@@ -564,14 +594,20 @@ function pointBox(point) {
     return { x: Number(point?.x) || 0, y: Number(point?.y) || 0, w: 0, h: 0 };
 }
 
-function manualChipPoint(room) {
-    const source = String(room?.marker?.source || '');
-    if (source === '' || source === 'text' || source === 'ocr' || source === 'contour') {
+function storedManualChipPoint(room) {
+    const chip = room?.chip;
+    if (chip && chip.manual !== false && Number.isFinite(Number(chip.x)) && Number.isFinite(Number(chip.y))) {
+        return { x: Number(chip.x), y: Number(chip.y) };
+    }
+    if (String(room?.marker?.source || '') !== 'user') {
         return null;
     }
-    const box = boardChipBox(room);
+    const box = room.marker;
 
-    return box ? boxCenter(box) : null;
+    return {
+        x: Number(box.x) + ((Number(box.width) || 0) / 2),
+        y: Number(box.y) + ((Number(box.height) || 0) / 2),
+    };
 }
 
 function captionOwnTexts(room, caption) {

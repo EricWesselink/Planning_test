@@ -21,6 +21,7 @@ class DrawingTakeoffParser
         private SpatialRoomAssembler $assembler = new SpatialRoomAssembler,
         private SpatialLegendAssembler $legendAssembler = new SpatialLegendAssembler,
         private SpatialFinishLinker $spatial = new SpatialFinishLinker,
+        private FloorVariantResolver $variants = new FloorVariantResolver,
         private FinishPairingRules $pairing = new FinishPairingRules,
         private PlinthLengthCalculator $plinthLengths = new PlinthLengthCalculator,
         private PdfPageGeometry $geometry = new PdfPageGeometry,
@@ -67,6 +68,7 @@ class DrawingTakeoffParser
         $fromSpatial = $this->assembler->assemble($pages, $fromText['legend']);
         $rooms = $this->mergeRooms($fromText['rooms'], $fromSpatial);
         $rooms = $this->spatial->link($rooms, $path, $pages);
+        $rooms = $this->variants->resolve($rooms, $fromText['legend'], $pages);
         $rooms = $this->pairing->apply($rooms, $fromText['legend']);
         $rooms = $this->applyPlinthLengths($rooms, $pages);
         $rooms = $this->applyFloorOverlays($rooms, $pages);

@@ -112,6 +112,12 @@ class CalculationLineController extends Controller
             'floors.*.product' => ['nullable', 'string', 'max:255'],
             'floors.*.quantity' => ['nullable', 'numeric'],
             'note' => ['nullable', 'string', 'max:1000'],
+            'chip' => ['nullable', 'array'],
+            'chip.x' => ['required_with:chip', 'numeric', 'min:0', 'max:1'],
+            'chip.y' => ['required_with:chip', 'numeric', 'min:0', 'max:1'],
+            'chip.page' => ['nullable', 'integer', 'min:1'],
+            'chip_reset' => ['sometimes', 'boolean'],
+            'restore_automatic' => ['sometimes', 'boolean'],
         ]);
 
         foreach (['floor_quantity', 'plinth_quantity'] as $field) {

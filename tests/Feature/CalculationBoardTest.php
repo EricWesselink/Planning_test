@@ -65,7 +65,9 @@ class CalculationBoardTest extends TestCase
             ->assertSee('fase 1 verdieping 1')
             ->assertSee('Controleren')
             ->assertSee('Ruimtenaam')
-            ->assertSee('Vloercode')
+            ->assertSee('Materiaal aanpassen')
+            ->assertSee('Positie herstellen')
+            ->assertSee('Automatische herkenning herstellen')
             ->assertSee('Gegevens wijzigen')
             ->assertSee('id="room-groups"', false)
             ->assertSee('id="work-legend"', false)
@@ -323,6 +325,144 @@ class CalculationBoardTest extends TestCase
                 'floor_quantity' => '4,20',
             ])
             ->assertForbidden();
+    }
+
+    public function test_board_saves_a_chip_position_without_changing_quantities(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeCalculation($user);
+        $floor = $calculation->lines()->where('unit', WorkUnit::SquareMeter)->first();
+        $quantity = (float) $floor->quantity;
+        $code = $floor->product_code;
+        $product = $floor->product;
+
+        $response = $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $floor]), [
+                'chip' => ['x' => 0.42, 'y' => 0.33, 'page' => 1],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('room.chip.x', 0.42)
+            ->assertJsonPath('room.chip.y', 0.33)
+            ->assertJsonPath('room.chip.manual', true)
+            ->assertJsonPath('room.floor_code', $code)
+            ->assertJsonPath('room.floor_product', $product)
+            ->assertJsonPath('room.m2', $quantity);
+
+        $floor->refresh();
+        $this->assertEqualsWithDelta($quantity, (float) $floor->quantity, 0.001);
+        $this->assertSame($code, $floor->product_code);
+        $this->assertSame($product, $floor->product);
+        $trace = json_decode((string) $floor->calculation_trace, true);
+        $this->assertIsArray($trace);
+        $this->assertSame(0.42, $trace['chip']['x']);
+        $this->assertTrue($trace['chip']['manual']);
+    }
+
+    public function test_board_resets_a_chip_position_and_keeps_quantities(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeCalculation($user);
+        $floor = $calculation->lines()->where('unit', WorkUnit::SquareMeter)->first();
+        $floor->update([
+            'calculation_trace' => json_encode([
+                'role' => 'room_floor',
+                'reliable' => true,
+                'chip' => ['x' => 0.42, 'y' => 0.33, 'page' => 1, 'manual' => true],
+            ]),
+        ]);
+        $quantity = (float) $floor->quantity;
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $floor]), [
+                'chip_reset' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('room.chip', null)
+            ->assertJsonPath('room.m2', $quantity);
+
+        $floor->refresh();
+        $this->assertEqualsWithDelta($quantity, (float) $floor->quantity, 0.001);
+        $trace = json_decode((string) $floor->calculation_trace, true);
+        $this->assertSame('room_floor', $trace['role']);
+        $this->assertArrayNotHasKey('chip', $trace);
+    }
+
+    public function test_board_restores_automatic_material_without_changing_quantities(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeCalculation($user);
+        $floor = $calculation->lines()->where('unit', WorkUnit::SquareMeter)->first();
+        $floor->update([
+            'product_code' => 'v09',
+            'product' => 'Tapijt',
+            'original_product_code' => 'v04',
+            'original_product' => 'Gietvloer',
+        ]);
+        $quantity = (float) $floor->quantity;
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $floor]), [
+                'restore_automatic' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('room.floor_code', 'v04')
+            ->assertJsonPath('room.floor_product', 'Gietvloer')
+            ->assertJsonPath('room.m2', $quantity);
+
+        $floor->refresh();
+        $this->assertSame('v04', $floor->product_code);
+        $this->assertSame('Gietvloer', $floor->product);
+        $this->assertEqualsWithDelta($quantity, (float) $floor->quantity, 0.001);
+    }
+
+    public function test_board_changes_material_from_the_legend_without_changing_quantities(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeCalculation($user);
+        $calculation->drawings()->first()->update([
+            'legend' => [
+                ['code' => 'v01', 'product' => 'Marmoleum - Forbo 3733', 'kind' => 'floor'],
+                ['code' => 'v04', 'product' => 'Gietvloer', 'kind' => 'floor'],
+            ],
+        ]);
+        $floor = $calculation->lines()->where('unit', WorkUnit::SquareMeter)->first();
+        $quantity = (float) $floor->quantity;
+
+        $this->actingAs($user)
+            ->patchJson(route('calculations.board.rooms.update', [$calculation, $floor]), [
+                'floor_code' => 'v01',
+                'floor_product' => 'Marmoleum - Forbo 3733',
+            ])
+            ->assertOk()
+            ->assertJsonPath('room.floor_code', 'v01')
+            ->assertJsonPath('room.floor_product', 'Marmoleum - Forbo 3733')
+            ->assertJsonPath('room.m2', $quantity);
+
+        $floor->refresh();
+        $this->assertSame('v01', $floor->product_code);
+        $this->assertSame('Marmoleum - Forbo 3733', $floor->product);
+        $this->assertEqualsWithDelta($quantity, (float) $floor->quantity, 0.001);
+        $this->assertSame(1, $calculation->lines()->where('unit', WorkUnit::SquareMeter)->count());
+    }
+
+    public function test_board_payload_lists_the_drawing_legend(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeCalculation($user);
+        $calculation->drawings()->first()->update([
+            'legend' => [
+                ['code' => 'v01', 'product' => 'Marmoleum - Forbo 3733', 'kind' => 'floor'],
+            ],
+        ]);
+
+        $html = $this->actingAs($user)
+            ->get(route('calculations.board', $calculation))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('v01 – Marmoleum - Forbo 3733', $html);
     }
 
     public function test_board_room_confirm_rejects_incomplete_rooms(): void

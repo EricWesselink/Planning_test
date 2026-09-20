@@ -190,8 +190,8 @@
                                 <input name="floor_quantity" inputmode="decimal" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
                             </label>
                             <label class="block">
-                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloercode</span>
-                                <input name="floor_code" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
+                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Materiaal aanpassen</span>
+                                <select name="floor_code" class="mt-0.5 w-full border border-nicon-line px-2 py-1"></select>
                             </label>
                             <label class="block">
                                 <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloerproduct</span>
@@ -218,6 +218,8 @@
                     <div class="flex flex-wrap gap-2 pt-1">
                         <button type="submit" class="complete-form-submit bg-nicon-ink px-3 py-1.5 text-xs text-white">Opslaan</button>
                         <button type="button" id="calc-confirm" class="complete-form-reopen border border-nicon-line bg-white px-3 py-1.5 text-xs">Bevestigen</button>
+                        <button type="button" id="calc-reset-chip" class="border border-nicon-line bg-white px-3 py-1.5 text-xs">Positie herstellen</button>
+                        <button type="button" id="calc-restore-auto" class="border border-nicon-line bg-white px-3 py-1.5 text-xs">Automatische herkenning herstellen</button>
                     </div>
                     <p id="calc-room-message" class="text-xs text-nicon-ok hidden"></p>
                     <p id="calc-room-error" class="text-xs text-nicon-danger hidden"></p>

@@ -32,7 +32,8 @@ class WallBoundDimensionMatcher
      *     box: ?array{left: float, right: float, bottom: float, top: float, width: float, height: float},
      *     horizontal: ?array<string, mixed>,
      *     vertical: ?array<string, mixed>,
-     *     rejected: list<array{mm: int, reason: string}>,
+     *     rejected: list<array{mm: int, reason: string, endpoints?: string, expected?: string, delta?: string}>,
+     *     dimension_debug: list<array{mm: int, decision: string, reason: string, endpoints: string, expected: string, delta: string}>,
      *     confidence: float,
      *     boundary: array<string, mixed>,
      *     scale_mm_per_px: ?float
@@ -60,46 +61,67 @@ class WallBoundDimensionMatcher
         $otherBoxes = $this->otherBoxes($anchor, $anchors, $page);
         $horizontal = null;
         $vertical = null;
+        $pairKnownH = $sides['left'] !== null && $sides['right'] !== null;
+        $pairKnownV = $sides['top'] !== null && $sides['bottom'] !== null;
+        $dimensionDebug = [];
 
         foreach ($dimensions as $dimension) {
             $mm = (int) ($dimension['mm'] ?? 0);
             if ($mm < 400) {
                 continue;
             }
+            $hChain = $this->chains->pickHorizontalChain($dimension, $lines, $sides, $pageMin);
+            $vChain = $this->chains->pickVerticalChain($dimension, $lines, $sides, $pageMin);
+            $hDebug = $this->chains->endpointDebug($hChain, $sides['left'], $sides['right'], true);
+            $vDebug = $this->chains->endpointDebug($vChain, $sides['bottom'], $sides['top'], false);
             if (is_array($matchBox) && $this->closerToOtherBox($dimension, $matchBox, $otherBoxes)) {
-                $rejected[] = ['mm' => $mm, 'reason' => 'dichter bij de contour van een andere ruimte'];
+                $rejected[] = $this->rejectRow(
+                    $mm,
+                    'dichter bij de contour van een andere ruimte',
+                    $hDebug,
+                    $vDebug,
+                );
+                $dimensionDebug[] = $this->debugRow($mm, 'afgewezen', 'dichter bij de contour van een andere ruimte', $hDebug, $vDebug);
 
                 continue;
             }
 
-            $asWidth = is_array($matchBox) ? $this->asRoomWidth($dimension, $matchBox, $boxEdges, $overallWalls) : null;
-            $asHeight = is_array($matchBox) ? $this->asRoomHeight($dimension, $matchBox, $boxEdges, $overallWalls) : null;
             $chainWidth = $this->chains->asWidth($dimension, $lines, $sides, $anchor, $anchors, $pageMin, $printedScale);
             $chainHeight = $this->chains->asHeight($dimension, $lines, $sides, $anchor, $anchors, $pageMin, $printedScale);
-
-            if ($asWidth === null) {
-                $asWidth = $chainWidth;
+            $asWidth = $chainWidth;
+            $asHeight = $chainHeight;
+            if ($asWidth === null && ! $pairKnownH && is_array($matchBox)) {
+                $asWidth = $this->asRoomWidth($dimension, $matchBox, $boxEdges, $overallWalls);
             }
-            if ($asHeight === null) {
-                $asHeight = $chainHeight;
+            if ($asHeight === null && ! $pairKnownV && is_array($matchBox)) {
+                $asHeight = $this->asRoomHeight($dimension, $matchBox, $boxEdges, $overallWalls);
             }
 
             if ($asWidth === null && $asHeight === null) {
-                $rejected[] = [
-                    'mm' => $mm,
-                    'reason' => $this->chains->rejectReason($dimension, $lines, $anchor, $anchors, $pageMin, $sides)
-                        ?? (is_array($matchBox) ? $this->rejectReason($dimension, $matchBox, $overallWalls) : 'maatketting sluit niet aan op de wanden van deze ruimte'),
-                ];
+                $reason = $this->endpointRejectReason($hChain, $vChain, $pairKnownH, $pairKnownV, $hDebug, $vDebug)
+                    ?? $this->chains->rejectReason($dimension, $lines, $anchor, $anchors, $pageMin, $sides)
+                    ?? (is_array($matchBox) ? $this->rejectReason($dimension, $matchBox, $overallWalls) : 'maatketting sluit niet aan op de wanden van deze ruimte');
+                $rejected[] = $this->rejectRow($mm, $reason, $hDebug, $vDebug);
+                $dimensionDebug[] = $this->debugRow($mm, 'afgewezen', $reason, $hDebug, $vDebug);
 
                 continue;
             }
 
             if ($asWidth !== null && ($horizontal === null || $asWidth['score'] > $horizontal['score'])) {
-                $horizontal = $asWidth;
+                $horizontal = $asWidth + $hDebug;
             }
             if ($asHeight !== null && ($vertical === null || $asHeight['score'] > $vertical['score'])) {
-                $vertical = $asHeight;
+                $vertical = $asHeight + $vDebug;
             }
+            $dimensionDebug[] = $this->debugRow(
+                $mm,
+                'geaccepteerd',
+                $asWidth !== null && $asHeight !== null
+                    ? 'gekoppeld als breedte en hoogte'
+                    : ($asWidth !== null ? 'gekoppeld als breedte' : 'gekoppeld als hoogte'),
+                $hDebug,
+                $vDebug,
+            );
         }
 
         $confidence = 0.0;
@@ -120,10 +142,35 @@ class WallBoundDimensionMatcher
         } elseif ($horizontal !== null && $vertical !== null) {
             $keepHorizontal = ((float) $horizontal['score']) >= ((float) $vertical['score']);
             $dropped = $keepHorizontal ? $vertical : $horizontal;
-            $rejected[] = [
-                'mm' => (int) $dropped['mm'],
-                'reason' => 'horizontale en verticale schaal komen niet overeen; combinatie niet gebruikt',
-            ];
+            $rejected[] = $this->rejectRow(
+                (int) $dropped['mm'],
+                'horizontale en verticale schaal komen niet overeen; combinatie niet gebruikt',
+                [
+                    'endpoints' => $dropped['endpoints'] ?? '—',
+                    'expected' => $dropped['expected'] ?? '—',
+                    'delta' => $dropped['delta'] ?? '—',
+                ],
+                [
+                    'endpoints' => '—',
+                    'expected' => '—',
+                    'delta' => '—',
+                ],
+            );
+            $dimensionDebug[] = $this->debugRow(
+                (int) $dropped['mm'],
+                'afgewezen',
+                'horizontale en verticale schaal komen niet overeen; combinatie niet gebruikt',
+                [
+                    'endpoints' => $dropped['endpoints'] ?? '—',
+                    'expected' => $dropped['expected'] ?? '—',
+                    'delta' => $dropped['delta'] ?? '—',
+                ],
+                [
+                    'endpoints' => '—',
+                    'expected' => '—',
+                    'delta' => '—',
+                ],
+            );
             if ($keepHorizontal) {
                 $vertical = null;
             } else {
@@ -141,10 +188,83 @@ class WallBoundDimensionMatcher
             'horizontal' => $horizontal,
             'vertical' => $vertical,
             'rejected' => $rejected,
+            'dimension_debug' => $dimensionDebug,
             'confidence' => $confidence,
             'boundary' => $boundary,
             'scale_mm_per_px' => $scale,
         ];
+    }
+
+    /**
+     * @param  array{endpoints: string, expected: string, delta: string}  $horizontal
+     * @param  array{endpoints: string, expected: string, delta: string}  $vertical
+     * @return array{mm: int, reason: string, endpoints: string, expected: string, delta: string}
+     */
+    private function rejectRow(int $mm, string $reason, array $horizontal, array $vertical): array
+    {
+        $debug = $this->preferAxisDebug($horizontal, $vertical);
+
+        return [
+            'mm' => $mm,
+            'reason' => $reason,
+            'endpoints' => $debug['endpoints'],
+            'expected' => $debug['expected'],
+            'delta' => $debug['delta'],
+        ];
+    }
+
+    /**
+     * @param  array{endpoints: string, expected: string, delta: string}  $horizontal
+     * @param  array{endpoints: string, expected: string, delta: string}  $vertical
+     * @return array{mm: int, decision: string, reason: string, endpoints: string, expected: string, delta: string}
+     */
+    private function debugRow(int $mm, string $decision, string $reason, array $horizontal, array $vertical): array
+    {
+        $debug = $this->preferAxisDebug($horizontal, $vertical);
+
+        return [
+            'mm' => $mm,
+            'decision' => $decision,
+            'reason' => $reason,
+            'endpoints' => $debug['endpoints'],
+            'expected' => $debug['expected'],
+            'delta' => $debug['delta'],
+        ];
+    }
+
+    /**
+     * @param  array{endpoints: string, expected: string, delta: string}  $horizontal
+     * @param  array{endpoints: string, expected: string, delta: string}  $vertical
+     * @return array{endpoints: string, expected: string, delta: string}
+     */
+    private function preferAxisDebug(array $horizontal, array $vertical): array
+    {
+        if (($horizontal['endpoints'] ?? '') !== 'geen maatsegment gevonden') {
+            return $horizontal;
+        }
+
+        return $vertical;
+    }
+
+    /**
+     * @param  array{start?: float, end?: float}|null  $horizontal
+     * @param  array{start?: float, end?: float}|null  $vertical
+     * @param  array{endpoints: string, expected: string, delta: string}  $hDebug
+     * @param  array{endpoints: string, expected: string, delta: string}  $vDebug
+     */
+    private function endpointRejectReason(?array $horizontal, ?array $vertical, bool $pairKnownH, bool $pairKnownV, array $hDebug, array $vDebug): ?string
+    {
+        if ($pairKnownH && $horizontal !== null) {
+            return 'maatlijn-endpoints sluiten niet aan op linker- en rechterwand ('.$hDebug['endpoints'].' vs '.$hDebug['expected'].', Δ '.$hDebug['delta'].')';
+        }
+        if ($pairKnownV && $vertical !== null) {
+            return 'maatlijn-endpoints sluiten niet aan op boven- en onderwand ('.$vDebug['endpoints'].' vs '.$vDebug['expected'].', Δ '.$vDebug['delta'].')';
+        }
+        if ($pairKnownH || $pairKnownV) {
+            return 'geen maatsegment gevonden waarvan de endpoints op dezelfde wandassen liggen';
+        }
+
+        return null;
     }
 
     /**

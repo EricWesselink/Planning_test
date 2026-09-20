@@ -12,6 +12,13 @@ class FloorVariantResolver
      */
     public function resolve(array $rooms, array $legend, array $pages = []): array
     {
+        $exact = [];
+        foreach ($legend as $entry) {
+            $legendCode = mb_strtolower(trim((string) ($entry['code'] ?? '')));
+            if ($legendCode !== '') {
+                $exact[$legendCode] = true;
+            }
+        }
         $variants = $this->variantsByFamily($legend);
         if ($variants === [] || $rooms === []) {
             return $rooms;
@@ -21,7 +28,7 @@ class FloorVariantResolver
         $anchors = $this->anchors($rooms, $pages);
         foreach ($rooms as $index => $room) {
             $code = mb_strtolower(trim((string) ($room['floor_code'] ?? '')));
-            if ($code === '' || FinishPairingRules::isSpecific($code)) {
+            if ($code === '' || FinishPairingRules::isSpecific($code) || isset($exact[$code])) {
                 continue;
             }
             $options = $variants[$code] ?? [];

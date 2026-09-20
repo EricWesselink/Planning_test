@@ -305,6 +305,7 @@ TXT, 'proef-namen.pdf'),
             ->assertSee('Gekozen verticale maat: 2000')
             ->assertSee('Confidence:')
             ->assertSee('Afgewezen maten')
+            ->assertSee('Maatkoppeling')
             ->assertSee('6975')
             ->getContent();
 
@@ -383,7 +384,7 @@ TXT, 'proef-namen.pdf'),
         $room = collect($payload['rooms'] ?? [])->firstWhere('room_number', 'A-00-03');
         $this->assertNotNull($room);
         $this->assertSame(7.0, (float) $room['calculated_m2']);
-        $this->assertSame('lengte × breedte', $room['method']);
+        $this->assertSame('maatketting', $room['method']);
         Storage::disk('local')->assertExists(TrialStore::DIRECTORY.'/'.$id.'/preview.png');
 
         $this->actingAs($user)

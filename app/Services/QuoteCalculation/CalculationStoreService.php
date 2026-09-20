@@ -513,6 +513,15 @@ class CalculationStoreService
             return $calculation;
         }
 
+        if ($this->saveRoomChip($match, $fields)) {
+            if ($this->isChipOnly($fields)) {
+                return $calculation->fresh(['lines', 'drawings']) ?? $calculation;
+            }
+        }
+        if (($fields['restore_automatic'] ?? false) === true) {
+            $fields = $this->restoreAutomaticFields($match, $fields);
+        }
+
         $lines = [];
         $floors = $match['floors'] ?? array_values(array_filter([$match['floor'] ?? null]));
         $plinth = $match['plinth'] instanceof CalculationLine ? $match['plinth'] : null;
@@ -949,6 +958,76 @@ class CalculationStoreService
     }
 
     /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $fields
+     */
+    private function saveRoomChip(array $row, array $fields): bool
+    {
+        if (! array_key_exists('chip', $fields) && ! array_key_exists('chip_reset', $fields)) {
+            return false;
+        }
+        $floor = $row['floor'] ?? (($row['floors'][0] ?? null));
+        if (! $floor instanceof CalculationLine || $floor->unit !== WorkUnit::SquareMeter) {
+            return false;
+        }
+        $decoded = json_decode((string) $floor->calculation_trace, true);
+        if (! is_array($decoded)) {
+            if (filled($floor->calculation_trace)) {
+                return false;
+            }
+            $decoded = [];
+        }
+        if (($fields['chip_reset'] ?? false) === true) {
+            unset($decoded['chip']);
+        } elseif (is_array($fields['chip'] ?? null)) {
+            $decoded['chip'] = [
+                'x' => max(0.0, min(1.0, (float) $fields['chip']['x'])),
+                'y' => max(0.0, min(1.0, (float) $fields['chip']['y'])),
+                'page' => max(1, (int) ($fields['chip']['page'] ?? 1)),
+                'manual' => true,
+            ];
+        }
+        $floor->update([
+            'calculation_trace' => $decoded === [] ? null : json_encode($decoded, JSON_UNESCAPED_UNICODE),
+        ]);
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fields
+     */
+    private function isChipOnly(array $fields): bool
+    {
+        $keys = array_keys($fields);
+        sort($keys);
+
+        return $keys === ['chip'] || $keys === ['chip_reset'] || $keys === ['chip', 'chip_reset'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $fields
+     * @return array<string, mixed>
+     */
+    private function restoreAutomaticFields(array $row, array $fields): array
+    {
+        $floor = $row['floor'] ?? (($row['floors'][0] ?? null));
+        if (! $floor instanceof CalculationLine) {
+            return $fields;
+        }
+        if (filled($floor->original_product_code)) {
+            $fields['floor_code'] = $floor->original_product_code;
+        }
+        if (filled($floor->original_product)) {
+            $fields['floor_product'] = $floor->original_product;
+        }
+        unset($fields['restore_automatic']);
+
+        return $fields;
+    }
+
+    /**
      * Fill empty local floor areas and subtract them from the main floor when
      * that main quantity is still the unused remainder of the room.
      *
@@ -1281,7 +1360,7 @@ class CalculationStoreService
             return $next;
         }
         $code = mb_strtolower(trim((string) ($next['product_code'] ?? '')));
-        if ($code === '' || ! FinishPairingRules::isSpecific($code) || ! isset($legend[$code])) {
+        if ($code === '' || ! isset($legend[$code])) {
             return $next;
         }
         $previous = mb_strtolower(trim((string) $line->product_code));

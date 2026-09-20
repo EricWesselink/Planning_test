@@ -29,7 +29,7 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame([2000, 3500], $room['recognized_dimensions']);
         $this->assertSame(3500, $room['horizontal_mm']);
         $this->assertSame(2000, $room['vertical_mm']);
-        $this->assertSame('lengte × breedte', $room['method']);
+        $this->assertSame('maatketting', $room['method']);
         $this->assertSame('3500 × 2000 → 7,00 m²', $room['trace']);
         $this->assertSame(7.0, $room['calculated_m2']);
         $this->assertSame(99.0, $room['printed_m2']);
@@ -38,9 +38,12 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame(AreaWithoutM2Analyzer::STATUS_REVIEW, $room['status']);
         $this->assertSame('Oranje – controleren', $room['status_label']);
         $this->assertStringContainsString('x=250, y=485', $room['horizontal_position']);
-        $this->assertStringContainsString('onderwand', $room['horizontal_walls']);
+        $this->assertStringContainsString('maatketting', $room['horizontal_walls']);
         $this->assertStringContainsString('x=70, y=590', $room['vertical_position']);
-        $this->assertStringContainsString('linkerwand', $room['vertical_walls']);
+        $this->assertStringContainsString('maatketting', $room['vertical_walls']);
+        $this->assertNotEmpty($room['dimension_debug']);
+        $this->assertSame('x=100–450', $room['horizontal_endpoints']);
+        $this->assertStringContainsString('x=', $room['horizontal_expected']);
         $this->assertContains(6975, array_column($room['rejected'], 'mm'));
         $this->assertStringContainsString(
             'totale/stramienmaat',
@@ -175,7 +178,7 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame(7.0, $room['calculated_m2']);
         $this->assertSame(99.0, $room['printed_m2']);
         $this->assertNotSame(99.0, $room['calculated_m2']);
-        $this->assertSame('lengte × breedte', $room['method']);
+        $this->assertSame('maatketting', $room['method']);
         $this->assertSame(3500, $room['horizontal_mm']);
         $this->assertSame(2000, $room['vertical_mm']);
         $this->assertContains(6975, array_column($room['rejected'], 'mm'));
@@ -202,7 +205,7 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame('Brontype: afbeelding/scanned PDF', $result['source_label']);
         $this->assertSame('tesseract', $result['ocr_engine']);
         $this->assertSame(7.0, $result['rooms'][0]['calculated_m2']);
-        $this->assertSame('lengte × breedte', $result['rooms'][0]['method']);
+        $this->assertSame('maatketting', $result['rooms'][0]['method']);
         $this->assertSame(1.2, $result['timings']['ocr']);
         $this->assertSame(0.4, $result['timings']['render']);
         $this->assertContains('OPSLAG', $result['recognized_room_names']);
@@ -263,7 +266,7 @@ class AreaWithoutM2AnalyzerTest extends TestCase
 
         $this->assertSame('SLAAPKAMER 1', $room['room_name']);
         $this->assertSame(7.0, $room['calculated_m2']);
-        $this->assertSame('lengte × breedte', $room['method']);
+        $this->assertSame('maatketting', $room['method']);
         $this->assertSame(3500, $room['horizontal_mm']);
         $this->assertSame(2000, $room['vertical_mm']);
         $this->assertContains(10600, array_column($room['rejected'], 'mm'));
@@ -318,6 +321,38 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertContains(8000, array_column($byName['SLAAPKAMER 1']['rejected'], 'mm'));
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['wall_debug']['vertical']);
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['overlay']['candidates']);
+        $this->assertContains(2400, array_column($byName['SLAAPKAMER 2']['rejected'], 'mm'));
+        $this->assertNull($byName['WOONKAMER']['calculated_m2']);
+        $this->assertSame(AreaWithoutM2Analyzer::STATUS_UNAVAILABLE, $byName['WOONKAMER']['status']);
+    }
+
+    public function test_does_not_scale_a_room_from_one_unproven_local_measure(): void
+    {
+        $result = $this->analyzer()->analyzePages([[
+            'page' => 1,
+            'width' => 900.0,
+            'height' => 700.0,
+            'texts' => [
+                ['text' => 'WOONKAMER', 'x' => 300.0, 'y' => 250.0, 'page' => 1],
+                ['text' => '3600', 'x' => 300.0, 'y' => 50.0, 'page' => 1],
+            ],
+            'fills' => [],
+            'walls' => [
+                ['x1' => 100.0, 'y1' => 100.0, 'x2' => 500.0, 'y2' => 100.0, 'axis' => 'h'],
+                ['x1' => 100.0, 'y1' => 400.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'h'],
+                ['x1' => 100.0, 'y1' => 100.0, 'x2' => 100.0, 'y2' => 400.0, 'axis' => 'v'],
+                ['x1' => 500.0, 'y1' => 100.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'v'],
+            ],
+        ]]);
+
+        $room = $result['rooms'][0];
+
+        $this->assertSame('WOONKAMER', $room['room_name']);
+        $this->assertNull($room['calculated_m2']);
+        $this->assertNull($room['horizontal_mm']);
+        $this->assertSame(AreaWithoutM2Analyzer::STATUS_UNAVAILABLE, $room['status']);
+        $this->assertContains(3600, array_column($room['rejected'], 'mm'));
+        $this->assertNotEmpty($room['dimension_debug']);
     }
 
     public function test_geometry_overlay_lists_raw_lines_bands_and_classified_axes(): void
@@ -578,10 +613,16 @@ class AreaWithoutM2AnalyzerTest extends TestCase
                 ['text' => '3000', 'x' => 850.0, 'y' => 50.0, 'page' => 1],
                 ['text' => '3500', 'x' => 650.0, 'y' => 605.0, 'page' => 1],
                 ['text' => '3300', 'x' => 1050.0, 'y' => 265.0, 'page' => 1],
+                ['text' => '2400', 'x' => 850.0, 'y' => 120.0, 'page' => 1],
+                ['text' => '3600', 'x' => 400.0, 'y' => 40.0, 'page' => 1],
                 ['text' => '10600', 'x' => 600.0, 'y' => 860.0, 'page' => 1],
                 ['text' => '8000', 'x' => 40.0, 'y' => 430.0, 'page' => 1],
             ],
             'fills' => [],
+            'ticks' => [
+                ['x1' => 800.0, 'y1' => 120.0, 'x2' => 920.0, 'y2' => 120.0, 'axis' => 'h'],
+                ['x1' => 1050.0, 'y1' => 100.0, 'x2' => 1050.0, 'y2' => 430.0, 'axis' => 'v'],
+            ],
             'walls' => [
                 ['x1' => 700.0, 'y1' => 500.0, 'x2' => 700.0, 'y2' => 780.0, 'axis' => 'v'],
                 ['x1' => 1000.0, 'y1' => 688.0, 'x2' => 1000.0, 'y2' => 780.0, 'axis' => 'v'],

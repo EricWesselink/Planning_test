@@ -258,6 +258,11 @@ class SpatialFinishLinker
             return null;
         }
 
+        $family = array_values(array_filter($floors, fn (array $item) => ! str_contains($item['code'], '.')));
+        if (count($family) === 1) {
+            return $family[0]['code'];
+        }
+
         $specific = array_values(array_filter($floors, fn (array $item) => str_contains($item['code'], '.')));
         if (count($specific) === 1) {
             return $specific[0]['code'];

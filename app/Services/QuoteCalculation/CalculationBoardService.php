@@ -52,6 +52,7 @@ class CalculationBoardService
                 ->all(),
             'rooms' => $rooms,
             'materials' => $this->materials($rooms),
+            'legend' => $this->legendOptions($calculation),
         ];
     }
 
@@ -176,6 +177,9 @@ class CalculationBoardService
             'excel_product_code' => $row['excel_product_code'] ?? null,
             'excel_code_conflict' => (bool) ($row['excel_code_conflict'] ?? false),
             'note' => $floor?->note ?: $plinth?->note,
+            'chip' => $this->chipFromTrace($floor?->calculation_trace),
+            'original_floor_code' => $floor?->original_product_code,
+            'original_floor_product' => $floor?->original_product,
         ];
     }
 
@@ -293,6 +297,31 @@ class CalculationBoardService
 
             return $group;
         }, $groups));
+    }
+
+    /**
+     * @return list<array{code: string, product: string, label: string}>
+     */
+    private function legendOptions(Calculation $calculation): array
+    {
+        $options = [];
+        foreach ($calculation->drawings as $drawing) {
+            foreach ($drawing->legend ?? [] as $entry) {
+                $code = mb_strtolower(trim((string) ($entry['code'] ?? '')));
+                $product = trim((string) ($entry['product'] ?? ''));
+                if ($code === '' || isset($options[$code]) || ! str_starts_with($code, 'v')) {
+                    continue;
+                }
+                $options[$code] = [
+                    'code' => $code,
+                    'product' => $product,
+                    'label' => trim($code.($product !== '' ? ' – '.$product : '')),
+                ];
+            }
+        }
+        ksort($options, SORT_NATURAL);
+
+        return array_values($options);
     }
 
     /**
@@ -428,6 +457,25 @@ class CalculationBoardService
         }
 
         return null;
+    }
+
+    /**
+     * @return array{x: float, y: float, page: int, manual: bool}|null
+     */
+    private function chipFromTrace(mixed $trace): ?array
+    {
+        $decoded = $this->decodeTrace($trace);
+        $chip = is_array($decoded['chip'] ?? null) ? $decoded['chip'] : null;
+        if ($chip === null || ! is_numeric($chip['x'] ?? null) || ! is_numeric($chip['y'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'x' => max(0.0, min(1.0, (float) $chip['x'])),
+            'y' => max(0.0, min(1.0, (float) $chip['y'])),
+            'page' => max(1, (int) ($chip['page'] ?? 1)),
+            'manual' => ($chip['manual'] ?? true) !== false,
+        ];
     }
 
     private function roomContourFrom(mixed $trace): ?array

@@ -322,6 +322,40 @@ class SpatialFinishLinkerTest extends TestCase
         $this->assertNull($linked[0]['floor_code']);
     }
 
+    public function test_uses_the_family_floor_from_the_finish_symbol_when_a_variant_sits_nearby(): void
+    {
+        $rooms = [[
+            'room_number' => 'A-00-04',
+            'room_name' => 'WK',
+            'square_meters' => 12.4,
+            'floor_code' => null,
+            'plinth_code' => null,
+            'needs_review' => true,
+        ]];
+        $pages = [[
+            'page' => 1,
+            'width' => 1684.0,
+            'height' => 2979.0,
+            'texts' => [
+                $this->item('WK', 500, 780),
+                $this->item('A-00-04', 500, 790),
+                $this->item('12.4', 500, 800),
+                $this->item('m²', 520, 800),
+                $this->item('w01', 516, 842),
+                $this->item('p01', 516, 851),
+                $this->item('v01', 516, 858),
+                $this->item('pl01', 516, 866),
+                $this->item('v01.d', 516, 872),
+            ],
+        ]];
+
+        $linked = (new SpatialFinishLinker)->link($rooms, '', $pages);
+
+        $this->assertSame('v01', $linked[0]['floor_code']);
+        $this->assertSame('pl01', $linked[0]['plinth_code']);
+        $this->assertFalse($linked[0]['needs_review']);
+    }
+
     /**
      * @return array{text: string, x: float, y: float, page: int}
      */

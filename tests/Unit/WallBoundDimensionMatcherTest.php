@@ -113,6 +113,10 @@ class WallBoundDimensionMatcherTest extends TestCase
             [
                 'page' => 1,
                 'fills' => [],
+                'ticks' => [
+                    ['x1' => 413.0, 'y1' => 544.0, 'x2' => 1393.0, 'y2' => 544.0, 'axis' => 'h'],
+                    ['x1' => 199.0, 'y1' => 613.0, 'x2' => 199.0, 'y2' => 1170.0, 'axis' => 'v'],
+                ],
                 'walls' => [
                     ['x1' => 413.0, 'y1' => 1168.0, 'x2' => 1393.0, 'y2' => 1168.0, 'axis' => 'h'],
                     ['x1' => 413.0, 'y1' => 613.0, 'x2' => 1393.0, 'y2' => 613.0, 'axis' => 'h'],
@@ -156,6 +160,79 @@ class WallBoundDimensionMatcherTest extends TestCase
             'overspant',
             collect($match['rejected'])->firstWhere('mm', 10600)['reason'] ?? '',
         );
+    }
+
+    public function test_rejects_a_short_dimension_segment_that_does_not_meet_both_room_walls(): void
+    {
+        $match = (new WallBoundDimensionMatcher)->match(
+            ['x' => 850.0, 'y' => 330.0, 'page' => 1, 'room_key' => 's2', 'text' => 'SLAAPKAMER 2'],
+            [
+                ['text' => '2400', 'x' => 860.0, 'y' => 185.0, 'page' => 1, 'mm' => 2400],
+                ['text' => '3000', 'x' => 866.0, 'y' => 170.0, 'page' => 1, 'mm' => 3000],
+                ['text' => '3300', 'x' => 1070.0, 'y' => 330.0, 'page' => 1, 'mm' => 3300],
+            ],
+            [
+                'page' => 1,
+                'width' => 1200.0,
+                'height' => 900.0,
+                'drawing_scale' => 50,
+                'fills' => [],
+                'ticks' => [
+                    ['x1' => 800.0, 'y1' => 185.0, 'x2' => 920.0, 'y2' => 185.0, 'axis' => 'h'],
+                    ['x1' => 678.0, 'y1' => 170.0, 'x2' => 1055.0, 'y2' => 170.0, 'axis' => 'h'],
+                    ['x1' => 1070.0, 'y1' => 198.0, 'x2' => 1070.0, 'y2' => 470.0, 'axis' => 'v'],
+                ],
+                'walls' => [
+                    ['x1' => 678.0, 'y1' => 198.0, 'x2' => 678.0, 'y2' => 470.0, 'axis' => 'v'],
+                    ['x1' => 1055.0, 'y1' => 198.0, 'x2' => 1055.0, 'y2' => 470.0, 'axis' => 'v'],
+                    ['x1' => 678.0, 'y1' => 198.0, 'x2' => 1055.0, 'y2' => 198.0, 'axis' => 'h'],
+                    ['x1' => 678.0, 'y1' => 470.0, 'x2' => 1055.0, 'y2' => 470.0, 'axis' => 'h'],
+                ],
+            ],
+            [],
+        );
+
+        $this->assertSame(3000, $match['horizontal']['mm'] ?? null);
+        $this->assertSame(3300, $match['vertical']['mm'] ?? null);
+        $this->assertSame('chain', $match['horizontal']['source'] ?? null);
+        $this->assertSame('chain', $match['vertical']['source'] ?? null);
+        $this->assertContains(2400, array_column($match['rejected'], 'mm'));
+        $rejected = collect($match['rejected'])->firstWhere('mm', 2400);
+        $this->assertStringContainsString('endpoints', (string) ($rejected['reason'] ?? ''));
+        $this->assertSame('x=800–920', $rejected['endpoints'] ?? null);
+        $this->assertSame('x=678–1055', $rejected['expected'] ?? null);
+        $this->assertNotEmpty($rejected['delta'] ?? null);
+        $this->assertNotEmpty($match['dimension_debug']);
+        $debug2400 = collect($match['dimension_debug'])->firstWhere('mm', 2400);
+        $this->assertSame('afgewezen', $debug2400['decision'] ?? null);
+    }
+
+    public function test_does_not_treat_a_nearby_unproven_measure_as_the_room_width(): void
+    {
+        $match = (new WallBoundDimensionMatcher)->match(
+            ['x' => 300.0, 'y' => 250.0, 'page' => 1, 'room_key' => 'woonkamer', 'text' => 'WOONKAMER'],
+            [
+                ['text' => '3600', 'x' => 300.0, 'y' => 50.0, 'page' => 1, 'mm' => 3600],
+            ],
+            [
+                'page' => 1,
+                'width' => 900.0,
+                'height' => 700.0,
+                'fills' => [],
+                'walls' => [
+                    ['x1' => 100.0, 'y1' => 100.0, 'x2' => 500.0, 'y2' => 100.0, 'axis' => 'h'],
+                    ['x1' => 100.0, 'y1' => 400.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'h'],
+                    ['x1' => 100.0, 'y1' => 100.0, 'x2' => 100.0, 'y2' => 400.0, 'axis' => 'v'],
+                    ['x1' => 500.0, 'y1' => 100.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'v'],
+                ],
+            ],
+            [],
+        );
+
+        $this->assertNull($match['horizontal']);
+        $this->assertNull($match['vertical']);
+        $this->assertContains(3600, array_column($match['rejected'], 'mm'));
+        $this->assertSame(0.0, $match['confidence']);
     }
 
     /**

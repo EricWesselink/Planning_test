@@ -219,16 +219,26 @@
                 <p>Schaal: {{ isset($room['scale_mm_per_px']) ? str_replace('.', ',', (string) $room['scale_mm_per_px']).' mm/px' : '—' }}</p>
                 <p>Gekozen horizontale maat: {{ $room['horizontal_mm'] ?? '—' }} · {{ $room['horizontal_position'] ?? '—' }}</p>
                 <p>Maatsegment horizontaal: {{ $room['horizontal_segment'] ?? '—' }}</p>
+                <p>Endpoints horizontaal: {{ $room['horizontal_endpoints'] ?? '—' }} · verwacht {{ $room['horizontal_expected'] ?? '—' }} · Δ {{ $room['horizontal_delta'] ?? '—' }}</p>
                 <p>Wanden horizontale maat: {{ $room['horizontal_walls'] ?? '—' }}</p>
                 <p>Gekozen verticale maat: {{ $room['vertical_mm'] ?? '—' }} · {{ $room['vertical_position'] ?? '—' }}</p>
                 <p>Maatsegment verticaal: {{ $room['vertical_segment'] ?? '—' }}</p>
+                <p>Endpoints verticaal: {{ $room['vertical_endpoints'] ?? '—' }} · verwacht {{ $room['vertical_expected'] ?? '—' }} · Δ {{ $room['vertical_delta'] ?? '—' }}</p>
                 <p>Wanden verticale maat: {{ $room['vertical_walls'] ?? '—' }}</p>
                 <p>Confidence: {{ number_format((float) ($room['confidence'] ?? 0), 2, ',', '.') }}</p>
+                @if (($room['dimension_debug'] ?? []) !== [])
+                    <p class="mt-2 font-medium text-nicon-ink">Maatkoppeling</p>
+                    <ul class="list-disc pl-5">
+                        @foreach ($room['dimension_debug'] as $row)
+                            <li>{{ $row['mm'] ?? '?' }} · {{ $row['decision'] ?? '' }} · {{ $row['reason'] ?? '' }} · endpoints {{ $row['endpoints'] ?? '—' }} · wandpaar {{ $row['expected'] ?? '—' }} · Δ {{ $row['delta'] ?? '—' }}</li>
+                        @endforeach
+                    </ul>
+                @endif
                 @if (($room['rejected'] ?? []) !== [])
                     <p class="mt-2 font-medium text-nicon-ink">Afgewezen maten</p>
                     <ul class="list-disc pl-5">
                         @foreach ($room['rejected'] as $rejected)
-                            <li>{{ $rejected['mm'] ?? '?' }} — {{ $rejected['reason'] ?? '' }}</li>
+                            <li>{{ $rejected['mm'] ?? '?' }} — {{ $rejected['reason'] ?? '' }} · endpoints {{ $rejected['endpoints'] ?? '—' }} · wandpaar {{ $rejected['expected'] ?? '—' }} · Δ {{ $rejected['delta'] ?? '—' }}</li>
                         @endforeach
                     </ul>
                 @endif

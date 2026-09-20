@@ -270,6 +270,7 @@ class AreaWithoutM2Analyzer
             'horizontal' => null,
             'vertical' => null,
             'rejected' => [],
+            'dimension_debug' => [],
             'confidence' => 0.0,
             'boundary' => [
                 'left' => null,
@@ -488,7 +489,7 @@ class AreaWithoutM2Analyzer
         }
 
         $local = is_array($horizontal) ? $horizontal : $vertical;
-        if (! is_array($local) || ! is_array($box)) {
+        if (! is_array($local) || ! is_array($box) || ($local['source'] ?? '') !== 'chain') {
             return null;
         }
 
@@ -619,7 +620,14 @@ class AreaWithoutM2Analyzer
             'ocr_x' => round((float) ($anchor['x'] ?? 0), 1),
             'ocr_y' => round((float) ($anchor['y'] ?? 0), 1),
             'horizontal_segment' => $horizontal['segment'] ?? '—',
+            'horizontal_endpoints' => $horizontal['endpoints'] ?? '—',
+            'horizontal_expected' => $horizontal['expected'] ?? '—',
+            'horizontal_delta' => $horizontal['delta'] ?? '—',
             'vertical_segment' => $vertical['segment'] ?? '—',
+            'vertical_endpoints' => $vertical['endpoints'] ?? '—',
+            'vertical_expected' => $vertical['expected'] ?? '—',
+            'vertical_delta' => $vertical['delta'] ?? '—',
+            'dimension_debug' => is_array($bound['dimension_debug'] ?? null) ? $bound['dimension_debug'] : [],
             'overlay' => $this->overlayGeometry($bound, $page, $anchor, $name, $roomNumber),
         ];
     }

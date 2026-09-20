@@ -30,7 +30,7 @@ import {
     roomMatchesSearch,
     roomOverlayContent,
 } from './calculation-board-selection';
-import { chipAnchorInRoom, attachRoomCaptions } from './calculation-board-overlay';
+import { chipAnchorInRoom, attachRoomCaptions, applyStoredChips } from './calculation-board-overlay';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -45,6 +45,7 @@ function boot() {
     const drawings = data.drawings || [];
     const csrf = data.csrf;
     let materials = data.materials || [];
+    const legend = data.legend || [];
     let selectedKey = data.selected_key || null;
     let filter = 'all';
     let search = '';
@@ -192,6 +193,7 @@ function boot() {
         if (!pdfDoc) {
             return;
         }
+        applyStoredChips(rooms);
         const known = rooms
             .filter((room) => Number(room.drawing_id) === Number(drawingId))
             .map((room) => room.number)
@@ -207,6 +209,9 @@ function boot() {
             finishItems.push(...items);
         }
         rooms.filter((room) => Number(room.drawing_id) === Number(drawingId)).forEach((room) => {
+            if (room.marker?.source === 'user') {
+                return;
+            }
             const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
                 || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
             assignHit(room, hit);
@@ -215,6 +220,7 @@ function boot() {
             rooms.filter((room) => Number(room.drawing_id) === Number(drawingId)),
             finishItems,
         );
+        applyStoredChips(rooms);
         assignFinishHits(finishItems);
     }
 
@@ -397,8 +403,61 @@ function boot() {
         chip.style.background = contrast.bg;
         chip.style.color = contrast.fg;
         chip.title = content.title;
-        bindOverlayPointer(chip, room);
+        bindChipPointer(chip, room);
         markersEl.append(chip);
+    }
+
+    function bindChipPointer(chip, room) {
+        let draggingChip = false;
+        let moved = false;
+        chip.addEventListener('pointerdown', (event) => {
+            event.stopPropagation();
+            if (event.button !== 0 || !data.can_update) {
+                return;
+            }
+            draggingChip = true;
+            moved = false;
+            chip.setPointerCapture(event.pointerId);
+        });
+        chip.addEventListener('pointermove', (event) => {
+            if (!draggingChip) {
+                return;
+            }
+            const point = toNorm(event);
+            if (!moved) {
+                moved = true;
+            }
+            chip.style.left = `${point.x * 100}%`;
+            chip.style.top = `${point.y * 100}%`;
+        });
+        chip.addEventListener('pointerup', (event) => {
+            if (!draggingChip) {
+                return;
+            }
+            draggingChip = false;
+            event.preventDefault();
+            event.stopPropagation();
+            if (!moved) {
+                hideTip();
+                selectRoom(room.key, { keepView: true });
+                return;
+            }
+            const point = toNorm(event);
+            saveRoom(room, {
+                chip: {
+                    x: point.x,
+                    y: point.y,
+                    page: Math.max(1, Number(room.marker?.page || page)),
+                },
+            }, 'Positie opgeslagen.');
+        });
+        chip.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        chip.addEventListener('mouseenter', (event) => showTip(room, event));
+        chip.addEventListener('mousemove', (event) => showTip(room, event));
+        chip.addEventListener('mouseleave', hideTip);
     }
 
     function renderOverlays() {
@@ -760,7 +819,7 @@ function boot() {
         form.room_number.value = room.number || '';
         form.room_name.value = room.name || '';
         form.floor_quantity.value = qtyInput(room.floor_quantity);
-        form.floor_code.value = room.floor_code || '';
+        fillFloorCodeSelect(room);
         form.floor_product.value = room.floor_product || '';
         form.plinth_code.value = room.plinth_code || '';
         form.plinth_product.value = room.plinth_product || '';
@@ -811,6 +870,65 @@ function boot() {
         }
         setMessage('');
         setError('');
+    }
+
+    function fillFloorCodeSelect(room) {
+        const select = form?.floor_code;
+        if (!select || select.tagName !== 'SELECT') {
+            if (select) {
+                select.value = room.floor_code || '';
+            }
+            return;
+        }
+        const current = String(room.floor_code || '').toLowerCase();
+        const options = [];
+        const seen = new Set();
+        const addOption = (entry) => {
+            const code = String(entry?.code || '').toLowerCase();
+            if (code === '' || seen.has(code)) {
+                return;
+            }
+            seen.add(code);
+            options.push({
+                code,
+                product: entry.product || '',
+                label: entry.label || [entry.code, entry.product].filter(Boolean).join(' – '),
+            });
+        };
+        legend.forEach(addOption);
+        materials.forEach((entry) => {
+            const code = String(entry.code || '').toLowerCase();
+            if (code.startsWith('v')) {
+                addOption(entry);
+            }
+        });
+        if (current !== '' && !seen.has(current)) {
+            addOption({
+                code: current,
+                product: room.floor_product || '',
+                label: [room.floor_code, room.floor_product].filter(Boolean).join(' – '),
+            });
+        }
+        select.replaceChildren();
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = 'Kies uit legenda';
+        select.append(empty);
+        options.forEach((entry) => {
+            const option = document.createElement('option');
+            option.value = entry.code;
+            option.textContent = entry.label;
+            select.append(option);
+        });
+        select.value = current;
+    }
+
+    function legendProductFor(code) {
+        const needle = String(code || '').toLowerCase();
+        const entry = legend.find((item) => String(item.code || '').toLowerCase() === needle)
+            || materials.find((item) => String(item.code || '').toLowerCase() === needle);
+
+        return entry?.product || '';
     }
 
     function setMessage(text) {
@@ -888,9 +1006,26 @@ function boot() {
             rooms[index] = {
                 ...previous,
                 ...next,
-                marker: previous.marker,
-                jump_target: previous.jump_target,
-                has_position: previous.has_position,
+                marker: next.chip?.manual
+                    ? {
+                        page: Math.max(1, Number(next.chip.page) || Number(previous.marker?.page) || 1),
+                        x: Number(next.chip.x),
+                        y: Number(next.chip.y),
+                        width: 0,
+                        height: 0,
+                        source: 'user',
+                    }
+                    : (previous.chip?.manual && !next.chip
+                        ? { ...previous.marker, source: 'text' }
+                        : previous.marker),
+                jump_target: next.chip?.manual
+                    ? {
+                        page: Math.max(1, Number(next.chip.page) || 1),
+                        bbox: { x: Number(next.chip.x), y: Number(next.chip.y), w: 0, h: 0 },
+                        geometry: 'label',
+                    }
+                    : previous.jump_target,
+                has_position: Boolean(next.chip?.manual) || (previous.has_position && !(!next.chip && previous.chip?.manual)),
                 floors: (next.floors || []).map((finish) => {
                     const prior = (previous.floors || []).find((item) => Number(item.id) === Number(finish.id));
                     return { ...finish, marker: prior?.marker || finish.marker };
@@ -1231,6 +1366,34 @@ function boot() {
             plinth_product: form.plinth_product.value,
             plinth_quantity: form.plinth_quantity.value,
         });
+    });
+    form?.floor_code?.addEventListener('change', async () => {
+        const room = roomByKey(selectedKey);
+        if (!room?.id || !data.can_update) {
+            return;
+        }
+        const product = legendProductFor(form.floor_code.value);
+        if (product) {
+            form.floor_product.value = product;
+        }
+        await saveRoom(room, {
+            floor_code: form.floor_code.value,
+            floor_product: form.floor_product.value,
+        }, 'Materiaal opgeslagen.');
+    });
+    document.getElementById('calc-reset-chip')?.addEventListener('click', async () => {
+        const room = roomByKey(selectedKey);
+        if (!room?.id || !data.can_update) {
+            return;
+        }
+        await saveRoom(room, { chip_reset: true }, 'Positie hersteld.');
+    });
+    document.getElementById('calc-restore-auto')?.addEventListener('click', async () => {
+        const room = roomByKey(selectedKey);
+        if (!room?.id || !data.can_update) {
+            return;
+        }
+        await saveRoom(room, { restore_automatic: true }, 'Automatische herkenning hersteld.');
     });
     document.getElementById('calc-confirm')?.addEventListener('click', async () => {
         const room = roomByKey(selectedKey);

@@ -7,6 +7,7 @@ import {
     overlayPlan,
     overlayRoomsOnPage,
     placeBoardRooms,
+    applyStoredChips,
     legendFromRooms,
     materialCodesInOverlayText,
     roomsForDrawing,
@@ -838,6 +839,32 @@ test('a saved label inside the room stays put and one outside snaps in', () => {
     assert.ok(snapped.x <= office.x + office.w);
     assert.ok(snapped.x >= office.x);
     assert.ok(snapped.y >= office.y && snapped.y <= office.y + office.h);
+});
+
+test('a stored chip stays on its saved coordinates after automatic placement', () => {
+    const toilet = room({
+        key: 'k-01-04',
+        number: 'K-01-04',
+        name: 'TOILET',
+        floor_codes_label: 'v04',
+        chip: { x: 0.214, y: 0.428, page: 1, manual: true },
+        contour: { page: 1, reliable: true, role: 'room_floor', rects: [{ x: 0.05, y: 0.38, w: 0.14, h: 0.10 }] },
+        marker: { page: 1, x: 0.08, y: 0.44, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.08, y: 0.44, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+
+    applyStoredChips([toilet]);
+    placeBoardRooms([toilet], 336, [
+        { number: 'K-01-04', page: 1, x: 0.62, y: 0.18, w: 0.05, h: 0.02, source: 'text' },
+    ]);
+    const chip = chipAnchorInRoom(toilet, { rooms: [toilet], roomLabels: false, materialCodes: true });
+    const printed = overlayPlan([toilet], 336, 1, { materialCodes: true });
+
+    assert.equal(toilet.marker.source, 'user');
+    assert.equal(Number(chip.x.toFixed(3)), 0.214);
+    assert.equal(Number(chip.y.toFixed(3)), 0.428);
+    assert.equal(Number(printed[0].chip.x.toFixed(3)), 0.214);
+    assert.equal(printed[0].text, 'v04');
 });
 
 test('print ignores a cloud of trace rects and a title-block copy of the room number', () => {
