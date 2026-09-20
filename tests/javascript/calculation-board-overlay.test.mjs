@@ -26,6 +26,7 @@ import {
     roomsOnDrawing,
     mergePrintRoomChips,
     attachRoomCaptions,
+    tightGlyphBox,
 } from '../../resources/js/calculation-board-overlay.js';
 
 function room(overrides = {}) {
@@ -636,6 +637,15 @@ test('print keeps neighbouring room codes in their own rooms', () => {
     assert.equal(Number(clamped.x.toFixed(2)), 0.97);
 });
 
+function chipMissesBox(chip, box, halfW = 0.0075, halfH = 0.0045) {
+    const right = chip.x + halfW;
+    const left = chip.x - halfW;
+    const top = chip.y - halfH;
+    const bottom = chip.y + halfH;
+
+    return right < box.x || left > box.x + box.w || bottom < box.y || top > box.y + box.h;
+}
+
 test('a toilet v04 stays inside the stall and not on the wall', () => {
     const stall = { x: 0.20, y: 0.42, w: 0.028, h: 0.038 };
     const toilet = room({
@@ -695,13 +705,15 @@ test('a toilet without a floor box keeps v04 beside the room name before the doo
         roomLabels: false,
         materialCodes: true,
     });
+    const name = tightGlyphBox(items[0]);
     const inflatedRight = 0.180 + 0.05;
 
-    assert.ok(chip.x > 0.180);
     assert.ok(chip.x < 0.214);
     assert.ok(chip.x < inflatedRight);
-    assert.ok(chip.y >= 0.398);
+    assert.ok(chip.x > name.x - 0.014);
+    assert.ok(chip.y >= 0.392);
     assert.ok(chip.y < 0.455);
+    assert.ok(chipMissesBox(chip, name));
 });
 
 test('stacked toilets without floor boxes keep each v04 inside their own stall', () => {
@@ -735,13 +747,69 @@ test('stacked toilets without floor boxes keep each v04 inside their own stall',
     }));
 
     chips.forEach((chip, index) => {
-        assert.ok(chip.x > 0.180);
+        const name = tightGlyphBox(items[index * 4]);
         assert.ok(chip.x < 0.214, `${stalls[index].number} leaked past the door`);
-        assert.ok(chip.y >= stalls[index].y - 0.006);
+        assert.ok(chip.x > name.x - 0.014, `${stalls[index].number} left the stall`);
+        assert.ok(chip.y >= stalls[index].y - 0.008);
         assert.ok(chip.y < stalls[index].y + 0.050);
+        assert.ok(chipMissesBox(chip, name), `${stalls[index].number} covers TOILET`);
     });
     assert.ok(chips[0].y < chips[1].y);
     assert.ok(chips[1].y < chips[2].y);
+});
+
+test('a two-line toilet name is not covered by v04', () => {
+    const items = [
+        { text: 'TOILET', page: 1, x: 0.22, y: 0.40, w: 0.05, h: 0.010 },
+        { text: 'KIND', page: 1, x: 0.22, y: 0.412, w: 0.04, h: 0.010 },
+        { text: 'A-00-14', page: 1, x: 0.22, y: 0.424, w: 0.05, h: 0.009 },
+        { text: '1.5 m²', page: 1, x: 0.22, y: 0.434, w: 0.04, h: 0.008 },
+        { text: 'BI.H01', page: 1, x: 0.268, y: 0.418, w: 0.018, h: 0.008 },
+    ];
+    const toilet = room({
+        key: 'a-00-14',
+        number: 'A-00-14',
+        name: 'TOILET KIND',
+        floor_codes_label: 'v04',
+        contour: null,
+        marker: { page: 1, x: 0.22, y: 0.424, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.22, y: 0.424, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+    attachRoomCaptions([toilet], items);
+    const chip = chipAnchorInRoom(toilet, { items, rooms: [toilet], roomLabels: false, materialCodes: true });
+
+    assert.ok(chipMissesBox(chip, tightGlyphBox(items[0])));
+    assert.ok(chipMissesBox(chip, tightGlyphBox(items[1])));
+    assert.ok(chip.x < 0.268);
+    assert.ok(chip.x > 0.22 - 0.014);
+    assert.ok(chip.y < 0.45);
+});
+
+test('a wet-area polygon left of the toilet does not steal v04', () => {
+    const shower = { x: 0.12, y: 0.38, w: 0.048, h: 0.055 };
+    const items = [
+        { text: 'TOILET', page: 1, x: 0.180, y: 0.400, w: 0.05, h: 0.010 },
+        { text: 'K-01-03', page: 1, x: 0.180, y: 0.412, w: 0.05, h: 0.009 },
+        { text: '1.3 m²', page: 1, x: 0.180, y: 0.422, w: 0.04, h: 0.008 },
+        { text: 'BI.H01', page: 1, x: 0.214, y: 0.408, w: 0.018, h: 0.008 },
+    ];
+    const toilet = room({
+        key: 'k-01-03',
+        number: 'K-01-03',
+        name: 'TOILET',
+        floor_codes_label: 'v04',
+        contour: { page: 1, reliable: true, role: 'room_floor', rects: [shower] },
+        marker: { page: 1, x: 0.180, y: 0.412, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.180, y: 0.412, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+    attachRoomCaptions([toilet], items);
+    const chip = chipAnchorInRoom(toilet, { items, rooms: [toilet], roomLabels: false, materialCodes: true });
+    const name = tightGlyphBox(items[0]);
+
+    assert.ok(chip.x > shower.x + shower.w);
+    assert.ok(chip.x > name.x - 0.014);
+    assert.ok(chip.x < 0.214);
+    assert.ok(chipMissesBox(chip, name));
 });
 
 test('a saved label inside the room stays put and one outside snaps in', () => {

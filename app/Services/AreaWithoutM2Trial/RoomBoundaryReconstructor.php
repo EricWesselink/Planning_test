@@ -128,6 +128,9 @@ class RoomBoundaryReconstructor
             $nameBand,
             $pageHeight,
         );
+        $roomWidthWindow = ($left !== null && $right !== null)
+            ? ['lo' => (float) $left['pos'], 'hi' => (float) $right['pos']]
+            : null;
         [$bottom, $top] = $this->resolvePair(
             $clustered['h'],
             $y,
@@ -142,6 +145,7 @@ class RoomBoundaryReconstructor
             $thickness,
             $nameBand,
             $pageWidth,
+            $roomWidthWindow,
         );
 
         $gaps = [];
@@ -393,6 +397,7 @@ class RoomBoundaryReconstructor
      *
      * @param  list<array<string, mixed>>  $walls
      * @param  list<array{x: float, y: float, page?: int, room_key?: string, room_number?: string}>  $others
+     * @param  array{lo: float, hi: float}|null  $spanWindow
      * @return array{0: ?array{pos: float, wall: array<string, mixed>, gaps: list<string>, dist: float}, 1: ?array{pos: float, wall: array<string, mixed>, gaps: list<string>, dist: float}}
      */
     private function resolvePair(
@@ -409,11 +414,12 @@ class RoomBoundaryReconstructor
         float $thickness,
         float $nameBand,
         float $pageSpan,
+        ?array $spanWindow = null,
     ): array {
         $lowSide = $vertical ? 'left' : 'bottom';
         $highSide = $vertical ? 'right' : 'top';
-        $low = $this->firstWall($walls, $origin, $cover, $lowSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, [], $thickness, $nameBand, $pageSpan);
-        $high = $this->firstWall($walls, $origin, $cover, $highSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, [], $thickness, $nameBand, $pageSpan);
+        $low = $this->firstWall($walls, $origin, $cover, $lowSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, [], $thickness, $nameBand, $pageSpan, $spanWindow);
+        $high = $this->firstWall($walls, $origin, $cover, $highSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, [], $thickness, $nameBand, $pageSpan, $spanWindow);
         if ($low === null || $high === null || ((float) $high['pos'] - (float) $low['pos']) >= $minRoom) {
             return [$low, $high];
         }
@@ -421,8 +427,8 @@ class RoomBoundaryReconstructor
         $clusterLo = (float) $low['pos'];
         $clusterHi = (float) $high['pos'];
         $excluded = [$clusterLo, $clusterHi];
-        $nextLow = $this->firstWall($walls, $origin, $cover, $lowSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, $excluded, $thickness, $nameBand, $pageSpan);
-        $nextHigh = $this->firstWall($walls, $origin, $cover, $highSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, $excluded, $thickness, $nameBand, $pageSpan);
+        $nextLow = $this->firstWall($walls, $origin, $cover, $lowSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, $excluded, $thickness, $nameBand, $pageSpan, $spanWindow);
+        $nextHigh = $this->firstWall($walls, $origin, $cover, $highSide, $vertical, $anchor, $others, $minLength, $coverSlack, $maxDist, $excluded, $thickness, $nameBand, $pageSpan, $spanWindow);
 
         $namesLow = 0;
         $namesHigh = 0;
@@ -469,6 +475,7 @@ class RoomBoundaryReconstructor
      * @param  list<array<string, mixed>>  $walls
      * @param  list<array{x: float, y: float, page?: int, room_key?: string, room_number?: string}>  $others
      * @param  list<float>  $excluded
+     * @param  array{lo: float, hi: float}|null  $spanWindow
      * @return array{pos: float, wall: array<string, mixed>, gaps: list<string>, dist: float}|null
      */
     private function firstWall(
@@ -486,8 +493,11 @@ class RoomBoundaryReconstructor
         float $excludeTol,
         float $nameBand,
         float $pageSpan,
+        ?array $spanWindow = null,
     ): ?array {
         $candidates = [];
+        $window = $this->boundWindow($cover, $vertical, $anchor, $others, $nameBand, $pageSpan, $spanWindow);
+        $minOverlap = $this->minBoundOverlap($window, $spanWindow !== null);
         foreach ($walls as $wall) {
             if ($vertical) {
                 $pos = (float) $wall['x'];
@@ -502,9 +512,8 @@ class RoomBoundaryReconstructor
             if ($length < $minLength) {
                 continue;
             }
-            $window = $this->coverWindow($cover, $vertical, $anchor, $others, $nameBand, $pageSpan);
             $overlap = min($spanEnd, $window['hi']) - max($spanStart, $window['lo']);
-            if ($overlap < 4) {
+            if ($overlap < $minOverlap) {
                 continue;
             }
             $dist = abs($origin - $pos);
@@ -528,10 +537,12 @@ class RoomBoundaryReconstructor
             if (($wall['role'] ?? '') === WallAxisAssembler::ROLE_DIMENSION) {
                 continue;
             }
+            $windowWidth = max(1.0, $window['hi'] - $window['lo']);
             $candidates[] = [
                 'pos' => $pos,
                 'dist' => $dist,
                 'length' => $length,
+                'coverage' => $overlap / $windowWidth,
                 'wall' => $wall,
                 'gaps' => $wall['gaps'] ?? [],
             ];
@@ -547,7 +558,9 @@ class RoomBoundaryReconstructor
         $usable = [];
         $maxLength = 0.0;
         foreach ($candidates as $candidate) {
-            if ($hasLocal && $candidate['length'] > $pageSpan * 0.65) {
+            $keepLongRoomBound = $spanWindow !== null
+                && ($candidate['coverage'] >= (1 / 3) || $this->isEnvelopeWall($candidate['wall']));
+            if ($hasLocal && $candidate['length'] > $pageSpan * 0.65 && ! $keepLongRoomBound) {
                 continue;
             }
             $usable[] = $candidate;
@@ -556,6 +569,11 @@ class RoomBoundaryReconstructor
 
         $filtered = [];
         foreach ($usable as $candidate) {
+            if ($spanWindow !== null) {
+                $filtered[] = $candidate;
+
+                continue;
+            }
             $besideLongest = false;
             foreach ($usable as $other) {
                 if ($other['length'] >= $maxLength * 0.9 && abs($candidate['pos'] - $other['pos']) <= $excludeTol) {
@@ -623,10 +641,48 @@ class RoomBoundaryReconstructor
     }
 
     /**
+     * @param  list<array{x: float, y: float, page?: int, room_key?: string, room_number?: string}>  $others
+     * @param  array{lo: float, hi: float}|null  $spanWindow
+     * @return array{lo: float, hi: float}
+     */
+    private function boundWindow(
+        float $cover,
+        bool $vertical,
+        array $anchor,
+        array $others,
+        float $nameBand,
+        float $pageSpan,
+        ?array $spanWindow,
+    ): array {
+        if ($spanWindow === null) {
+            return $this->coverWindow($cover, $vertical, $anchor, $others, $nameBand, $pageSpan);
+        }
+
+        return [
+            'lo' => min($spanWindow['lo'], $spanWindow['hi']),
+            'hi' => max($spanWindow['lo'], $spanWindow['hi']),
+        ];
+    }
+
+    /**
+     * @param  array{lo: float, hi: float}  $window
+     */
+    private function minBoundOverlap(array $window, bool $spanKnown): float
+    {
+        $width = $window['hi'] - $window['lo'];
+        if ($spanKnown && $width >= 8) {
+            return max(4.0, $width / 3);
+        }
+
+        return 4.0;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $walls
      * @param  list<array{x: float, y: float, page?: int, room_key?: string, room_number?: string}>  $others
      * @param  array{pos: float, wall: array<string, mixed>}|null  $chosenLow
      * @param  array{pos: float, wall: array<string, mixed>}|null  $chosenHigh
+     * @param  array{lo: float, hi: float}|null  $spanWindow
      * @return list<array{axis: string, pos: float, span: string, dist: float, decision: string}>
      */
     private function debugCandidates(
@@ -643,10 +699,12 @@ class RoomBoundaryReconstructor
         float $pageSpan,
         ?array $chosenLow,
         ?array $chosenHigh,
+        ?array $spanWindow = null,
     ): array {
         $lowSide = $vertical ? 'links' : 'onder';
         $highSide = $vertical ? 'rechts' : 'boven';
-        $window = $this->coverWindow($cover, $vertical, $anchor, $others, $nameBand, $pageSpan);
+        $window = $this->boundWindow($cover, $vertical, $anchor, $others, $nameBand, $pageSpan, $spanWindow);
+        $minOverlap = $this->minBoundOverlap($window, $spanWindow !== null);
         $rows = [];
         foreach ($walls as $wall) {
             if ($vertical) {
@@ -665,14 +723,15 @@ class RoomBoundaryReconstructor
             $kind = (string) ($wall['kind'] ?? WallAxisAssembler::KIND_LINE);
             $role = (string) ($wall['role'] ?? '—');
             $envelope = $this->isEnvelopeWall($wall);
+            $overlap = min($spanEnd, $window['hi']) - max($spanStart, $window['lo']);
             if (($wall['role'] ?? '') === WallAxisAssembler::ROLE_DIMENSION) {
                 $decision = 'afgewezen: maatlijn buiten de gevel';
             } elseif ($length < $minLength) {
                 $decision = 'afgewezen: te kort ('.round($length).' px)';
             } elseif ($dist < 0.5 || $dist > $maxDist) {
                 $decision = 'afgewezen: afstand tot OCR '.round($dist).' px';
-            } elseif (min($spanEnd, $window['hi']) - max($spanStart, $window['lo']) < 4) {
-                $decision = 'afgewezen: geen overlap met OCR-venster';
+            } elseif ($overlap < $minOverlap) {
+                $decision = 'afgewezen: onvoldoende overlap met kamerbereik ('.round(max(0.0, $overlap)).' px)';
             } elseif ($this->otherNameBetween($origin, $pos, $vertical, $cover, $anchor, $others, $nameBand)) {
                 $decision = 'afgewezen: andere ruimtenaam ertussen';
             } elseif ($chosenLow !== null && abs($pos - (float) $chosenLow['pos']) <= $excludeTol) {
@@ -1011,6 +1070,9 @@ class RoomBoundaryReconstructor
                 $pageWidth,
                 $bottom,
                 $top,
+                ($left !== null && $right !== null)
+                    ? ['lo' => (float) $left['pos'], 'hi' => (float) $right['pos']]
+                    : null,
             ),
             'tested_pair' => [
                 'vertical' => $left === null || $right === null

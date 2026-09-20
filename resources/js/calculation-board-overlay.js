@@ -387,17 +387,20 @@ export function tightGlyphBox(item) {
     const h = Math.max(0.005, Number(item.th) || Number(item.h) || 0.008);
     const text = String(item.text || item.label_text || item.number || '');
     const letters = Math.max(1, text.replace(/\s+/g, '').length);
-    const fromChars = h * letters * 0.33;
+    const estimated = h * letters * 0.62;
     const raw = Number(item.tw) > 0.001 ? Number(item.tw) : Number(item.w) || 0;
-    const w = Math.min(raw > 0.001 ? raw : fromChars, fromChars, 0.02);
+    const paddedHit = raw > estimated * 1.35 || raw >= 0.045;
+    const w = paddedHit || !(raw > 0.001)
+        ? estimated
+        : Math.max(raw, estimated * 0.9);
 
     return {
         x: Number(item.x) || 0,
         y: Number(item.y) || 0,
-        w: Math.max(0.004, w),
+        w: Math.min(0.06, Math.max(0.004, w)),
         h,
         page: Number(item.page) || undefined,
-        text: String(item.text || item.label_text || item.number || ''),
+        text,
     };
 }
 
@@ -420,26 +423,32 @@ function isCaptionNameText(text, number) {
     return /[A-Za-zÀ-ÿ]{2,}/.test(value);
 }
 
-function findCaptionNameItem(room, near, number, originY) {
+function findCaptionNameItems(room, near, number, originY) {
     const nameKey = String(room?.name || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const words = nameKey.split(' ').filter((word) => word.length > 0);
     const inColumn = near.filter((item) => isCaptionNameText(item.text, number));
-    if (nameKey !== '') {
-        const matched = inColumn.find((item) => {
+    if (words.length > 0) {
+        const matched = inColumn.filter((item) => {
             const text = String(item.text || '').trim().toUpperCase().replace(/\s+/g, ' ');
+            if (text === nameKey || words.includes(text)) {
+                return true;
+            }
 
-            return text === nameKey
-                || nameKey.startsWith(text)
-                || text.startsWith(nameKey.split(' ')[0]);
+            return text.length >= 3 && (nameKey.startsWith(text) || text.startsWith(words[0]));
         });
-        if (matched) {
-            return matched;
+        if (matched.length > 0) {
+            const closest = matched.reduce((best, item) => (
+                Math.abs(Number(item.y) - originY) < Math.abs(Number(best.y) - originY) ? item : best
+            ));
+
+            return matched.filter((item) => Math.abs(Number(item.y) - Number(closest.y)) < 0.018);
         }
     }
     const above = inColumn
         .filter((item) => Number(item.y) <= originY + 0.002)
         .sort((left, right) => Math.abs(Number(left.y) - originY) - Math.abs(Number(right.y) - originY));
 
-    return above[0] || null;
+    return above[0] ? [above[0]] : [];
 }
 
 export function roomCaptionCluster(room, items = []) {
@@ -459,12 +468,13 @@ export function roomCaptionCluster(room, items = []) {
     const oy = Number(origin?.y) || 0;
     const near = list.filter((item) => (
         Math.abs(Number(item.x) - ox) < 0.022
-        && Number(item.y) > oy - 0.035
-        && Number(item.y) < oy + 0.04
+        && Number(item.y) > oy - 0.022
+        && Number(item.y) < oy + 0.028
     ));
-    const nameItem = findCaptionNameItem(room, near, number, oy);
+    const nameItems = findCaptionNameItems(room, near, number, oy);
     const m2Item = near.find((item) => isAreaLabelText(String(item.text || '')));
-    const parts = [nameItem, numberItem, m2Item].map(tightGlyphBox).filter(Boolean);
+    const nameBoxes = nameItems.map(tightGlyphBox).filter(Boolean);
+    const parts = [...nameBoxes, tightGlyphBox(numberItem), tightGlyphBox(m2Item)].filter(Boolean);
     if (parts.length === 0) {
         return null;
     }
@@ -473,7 +483,7 @@ export function roomCaptionCluster(room, items = []) {
     return {
         ...box,
         page,
-        name: nameItem ? tightGlyphBox(nameItem) : null,
+        name: unionBoxes(nameBoxes) || nameBoxes[0] || null,
         number: numberItem ? tightGlyphBox(numberItem) : null,
         m2: m2Item ? tightGlyphBox(m2Item) : null,
     };
@@ -494,12 +504,16 @@ export function attachRoomCaptions(rooms, items) {
 export function chipAnchorInRoom(room, options = {}) {
     const text = options.text ?? overlayChipText(room, options);
     const chip = chipHalfSizeForText(text);
-    const floor = options.interior && isRoomFloorBox(options.interior)
+    let floor = options.interior && isRoomFloorBox(options.interior)
         ? options.interior
         : roomFloorBox(room);
     const items = options.items || room.caption_items || [];
     const caption = options.caption || room.caption || roomCaptionCluster(room, items);
     const neighbors = options.rooms || [];
+    if (floor && caption && !captionIsInFloor(caption, floor) && !captionIsTitleBlock(caption, floor) && isSmallFloorBox(floor)) {
+        floor = null;
+    }
+    const glue = caption ? captionGlueBox(caption, chip) : null;
     if (floor) {
         const inset = insetInterior(floor, chip);
         const bounds = inset.degenerate ? floor : inset;
@@ -507,20 +521,20 @@ export function chipAnchorInRoom(room, options = {}) {
         if (manual && pointInBox(manual, bounds)) {
             return pointBox(manual);
         }
-        if (caption) {
-            return pointBox(clampPointToBox(
-                captionChipPoint(caption, chip, bounds),
-                bounds,
-            ));
+        if (caption && captionIsInFloor(caption, floor)) {
+            const clipped = intersectBoxes(glue, bounds) || glue;
+
+            return pointBox(captionChipPoint(caption, chip, clipped));
         }
         const preferred = preferredChipPoint(floor, inset);
 
         return pointBox(inset.degenerate ? boxCenter(floor) : preferred);
     }
     if (caption) {
-        const bounds = options.bounds
+        const obstacles = options.bounds
             || room.caption_bounds
-            || captionRoomBounds(room, neighbors, caption, items);
+            || captionRoomBounds(room, neighbors, caption, items, chip);
+        const bounds = intersectBoxes(glue, obstacles) || glue;
         const manual = manualChipPoint(room);
         if (manual && pointInBox(manual, bounds)) {
             return pointBox(manual);
@@ -621,13 +635,13 @@ function shrinkCaptionBounds(left, right, top, bottom, caption, box, margin) {
     return { left, right, top, bottom };
 }
 
-function captionRoomBounds(room, rooms, caption, items = []) {
+function captionRoomBounds(room, rooms, caption, items = [], chip = { w: 0.006, h: 0.0045 }) {
     const page = Number(room?.marker?.page || caption.page || 1);
-    const nameBox = caption.name || caption.number || caption;
-    let left = caption.x - 0.006;
-    let right = nameBox.x + nameBox.w + 0.014;
-    let top = caption.y - 0.006;
-    let bottom = caption.y + caption.h + 0.008;
+    const glue = captionGlueBox(caption, chip);
+    let left = glue.x;
+    let right = glue.x + glue.w;
+    let top = glue.y;
+    let bottom = glue.y + glue.h;
     const apply = (box) => {
         const next = shrinkCaptionBounds(left, right, top, bottom, caption, box, 0.003);
         left = next.left;
@@ -660,8 +674,6 @@ function captionRoomBounds(room, rooms, caption, items = []) {
         }
         apply(tightGlyphBox(item) || item);
     });
-    right = Math.max(right, caption.x + 0.01);
-    bottom = Math.max(bottom, caption.y + 0.01);
 
     return {
         x: left,
@@ -671,20 +683,48 @@ function captionRoomBounds(room, rooms, caption, items = []) {
     };
 }
 
+function captionOccupiedBoxes(caption) {
+    const parts = [caption?.name, caption?.number, caption?.m2].filter(Boolean);
+    if (parts.length > 0) {
+        return parts;
+    }
+
+    return caption ? [caption] : [];
+}
+
+function chipOverlapsBox(point, chip, box, pad = 0.0015) {
+    if (!box) {
+        return false;
+    }
+
+    return rangesOverlap(point.x - chip.w, point.x + chip.w, Number(box.x) - pad, Number(box.x) + Number(box.w) + pad)
+        && rangesOverlap(point.y - chip.h, point.y + chip.h, Number(box.y) - pad, Number(box.y) + Number(box.h) + pad);
+}
+
+function chipOverlapsCaption(point, chip, caption) {
+    return captionOccupiedBoxes(caption).some((box) => chipOverlapsBox(point, chip, box));
+}
+
 function captionChipPoint(caption, chip, bounds) {
-    const anchor = caption.name || caption.number || caption;
-    const gap = 0.002;
+    const name = caption.name || caption.number || caption;
+    const number = caption.number || name;
+    const cluster = caption;
+    const gap = 0.0025;
     const candidates = [
-        { x: anchor.x + anchor.w + gap + chip.w, y: anchor.y + (anchor.h / 2) },
-        { x: anchor.x - gap - chip.w, y: anchor.y + (anchor.h / 2) },
-        { x: anchor.x + (Math.min(anchor.w, 0.012) / 2), y: anchor.y + anchor.h + gap + chip.h },
-        { x: anchor.x + (Math.min(anchor.w, 0.012) / 2), y: anchor.y - gap - chip.h },
+        { x: name.x + name.w + gap + chip.w, y: name.y + (name.h / 2) },
+        { x: name.x - gap - chip.w, y: name.y + (name.h / 2) },
+        { x: number.x + number.w + gap + chip.w, y: number.y + (number.h / 2) },
+        { x: number.x - gap - chip.w, y: number.y + (number.h / 2) },
+        { x: name.x - gap - chip.w, y: cluster.y + (cluster.h / 2) },
+        { x: cluster.x + (Math.min(cluster.w, 0.012) / 2), y: cluster.y + cluster.h + gap + chip.h },
+        { x: cluster.x + (Math.min(cluster.w, 0.012) / 2), y: cluster.y - gap - chip.h },
     ];
     const fits = (point) => (
         (point.x - chip.w) >= bounds.x
         && (point.x + chip.w) <= (bounds.x + bounds.w)
         && (point.y - chip.h) >= bounds.y
         && (point.y + chip.h) <= (bounds.y + bounds.h)
+        && !chipOverlapsCaption(point, chip, caption)
     );
     const found = candidates.find(fits);
     if (found) {
@@ -696,8 +736,18 @@ function captionChipPoint(caption, chip, bounds) {
         w: Math.max(0, bounds.w - (chip.w * 2)),
         h: Math.max(0, bounds.h - (chip.h * 2)),
     };
+    const fallback = {
+        x: Math.max(bounds.x + chip.w, name.x - gap - chip.w),
+        y: name.y + (name.h / 2),
+    };
+    if (inset.w > 0 && inset.h > 0) {
+        const clamped = clampPointToBox(fallback, inset);
+        if (!chipOverlapsCaption(clamped, chip, caption) || !candidates.some((point) => fits(point))) {
+            return clamped;
+        }
+    }
 
-    return inset.w > 0 && inset.h > 0 ? clampPointToBox(candidates[0], inset) : boxCenter(bounds);
+    return clampPointToBox(fallback, inset.w > 0 ? inset : bounds);
 }
 
 function chipHalfSizeForText(text) {
@@ -747,6 +797,62 @@ function isRoomFloorBox(box) {
     }
 
     return true;
+}
+
+function captionGlueBox(caption, chip) {
+    const padX = ((Number(chip?.w) || 0.006) * 2) + 0.004;
+    const padY = ((Number(chip?.h) || 0.0045) * 2) + 0.003;
+
+    return {
+        x: Number(caption.x) - padX,
+        y: Number(caption.y) - padY,
+        w: Number(caption.w) + (padX * 2),
+        h: Number(caption.h) + (padY * 2),
+    };
+}
+
+function isSmallFloorBox(floor) {
+    const width = Number(floor?.w) || 0;
+    const height = Number(floor?.h) || 0;
+
+    return width < 0.055 || (width * height) < 0.004;
+}
+
+function captionIsInFloor(caption, floor) {
+    if (!caption || !floor) {
+        return false;
+    }
+
+    return rangesOverlap(Number(caption.x), Number(caption.x) + Number(caption.w), Number(floor.x) - 0.004, Number(floor.x) + Number(floor.w) + 0.004)
+        && rangesOverlap(Number(caption.y), Number(caption.y) + Number(caption.h), Number(floor.y) - 0.004, Number(floor.y) + Number(floor.h) + 0.004);
+}
+
+function captionIsTitleBlock(caption, floor) {
+    if (!caption || !floor) {
+        return true;
+    }
+    if (Number(caption.y) < 0.12 || Number(caption.x) > 0.70) {
+        return true;
+    }
+    const captionCenter = boxCenter(caption);
+    const floorCenter = boxCenter(floor);
+
+    return Math.hypot(captionCenter.x - floorCenter.x, captionCenter.y - floorCenter.y) > 0.14;
+}
+
+function intersectBoxes(left, right) {
+    if (!left || !right) {
+        return null;
+    }
+    const x = Math.max(Number(left.x), Number(right.x));
+    const y = Math.max(Number(left.y), Number(right.y));
+    const rightEdge = Math.min(Number(left.x) + Number(left.w), Number(right.x) + Number(right.w));
+    const bottom = Math.min(Number(left.y) + Number(left.h), Number(right.y) + Number(right.h));
+    if (rightEdge - x < 0.008 || bottom - y < 0.008) {
+        return null;
+    }
+
+    return { x, y, w: rightEdge - x, h: bottom - y };
 }
 
 function boxCenter(box) {

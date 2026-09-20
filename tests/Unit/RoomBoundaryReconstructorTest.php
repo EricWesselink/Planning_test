@@ -211,6 +211,62 @@ class RoomBoundaryReconstructorTest extends TestCase
         $this->assertNotSame(40.0, $second['bottom_pos']);
     }
 
+    public function test_picks_the_spanning_outer_facade_instead_of_a_closer_internal_stub(): void
+    {
+        $page = [
+            'page' => 1,
+            'width' => 1200.0,
+            'height' => 849.0,
+            'fills' => [],
+            'ticks' => [],
+            'walls' => [
+                ['x1' => 678.0, 'y1' => 198.0, 'x2' => 678.0, 'y2' => 736.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_CLUSTER],
+                ['x1' => 1055.0, 'y1' => 185.0, 'x2' => 1055.0, 'y2' => 746.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_CLUSTER],
+                ['x1' => 678.0, 'y1' => 736.0, 'x2' => 1055.0, 'y2' => 736.0, 'axis' => 'h'],
+                ['x1' => 787.0, 'y1' => 470.0, 'x2' => 1045.0, 'y2' => 470.0, 'axis' => 'h'],
+                ['x1' => 521.0, 'y1' => 275.0, 'x2' => 596.0, 'y2' => 275.0, 'axis' => 'h'],
+                [
+                    'x1' => 123.0, 'y1' => 198.0, 'x2' => 1064.0, 'y2' => 198.0,
+                    'axis' => 'h', 'kind' => WallAxisAssembler::KIND_CLUSTER,
+                ],
+            ],
+        ];
+        $anchors = $this->proefLikeAnchors();
+        $reconstructor = new RoomBoundaryReconstructor;
+
+        $first = $reconstructor->reconstruct(
+            ['x' => 945.3, 'y' => 620.5, 'page' => 1, 'room_key' => 's1', 'text' => 'SLAAPKAMER 1'],
+            $page,
+            $anchors,
+        );
+        $second = $reconstructor->reconstruct(
+            ['x' => 945.0, 'y' => 333.5, 'page' => 1, 'room_key' => 's2', 'text' => 'SLAAPKAMER 2'],
+            $page,
+            $anchors,
+        );
+
+        $this->assertEqualsWithDelta(678.0, (float) $first['left_pos'], 1.0);
+        $this->assertEqualsWithDelta(1055.0, (float) $first['right_pos'], 1.0);
+        $this->assertEqualsWithDelta(736.0, (float) $first['top_pos'], 1.0);
+        $this->assertEqualsWithDelta(470.0, (float) $first['bottom_pos'], 1.0);
+        $this->assertNotNull($first['box']);
+        $this->assertEqualsWithDelta(678.0, (float) $second['left_pos'], 1.0);
+        $this->assertEqualsWithDelta(1055.0, (float) $second['right_pos'], 1.0);
+        $this->assertEqualsWithDelta(470.0, (float) $second['top_pos'], 1.0);
+        $this->assertEqualsWithDelta(198.0, (float) $second['bottom_pos'], 1.0);
+        $this->assertNotSame(275.0, $second['bottom_pos']);
+        $this->assertNotNull($second['box']);
+        $this->assertSame($first['bottom_pos'], $second['top_pos']);
+        $overlapRejected = false;
+        foreach ($second['wall_debug']['horizontal'] as $row) {
+            if (str_contains((string) ($row['decision'] ?? ''), 'onvoldoende overlap met kamerbereik')) {
+                $overlapRejected = true;
+                break;
+            }
+        }
+        $this->assertTrue($overlapRejected);
+    }
+
     /**
      * Geometry inspired by OCR from proef.pdf: stacked bedrooms at x≈945, HAL on a thick wall.
      *
