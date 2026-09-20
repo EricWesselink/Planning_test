@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Calculation;
+use App\Models\CalculationDrawing;
 use App\Models\CalculationLine;
 use App\Services\QuoteCalculation\CalculationBoardService;
 use App\Services\QuoteCalculation\CalculationRoomRows;
@@ -116,6 +117,7 @@ class CalculationLineController extends Controller
             'chip.x' => ['required_with:chip', 'numeric', 'min:0', 'max:1'],
             'chip.y' => ['required_with:chip', 'numeric', 'min:0', 'max:1'],
             'chip.page' => ['nullable', 'integer', 'min:1'],
+            'chip.finish_id' => ['nullable', 'integer'],
             'chip_reset' => ['sometimes', 'boolean'],
             'restore_automatic' => ['sometimes', 'boolean'],
         ]);
@@ -127,6 +129,50 @@ class CalculationLineController extends Controller
         }
 
         $store->updateBoardRoom($calculation, $line, $validated, $rows);
+
+        return $this->boardRoomJson($calculation, $line, $board);
+    }
+
+    public function storeBoardRoom(
+        Request $request,
+        Calculation $calculation,
+        CalculationStoreService $store,
+        CalculationRoomRows $rows,
+        CalculationBoardService $board,
+    ): JsonResponse {
+        Gate::authorize('update', $calculation);
+
+        if ($request->exists('floor_quantity')) {
+            $request->merge(['floor_quantity' => Format::decimalInput($request->input('floor_quantity'))]);
+        }
+
+        $validated = $request->validate([
+            'document_id' => ['required', 'integer', 'exists:calculation_drawings,id'],
+            'page' => ['required', 'integer', 'min:1'],
+            'room_number' => ['required_without:room_name', 'nullable', 'string', 'max:50'],
+            'room_name' => ['required_without:room_number', 'nullable', 'string', 'max:255'],
+            'floor_code' => ['required', 'string', 'max:50'],
+            'floor_product' => ['nullable', 'string', 'max:255'],
+            'floor_quantity' => ['required', 'numeric'],
+            'chip' => ['required', 'array'],
+            'chip.x' => ['required', 'numeric', 'min:0', 'max:1'],
+            'chip.y' => ['required', 'numeric', 'min:0', 'max:1'],
+            'chip.page' => ['nullable', 'integer', 'min:1'],
+        ], [
+            'floor_code.required' => 'Kies of vul een materiaalcode in.',
+            'floor_quantity.required' => 'Vul de oppervlakte in m² in.',
+            'room_number.required_without' => 'Vul een ruimtenummer of ruimtenaam in.',
+            'room_name.required_without' => 'Vul een ruimtenummer of ruimtenaam in.',
+        ]);
+
+        $drawing = CalculationDrawing::query()->findOrFail((int) $validated['document_id']);
+        abort_unless((int) $drawing->calculation_id === (int) $calculation->id, 404);
+
+        if (array_key_exists('floor_quantity', $validated) && $validated['floor_quantity'] === '') {
+            $validated['floor_quantity'] = null;
+        }
+
+        $line = $store->createBoardRoom($calculation, $validated, $rows);
 
         return $this->boardRoomJson($calculation, $line, $board);
     }

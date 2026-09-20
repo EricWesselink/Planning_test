@@ -115,13 +115,16 @@ class DrawingController extends Controller
         $data = $request->validate([
             'document_id' => ['required', 'exists:project_documents,id'],
             'page' => ['required', 'integer', 'min:1'],
-            'x' => ['required', 'numeric', 'between:0,1'],
-            'y' => ['required', 'numeric', 'between:0,1'],
+            'x' => ['required_without:label_only', 'numeric', 'between:0,1'],
+            'y' => ['required_without:label_only', 'numeric', 'between:0,1'],
             'width' => ['nullable', 'numeric', 'between:0,1'],
             'height' => ['nullable', 'numeric', 'between:0,1'],
             'w' => ['nullable', 'numeric', 'between:0,1'],
             'h' => ['nullable', 'numeric', 'between:0,1'],
             'label_text' => ['nullable', 'string', 'max:160'],
+            'label_only' => ['sometimes', 'boolean'],
+            'label_x' => ['required_with:label_only', 'nullable', 'numeric', 'between:0,1'],
+            'label_y' => ['required_with:label_only', 'nullable', 'numeric', 'between:0,1'],
             'area_number' => ['sometimes', 'nullable', 'string', 'max:32'],
             'name' => ['sometimes', 'nullable', 'string', 'max:120'],
         ]);
@@ -139,6 +142,26 @@ class DrawingController extends Controller
             $area->area_number = $number !== '' ? $number : null;
             $area->name = $name !== '' ? $name : ($area->area_number ?: 'Ruimte');
             $area->save();
+        }
+
+        if ($request->boolean('label_only')) {
+            $marker = AreaDrawingMarker::query()
+                ->where('project_area_id', $area->id)
+                ->where('project_document_id', $document->id)
+                ->first();
+            if (! $marker instanceof AreaDrawingMarker) {
+                return response()->json(['message' => 'Koppel de ruimte eerst aan de tekening.'], 422);
+            }
+            $marker->update([
+                'label_x' => max(0, min(1, (float) $data['label_x'])),
+                'label_y' => max(0, min(1, (float) $data['label_y'])),
+            ]);
+            $area->load(['floor', 'markers', 'tasks.workItem', 'tasks.completedByWorker']);
+
+            return response()->json([
+                'area' => app(ProjectBoardService::class)->areaSummary($area, $document),
+                'marker' => $marker->fresh()?->toBoardArray() ?? $marker->toBoardArray(),
+            ]);
         }
 
         $width = (float) ($data['width'] ?? $data['w'] ?? 0.08);

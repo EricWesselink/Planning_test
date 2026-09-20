@@ -26,6 +26,7 @@ import {
     roomContour,
     roomVisualContour,
     contourBox,
+    nameOverlayPoint,
     pointInPolygon,
     hitTestContours,
 } from '../../resources/js/room-geometry.js';
@@ -112,6 +113,31 @@ test('progress marks sit under the pdf room name, even with a saved marker', () 
     const visual = labelVisualBox(box, '0.21 speellokaal');
     assert.ok(visual.w <= 0.04);
     assert.ok((visual.x + visual.w / 2) < box.x + 0.03);
+});
+
+test('room name overlay sits in the room center unless it was dragged', () => {
+    const area = {
+        marker: {
+            page: 1,
+            polygon: [
+                { x: 0.10, y: 0.20 },
+                { x: 0.30, y: 0.20 },
+                { x: 0.30, y: 0.40 },
+                { x: 0.10, y: 0.40 },
+            ],
+        },
+    };
+    const auto = nameOverlayPoint(area);
+    assert.equal(auto.manual, false);
+    assert.ok(Math.abs(auto.x - 0.20) < 0.0001);
+    assert.ok(Math.abs(auto.y - 0.30) < 0.0001);
+
+    const dragged = nameOverlayPoint({
+        marker: { ...area.marker, label_x: 0.18, label_y: 0.27 },
+    });
+    assert.equal(dragged.manual, true);
+    assert.equal(dragged.x, 0.18);
+    assert.equal(dragged.y, 0.27);
 });
 
 test('status dots sit under the room name, not at the wide click box', () => {

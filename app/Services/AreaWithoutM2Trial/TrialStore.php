@@ -79,6 +79,7 @@ class TrialStore
             'timing_labels' => is_array($result['timing_labels'] ?? null) ? $result['timing_labels'] : [],
             'geometry' => is_array($result['geometry'] ?? null) ? $result['geometry'] : [],
             'geometry_debug' => is_array($result['geometry_debug'] ?? null) ? $result['geometry_debug'] : [],
+            'page_pipeline' => is_array($result['page_pipeline'] ?? null) ? $result['page_pipeline'] : [],
             'created_at' => now()->toIso8601String(),
         ];
         Storage::disk('local')->put(
@@ -148,6 +149,7 @@ class TrialStore
             'timing_labels' => is_array($decoded['timing_labels'] ?? null) ? $decoded['timing_labels'] : [],
             'geometry' => is_array($decoded['geometry'] ?? null) ? $decoded['geometry'] : [],
             'geometry_debug' => is_array($decoded['geometry_debug'] ?? null) ? $decoded['geometry_debug'] : [],
+            'page_pipeline' => is_array($decoded['page_pipeline'] ?? null) ? $decoded['page_pipeline'] : [],
             'created_at' => isset($decoded['created_at']) ? (string) $decoded['created_at'] : null,
             'has_preview' => Storage::disk('local')->exists(self::DIRECTORY.'/'.$id.'/preview.png'),
         ];

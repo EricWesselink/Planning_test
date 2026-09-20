@@ -137,6 +137,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/calculaties/{calculation}/totalen', [CalculationController::class, 'totals'])->name('calculations.totals');
     Route::get('/calculaties/{calculation}/bronnen', [CalculationController::class, 'files'])->name('calculations.files');
     Route::patch('/calculaties/{calculation}/bord/ruimtes/{line}', [CalculationLineController::class, 'updateBoardRoom'])->name('calculations.board.rooms.update')->scopeBindings();
+    Route::post('/calculaties/{calculation}/bord/ruimtes', [CalculationLineController::class, 'storeBoardRoom'])->name('calculations.board.rooms.store');
     Route::post('/calculaties/{calculation}/bord/ruimtes/{line}/bevestigen', [CalculationLineController::class, 'confirmBoardRoom'])->name('calculations.board.rooms.confirm')->scopeBindings();
     Route::patch('/calculaties/{calculation}', [CalculationController::class, 'update'])->name('calculations.update');
     Route::delete('/calculaties/{calculation}', [CalculationController::class, 'destroy'])->name('calculations.destroy');

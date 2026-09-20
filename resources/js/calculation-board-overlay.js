@@ -3,14 +3,17 @@ import {
     clamp,
     contourBox,
     exactRoomHitForArea,
+    nameMatches,
     normalizeRoomNumber,
     roomFocusBox,
+    roomNumbersIn,
     roomVisualContour,
     storedJumpTarget,
     unionBoxes,
 } from './room-geometry.js';
 import {
     overlayContrast,
+    reviewKindClass,
     roomDrawingState,
     roomOverlayContent,
 } from './calculation-board-selection.js';
@@ -40,6 +43,79 @@ export function roomsForDrawing(rooms, drawingId) {
     }
 
     return (rooms || []).filter((room) => Number(room.drawing_id) === id);
+}
+
+export function finishChipViews(room, options = {}) {
+    if (options.materialCodes === false) {
+        return [{ ...room, chipIndex: 0 }];
+    }
+    const finishes = roomFinishes(room);
+    if (finishes.length > 1) {
+        return finishes.map((finish, index) => finishChipView(room, finish, index));
+    }
+    const codes = String(room?.floor_codes_label || '')
+        .split('+')
+        .map((part) => part.trim())
+        .filter(Boolean);
+    if (codes.length > 1) {
+        return codes.map((code, index) => finishChipView(room, {
+            code,
+            role: index === 0 ? 'main' : 'local',
+            material_key: code.toLowerCase(),
+            material_color: room.material_color,
+        }, index));
+    }
+    const code = codes[0] || finishes[0]?.code || room?.floor_code;
+    if (code) {
+        return [finishChipView(room, { ...(finishes[0] || {}), code }, 0)];
+    }
+
+    return [{ ...room, chipIndex: 0 }];
+}
+
+export function finishInterior(view) {
+    const overlay = view?.finishOverlay || null;
+    if (overlay && Number(overlay.w) > 0 && Number(overlay.h) > 0) {
+        return overlay;
+    }
+    const polygon = view?.finishMarker?.polygon;
+    if (Array.isArray(polygon) && polygon.length >= 3) {
+        return contourBox({ type: 'polygon', points: polygon });
+    }
+
+    return null;
+}
+
+function finishChipView(room, finish, index) {
+    const code = String(finish?.code || room?.floor_code || '').trim();
+    const chip = finish?.chip || (index === 0 ? room.chip : null);
+    let marker = room.marker;
+    if (chip) {
+        marker = {
+            page: Math.max(1, Number(chip.page) || Number(room.marker?.page) || 1),
+            x: Number(chip.x),
+            y: Number(chip.y),
+            width: 0,
+            height: 0,
+            source: 'user',
+        };
+    } else if (index > 0 && String(room.marker?.source || '') === 'user') {
+        marker = { ...room.marker, source: 'text' };
+    }
+
+    return {
+        ...room,
+        floor_code: code,
+        floor_codes_label: code,
+        material_key: finish?.material_key || code.toLowerCase(),
+        material_color: finish?.material_color || room.material_color,
+        chip,
+        marker,
+        finish_id: finish?.id ?? null,
+        chipIndex: index,
+        finishOverlay: finish?.overlay || null,
+        finishMarker: finish?.marker || null,
+    };
 }
 
 export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId, drawingLabel = '') {
@@ -85,13 +161,30 @@ export function roomsOnDrawing(rooms, drawingId, drawingLabel = '') {
     ));
 }
 
-export function placeBoardRooms(rooms, drawingId, hits, drawingLabel = '') {
+export function placeBoardRooms(rooms, drawingId, hits, drawingLabel = '', items = []) {
     const usable = usableLabelHits(hits);
-    roomsOnDrawing(rooms, drawingId, drawingLabel).forEach((room) => {
+    const drawingRooms = roomsOnDrawing(rooms, drawingId, drawingLabel);
+    const claimed = new Set();
+    namedRoomsFirst(drawingRooms).forEach((room) => {
         if (roomHasManualChip(room) || isDrawingAreaBox(boardChipBox(room))) {
             return;
         }
-        assignHit(room, pickRoomLabelHit(room, usable));
+        assignHit(room, pickExclusiveRoomHit(room, usable, items, claimed, drawingRooms));
+    });
+}
+
+function namedRoomsFirst(rooms) {
+    return [...(rooms || [])].sort((left, right) => {
+        const leftName = String(left?.name || '').trim();
+        const rightName = String(right?.name || '').trim();
+        if (leftName !== '' && rightName === '') {
+            return -1;
+        }
+        if (leftName === '' && rightName !== '') {
+            return 1;
+        }
+
+        return 0;
     });
 }
 
@@ -215,6 +308,77 @@ export function isPlanLabelHit(hits, hit) {
         w: Number(hit.w) || 0,
         h: Number(hit.h) || 0,
     });
+}
+
+export function pickExclusiveRoomHit(room, hits, items, claimed, siblings) {
+    const used = claimed instanceof Set ? claimed : new Set();
+    const wanted = normalizeRoomNumber(room?.number);
+    if (!wanted) {
+        return null;
+    }
+    const matches = (hits || []).filter((hit) => {
+        const number = normalizeRoomNumber(hit.number);
+
+        return (number === wanted || number === normalizeRoomNumber(room.number_raw))
+            && !used.has(labelHitKey(hit));
+    });
+    if (matches.length === 0) {
+        return null;
+    }
+    const named = pickHitNearRoomName(room, matches, items);
+    if (named) {
+        used.add(labelHitKey(named));
+
+        return named;
+    }
+    const preferred = pickRoomLabelHit(room, hits);
+    const chosen = preferred && matches.some((hit) => labelHitKey(hit) === labelHitKey(preferred))
+        ? preferred
+        : (matches[0] || null);
+    if (chosen) {
+        used.add(labelHitKey(chosen));
+    }
+
+    return chosen;
+}
+
+function labelHitKey(hit) {
+    return [
+        Number(hit?.page) || 1,
+        Number(hit?.x || 0).toFixed(4),
+        Number(hit?.y || 0).toFixed(4),
+        normalizeRoomNumber(hit?.number),
+    ].join('|');
+}
+
+function pickHitNearRoomName(room, matches, items) {
+    const name = String(room?.name || '').trim();
+    if (name === '' || !Array.isArray(items) || items.length === 0 || matches.length === 0) {
+        return null;
+    }
+    const page = Number(matches[0]?.page || room?.marker?.page || 1);
+    const words = name.split(/\s+/).filter((word) => word.length >= 3);
+    const nameItems = items.filter((item) => {
+        if (Number(item.page || page) !== page) {
+            return false;
+        }
+        const text = String(item.text || '');
+
+        return nameMatches(name, text) || words.some((word) => nameMatches(word, text));
+    });
+    if (nameItems.length === 0) {
+        return null;
+    }
+    const cx = nameItems.reduce((sum, item) => sum + Number(item.x || 0), 0) / nameItems.length;
+    const cy = nameItems.reduce((sum, item) => sum + Number(item.y || 0), 0) / nameItems.length;
+    const ranked = [...matches].sort((left, right) => {
+        const leftDist = Math.hypot(Number(left.x || 0) - cx, Number(left.y || 0) - cy);
+        const rightDist = Math.hypot(Number(right.x || 0) - cx, Number(right.y || 0) - cy);
+
+        return leftDist - rightDist;
+    });
+
+    return ranked[0] || null;
 }
 
 export function pickRoomLabelHit(room, hits) {
@@ -442,6 +606,86 @@ function isAreaLabelText(text) {
     return /m\s*[²2]/i.test(text) || /^\d+[.,]\d+\s*m/.test(text);
 }
 
+export function parseAreaQuantity(text) {
+    const source = String(text || '').replace(/\s+/g, ' ');
+    if (!isAreaLabelText(source) && !/m\s*[²2]/i.test(source)) {
+        return null;
+    }
+    const match = source.match(/(\d+[.,]\d+)/);
+    if (!match) {
+        return null;
+    }
+    const value = Number(match[1].replace(',', '.'));
+
+    return Number.isFinite(value) ? value : null;
+}
+
+function draftRoomNumber(text) {
+    const source = String(text || '').trim();
+    if (source === '' || isAreaLabelText(source)) {
+        return '';
+    }
+    const exact = normalizeRoomNumber(source);
+    if (/^[a-z]-\d{2}-\d{2}[a-z]?$/.test(exact) || /^[a-z]\.\d+\.\d+[a-z]?$/.test(exact)) {
+        return exact;
+    }
+    const found = roomNumbersIn(source);
+
+    return found.find((value) => /^[a-z]-\d{2}-\d{2}/.test(value) || /^[a-z]\.\d+\.\d+/.test(value))
+        || found.find((value) => /^\d+\.\d+[a-z]$/.test(value))
+        || '';
+}
+
+export function unplacedRoomDraft(items, point, page = 1) {
+    const px = Number(point?.x);
+    const py = Number(point?.y);
+    const list = (items || []).filter((item) => Number(item.page || page) === Number(page));
+    const numbered = [];
+    list.forEach((item) => {
+        const number = draftRoomNumber(item.text);
+        if (number === '') {
+            return;
+        }
+        numbered.push({
+            item,
+            number,
+            dist: Math.hypot(Number(item.x) - px, Number(item.y) - py),
+        });
+    });
+    numbered.sort((left, right) => left.dist - right.dist);
+    const chosen = numbered.find((entry) => entry.dist < 0.08) || null;
+    const origin = chosen?.item;
+    const ox = origin ? Number(origin.x) : px;
+    const oy = origin ? Number(origin.y) : py;
+    const near = list.filter((item) => (
+        Math.abs(Number(item.x) - ox) < 0.028
+        && Number(item.y) > oy - 0.10
+        && Number(item.y) < oy + 0.05
+    ));
+    const names = near
+        .filter((item) => isCaptionNameText(item.text, chosen?.number || ''))
+        .filter((item) => !/^v\d/i.test(String(item.text || '').trim()) && !/^p\s*\//i.test(String(item.text || '').trim()))
+        .sort((left, right) => Number(left.y) - Number(right.y) || Number(left.x) - Number(right.x));
+    const uniqueNames = [];
+    names.forEach((item) => {
+        const text = String(item.text || '').trim().replace(/\s+/g, ' ');
+        if (text !== '' && !uniqueNames.includes(text)) {
+            uniqueNames.push(text);
+        }
+    });
+    const m2Item = near.find((item) => parseAreaQuantity(item.text) != null);
+    const quantity = m2Item ? parseAreaQuantity(m2Item.text) : null;
+
+    return {
+        number: chosen?.number || '',
+        name: uniqueNames.join(' '),
+        quantity,
+        x: Number.isFinite(px) ? clamp(px) : 0,
+        y: Number.isFinite(py) ? clamp(py) : 0,
+        page: Number(page) || 1,
+    };
+}
+
 function isCaptionNameText(text, number) {
     const value = String(text || '').trim().toUpperCase().replace(/\s+/g, ' ');
     if (value === '' || value.length > 28) {
@@ -558,11 +802,11 @@ export function chipAnchorInRoom(room, options = {}) {
         if (caption && captionIsInFloor(caption, floor)) {
             const clipped = intersectBoxes(glue, bounds) || glue;
 
-            return pointBox(captionChipPoint(caption, chip, clipped));
+            return stackedPointBox(captionChipPoint(caption, chip, clipped), options, text);
         }
         const preferred = preferredChipPoint(floor, inset);
 
-        return pointBox(inset.degenerate ? boxCenter(floor) : preferred);
+        return stackedPointBox(inset.degenerate ? boxCenter(floor) : preferred, options, text);
     }
     if (caption) {
         const obstacles = options.bounds
@@ -570,7 +814,7 @@ export function chipAnchorInRoom(room, options = {}) {
             || captionRoomBounds(room, neighbors, caption, items, chip);
         const bounds = intersectBoxes(glue, obstacles) || glue;
 
-        return pointBox(captionChipPoint(caption, chip, bounds));
+        return stackedPointBox(captionChipPoint(caption, chip, bounds), options, text);
     }
     const fallback = tightGlyphBox(room.marker || storedJumpTarget(room)?.box);
     if (!fallback) {
@@ -582,12 +826,20 @@ export function chipAnchorInRoom(room, options = {}) {
         w: fallback.w + 0.02,
         h: fallback.h + 0.016,
     });
+
+    return stackedPointBox(point, options, text);
+}
+
+function stackedPointBox(point, options = {}, text = '') {
+    const box = pointBox(point);
     const index = Math.max(0, Number(options.index) || 0);
     if (index === 0) {
-        return pointBox(point);
+        return box;
     }
+    const chip = chipHalfSizeForText(text);
+    const step = (chip.w * 2) + 0.005;
 
-    return pointBox({ x: point.x, y: point.y + (index * Math.max(chip.h * 2.4, 0.007)) });
+    return { ...box, x: box.x + (index * step) };
 }
 
 function pointBox(point) {
@@ -1000,19 +1252,29 @@ export function overlayRoomsOnPage(rooms, drawingId, page, drawingLabel = '') {
 }
 
 export function overlayPlan(rooms, drawingId, page, options = {}) {
-    return overlayRoomsOnPage(rooms, drawingId, page, options.drawingLabel).map((room) => ({
-        key: room.key,
-        number: room.number,
-        drawing_id: Number(room.drawing_id),
-        box: roomLabelAnchor(room),
-        chip: chipAnchorInRoom(room, { ...options, rooms, items: options.items }),
-        text: overlayChipText(room, options),
-        colored: Boolean(options.colored),
-        fill: options.colored ? printFillContour(room) : null,
-        source: isPlausibleRoomBox(contourBox(roomTraceContour(room)))
-            ? 'contour'
-            : (room.marker?.source || room.jump_target?.geometry || 'label'),
-    }));
+    return overlayRoomsOnPage(rooms, drawingId, page, options.drawingLabel).flatMap((room) => (
+        finishChipViews(room, options).map((view) => ({
+            key: view.finish_id ? `${room.key}:${view.finish_id}` : `${room.key}:${view.chipIndex}:${view.floor_code}`,
+            number: room.number,
+            drawing_id: Number(room.drawing_id),
+            box: roomLabelAnchor(room),
+            chip: chipAnchorInRoom(view, {
+                ...options,
+                rooms,
+                items: options.items,
+                text: overlayChipText(view, options),
+                index: finishInterior(view) ? 0 : view.chipIndex,
+                interior: finishInterior(view) || undefined,
+            }),
+            text: overlayChipText(view, options),
+            color: view.material_color,
+            colored: Boolean(options.colored),
+            fill: options.colored ? printFillContour(room) : null,
+            source: isPlausibleRoomBox(contourBox(roomTraceContour(room)))
+                ? 'contour'
+                : (room.marker?.source || room.jump_target?.geometry || 'label'),
+        }))
+    ));
 }
 
 export function printDrawingSheets(drawings) {
@@ -1054,7 +1316,10 @@ export function printedMaterialCodes(room) {
 export function mergePrintRoomChips(rooms) {
     const groups = new Map();
     (rooms || []).forEach((room) => {
-        const key = normalizeRoomNumber(room.number) || `id:${room.key}`;
+        const key = [
+            normalizeRoomNumber(room.number),
+            String(room.name || '').trim().toLowerCase().replace(/\s+/g, ' '),
+        ].filter(Boolean).join('|') || `id:${room.key}`;
         const current = groups.get(key) || [];
         current.push(room);
         groups.set(key, current);
@@ -1345,20 +1610,24 @@ export function paintCalculationOverlays({
                 appendFill(hitEl, { ...room, material_color: room.material_color }, fillContour, state, onRoomPointer);
             }
         }
-        const chipBox = chipAnchorInRoom(room, {
-            roomLabels,
-            materialCodes,
-            text: overlayChipText(room, { roomLabels, materialCodes }),
-            rooms,
-            items,
-        }) || box;
-        appendCodeChip(markersEl, room, chipBox, state, {
-            roomLabels,
-            materialCodes,
-            chipTag,
-            chipTransform,
-            onRoomPointer,
-            showChips,
+        finishChipViews(room, { roomLabels, materialCodes }).forEach((view) => {
+            const chipBox = chipAnchorInRoom(view, {
+                roomLabels,
+                materialCodes,
+                text: overlayChipText(view, { roomLabels, materialCodes }),
+                rooms,
+                items,
+                index: finishInterior(view) ? 0 : view.chipIndex,
+                interior: finishInterior(view) || undefined,
+            }) || box;
+            appendCodeChip(markersEl, view, chipBox, state, {
+                roomLabels,
+                materialCodes,
+                chipTag,
+                chipTransform,
+                onRoomPointer,
+                showChips,
+            });
         });
     });
 }
@@ -1400,9 +1669,7 @@ function appendFill(hitEl, room, contour, state, onRoomPointer) {
         if (state.filteredOut) {
             classes.push('is-filtered-out');
         }
-        if (room.needs_review) {
-            classes.push('is-review');
-        }
+        classes.push(reviewKindClass(room));
         shape.setAttribute('class', classes.join(' '));
         shape.dataset.roomKey = String(room.key);
         if (state.highlighted || state.selected) {
@@ -1450,7 +1717,7 @@ function appendCodeChip(markersEl, room, box, state, options) {
     if (chip.tagName === 'BUTTON') {
         chip.type = 'button';
     }
-    chip.className = 'calc-code-chip';
+    chip.className = `calc-code-chip ${reviewKindClass(room)}`;
     if (state.selected) {
         chip.classList.add('is-on');
     }

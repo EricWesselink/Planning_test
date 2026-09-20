@@ -4,7 +4,6 @@ import {
     assessTextLayer,
     clamp,
     contourBox,
-    exactRoomHitForArea,
     focusViewport,
     hitTestContours,
     hitTestLabels,
@@ -19,18 +18,23 @@ import {
 } from './pdf-text-layer';
 import {
     localAreaPatchBody,
+    isDoubleActivation,
+    legendMaterialChoices,
+    materialChoicePatch,
     materialFillBox,
     materialLabel,
     needsLocalAreaInput,
     overlayContrast,
     qtyInput,
+    reviewKindClass,
+    reviewKindOf,
     roomDrawingState,
     roomMatchesFilter,
     roomMatchesMaterials,
     roomMatchesSearch,
     roomOverlayContent,
 } from './calculation-board-selection';
-import { chipAnchorInRoom, attachRoomCaptions, applyStoredChips } from './calculation-board-overlay';
+import { chipAnchorInRoom, attachRoomCaptions, applyStoredChips, finishChipViews, finishInterior, unplacedRoomDraft, pickExclusiveRoomHit } from './calculation-board-overlay';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -63,6 +67,10 @@ function boot() {
     let dragging = false;
     let dragMoved = false;
     let dragStart = null;
+    let lastActivate = { key: '', at: 0 };
+    let lastEmptyClick = { at: 0, x: 0, y: 0 };
+    let pageItems = [];
+    let creatingPoint = null;
     let selectToken = 0;
     const MIN_ZOOM = 0.4;
     const MAX_ZOOM = 4;
@@ -161,6 +169,54 @@ function boot() {
         on?.scrollIntoView({ block: 'nearest' });
     }
 
+    function bindRoomRow(row) {
+        row.addEventListener('click', () => {
+            const room = roomByKey(row.dataset.roomKey);
+            if (!room) {
+                return;
+            }
+            if (consumeDoubleActivate(room)) {
+                openMaterialDialog(room);
+                return;
+            }
+            selectRoom(room.key);
+        });
+        row.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            const room = roomByKey(row.dataset.roomKey);
+            if (room) {
+                openMaterialDialog(room);
+            }
+        });
+    }
+
+    function appendRoomRow(room) {
+        const list = root.querySelector('.board-left .overflow-auto');
+        if (!list || !room?.key) {
+            return;
+        }
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `room-row calc-room-row ${reviewKindClass(room)}`;
+        row.dataset.roomKey = String(room.key);
+        row.dataset.drawingId = String(room.drawing_id || '');
+        row.dataset.review = room.needs_review ? '1' : '0';
+        row.dataset.reviewKind = room.review_kind || reviewKindOf(room);
+        row.dataset.floor = room.has_floor ? '1' : '0';
+        row.dataset.plinth = room.has_plinth ? '1' : '0';
+        row.dataset.material = room.material_key || '';
+        row.dataset.search = room.search || '';
+        row.style.setProperty('--material-color', room.material_color || '');
+        row.style.setProperty('--material-color-soft', room.material_color_soft || '');
+        row.innerHTML = `<span class="room-num"></span><span class="room-name"></span><span class="room-m2"></span><span class="room-code"></span>`;
+        row.querySelector('.room-num').textContent = room.number || '—';
+        row.querySelector('.room-name').textContent = room.name || '—';
+        row.querySelector('.room-m2').textContent = room.m2_label || '—';
+        row.querySelector('.room-code').textContent = room.floor_codes_label || room.floor_code || '—';
+        bindRoomRow(row);
+        list.append(row);
+    }
+
     function assignHit(room, hit) {
         if (!hit) {
             return;
@@ -208,13 +264,25 @@ function boot() {
             hits.push(...assessTextLayer(items, known).hits);
             finishItems.push(...items);
         }
-        rooms.filter((room) => Number(room.drawing_id) === Number(drawingId)).forEach((room) => {
+        pageItems = finishItems;
+        const drawingRooms = rooms.filter((room) => Number(room.drawing_id) === Number(drawingId));
+        const claimed = new Set();
+        [...drawingRooms].sort((left, right) => {
+            const leftName = String(left.name || '').trim();
+            const rightName = String(right.name || '').trim();
+            if (leftName !== '' && rightName === '') {
+                return -1;
+            }
+            if (leftName === '' && rightName !== '') {
+                return 1;
+            }
+
+            return 0;
+        }).forEach((room) => {
             if (room.marker?.source === 'user') {
                 return;
             }
-            const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
-                || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
-            assignHit(room, hit);
+            assignHit(room, pickExclusiveRoomHit(room, hits, finishItems, claimed, drawingRooms));
         });
         attachRoomCaptions(
             rooms.filter((room) => Number(room.drawing_id) === Number(drawingId)),
@@ -335,6 +403,17 @@ function boot() {
         return { type: 'box', box: padded, room };
     }
 
+    function consumeDoubleActivate(room) {
+        const now = Date.now();
+        const doubled = isDoubleActivation(lastActivate, room?.key, now);
+        lastActivate = { key: String(room?.key || ''), at: now };
+        if (doubled) {
+            lastActivate = { key: '', at: 0 };
+        }
+
+        return doubled;
+    }
+
     function bindOverlayPointer(el, room) {
         el.addEventListener('pointerdown', (event) => {
             event.stopPropagation();
@@ -343,7 +422,17 @@ function boot() {
             event.preventDefault();
             event.stopPropagation();
             hideTip();
+            if (consumeDoubleActivate(room)) {
+                openMaterialDialog(room);
+                return;
+            }
             selectRoom(room.key, { keepView: true });
+        });
+        el.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            hideTip();
+            openMaterialDialog(room);
         });
         el.addEventListener('mouseenter', (event) => showTip(room, event));
         el.addEventListener('mousemove', (event) => showTip(room, event));
@@ -372,9 +461,7 @@ function boot() {
         if (state.filteredOut) {
             classes.push('is-filtered-out');
         }
-        if (room.needs_review) {
-            classes.push('is-review');
-        }
+        classes.push(reviewKindClass(room));
         shape.setAttribute('class', classes.join(' '));
         shape.dataset.roomKey = String(room.key);
         shape.style.fill = 'transparent';
@@ -385,24 +472,28 @@ function boot() {
 
     function appendCodeChip(room, box, state) {
         const content = roomOverlayContent(room);
-        if (!content.code || (!state.highlighted && !state.selected)) {
+        if (!state.highlighted && !state.selected) {
             return;
         }
+        const hasCode = Boolean(content.code);
         const contrast = overlayContrast(room.material_color);
         const chip = document.createElement('button');
         chip.type = 'button';
-        chip.className = 'calc-code-chip';
+        chip.className = `calc-code-chip ${reviewKindClass(room)}`;
         if (state.selected) {
             chip.classList.add('is-on');
         }
-        chip.textContent = content.code;
+        if (!hasCode) {
+            chip.classList.add('is-empty');
+        }
+        chip.textContent = content.code || '+';
         chip.dataset.roomKey = String(room.key);
         chip.style.left = `${((Number(box.x) || 0) + (Number(box.w) || 0) / 2) * 100}%`;
         chip.style.top = `${((Number(box.y) || 0) + (Number(box.h) || 0) / 2) * 100}%`;
         chip.style.transform = codeChipTransform();
-        chip.style.background = contrast.bg;
-        chip.style.color = contrast.fg;
-        chip.title = content.title;
+        chip.style.background = hasCode ? contrast.bg : '#fff';
+        chip.style.color = hasCode ? contrast.fg : '#1c1917';
+        chip.title = `${content.title || 'Ruimte'} · Dubbelklik om materiaal te kiezen`;
         bindChipPointer(chip, room);
         markersEl.append(chip);
     }
@@ -410,6 +501,7 @@ function boot() {
     function bindChipPointer(chip, room) {
         let draggingChip = false;
         let moved = false;
+        let chipOrigin = null;
         chip.addEventListener('pointerdown', (event) => {
             event.stopPropagation();
             if (event.button !== 0 || !data.can_update) {
@@ -417,16 +509,18 @@ function boot() {
             }
             draggingChip = true;
             moved = false;
+            chipOrigin = { x: event.clientX, y: event.clientY };
             chip.setPointerCapture(event.pointerId);
         });
         chip.addEventListener('pointermove', (event) => {
             if (!draggingChip) {
                 return;
             }
-            const point = toNorm(event);
-            if (!moved) {
-                moved = true;
+            if (!moved && chipOrigin && Math.hypot(event.clientX - chipOrigin.x, event.clientY - chipOrigin.y) < 4) {
+                return;
             }
+            moved = true;
+            const point = toNorm(event);
             chip.style.left = `${point.x * 100}%`;
             chip.style.top = `${point.y * 100}%`;
         });
@@ -435,25 +529,37 @@ function boot() {
                 return;
             }
             draggingChip = false;
-            event.preventDefault();
             event.stopPropagation();
             if (!moved) {
                 hideTip();
+                const current = roomByKey(room.key) || room;
+                if (consumeDoubleActivate(current)) {
+                    openMaterialDialog(current, room.finish_id);
+                    return;
+                }
                 selectRoom(room.key, { keepView: true });
                 return;
             }
+            event.preventDefault();
             const point = toNorm(event);
             saveRoom(room, {
                 chip: {
                     x: point.x,
                     y: point.y,
                     page: Math.max(1, Number(room.marker?.page || page)),
+                    finish_id: room.finish_id || undefined,
                 },
             }, 'Positie opgeslagen.');
         });
         chip.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
+        });
+        chip.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            hideTip();
+            openMaterialDialog(roomByKey(room.key) || room, room.finish_id);
         });
         chip.addEventListener('mouseenter', (event) => showTip(room, event));
         chip.addEventListener('mousemove', (event) => showTip(room, event));
@@ -480,8 +586,9 @@ function boot() {
                 return;
             }
             const finishes = roomFinishes(room);
-            finishes.forEach((finish) => {
-                const finishOn = materialSet.size === 0 || materialSet.has(String(finish.material_key || '').toLowerCase());
+            finishChipViews(room).forEach((view, index) => {
+                const finish = finishes[index] || { code: view.floor_code, material_color: view.material_color, role: index === 0 ? 'main' : 'local' };
+                const finishOn = materialSet.size === 0 || materialSet.has(String(finish.material_key || view.material_key || '').toLowerCase());
                 if (!finishOn && !state.selected) {
                     return;
                 }
@@ -498,24 +605,19 @@ function boot() {
                 } else if (isLocal && finish.overlay) {
                     finishContour = { type: 'box', box: finish.overlay, room };
                 } else if (isLocal) {
-                    return;
+                    finishContour = null;
                 }
-                appendFill({ ...room, material_color: finish.material_color || room.material_color }, finishContour, finishState);
-                if (isLocal) {
-                    const localBox = contourBox(finishContour);
-                    if (localBox) {
-                        appendCodeChip({
-                            ...room,
-                            floor_code: finish.code,
-                            floor_codes_label: finish.code,
-                            material_color: finish.material_color || room.material_color,
-                        }, chipAnchorInRoom(room, { interior: localBox, text: finish.code }) || localBox, { ...finishState, highlighted: true });
-                    }
+                if (finishContour) {
+                    appendFill({ ...room, material_color: finish.material_color || room.material_color }, finishContour, finishState);
                 }
+                const chipBox = chipAnchorInRoom(view, {
+                    text: view.floor_codes_label || finish.code,
+                    rooms,
+                    index: finishInterior(view) ? 0 : view.chipIndex,
+                    interior: finishInterior(view) || undefined,
+                }) || box;
+                appendCodeChip(view, chipBox, { ...finishState, highlighted: true });
             });
-            if (finishes.length <= 1 || materialSet.size === 0 || materialSet.has(String(room.material_key || '').toLowerCase())) {
-                appendCodeChip(room, chipAnchorInRoom(room, { text: roomOverlayContent(room).code, rooms }) || box, state);
-            }
         });
         applyTransform();
     }
@@ -745,8 +847,8 @@ function boot() {
                 label: [room.plinth_product, room.plinth_code].filter(Boolean).join(' ') || 'Plint',
                 progress_label: room.plinth_quantity_label || '',
                 quantity_label: room.plinth_quantity_label || '',
-                display_color: '#65a30d',
-                display_color_soft: 'rgba(101, 163, 13, 0.14)',
+                display_color: '#f38400',
+                display_color_soft: 'rgba(243, 132, 0, 0.14)',
                 color_key: 'plinten',
                 status_label: room.status_label || '',
             });
@@ -794,12 +896,28 @@ function boot() {
         if (m2El) {
             m2El.textContent = room?.m2_label || '';
         }
+        const kindEl = document.getElementById('room-review-kind');
+        if (kindEl) {
+            const kind = room ? reviewKindOf(room) : '';
+            kindEl.hidden = !room;
+            kindEl.textContent = room?.review_kind_label || '';
+            kindEl.className = `room-review-kind${kind ? ` is-${kind}` : ''}`;
+        }
+        const materialLine = document.getElementById('room-material-line');
+        if (materialLine) {
+            const code = room ? (room.floor_codes_label || room.floor_code || '') : '';
+            const product = room?.floor_product || '';
+            materialLine.textContent = room
+                ? [code || '—', product].filter(Boolean).join(' · ')
+                : '';
+        }
         const status = document.getElementById('room-progress-label') || document.getElementById('room-status');
         if (status) {
             status.textContent = room
                 ? (room.progress ? `${room.progress} · ${room.status_label || ''}` : (room.status_label || ''))
                 : '';
-            status.className = `text-sm ${room?.needs_review ? 'text-nicon-warn' : (room ? 'text-nicon-ok' : '')}`;
+            const kind = room ? reviewKindOf(room) : '';
+            status.className = `text-sm ${kind === 'review' ? 'text-nicon-warn' : (kind === 'manual' ? 'text-nicon-ink' : (room ? 'text-nicon-ok' : ''))}`;
         }
         setRoomProgressBar(
             room?.total ? Math.round((Number(room.done || 0) / Number(room.total)) * 100) : 0,
@@ -819,7 +937,7 @@ function boot() {
         form.room_number.value = room.number || '';
         form.room_name.value = room.name || '';
         form.floor_quantity.value = qtyInput(room.floor_quantity);
-        fillFloorCodeSelect(room);
+        fillMaterialPicker(room);
         form.floor_product.value = room.floor_product || '';
         form.plinth_code.value = room.plinth_code || '';
         form.plinth_product.value = room.plinth_product || '';
@@ -872,55 +990,334 @@ function boot() {
         setError('');
     }
 
-    function fillFloorCodeSelect(room) {
-        const select = form?.floor_code;
-        if (!select || select.tagName !== 'SELECT') {
-            if (select) {
-                select.value = room.floor_code || '';
+    function fillMaterialPicker(room) {
+        if (form?.floor_code) {
+            form.floor_code.value = room.floor_code || '';
+        }
+        const label = document.getElementById('calc-open-material-label');
+        const swatch = document.getElementById('calc-open-material-swatch');
+        const code = String(room.floor_codes_label || room.floor_code || '').trim();
+        const product = String(room.floor_product || '').trim();
+        if (label) {
+            label.textContent = code
+                ? [code, product].filter(Boolean).join(' · ')
+                : 'Materiaal kiezen';
+        }
+        if (swatch) {
+            swatch.hidden = !room.material_color;
+            if (room.material_color) {
+                swatch.style.background = room.material_color;
+            }
+        }
+    }
+
+    function openMaterialDialog(room, finishId) {
+        const dialog = document.getElementById('calc-material-dialog');
+        if (!dialog || !room) {
+            return;
+        }
+        creatingPoint = null;
+        dialog.dataset.create = '';
+        setCreateFields(false);
+        const target = roomByKey(room.key) || room;
+        if (String(selectedKey) !== String(target.key)) {
+            selectRoom(target.key, { keepView: true });
+        }
+        const finishes = roomFinishes(target);
+        const finish = finishes.find((item) => Number(item.id) === Number(finishId)) || finishes[0] || null;
+        dialog.dataset.roomKey = String(target.key || '');
+        dialog.dataset.finishId = finish?.id ? String(finish.id) : '';
+        const roomEl = document.getElementById('calc-material-dialog-room');
+        if (roomEl) {
+            roomEl.textContent = `${target.number || '—'} ${target.name || ''}`.trim();
+        }
+        const m2El = document.getElementById('calc-material-dialog-m2');
+        if (m2El) {
+            const area = finish?.quantity_label || target.m2_label || 'geen m² gevonden';
+            m2El.textContent = `Oppervlakte: ${area}`;
+        }
+        fillMaterialChoiceList(dialog, {
+            code: String(finish?.code || target.floor_code || '').toLowerCase(),
+            product: finish?.product || target.floor_product || '',
+            color: finish?.material_color || target.material_color || '',
+        });
+        revealMaterialDialog(dialog);
+    }
+
+    function setCreateFields(visible, draft = null) {
+        const wrap = document.getElementById('calc-material-dialog-create');
+        wrap?.toggleAttribute('hidden', !visible);
+        const m2El = document.getElementById('calc-material-dialog-m2');
+        if (m2El) {
+            m2El.hidden = Boolean(visible);
+        }
+        const title = document.getElementById('calc-material-dialog-title');
+        if (title) {
+            title.textContent = visible ? 'Ruimte aanmaken' : 'Materiaal kiezen';
+        }
+        if (!visible) {
+            return;
+        }
+        const numberInput = document.getElementById('calc-create-number');
+        const nameInput = document.getElementById('calc-create-name');
+        const qtyField = document.getElementById('calc-create-m2');
+        if (numberInput) {
+            numberInput.value = draft?.number || '';
+        }
+        if (nameInput) {
+            nameInput.value = draft?.name || '';
+        }
+        if (qtyField) {
+            qtyField.value = draft?.quantity == null ? '' : qtyInput(draft.quantity);
+        }
+    }
+
+    function fillMaterialChoiceList(dialog, current) {
+        const currentCode = String(current?.code || '').toLowerCase();
+        const choices = legendMaterialChoices([...legend, ...materials], current);
+        const list = document.getElementById('calc-material-dialog-list');
+        const empty = document.getElementById('calc-material-dialog-empty');
+        empty?.toggleAttribute('hidden', choices.length > 0);
+        const codeInput = document.getElementById('calc-material-code');
+        const productInput = document.getElementById('calc-material-product');
+        if (codeInput) {
+            codeInput.value = currentCode;
+        }
+        if (productInput) {
+            productInput.value = current?.product || '';
+        }
+        if (!list) {
+            return;
+        }
+        list.replaceChildren();
+        choices.forEach((entry) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'calc-material-choice';
+            if (entry.code === currentCode) {
+                button.classList.add('is-on');
+            }
+            const contrast = overlayContrast(entry.color || current?.color);
+            const mark = document.createElement('i');
+            mark.className = 'calc-swatch';
+            mark.style.background = contrast.bg;
+            const codeEl = document.createElement('span');
+            codeEl.className = 'calc-material-choice-code';
+            codeEl.textContent = entry.code;
+            const productEl = document.createElement('span');
+            productEl.className = 'calc-material-choice-product';
+            productEl.textContent = entry.product || '—';
+            button.append(mark, codeEl, productEl);
+            button.addEventListener('click', () => {
+                if (dialog.dataset.create === '1') {
+                    if (codeInput) {
+                        codeInput.value = entry.code;
+                    }
+                    if (productInput) {
+                        productInput.value = entry.product || '';
+                    }
+                    list.querySelectorAll('.calc-material-choice').forEach((item) => item.classList.toggle('is-on', item === button));
+                    return;
+                }
+                pickMaterial(entry.code, entry.product);
+            });
+            list.append(button);
+        });
+    }
+
+    function roomByNumberOnDrawing(number, name = '') {
+        const needle = normalizeRoomNumber(number);
+        if (!needle) {
+            return null;
+        }
+        const matches = rooms.filter((room) => (
+            Number(room.drawing_id) === Number(drawingId)
+            && normalizeRoomNumber(room.number) === needle
+        ));
+        const nameNeedle = String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (nameNeedle !== '') {
+            const named = matches.find((room) => (
+                String(room.name || '').trim().toLowerCase().replace(/\s+/g, ' ') === nameNeedle
+            ));
+            if (named) {
+                return named;
+            }
+            const hasOtherName = matches.some((room) => {
+                const current = String(room.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+                return current !== '' && current !== nameNeedle;
+            });
+            if (hasOtherName) {
+                return null;
+            }
+        }
+
+        return matches.length === 1 ? matches[0] : null;
+    }
+
+    function consumeEmptyDouble(point) {
+        const now = Date.now();
+        const doubled = (now - lastEmptyClick.at) < 450
+            && Math.hypot(point.x - lastEmptyClick.x, point.y - lastEmptyClick.y) < 0.035;
+        lastEmptyClick = { at: now, x: point.x, y: point.y };
+
+        return doubled;
+    }
+
+    function openCreateRoomDialog(point) {
+        if (!data.can_update) {
+            return;
+        }
+        const draft = unplacedRoomDraft(pageItems, point, page);
+        const existing = roomByNumberOnDrawing(draft.number, draft.name);
+        creatingPoint = { x: draft.x, y: draft.y, page: draft.page || page };
+        const dialog = document.getElementById('calc-material-dialog');
+        if (!dialog) {
+            return;
+        }
+        if (existing) {
+            dialog.dataset.create = '1';
+            dialog.dataset.roomKey = String(existing.key || '');
+            dialog.dataset.finishId = '';
+            const roomEl = document.getElementById('calc-material-dialog-room');
+            if (roomEl) {
+                roomEl.textContent = `${existing.number || '—'} ${existing.name || ''}`.trim();
+            }
+            setCreateFields(true, {
+                number: existing.number || draft.number,
+                name: existing.name || draft.name,
+                quantity: existing.floor_quantity ?? draft.quantity,
+            });
+            fillMaterialChoiceList(dialog, {
+                code: String(existing.floor_code || '').toLowerCase(),
+                product: existing.floor_product || '',
+                color: existing.material_color || '',
+            });
+            revealMaterialDialog(dialog);
+            return;
+        }
+        dialog.dataset.create = '1';
+        dialog.dataset.roomKey = '';
+        dialog.dataset.finishId = '';
+        const roomEl = document.getElementById('calc-material-dialog-room');
+        if (roomEl) {
+            roomEl.textContent = 'Niet herkende ruimte';
+        }
+        setCreateFields(true, draft);
+        fillMaterialChoiceList(dialog, { code: '', product: '' });
+        revealMaterialDialog(dialog);
+    }
+
+    function revealMaterialDialog(dialog) {
+        if (!dialog) {
+            return;
+        }
+        if (typeof dialog.showModal === 'function') {
+            if (!dialog.open) {
+                dialog.showModal();
             }
             return;
         }
-        const current = String(room.floor_code || '').toLowerCase();
-        const options = [];
-        const seen = new Set();
-        const addOption = (entry) => {
-            const code = String(entry?.code || '').toLowerCase();
-            if (code === '' || seen.has(code)) {
-                return;
-            }
-            seen.add(code);
-            options.push({
-                code,
-                product: entry.product || '',
-                label: entry.label || [entry.code, entry.product].filter(Boolean).join(' – '),
-            });
-        };
-        legend.forEach(addOption);
-        materials.forEach((entry) => {
-            const code = String(entry.code || '').toLowerCase();
-            if (code.startsWith('v')) {
-                addOption(entry);
-            }
-        });
-        if (current !== '' && !seen.has(current)) {
-            addOption({
-                code: current,
-                product: room.floor_product || '',
-                label: [room.floor_code, room.floor_product].filter(Boolean).join(' – '),
-            });
+        dialog.setAttribute('open', '');
+    }
+
+    async function pickMaterial(code, product) {
+        const dialog = document.getElementById('calc-material-dialog');
+        const room = roomByKey(dialog?.dataset.roomKey || selectedKey);
+        if (!room?.id || !data.can_update) {
+            dialog?.close();
+            return;
         }
-        select.replaceChildren();
-        const empty = document.createElement('option');
-        empty.value = '';
-        empty.textContent = 'Kies uit legenda';
-        select.append(empty);
-        options.forEach((entry) => {
-            const option = document.createElement('option');
-            option.value = entry.code;
-            option.textContent = entry.label;
-            select.append(option);
+        const chosenProduct = product || legendProductFor(code);
+        if (form?.floor_code && !dialog?.dataset.finishId) {
+            form.floor_code.value = code;
+        }
+        if (form?.floor_product && chosenProduct && !dialog?.dataset.finishId) {
+            form.floor_product.value = chosenProduct;
+        }
+        await saveRoom(room, materialChoicePatch(room, {
+            code,
+            product: chosenProduct,
+            finishId: dialog?.dataset.finishId,
+        }), 'Materiaal opgeslagen.');
+        dialog?.close();
+    }
+
+    function applyTypedMaterial() {
+        const dialog = document.getElementById('calc-material-dialog');
+        if (dialog?.dataset.create === '1') {
+            createBoardRoomFromDialog();
+            return;
+        }
+        const code = String(document.getElementById('calc-material-code')?.value || '').trim();
+        const product = String(document.getElementById('calc-material-product')?.value || '').trim();
+        if (code === '') {
+            setError('Vul een materiaalcode in.');
+            return;
+        }
+        setError('');
+        pickMaterial(code, product || legendProductFor(code));
+    }
+
+    async function createBoardRoomFromDialog() {
+        const dialog = document.getElementById('calc-material-dialog');
+        if (!data.can_update || !data.routes?.create_room || !drawingId) {
+            return;
+        }
+        const number = String(document.getElementById('calc-create-number')?.value || '').trim();
+        const name = String(document.getElementById('calc-create-name')?.value || '').trim();
+        const quantity = String(document.getElementById('calc-create-m2')?.value || '').trim();
+        const code = String(document.getElementById('calc-material-code')?.value || '').trim();
+        const product = String(document.getElementById('calc-material-product')?.value || '').trim();
+        if (code === '') {
+            setError('Kies of vul een materiaalcode in.');
+            return;
+        }
+        if (quantity === '') {
+            setError('Vul de oppervlakte in m² in.');
+            return;
+        }
+        if (number === '' && name === '') {
+            setError('Vul een ruimtenummer of ruimtenaam in.');
+            return;
+        }
+        setError('');
+        const point = creatingPoint || { x: 0.5, y: 0.5, page };
+        const response = await fetch(data.routes.create_room, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': csrf,
+            },
+            body: JSON.stringify({
+                document_id: drawingId,
+                page: Math.max(1, Number(point.page || page)),
+                room_number: number,
+                room_name: name,
+                floor_code: code,
+                floor_product: product || legendProductFor(code),
+                floor_quantity: quantity,
+                chip: {
+                    x: clamp(point.x),
+                    y: clamp(point.y),
+                    page: Math.max(1, Number(point.page || page)),
+                },
+            }),
         });
-        select.value = current;
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            setError(payload.message || Object.values(payload.errors || {}).flat().join(' ') || 'Aanmaken mislukt.');
+            return;
+        }
+        if (payload.room) {
+            payload.room.materials = payload.materials;
+            applyRoomUpdate(payload.room);
+            creatingPoint = null;
+            dialog?.close();
+            setMessage('Ruimte aangemaakt.');
+            selectRoom(payload.room.key, { keepView: true });
+        }
     }
 
     function legendProductFor(code) {
@@ -1011,8 +1408,8 @@ function boot() {
                         page: Math.max(1, Number(next.chip.page) || Number(previous.marker?.page) || 1),
                         x: Number(next.chip.x),
                         y: Number(next.chip.y),
-                        width: 0,
-                        height: 0,
+                        width: 0.04,
+                        height: 0.02,
                         source: 'user',
                     }
                     : (previous.chip?.manual && !next.chip
@@ -1021,7 +1418,7 @@ function boot() {
                 jump_target: next.chip?.manual
                     ? {
                         page: Math.max(1, Number(next.chip.page) || 1),
-                        bbox: { x: Number(next.chip.x), y: Number(next.chip.y), w: 0, h: 0 },
+                        bbox: { x: Number(next.chip.x), y: Number(next.chip.y), w: 0.04, h: 0.02 },
                         geometry: 'label',
                     }
                     : previous.jump_target,
@@ -1031,14 +1428,39 @@ function boot() {
                     return { ...finish, marker: prior?.marker || finish.marker };
                 }),
             };
+        } else {
+            rooms.push({
+                ...next,
+                marker: next.chip?.manual
+                    ? {
+                        page: Math.max(1, Number(next.chip.page) || page),
+                        x: Number(next.chip.x),
+                        y: Number(next.chip.y),
+                        width: 0.04,
+                        height: 0.02,
+                        source: 'user',
+                    }
+                    : next.marker,
+                jump_target: next.chip?.manual
+                    ? {
+                        page: Math.max(1, Number(next.chip.page) || page),
+                        bbox: { x: Number(next.chip.x), y: Number(next.chip.y), w: 0.04, h: 0.02 },
+                        geometry: 'label',
+                    }
+                    : next.jump_target,
+                has_position: Boolean(next.chip?.manual),
+            });
+            appendRoomRow(next);
         }
         const row = root.querySelector(`.calc-room-row[data-room-key="${CSS.escape(String(previousKey))}"]`);
         if (row) {
             row.dataset.roomKey = next.key;
             row.style.setProperty('--material-color', next.material_color);
             row.style.setProperty('--material-color-soft', next.material_color_soft);
-            row.classList.toggle('is-review', Boolean(next.needs_review));
+            row.classList.remove('is-review', 'is-manual', 'is-certain');
+            row.classList.add(reviewKindClass(next));
             row.dataset.review = next.needs_review ? '1' : '0';
+            row.dataset.reviewKind = next.review_kind || reviewKindOf(next);
             row.dataset.material = next.material_key || '';
             row.dataset.search = next.search || '';
             const num = row.querySelector('.room-num');
@@ -1062,7 +1484,7 @@ function boot() {
             materials = next.materials;
         }
         paintPanel(roomByKey(next.key));
-        renderOverlays();
+        applyRoomFilters();
         refreshMaterialPanel();
     }
 
@@ -1071,6 +1493,7 @@ function boot() {
         if (!room) {
             return;
         }
+        const alreadySelected = String(selectedKey) === String(room.key);
         const token = ++selectToken;
         selectedKey = room.key;
         root.dataset.selected = String(room.key);
@@ -1099,7 +1522,9 @@ function boot() {
                 setHint('Ruimte gelokaliseerd via het ruimtenummer wanneer de tekstlaag beschikbaar is.');
             }
         }
-        renderOverlays();
+        if (!alreadySelected || !options.keepView) {
+            renderOverlays();
+        }
     }
 
     function clickableHits() {
@@ -1221,9 +1646,7 @@ function boot() {
         search = event.target.value || '';
         applyRoomFilters();
     });
-    root.querySelectorAll('.calc-room-row').forEach((row) => {
-        row.addEventListener('click', () => selectRoom(row.dataset.roomKey));
-    });
+    root.querySelectorAll('.calc-room-row').forEach((row) => bindRoomRow(row));
     workFilterToggle?.addEventListener('click', (event) => {
         event.stopPropagation();
         const open = !workFilterPanel.classList.contains('is-open');
@@ -1332,9 +1755,37 @@ function boot() {
         if (event.target.closest('button, select, a, input, textarea, label') && !event.target.closest('.room-label')) {
             return;
         }
-        const room = hitRoom(toNorm(event));
+        if (event.target.closest('.calc-code-chip, .calc-fill, .room-label')) {
+            return;
+        }
+        const point = toNorm(event);
+        const room = hitRoom(point);
         if (room) {
+            if (consumeDoubleActivate(room)) {
+                openMaterialDialog(room);
+                return;
+            }
             selectRoom(room.key, { keepView: true });
+            return;
+        }
+        if (data.can_update && consumeEmptyDouble(point)) {
+            openCreateRoomDialog(point);
+        }
+    });
+    stage.addEventListener('dblclick', (event) => {
+        if (event.target.closest('button, select, a, input, textarea, label') && !event.target.closest('.calc-code-chip, .room-label')) {
+            return;
+        }
+        const point = toNorm(event);
+        const room = hitRoom(point);
+        if (room) {
+            event.preventDefault();
+            openMaterialDialog(room);
+            return;
+        }
+        if (data.can_update) {
+            event.preventDefault();
+            openCreateRoomDialog(point);
         }
     });
     stage.addEventListener('wheel', (event) => {
@@ -1367,19 +1818,33 @@ function boot() {
             plinth_quantity: form.plinth_quantity.value,
         });
     });
-    form?.floor_code?.addEventListener('change', async () => {
+    form?.floor_quantity?.addEventListener('change', async () => {
         const room = roomByKey(selectedKey);
         if (!room?.id || !data.can_update) {
             return;
         }
-        const product = legendProductFor(form.floor_code.value);
-        if (product) {
-            form.floor_product.value = product;
-        }
         await saveRoom(room, {
-            floor_code: form.floor_code.value,
-            floor_product: form.floor_product.value,
-        }, 'Materiaal opgeslagen.');
+            floor_quantity: form.floor_quantity.value,
+        }, 'Oppervlakte opgeslagen.');
+    });
+    document.getElementById('calc-open-material')?.addEventListener('click', () => {
+        const room = roomByKey(selectedKey);
+        if (!room) {
+            return;
+        }
+        openMaterialDialog(room);
+    });
+    document.getElementById('calc-material-dialog-close')?.addEventListener('click', () => {
+        document.getElementById('calc-material-dialog')?.close();
+    });
+    document.getElementById('calc-material-apply')?.addEventListener('click', applyTypedMaterial);
+    document.querySelector('#calc-material-dialog form')?.addEventListener('submit', (event) => {
+        const code = String(document.getElementById('calc-material-code')?.value || '').trim();
+        if (code === '') {
+            return;
+        }
+        event.preventDefault();
+        applyTypedMaterial();
     });
     document.getElementById('calc-reset-chip')?.addEventListener('click', async () => {
         const room = roomByKey(selectedKey);
@@ -1393,7 +1858,7 @@ function boot() {
         if (!room?.id || !data.can_update) {
             return;
         }
-        await saveRoom(room, { restore_automatic: true }, 'Automatische herkenning hersteld.');
+        await saveRoom(room, { restore_automatic: true }, 'Automatisch hersteld.');
     });
     document.getElementById('calc-confirm')?.addEventListener('click', async () => {
         const room = roomByKey(selectedKey);

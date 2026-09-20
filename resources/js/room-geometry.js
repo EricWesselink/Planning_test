@@ -590,6 +590,25 @@ export function unionBoxes(boxes) {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
+export function nameOverlayPoint(area) {
+    const marker = area?.marker || {};
+    const labelX = Number(marker.label_x);
+    const labelY = Number(marker.label_y);
+    if (Number.isFinite(labelX) && Number.isFinite(labelY)) {
+        return { x: clamp(labelX), y: clamp(labelY), manual: true };
+    }
+    const box = contourBox(roomVisualContour(area)) || storedJumpTarget(area)?.box;
+    if (!box || !(Number(box.w) > 0) || !(Number(box.h) > 0)) {
+        return null;
+    }
+
+    return {
+        x: Number(box.x) + (Number(box.w) / 2),
+        y: Number(box.y) + (Number(box.h) / 2),
+        manual: false,
+    };
+}
+
 export function contourBox(contour) {
     if (!contour) {
         return null;

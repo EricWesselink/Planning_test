@@ -2,11 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     localAreaPatchBody,
+    isDoubleActivation,
+    legendMaterialChoices,
+    materialChoicePatch,
     materialFillBox,
     materialLabel,
     needsLocalAreaInput,
     overlayContrast,
     qtyInput,
+    reviewKindClass,
+    reviewKindOf,
     roomDrawingState,
     roomMatchesFilter,
     roomMatchesMaterials,
@@ -27,6 +32,18 @@ test('review filter keeps only rooms that need checking', () => {
     assert.equal(roomMatchesFilter(room, 'review'), true);
     assert.equal(roomMatchesFilter({ ...room, needs_review: false }, 'review'), false);
     assert.equal(roomMatchesFilter({ ...room, has_plinth: false }, 'plinths'), false);
+});
+
+test('manual filter keeps only rooms that were corrected by hand', () => {
+    const checked = { ...room, needs_review: false, review_kind: 'certain' };
+    const corrected = { ...room, needs_review: false, review_kind: 'manual' };
+
+    assert.equal(roomMatchesFilter(checked, 'manual'), false);
+    assert.equal(roomMatchesFilter(corrected, 'manual'), true);
+    assert.equal(roomMatchesFilter(corrected, 'review'), false);
+    assert.equal(reviewKindOf(corrected), 'manual');
+    assert.equal(reviewKindClass(corrected), 'is-manual');
+    assert.equal(reviewKindClass({ needs_review: true }), 'is-review');
 });
 
 test('search matches number name product or code', () => {
@@ -118,4 +135,44 @@ test('a local finish without m2 can be filled by hand', () => {
         floors: [{ id: 11595, quantity: '4,20' }],
     });
     assert.equal(Object.hasOwn(localAreaPatchBody(11595, '4,20'), 'floor_quantity'), false);
+});
+
+test('material popup choices come from the drawing legend', () => {
+    const legend = [
+        { code: 'v01', product: 'Marmoleum', color: '#848482' },
+        { code: 'v04', product: 'Gietvloer', color: '#8db600' },
+    ];
+
+    assert.deepEqual(legendMaterialChoices(legend, { code: 'v01' }).map((entry) => entry.code), ['v01', 'v04']);
+    assert.deepEqual(materialChoicePatch({ floors: [{ id: 10, role: 'main' }] }, { code: 'v04', product: 'Gietvloer' }), {
+        floor_code: 'v04',
+        floor_product: 'Gietvloer',
+    });
+    assert.deepEqual(materialChoicePatch({
+        floors: [
+            { id: 10, role: 'main', code: 'v01' },
+            { id: 11, role: 'local', code: 'v09' },
+        ],
+    }, { code: 'v04', product: 'Gietvloer', finishId: 11 }), {
+        floors: [{ id: 11, code: 'v04', product: 'Gietvloer' }],
+    });
+    assert.equal(Object.hasOwn(materialChoicePatch({ floors: [{ id: 10, role: 'main' }] }, { code: 'v04', product: 'Gietvloer' }), 'floor_quantity'), false);
+});
+
+test('double activation is a second click on the same room', () => {
+    assert.equal(isDoubleActivation({ key: 'a-00-08', at: 1000 }, 'a-00-08', 1300), true);
+    assert.equal(isDoubleActivation({ key: 'a-00-08', at: 1000 }, 'a-00-08', 1600), false);
+    assert.equal(isDoubleActivation({ key: 'a-00-08', at: 1000 }, 'a-00-13', 1100), false);
+    assert.equal(isDoubleActivation(null, 'a-00-08', 1100), false);
+});
+
+test('legend picker still offers a typed code when the drawing legend is empty', () => {
+    assert.deepEqual(
+        legendMaterialChoices([], { code: 'v01e', product: 'Marmoleum' }).map((entry) => entry.code),
+        ['v01e'],
+    );
+    assert.deepEqual(
+        legendMaterialChoices([{ key: 'v04', product: 'Gietvloer' }]).map((entry) => entry.code),
+        ['v04'],
+    );
 });

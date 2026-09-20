@@ -60,6 +60,8 @@ class AreaWithoutM2Analyzer
         private PdfPageGeometry $geometry = new PdfPageGeometry,
         private RasterPageReader $raster = new RasterPageReader,
         private WallBoundDimensionMatcher $matcher = new WallBoundDimensionMatcher,
+        private PageAdminZoneDetector $zones = new PageAdminZoneDetector,
+        private DimensionObjectFactory $dimensionObjects = new DimensionObjectFactory,
     ) {}
 
     /**
@@ -99,6 +101,16 @@ class AreaWithoutM2Analyzer
                 $warnings[] = $raster['error'];
             }
             $previewPath = is_string($raster['preview_path'] ?? null) ? $raster['preview_path'] : null;
+        } else {
+            $raster = $this->raster->readGeometry($path);
+            $this->timings['render'] = (float) ($raster['timings']['render'] ?? 0);
+            $this->timings['ocr'] = 0.0;
+            $this->timings['walls'] = (float) ($raster['timings']['walls'] ?? 0);
+            $pages = $this->mergeRasterGeometry($pages, $raster['pages'] ?? []);
+            if (is_string($raster['error'] ?? null) && $raster['error'] !== '') {
+                $warnings[] = $raster['error'];
+            }
+            $previewPath = is_string($raster['preview_path'] ?? null) ? $raster['preview_path'] : null;
         }
 
         $result = $this->analyzePages($pages, $filename, $source, $engine, $ocrMean);
@@ -126,8 +138,12 @@ class AreaWithoutM2Analyzer
         $rooms = [];
         $pageDimensions = [];
         $pageNames = [];
+        $pagePipelineMeta = null;
         foreach ($pages as $page) {
             $classified = $this->classify($page['texts'] ?? [], (int) ($page['page'] ?? 1));
+            $zones = $this->zones->detect($page);
+            $objects = $this->dimensionObjects->fromPage($page, $classified['printed'], $zones);
+            $classified['dimensions'] = $objects['accepted'];
             foreach ($classified['dimensions'] as $dimension) {
                 $pageDimensions[] = (int) $dimension['mm'];
             }
@@ -140,6 +156,14 @@ class AreaWithoutM2Analyzer
             $roomsStarted = hrtime(true);
             foreach ($this->roomsFromClassification($page, $classified) as $room) {
                 $rooms[] = $room;
+            }
+            if ($pagePipelineMeta === null) {
+                $pagePipelineMeta = [
+                    'page' => $page,
+                    'objects' => $objects['accepted'],
+                    'excluded' => $objects['excluded'],
+                    'zones' => $zones,
+                ];
             }
         }
 
@@ -183,6 +207,7 @@ class AreaWithoutM2Analyzer
             'timing_labels' => $this->timingLabels(),
             'geometry' => $this->pageGeometryOverlay($pages[0] ?? []),
             'geometry_debug' => $this->geometryDiagnosis($pages[0] ?? [], $rooms),
+            'page_pipeline' => $this->pagePipeline($pagePipelineMeta, $rooms),
         ];
     }
 
@@ -378,13 +403,6 @@ class AreaWithoutM2Analyzer
                     $mm = (int) $match[1];
                     if ($mm >= self::DIMENSION_MIN_MM && $mm <= self::DIMENSION_MAX_MM) {
                         $dimensions[] = $item + ['mm' => $mm];
-                    }
-                } elseif (preg_match_all('/(?<![0-9.,])(\d{3,5})(?!\s*m(?:²|2)\b)(?:\s*mm)?(?![0-9])/u', $text, $mmMatches)) {
-                    foreach ($mmMatches[1] as $raw) {
-                        $mm = (int) $raw;
-                        if ($mm >= self::DIMENSION_MIN_MM && $mm <= self::DIMENSION_MAX_MM && ! $this->looksLikeRoomNumber($raw)) {
-                            $dimensions[] = $item + ['mm' => $mm];
-                        }
                     }
                 }
             }
@@ -704,6 +722,204 @@ class AreaWithoutM2Analyzer
                 $pageWidth,
                 $pageHeight,
             ),
+        ];
+    }
+
+    /**
+     * Scale raster wall geometry into PDF page space and keep the text-layer words.
+     *
+     * @param  list<array<string, mixed>>  $pages
+     * @param  list<array<string, mixed>>  $rasterPages
+     * @return list<array<string, mixed>>
+     */
+    private function mergeRasterGeometry(array $pages, array $rasterPages): array
+    {
+        if ($rasterPages === []) {
+            return $pages;
+        }
+        $byPage = [];
+        foreach ($rasterPages as $rasterPage) {
+            $byPage[(int) ($rasterPage['page'] ?? 1)] = $rasterPage;
+        }
+        foreach ($pages as $index => $page) {
+            $number = (int) ($page['page'] ?? $index + 1);
+            if (! isset($byPage[$number])) {
+                continue;
+            }
+            $raster = $byPage[$number];
+            $sx = ((float) ($page['width'] ?? 1)) / max(1.0, (float) ($raster['width'] ?? 1));
+            $sy = ((float) ($page['height'] ?? 1)) / max(1.0, (float) ($raster['height'] ?? 1));
+            $scaledWalls = $this->scaleSegments($raster['walls'] ?? [], $sx, $sy);
+            $vectorWalls = is_array($page['walls'] ?? null) ? $page['walls'] : [];
+            if ($scaledWalls !== []) {
+                $page['walls'] = $this->uniqueSegments(array_merge($vectorWalls, $scaledWalls));
+                $page['ticks'] = $this->uniqueSegments(array_merge(
+                    is_array($page['ticks'] ?? null) ? $page['ticks'] : [],
+                    $this->scaleSegments($raster['ticks'] ?? [], $sx, $sy),
+                ));
+                $raw = $this->scaleSegments($raster['raw_walls'] ?? [], $sx, $sy);
+                $page['raw_walls'] = $raw !== [] ? $raw : ($page['raw_walls'] ?? []);
+                $extract = $this->scaleWallExtract(is_array($raster['wall_extract'] ?? null) ? $raster['wall_extract'] : [], $sx, $sy);
+                if ($extract !== []) {
+                    $page['wall_extract'] = $extract;
+                }
+            }
+            $pages[$index] = $page;
+        }
+
+        return $pages;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $segments
+     * @return list<array<string, mixed>>
+     */
+    private function scaleSegments(array $segments, float $sx, float $sy): array
+    {
+        $scaled = [];
+        foreach ($segments as $segment) {
+            if (! is_array($segment)) {
+                continue;
+            }
+            foreach (['x1', 'x2', 'x'] as $key) {
+                if (isset($segment[$key])) {
+                    $segment[$key] = round((float) $segment[$key] * $sx, 3);
+                }
+            }
+            foreach (['y1', 'y2', 'y'] as $key) {
+                if (isset($segment[$key])) {
+                    $segment[$key] = round((float) $segment[$key] * $sy, 3);
+                }
+            }
+            if (isset($segment['width'])) {
+                $axis = (string) ($segment['axis'] ?? 'v');
+                $segment['width'] = round((float) $segment['width'] * ($axis === 'h' ? $sy : $sx), 3);
+            }
+            $scaled[] = $segment;
+        }
+
+        return $scaled;
+    }
+
+    /**
+     * @param  array<string, mixed>  $extract
+     * @return array<string, mixed>
+     */
+    private function scaleWallExtract(array $extract, float $sx, float $sy): array
+    {
+        foreach (['bands_h', 'bands_v', 'axes', 'vertical_candidates', 'horizontal_candidates'] as $key) {
+            if (isset($extract[$key]) && is_array($extract[$key])) {
+                $extract[$key] = $this->scaleSegments($extract[$key], $sx, $sy);
+            }
+        }
+
+        return $extract;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $segments
+     * @return list<array<string, mixed>>
+     */
+    private function uniqueSegments(array $segments): array
+    {
+        $unique = [];
+        foreach ($segments as $segment) {
+            $key = implode('|', [
+                round((float) ($segment['x1'] ?? $segment['x'] ?? 0), 1),
+                round((float) ($segment['y1'] ?? $segment['y'] ?? 0), 1),
+                round((float) ($segment['x2'] ?? $segment['x'] ?? 0), 1),
+                round((float) ($segment['y2'] ?? $segment['y'] ?? 0), 1),
+                (string) ($segment['axis'] ?? ''),
+            ]);
+            $unique[$key] = $segment;
+        }
+
+        return array_values($unique);
+    }
+
+    /**
+     * @param  array{page?: array<string, mixed>, objects?: list<array<string, mixed>>, excluded?: list<array<string, mixed>>, zones?: list<array<string, mixed>>}|null  $meta
+     * @param  list<array<string, mixed>>  $rooms
+     * @return array<string, mixed>
+     */
+    private function pagePipeline(?array $meta, array $rooms): array
+    {
+        $page = is_array($meta['page'] ?? null) ? $meta['page'] : [];
+        $objects = is_array($meta['objects'] ?? null) ? $meta['objects'] : [];
+        $excluded = is_array($meta['excluded'] ?? null) ? $meta['excluded'] : [];
+        $axes = $this->axisSummary($page);
+
+        return [
+            'rooms' => array_map(fn (array $room): array => [
+                'room_name' => (string) ($room['room_name'] ?? ''),
+                'room_number' => (string) ($room['room_number'] ?? ''),
+                'printed_m2' => $room['printed_m2'] ?? null,
+            ], $rooms),
+            'wall_axes' => $axes,
+            'dimension_objects' => array_map(fn (array $object): array => [
+                'value' => (int) ($object['value'] ?? $object['mm'] ?? 0),
+                'orientation' => (string) ($object['orientation'] ?? ''),
+                'dimensionLine' => $object['dimensionLine'] ?? null,
+                'endpoint1' => $object['endpoint1'] ?? null,
+                'endpoint2' => $object['endpoint2'] ?? null,
+                'evidence' => (string) ($object['evidence'] ?? ''),
+                'confidence' => round((float) ($object['confidence'] ?? 0), 2),
+                'page' => (int) ($object['page'] ?? 1),
+                'x' => round((float) ($object['x'] ?? 0), 1),
+                'y' => round((float) ($object['y'] ?? 0), 1),
+            ], $objects),
+            'excluded_numbers' => array_map(fn (array $row): array => [
+                'mm' => (int) ($row['mm'] ?? 0),
+                'text' => (string) ($row['text'] ?? ''),
+                'reason' => (string) ($row['reason'] ?? ''),
+                'x' => round((float) ($row['x'] ?? 0), 1),
+                'y' => round((float) ($row['y'] ?? 0), 1),
+            ], $excluded),
+            'printed_m2' => array_values(array_filter(
+                array_map(fn (array $room): array => [
+                    'room' => trim((string) ($room['room_name'] ?? '').' '.(string) ($room['room_number'] ?? '')),
+                    'printed_m2' => $room['printed_m2'] ?? null,
+                ], $rooms),
+                fn (array $row): bool => $row['printed_m2'] !== null,
+            )),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $page
+     * @return array{vertical: int, horizontal: int, samples: list<string>}
+     */
+    private function axisSummary(array $page): array
+    {
+        $walls = array_merge(
+            is_array($page['wall_extract']['axes'] ?? null) ? $page['wall_extract']['axes'] : [],
+            is_array($page['walls'] ?? null) ? $page['walls'] : [],
+        );
+        $vertical = [];
+        $horizontal = [];
+        $samples = [];
+        foreach ($walls as $wall) {
+            if (! is_array($wall)) {
+                continue;
+            }
+            $axis = (string) ($wall['axis'] ?? '');
+            if ($axis === 'v') {
+                $x = round(((float) ($wall['x1'] ?? 0) + (float) ($wall['x2'] ?? 0)) / 2, 1);
+                $vertical[(string) $x] = true;
+                $samples[] = 'V x='.$x;
+            }
+            if ($axis === 'h') {
+                $y = round(((float) ($wall['y1'] ?? 0) + (float) ($wall['y2'] ?? 0)) / 2, 1);
+                $horizontal[(string) $y] = true;
+                $samples[] = 'H y='.$y;
+            }
+        }
+        $samples = array_values(array_unique($samples));
+
+        return [
+            'vertical' => count($vertical),
+            'horizontal' => count($horizontal),
+            'samples' => array_slice($samples, 0, 24),
         ];
     }
 
@@ -1459,12 +1675,6 @@ class AreaWithoutM2Analyzer
         }
 
         return (bool) preg_match(self::ROOM_NAME_PATTERN, $text);
-    }
-
-    private function looksLikeRoomNumber(string $text): bool
-    {
-        return (bool) preg_match('/^[A-Z]-\d{2}-\d{2}$/u', $text)
-            || (bool) preg_match('/^\d{1,2}[.\-]\d{2}[a-zA-Z]?$/u', $text);
     }
 
     private function isPrintedAreaToken(string $text): bool

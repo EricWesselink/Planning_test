@@ -103,4 +103,19 @@ class MaterialColorTest extends TestCase
         $this->assertNotSame('#008856', $left);
         $this->assertFalse(MaterialColor::hexesMatch($left, MaterialColor::fromCode('v01.d'), 52));
     }
+
+    public function test_work_colors_follow_material_codes_and_stay_distinct_per_product(): void
+    {
+        $this->assertSame('v01.a', MaterialColor::codeFromLabel('Marmoleum Walton v01.a, Linoleum'));
+        $this->assertSame('#be0032', MaterialColor::forWork('#c4a06a', 'Marmoleum Walton, 3352 berlin red v01.a, Linoleum'));
+        $this->assertSame('#f38400', MaterialColor::forWork('#65a30d', 'Plint, wit, Plinten'));
+        $this->assertSame('#f38400', MaterialColor::resolve(null, 'Plinten wit'));
+
+        $real = MaterialColor::forWork(null, 'Marmoleum Real, 3120 rosato, Linoleum');
+        $walton = MaterialColor::forWork(null, 'Marmoleum Walton, 3352 berlin red, Linoleum');
+        $this->assertNotSame($real, $walton);
+        $this->assertNotSame('#c4a06a', $real);
+        $this->assertNotSame('#c4a06a', $walton);
+        $this->assertSame('#c9bc94', MaterialColor::forWork('#c9bc94', 'Marmoleum Real, 3120 rosato, Linoleum'));
+    }
 }

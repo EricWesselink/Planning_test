@@ -39,6 +39,7 @@ class DimensionChainBinder
             'y' => (float) $dimension['y'],
             'axis' => 'horizontal',
             'wall_label' => 'maatketting x='.round($chain['start']).'–'.round($chain['end']).' op y='.round($chain['along']),
+            'bind_reason' => (string) ($chain['bind_reason'] ?? 'gekoppeld kettingsegment'),
             'segment' => 'x='.round($chain['start']).'–'.round($chain['end']).', y='.round($chain['along']),
             'score' => 1.2 / max(1.0, $chain['distance']),
             'side' => 'ketting',
@@ -83,6 +84,7 @@ class DimensionChainBinder
             'y' => (float) $dimension['y'],
             'axis' => 'vertical',
             'wall_label' => 'maatketting y='.round($chain['start']).'–'.round($chain['end']).' op x='.round($chain['along']),
+            'bind_reason' => (string) ($chain['bind_reason'] ?? 'gekoppeld kettingsegment'),
             'segment' => 'y='.round($chain['start']).'–'.round($chain['end']).', x='.round($chain['along']),
             'score' => 1.2 / max(1.0, $chain['distance']),
             'side' => 'ketting',
@@ -359,27 +361,57 @@ class DimensionChainBinder
      */
     private function pickChain(array $dimension, array $lines, ?float $first, ?float $second, bool $horizontal, float $pageMin): ?array
     {
+        $fromObject = $this->chainFromObject($dimension, $horizontal);
+        $mapped = $this->mapObjectToWallPair($fromObject, $dimension, $first, $second, $horizontal, $pageMin);
+        if ($mapped !== null) {
+            return $mapped;
+        }
+
         $near = $horizontal
             ? $this->horizontalChain($dimension, $lines, $pageMin)
             : $this->verticalChain($dimension, $lines, $pageMin);
         if ($first === null || $second === null) {
-            return $near;
+            return $near ?? $fromObject;
         }
-        $aligned = $this->chainAlignedToPair($dimension, $lines, $horizontal, $first, $second, $pageMin);
         if ($near !== null && $this->matchesPair($near['start'], $near['end'], $first, $second, $pageMin)) {
             return $near;
         }
-        if ($aligned === null) {
-            return null;
-        }
-        if ($near === null) {
-            return $aligned;
-        }
-        if ($this->numberInteriorToChain($dimension, $near, $horizontal) && $aligned['distance'] + 4 >= $near['distance']) {
+        if ($near !== null && $this->numberInteriorToChain($dimension, $near, $horizontal)) {
+            if (! $this->isSubsetOfPair($near, $first, $second, $pageMin)) {
+                return null;
+            }
+            $ticks = $horizontal
+                ? $this->fromPerpendicularTicks($dimension, $lines, 'v', max(36.0, $pageMin * 0.04))
+                : $this->fromPerpendicularTicks($dimension, $lines, 'h', max(36.0, $pageMin * 0.04));
+            if ($ticks !== null && $this->matchesPair($ticks['start'], $ticks['end'], $first, $second, $pageMin)) {
+                return $ticks;
+            }
+
             return null;
         }
 
-        return $aligned;
+        return $this->chainAlignedToPair($dimension, $lines, $horizontal, $first, $second, $pageMin);
+    }
+
+    /**
+     * @param  array{start?: float, end?: float, span?: float}|null  $chain
+     */
+    private function isSubsetOfPair(?array $chain, float $first, float $second, float $pageMin): bool
+    {
+        if ($chain === null) {
+            return false;
+        }
+        $roomStart = min($first, $second);
+        $roomEnd = max($first, $second);
+        $roomSpan = $roomEnd - $roomStart;
+        $start = min((float) $chain['start'], (float) $chain['end']);
+        $end = max((float) $chain['start'], (float) $chain['end']);
+        $tol = max(14.0, $pageMin * 0.03);
+        if ($start < $roomStart - $tol || $end > $roomEnd + $tol) {
+            return false;
+        }
+
+        return $roomSpan >= 12 && ($end - $start) < $roomSpan * 0.85;
     }
 
     /**
@@ -419,7 +451,7 @@ class DimensionChainBinder
             return null;
         }
         $axis = $horizontal ? 'h' : 'v';
-        $maxPerp = max(36.0, $pageMin * 0.05);
+        $maxPerp = max(36.0, $pageMin * 0.04);
         $best = null;
         foreach ($lines as $line) {
             if (($line['axis'] ?? '') !== $axis) {
@@ -460,70 +492,110 @@ class DimensionChainBinder
             return $best;
         }
 
-        return $this->tickPairOnWalls($dimension, $lines, $horizontal, $roomStart, $roomEnd, $pageMin, $maxPerp);
+        return null;
     }
 
     /**
-     * @param  array{x?: float, y?: float}  $dimension
-     * @param  list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>  $lines
-     * @return array{start: float, end: float, along: float, span: float, distance: float}|null
+     * Map a reconstructed chain segment onto the room's consecutive wall axes.
+     * Architect dimension lines often sit outside the inner face, so endpoints
+     * need not equal the detected inner walls.
+     *
+     * @param  array{start: float, end: float, along: float, span: float, distance: float}|null  $fromObject
+     * @param  array{mm?: int, evidence?: string, overall?: bool, x?: float, y?: float}  $dimension
+     * @return array{start: float, end: float, along: float, span: float, distance: float, bind_reason?: string}|null
      */
-    private function tickPairOnWalls(
+    private function mapObjectToWallPair(
+        ?array $fromObject,
         array $dimension,
-        array $lines,
+        ?float $first,
+        ?float $second,
         bool $horizontal,
-        float $roomStart,
-        float $roomEnd,
         float $pageMin,
-        float $maxPerp,
     ): ?array {
-        $tickAxis = $horizontal ? 'v' : 'h';
-        $x = (float) ($dimension['x'] ?? 0);
-        $y = (float) ($dimension['y'] ?? 0);
-        $perp = $horizontal ? $y : $x;
-        $tol = max(14.0, $pageMin * 0.03);
-        $startTick = null;
-        $endTick = null;
-        foreach ($lines as $line) {
-            if (($line['axis'] ?? '') !== $tickAxis) {
-                continue;
-            }
-            if ($horizontal) {
-                $pos = ((float) $line['x1'] + (float) $line['x2']) / 2;
-                $spanLo = min((float) $line['y1'], (float) $line['y2']);
-                $spanHi = max((float) $line['y1'], (float) $line['y2']);
-            } else {
-                $pos = ((float) $line['y1'] + (float) $line['y2']) / 2;
-                $spanLo = min((float) $line['x1'], (float) $line['x2']);
-                $spanHi = max((float) $line['x1'], (float) $line['x2']);
-            }
-            if ($perp < $spanLo - $maxPerp || $perp > $spanHi + $maxPerp) {
-                continue;
-            }
-            $tickLen = $spanHi - $spanLo;
-            if ($tickLen > max(64.0, ($roomEnd - $roomStart) * 0.35)) {
-                continue;
-            }
-            if (abs($pos - $roomStart) <= $tol && ($startTick === null || abs($pos - $roomStart) < abs($startTick - $roomStart))) {
-                $startTick = $pos;
-            }
-            if (abs($pos - $roomEnd) <= $tol && ($endTick === null || abs($pos - $roomEnd) < abs($endTick - $roomEnd))) {
-                $endTick = $pos;
-            }
-        }
-        if ($startTick === null || $endTick === null) {
+        if ($fromObject === null) {
             return null;
         }
-        $span = $endTick - $startTick;
-        if ($span < 12) {
+        if ($first === null || $second === null) {
+            return $fromObject;
+        }
+        $overall = ($dimension['overall'] ?? false) === true
+            || ($dimension['evidence'] ?? '') === 'gebouwmaat';
+        $roomStart = min($first, $second);
+        $roomEnd = max($first, $second);
+        $roomSpan = $roomEnd - $roomStart;
+        if ($roomSpan < 12) {
+            return null;
+        }
+        if ($overall || $fromObject['span'] > $roomSpan * 1.2) {
+            return $this->matchesPair($fromObject['start'], $fromObject['end'], $first, $second, $pageMin)
+                ? $fromObject
+                : null;
+        }
+        if ($this->matchesPair($fromObject['start'], $fromObject['end'], $first, $second, $pageMin)) {
+            return [
+                'start' => $roomStart,
+                'end' => $roomEnd,
+                'along' => $fromObject['along'],
+                'span' => $roomSpan,
+                'distance' => 0.0,
+                'bind_reason' => 'extension-lines op opeenvolgende bouwassen',
+            ];
+        }
+        if (! $this->numberInteriorToChain($dimension, ['start' => $roomStart, 'end' => $roomEnd], $horizontal)) {
+            return null;
+        }
+        $spanOk = abs($fromObject['span'] - $roomSpan) / $roomSpan <= 0.25;
+        $shiftOk = abs(($fromObject['start'] - $roomStart) - ($fromObject['end'] - $roomEnd)) <= max(28.0, $pageMin * 0.04);
+        if ($spanOk && $shiftOk) {
+            return [
+                'start' => $roomStart,
+                'end' => $roomEnd,
+                'along' => $fromObject['along'],
+                'span' => $roomSpan,
+                'distance' => 0.0,
+                'bind_reason' => 'kettingsegment topologisch op wandpaar',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Use a already-built dimension object's endpoints when binding to a wall pair.
+     *
+     * @param  array{orientation?: string, endpoint1?: array{x?: float, y?: float}, endpoint2?: array{x?: float, y?: float}}  $dimension
+     * @return array{start: float, end: float, along: float, span: float, distance: float}|null
+     */
+    public function chainFromObject(array $dimension, bool $horizontal): ?array
+    {
+        $orientation = (string) ($dimension['orientation'] ?? '');
+        $expected = $horizontal ? 'horizontal' : 'vertical';
+        if ($orientation !== $expected) {
+            return null;
+        }
+        $first = is_array($dimension['endpoint1'] ?? null) ? $dimension['endpoint1'] : null;
+        $second = is_array($dimension['endpoint2'] ?? null) ? $dimension['endpoint2'] : null;
+        if ($first === null || $second === null) {
+            return null;
+        }
+        if ($horizontal) {
+            $start = min((float) ($first['x'] ?? 0), (float) ($second['x'] ?? 0));
+            $end = max((float) ($first['x'] ?? 0), (float) ($second['x'] ?? 0));
+            $along = ((float) ($first['y'] ?? 0) + (float) ($second['y'] ?? 0)) / 2;
+        } else {
+            $start = min((float) ($first['y'] ?? 0), (float) ($second['y'] ?? 0));
+            $end = max((float) ($first['y'] ?? 0), (float) ($second['y'] ?? 0));
+            $along = ((float) ($first['x'] ?? 0) + (float) ($second['x'] ?? 0)) / 2;
+        }
+        if (($end - $start) < 16) {
             return null;
         }
 
         return [
-            'start' => $startTick,
-            'end' => $endTick,
-            'along' => $perp,
-            'span' => $span,
+            'start' => $start,
+            'end' => $end,
+            'along' => $along,
+            'span' => $end - $start,
             'distance' => 0.0,
         ];
     }

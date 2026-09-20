@@ -11,7 +11,8 @@
     @php
         $rooms = collect($board['rooms']);
         $groups = $rooms->groupBy(fn ($room) => $room['group'] ?: 'Overig');
-        $reviewCount = $rooms->where('needs_review', true)->count();
+        $reviewCount = $rooms->where('review_kind', 'review')->count();
+        $manualCount = $rooms->where('review_kind', 'manual')->count();
         $selectedKey = $board['selected_key'] ?? null;
         $materials = $board['materials'] ?? [];
     @endphp
@@ -26,6 +27,9 @@
                     @if ($reviewCount > 0)
                         · {{ $reviewCount }} controleren
                     @endif
+                    @if ($manualCount > 0)
+                        · {{ $manualCount }} handmatig
+                    @endif
                 </p>
             </div>
             @include('calculations.partials.tabs', ['calculation' => $calculation, 'tab' => 'board', 'compact' => true])
@@ -37,8 +41,9 @@
                     <span id="room-count-label" class="text-xs text-nicon-muted">{{ $rooms->count() }} ruimtes</span>
                 </div>
                 <div class="mt-2 flex flex-wrap gap-1 text-xs" id="room-filters">
-                    <button type="button" data-filter="all" class="room-filter is-on">Alles</button>
+                    <button type="button" data-filter="all" class="room-filter is-on">Alle ruimtes</button>
                     <button type="button" data-filter="review" class="room-filter">Controleren</button>
+                    <button type="button" data-filter="manual" class="room-filter">Handmatig aangepast</button>
                     <button type="button" data-filter="floors" class="room-filter">Vloeren</button>
                     <button type="button" data-filter="plinths" class="room-filter">Plinten</button>
                 </div>
@@ -52,10 +57,11 @@
                     @foreach ($groupRooms as $room)
                         <button
                             type="button"
-                            class="room-row calc-room-row {{ $selectedKey === $room['key'] ? 'is-on' : '' }} {{ $room['needs_review'] ? 'is-review' : '' }}"
+                            class="room-row calc-room-row {{ $selectedKey === $room['key'] ? 'is-on' : '' }} is-{{ $room['review_kind'] ?? 'review' }}"
                             data-room-key="{{ $room['key'] }}"
                             data-drawing-id="{{ $room['drawing_id'] ?? '' }}"
                             data-review="{{ $room['needs_review'] ? '1' : '0' }}"
+                            data-review-kind="{{ $room['review_kind'] ?? '' }}"
                             data-floor="{{ $room['has_floor'] ? '1' : '0' }}"
                             data-plinth="{{ $room['has_plinth'] ? '1' : '0' }}"
                             data-material="{{ $room['material_key'] }}"
@@ -158,6 +164,8 @@
                 <div class="text-xs text-nicon-muted" id="room-drawing"></div>
                 <h2 class="text-xl font-semibold" id="room-title">Kies een ruimte</h2>
                 <div class="text-sm text-nicon-muted" id="room-m2"></div>
+                <div id="room-review-kind" class="room-review-kind" hidden></div>
+                <p id="room-material-line" class="mt-1 text-sm"></p>
                 <div class="room-progress-row">
                     <div class="text-sm" id="room-progress-label"></div>
                     <div id="room-status" hidden></div>
@@ -169,6 +177,24 @@
             <div id="room-groups" class="room-groups"></div>
             <form id="calc-room-form" class="complete-form">
                 <div id="calc-room-fields" class="space-y-2">
+                    <div class="calc-room-review space-y-2">
+                        <label class="block">
+                            <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Oppervlakte aanpassen</span>
+                            <span class="calc-qty-row">
+                                <input name="floor_quantity" inputmode="decimal" class="mt-0.5 border border-nicon-line px-2 py-1">
+                                <span class="text-sm text-nicon-muted">m²</span>
+                            </span>
+                        </label>
+                        <div>
+                            <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Materiaal kiezen/aanpassen</span>
+                            <input type="hidden" name="floor_code">
+                            <button type="button" id="calc-open-material" class="calc-open-material mt-0.5">
+                                <span id="calc-open-material-swatch" class="calc-swatch" hidden></span>
+                                <span id="calc-open-material-label">Materiaal kiezen</span>
+                            </button>
+                            <p class="mt-1 text-[11px] text-nicon-muted">Dubbelklik op een lege plek om een ontbrekende ruimte aan te maken, met materiaal en m².</p>
+                        </div>
+                    </div>
                     <details class="calc-room-edit">
                         <summary>Gegevens wijzigen</summary>
                         <div class="mt-2 space-y-2">
@@ -185,14 +211,6 @@
                                 <ul id="floor-finishes" class="mt-1 space-y-1 text-sm"></ul>
                                 <p id="floor-finishes-total" class="mt-1 text-xs text-nicon-muted"></p>
                             </div>
-                            <label class="block">
-                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">m² hoofdvloer</span>
-                                <input name="floor_quantity" inputmode="decimal" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
-                            </label>
-                            <label class="block">
-                                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Materiaal aanpassen</span>
-                                <select name="floor_code" class="mt-0.5 w-full border border-nicon-line px-2 py-1"></select>
-                            </label>
                             <label class="block">
                                 <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Vloerproduct</span>
                                 <input name="floor_product" class="mt-0.5 w-full border border-nicon-line px-2 py-1">
@@ -219,7 +237,7 @@
                         <button type="submit" class="complete-form-submit bg-nicon-ink px-3 py-1.5 text-xs text-white">Opslaan</button>
                         <button type="button" id="calc-confirm" class="complete-form-reopen border border-nicon-line bg-white px-3 py-1.5 text-xs">Bevestigen</button>
                         <button type="button" id="calc-reset-chip" class="border border-nicon-line bg-white px-3 py-1.5 text-xs">Positie herstellen</button>
-                        <button type="button" id="calc-restore-auto" class="border border-nicon-line bg-white px-3 py-1.5 text-xs">Automatische herkenning herstellen</button>
+                        <button type="button" id="calc-restore-auto" class="border border-nicon-line bg-white px-3 py-1.5 text-xs">Automatisch herstellen</button>
                     </div>
                     <p id="calc-room-message" class="text-xs text-nicon-ok hidden"></p>
                     <p id="calc-room-error" class="text-xs text-nicon-danger hidden"></p>
@@ -229,5 +247,47 @@
     </div>
 
     <script type="application/json" id="board-data">{!! json_encode($board, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) !!}</script>
+    <dialog id="calc-material-dialog" class="calc-material-dialog" aria-labelledby="calc-material-dialog-title">
+        <form method="dialog" class="space-y-3">
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 id="calc-material-dialog-title" class="text-base font-semibold">Materiaal kiezen</h2>
+                    <p id="calc-material-dialog-room" class="text-sm text-nicon-muted"></p>
+                    <p id="calc-material-dialog-m2" class="text-sm"></p>
+                </div>
+                <button type="button" id="calc-material-dialog-close" class="text-sm text-nicon-muted">Sluiten</button>
+            </div>
+            <p id="calc-material-dialog-empty" class="text-sm text-nicon-muted" hidden>Geen materialen in de legenda. Vul hieronder zelf een code in.</p>
+            <div id="calc-material-dialog-create" class="calc-material-create" hidden>
+                <label class="block min-w-0">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Ruimtenummer</span>
+                    <input id="calc-create-number" class="mt-0.5 w-full border border-nicon-line px-2 py-1" placeholder="K-01-09">
+                </label>
+                <label class="block min-w-0">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Ruimtenaam</span>
+                    <input id="calc-create-name" class="mt-0.5 w-full border border-nicon-line px-2 py-1" placeholder="KANTOOR MAS">
+                </label>
+                <label class="block min-w-0">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Oppervlakte</span>
+                    <span class="calc-qty-row">
+                        <input id="calc-create-m2" inputmode="decimal" class="mt-0.5 border border-nicon-line px-2 py-1">
+                        <span class="text-sm text-nicon-muted">m²</span>
+                    </span>
+                </label>
+            </div>
+            <div id="calc-material-dialog-list" class="calc-material-dialog-list"></div>
+            <div class="calc-material-manual">
+                <label class="block min-w-0">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Code</span>
+                    <input id="calc-material-code" class="mt-0.5 w-full border border-nicon-line px-2 py-1" placeholder="v01e">
+                </label>
+                <label class="block min-w-0">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Product</span>
+                    <input id="calc-material-product" class="mt-0.5 w-full border border-nicon-line px-2 py-1" placeholder="Marmoleum">
+                </label>
+                <button type="button" id="calc-material-apply" class="complete-form-submit bg-nicon-ink px-3 py-1.5 text-xs text-white">Toepassen</button>
+            </div>
+        </form>
+    </dialog>
     @include('calculations.partials.print-dialog')
 @endsection

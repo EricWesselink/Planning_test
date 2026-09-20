@@ -271,6 +271,72 @@ class ProjectBoardMaterialColorTest extends TestCase
         $this->assertSame('#ee5086', $taraflexRoom->fresh(['tasks.workItem', 'project.workItems'])->materialColor());
     }
 
+    public function test_room_work_cards_keep_each_products_own_color(): void
+    {
+        Storage::fake('local');
+        [$user, $project, $area] = $this->makeBoardProject();
+        $area->tasks()->delete();
+        $real = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Marmoleum Real, 3120 rosato, Linoleum',
+            'display_color' => '#c9bc94',
+            'unit' => 'm2',
+            'ordered_quantity' => 24.65,
+            'status' => 'gepland',
+            'sort_order' => 1,
+        ]);
+        $walton = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Marmoleum Walton, 3352 berlin red, Linoleum',
+            'display_color' => '#d93e55',
+            'unit' => 'm2',
+            'ordered_quantity' => 19.39,
+            'status' => 'gepland',
+            'sort_order' => 2,
+        ]);
+        $plint = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plinten wit',
+            'display_color' => '#65a30d',
+            'unit' => 'm1',
+            'ordered_quantity' => 18,
+            'status' => 'gepland',
+            'sort_order' => 3,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $real->id,
+            'ordered_quantity' => 24.65,
+            'unit' => 'm2',
+            'status' => AreaStatus::NietGestart,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $walton->id,
+            'ordered_quantity' => 19.39,
+            'unit' => 'm2',
+            'status' => AreaStatus::NietGestart,
+        ]);
+        AreaTask::query()->create([
+            'project_area_id' => $area->id,
+            'work_item_id' => $plint->id,
+            'ordered_quantity' => 18,
+            'unit' => 'm1',
+            'status' => AreaStatus::NietGestart,
+        ]);
+
+        $detail = app(ProjectBoardService::class)->areaDetail($area->fresh(['tasks.workItem', 'markers', 'floor', 'project.documents', 'project.workItems']));
+        $byLabel = collect($detail['groups'])->keyBy(fn (array $group) => mb_strtolower((string) ($group['label'] ?? '')));
+
+        $this->assertSame('#c9bc94', $byLabel['marmoleum real, 3120 rosato, linoleum']['display_color']);
+        $this->assertSame('#d93e55', $byLabel['marmoleum walton, 3352 berlin red, linoleum']['display_color']);
+        $this->assertSame('#f38400', $byLabel['plinten wit']['display_color']);
+        $this->assertNotSame(
+            $byLabel['marmoleum real, 3120 rosato, linoleum']['display_color'],
+            $byLabel['marmoleum walton, 3352 berlin red, linoleum']['display_color'],
+        );
+    }
+
     /**
      * @return array{0: User, 1: Project, 2: ProjectArea}
      */

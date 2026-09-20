@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'project_area_id', 'project_document_id', 'page', 'x', 'y', 'width', 'height', 'label_text', 'polygon', 'confidence', 'source', 'drawing_room_id',
+    'project_area_id', 'project_document_id', 'page', 'x', 'y', 'width', 'height', 'label_text', 'label_x', 'label_y', 'polygon', 'confidence', 'source', 'drawing_room_id',
 ])]
 class AreaDrawingMarker extends Model
 {
@@ -19,6 +19,8 @@ class AreaDrawingMarker extends Model
             'y' => 'float',
             'width' => 'float',
             'height' => 'float',
+            'label_x' => 'float',
+            'label_y' => 'float',
             'polygon' => 'array',
             'confidence' => 'float',
         ];
@@ -70,6 +72,8 @@ class AreaDrawingMarker extends Model
             'width' => $this->width !== null ? (float) $this->width : null,
             'height' => $this->height !== null ? (float) $this->height : null,
             'label_text' => $this->label_text,
+            'label_x' => $this->label_x !== null ? (float) $this->label_x : null,
+            'label_y' => $this->label_y !== null ? (float) $this->label_y : null,
             'polygon' => $this->polygon,
             'confidence' => (float) $this->confidence,
             'source' => $this->source,

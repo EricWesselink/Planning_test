@@ -22,6 +22,7 @@
         $label = static fn (mixed $value): string => ($value === null || $value === '') ? '—' : (string) $value;
         $mismatch = (string) ($received['mismatch'] ?? '');
         $geometryDebug = is_array($trial['geometry_debug'] ?? null) ? $trial['geometry_debug'] : [];
+        $pagePipeline = is_array($trial['page_pipeline'] ?? null) ? $trial['page_pipeline'] : [];
     @endphp
     <div class="mt-4 border border-nicon-warn bg-white p-4 text-sm space-y-1">
         <p class="font-medium">Ontvangen upload</p>
@@ -52,6 +53,7 @@
         <p><span class="text-nicon-muted">Niet berekenbare ruimtes</span> · {{ $join($trial['unavailable_room_labels'] ?? []) }}</p>
         <p><span class="text-nicon-muted">Rendertijd</span> · {{ $timingLabels['render'] ?? '0,00 s' }}</p>
         <p><span class="text-nicon-muted">OCR-tijd</span> · {{ $timingLabels['ocr'] ?? '0,00 s' }}</p>
+        <p><span class="text-nicon-muted">Lijn/wanddetectie</span> · {{ $timingLabels['walls'] ?? '0,00 s' }}</p>
         <p><span class="text-nicon-muted">Analysetijd</span> · {{ $timingLabels['rooms'] ?? '0,00 s' }}</p>
         <p><span class="text-nicon-muted">Totale tijd</span> · {{ $timingLabels['total'] ?? '0,00 s' }}</p>
         <p><span class="text-nicon-muted">Uploadnaam</span> · {{ $trial['original_filename'] ?: ($trial['filename'] ?: '—') }}</p>
@@ -113,6 +115,53 @@
             </tbody>
         </table>
     </div>
+
+    @if ($pagePipeline !== [])
+        <div data-page-pipeline class="mt-4 border border-nicon-line bg-white p-4 text-sm space-y-2">
+            <p class="font-medium">Pagina-pipeline (eerste pagina)</p>
+            <p><span class="text-nicon-muted">Gevonden ruimtes</span> · {{ $join(array_map(static function (array $room): string {
+                return trim(($room['room_name'] ?? '').' '.($room['room_number'] ?? '')) ?: 'Ruimte';
+            }, $pagePipeline['rooms'] ?? [])) }}</p>
+            <p><span class="text-nicon-muted">Gevonden wandassen</span> · V {{ $pagePipeline['wall_axes']['vertical'] ?? 0 }} · H {{ $pagePipeline['wall_axes']['horizontal'] ?? 0 }}</p>
+            @if (($pagePipeline['wall_axes']['samples'] ?? []) !== [])
+                <ul class="list-disc pl-5 text-xs font-mono text-nicon-muted">
+                    @foreach ($pagePipeline['wall_axes']['samples'] as $sample)
+                        <li>{{ $sample }}</li>
+                    @endforeach
+                </ul>
+            @endif
+            <p class="font-medium text-nicon-ink">Dimension objects</p>
+            @if (($pagePipeline['dimension_objects'] ?? []) === [])
+                <p class="text-nicon-muted">geen</p>
+            @else
+                <ul class="list-disc pl-5 text-xs font-mono">
+                    @foreach ($pagePipeline['dimension_objects'] as $object)
+                        <li>{{ $object['value'] ?? '?' }} · {{ ($object['orientation'] ?? '') === 'vertical' ? 'V' : 'H' }} · e1 {{ isset($object['endpoint1']['x']) ? round($object['endpoint1']['x']).','.round($object['endpoint1']['y']) : '—' }} · e2 {{ isset($object['endpoint2']['x']) ? round($object['endpoint2']['x']).','.round($object['endpoint2']['y']) : '—' }} · {{ $object['evidence'] ?? '—' }} · {{ isset($object['confidence']) ? str_replace('.', ',', (string) $object['confidence']) : '—' }}</li>
+                    @endforeach
+                </ul>
+            @endif
+            <p class="font-medium text-nicon-ink">Uitgesloten legenda-getallen</p>
+            @if (($pagePipeline['excluded_numbers'] ?? []) === [])
+                <p class="text-nicon-muted">geen</p>
+            @else
+                <ul class="list-disc pl-5 text-xs">
+                    @foreach ($pagePipeline['excluded_numbers'] as $excluded)
+                        <li>{{ $excluded['mm'] ?? '?' }} · x={{ $excluded['x'] ?? '—' }}, y={{ $excluded['y'] ?? '—' }} — {{ $excluded['reason'] ?? '' }}</li>
+                    @endforeach
+                </ul>
+            @endif
+            <p class="font-medium text-nicon-ink">Bestaande m² per ruimte</p>
+            @if (($pagePipeline['printed_m2'] ?? []) === [])
+                <p class="text-nicon-muted">geen</p>
+            @else
+                <ul class="list-disc pl-5 text-xs">
+                    @foreach ($pagePipeline['printed_m2'] as $printed)
+                        <li>{{ $printed['room'] ?? 'Ruimte' }} · {{ isset($printed['printed_m2']) ? str_replace('.', ',', (string) $printed['printed_m2']) : '—' }} m²</li>
+                    @endforeach
+                </ul>
+            @endif
+        </div>
+    @endif
 
     @if ($geometryDebug !== [])
         <div data-geometry-debug class="mt-4 border border-nicon-line bg-white p-4 text-sm space-y-1">

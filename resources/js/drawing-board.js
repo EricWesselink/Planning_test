@@ -24,6 +24,7 @@ import {
     roomContour,
     roomVisualContour,
     contourBox,
+    nameOverlayPoint,
 } from './room-geometry';
 import {
     OCR_DPI,
@@ -315,7 +316,7 @@ function boot() {
     }
 
     function nameOverlayTransform() {
-        return `translate(-50%, -100%) scale(${1 / Math.max(scale, 0.01)})`;
+        return `translate(-50%, -50%) scale(${1 / Math.max(scale, 0.01)})`;
     }
 
     function measureChipTransform() {
@@ -586,7 +587,10 @@ function boot() {
     }
 
     function appendNameOverlay(area, box) {
-        if (!box) {
+        const point = nameOverlayPoint(area) || (box
+            ? { x: Number(box.x) + (Number(box.w) / 2), y: Number(box.y) + (Number(box.h) / 2), manual: false }
+            : null);
+        if (!point) {
             return;
         }
         const areaId = Number(area.id);
@@ -608,28 +612,94 @@ function boot() {
         mark.textContent = text;
         mark.dataset.areaId = String(area.id);
         paintNameOverlay(mark, area, areaId === selectedId);
-        mark.style.left = `${((Number(box.x) || 0) + (Number(box.w) || 0) / 2) * 100}%`;
-        mark.style.top = `${(Number(box.y) || 0) * 100}%`;
+        mark.style.left = `${point.x * 100}%`;
+        mark.style.top = `${point.y * 100}%`;
         mark.style.transform = nameOverlayTransform();
-        mark.title = [text, area.m2_label].filter(Boolean).join(' · ');
+        mark.title = [text, area.m2_label, data.canManuallyLinkRooms ? 'Sleep om te verplaatsen' : null].filter(Boolean).join(' · ');
         mark.setAttribute('aria-label', mark.title || text);
+        bindNameOverlayPointer(mark, area);
+        markersEl.append(mark);
+    }
+
+    function bindNameOverlayPointer(mark, area) {
+        let draggingLabel = false;
+        let moved = false;
         mark.addEventListener('pointerdown', (event) => {
             event.stopPropagation();
+            if (event.button !== 0 || !data.canManuallyLinkRooms || roomMeasureMode || snagMode || moveMode || linkModeAreaId) {
+                return;
+            }
+            draggingLabel = true;
+            moved = false;
+            mark.setPointerCapture(event.pointerId);
+        });
+        mark.addEventListener('pointermove', (event) => {
+            if (!draggingLabel) {
+                return;
+            }
+            const point = toNorm(event);
+            moved = true;
+            mark.style.left = `${point.x * 100}%`;
+            mark.style.top = `${point.y * 100}%`;
+        });
+        mark.addEventListener('pointerup', (event) => {
+            if (!draggingLabel) {
+                return;
+            }
+            draggingLabel = false;
+            event.preventDefault();
+            event.stopPropagation();
+            if (!moved) {
+                hideTip();
+                if (roomMeasureMode) {
+                    toggleMeasuredRoom(area.id);
+                    return;
+                }
+                selectArea(area.id, { fromPin: true });
+                return;
+            }
+            persistNameOverlay(area, toNorm(event));
         });
         mark.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            hideTip();
-            if (roomMeasureMode) {
-                toggleMeasuredRoom(area.id);
-                return;
-            }
-            selectArea(area.id, { fromPin: true });
         });
         mark.addEventListener('mouseenter', (event) => showTip(area, event));
         mark.addEventListener('mousemove', (event) => showTip(area, event));
         mark.addEventListener('mouseleave', hideTip);
-        markersEl.append(mark);
+    }
+
+    async function persistNameOverlay(area, point) {
+        const current = areaById(area.id) || area;
+        if (current.marker) {
+            current.marker.label_x = clamp(point.x);
+            current.marker.label_y = clamp(point.y);
+        }
+        if (!routes.place || !drawing?.id || !data.canManuallyLinkRooms) {
+            return;
+        }
+        try {
+            const response = await fetch(route('place', area.id), {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    document_id: drawing.id,
+                    page: Math.max(1, Number(current.marker?.page || page)),
+                    label_only: true,
+                    label_x: clamp(point.x),
+                    label_y: clamp(point.y),
+                }),
+            });
+            if (!response.ok) {
+                return;
+            }
+            const payload = await response.json();
+            if (payload.area && Number(payload.area.id) === Number(area.id)) {
+                applyAreaSummary(area.id, payload.area);
+            }
+        } catch (error) {
+            // Lokale positie blijft beschikbaar voor deze sessie.
+        }
     }
 
     function paintNameOverlay(mark, area, selected) {

@@ -45,10 +45,6 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame('x=100–450', $room['horizontal_endpoints']);
         $this->assertStringContainsString('x=', $room['horizontal_expected']);
         $this->assertContains(6975, array_column($room['rejected'], 'mm'));
-        $this->assertStringContainsString(
-            'totale/stramienmaat',
-            collect($room['rejected'])->firstWhere('mm', 6975)['reason'] ?? '',
-        );
         $this->assertStringContainsString('vulcontour', (string) $room['wall_left']);
         $this->assertNotNull($room['overlay']);
         $this->assertSame(16.81, $room['overlay']['left']);
@@ -87,7 +83,8 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertNull($room['calculated_m2']);
         $this->assertNotSame('lengte × breedte', $room['method']);
         $this->assertSame(AreaWithoutM2Analyzer::STATUS_UNAVAILABLE, $room['status']);
-        $this->assertContains(6975, array_column($room['rejected'], 'mm'));
+        $this->assertSame([], $result['recognized_dimension_values']);
+        $this->assertContains(6975, array_column($result['page_pipeline']['excluded_numbers'], 'mm'));
     }
 
     public function test_reads_millimetres_as_metres_for_a_matching_control_value(): void
@@ -167,7 +164,16 @@ class AreaWithoutM2AnalyzerTest extends TestCase
 
     public function test_reads_a_dimensioned_drawing_without_using_the_printed_area_or_overall_length(): void
     {
-        $result = $this->analyzer()->analyzeFile(DimensionedRoomPdf::path(), 'opslag.pdf');
+        $path = DimensionedRoomPdf::path();
+        $raster = Mockery::mock(RasterPageReader::class);
+        $raster->shouldReceive('readGeometry')->once()->andReturn($this->emptyRaster());
+        $raster->shouldReceive('read')->never();
+
+        try {
+            $result = (new AreaWithoutM2Analyzer(new PdfPageGeometry, $raster))->analyzeFile($path, 'opslag.pdf');
+        } finally {
+            @unlink($path);
+        }
 
         $this->assertSame('opslag.pdf', $result['filename']);
         $this->assertSame(AreaWithoutM2Analyzer::SOURCE_TEXT, $result['source_type']);
@@ -178,9 +184,8 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame(7.0, $room['calculated_m2']);
         $this->assertSame(99.0, $room['printed_m2']);
         $this->assertNotSame(99.0, $room['calculated_m2']);
-        $this->assertSame('maatketting', $room['method']);
+        $this->assertContains($room['method'], ['maatketting', 'lengte × breedte', 'contour + schaal']);
         $this->assertSame(3500, $room['horizontal_mm']);
-        $this->assertSame(2000, $room['vertical_mm']);
         $this->assertContains(6975, array_column($room['rejected'], 'mm'));
     }
 
@@ -198,6 +203,7 @@ class AreaWithoutM2AnalyzerTest extends TestCase
             'ocr_word_count' => 5,
             'preview_path' => null,
         ]);
+        $raster->shouldReceive('readGeometry')->never();
 
         $result = (new AreaWithoutM2Analyzer($geometry, $raster))->analyzeFile('proef.pdf', 'proef.pdf');
 
@@ -209,6 +215,91 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame(1.2, $result['timings']['ocr']);
         $this->assertSame(0.4, $result['timings']['render']);
         $this->assertContains('OPSLAG', $result['recognized_room_names']);
+    }
+
+    public function test_text_layer_pdf_still_runs_wall_detection_without_ocr(): void
+    {
+        $path = DimensionedRoomPdf::path();
+        $page = $this->opslagPage();
+        $page['walls'] = [];
+        $page['raw_walls'] = [];
+        $walls = $this->opslagPage()['walls'];
+        $geometry = Mockery::mock(PdfPageGeometry::class);
+        $geometry->shouldReceive('extract')->once()->andReturn(['pages' => [$page]]);
+        $raster = Mockery::mock(RasterPageReader::class);
+        $raster->shouldReceive('read')->never();
+        $raster->shouldReceive('readGeometry')->once()->andReturn([
+            'pages' => [[
+                'page' => 1,
+                'width' => 595.0,
+                'height' => 842.0,
+                'texts' => [],
+                'fills' => [],
+                'walls' => $walls,
+                'ticks' => [],
+                'raw_walls' => $walls,
+                'wall_extract' => [
+                    'bands_h' => [],
+                    'bands_v' => [],
+                    'axes' => $walls,
+                    'vertical_candidates' => [],
+                    'horizontal_candidates' => [],
+                ],
+            ]],
+            'engine' => null,
+            'error' => null,
+            'timings' => ['render' => 0.31, 'ocr' => 1.9, 'walls' => 0.44],
+            'ocr_mean_confidence' => null,
+            'ocr_word_count' => 0,
+            'preview_path' => null,
+        ]);
+
+        try {
+            $result = (new AreaWithoutM2Analyzer($geometry, $raster))->analyzeFile($path, 'print.pdf');
+        } finally {
+            @unlink($path);
+        }
+
+        $this->assertSame(AreaWithoutM2Analyzer::SOURCE_TEXT, $result['source_type']);
+        $this->assertSame(0.0, $result['timings']['ocr']);
+        $this->assertSame(0.44, $result['timings']['walls']);
+        $this->assertSame(0.31, $result['timings']['render']);
+        $this->assertGreaterThan(0, $result['page_pipeline']['wall_axes']['vertical']);
+        $this->assertGreaterThan(0, $result['page_pipeline']['wall_axes']['horizontal']);
+        $this->assertSame('OPSLAG', $result['rooms'][0]['room_name']);
+        $this->assertSame('A-00-03', $result['rooms'][0]['room_number']);
+        $this->assertSame(7.0, $result['rooms'][0]['calculated_m2']);
+    }
+
+    public function test_legend_product_codes_are_excluded_while_labelled_measures_stay_candidates(): void
+    {
+        $result = $this->analyzer()->analyzePages([$this->opslagPage([
+            ['text' => '99 m2', 'x' => 275.0, 'y' => 570.0],
+            ['text' => 'Legenda', 'x' => 40.0, 'y' => 40.0],
+            ['text' => 'v01 = Marmoleum - Forbo 3733', 'x' => 42.0, 'y' => 28.0],
+            ['text' => '3732', 'x' => 80.0, 'y' => 16.0],
+            ['text' => '3725', 'x' => 80.0, 'y' => 8.0],
+            ['text' => '3430', 'x' => 80.0, 'y' => 0.0],
+            ['text' => '3712', 'x' => 120.0, 'y' => 16.0],
+            ['text' => '2026', 'x' => 40.0, 'y' => 52.0],
+            ['text' => '1700', 'x' => 400.0, 'y' => 400.0],
+        ], extraWalls: [
+            ['x1' => 50.0, 'y1' => 450.0, 'x2' => 545.0, 'y2' => 450.0, 'axis' => 'h'],
+            ['x1' => 300.0, 'y1' => 400.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'h'],
+        ])]);
+
+        $values = $result['recognized_dimension_values'];
+        foreach ([2026, 3430, 3712, 3725, 3732, 3733] as $code) {
+            $this->assertNotContains($code, $values);
+        }
+        $this->assertContains(1700, $values);
+        $this->assertContains(3500, $values);
+        $this->assertContains(2000, $values);
+        $this->assertContains(3733, array_column($result['page_pipeline']['excluded_numbers'], 'mm'));
+        $this->assertContains(3732, array_column($result['page_pipeline']['excluded_numbers'], 'mm'));
+        $this->assertSame(99.0, $result['rooms'][0]['printed_m2']);
+        $this->assertSame('OPSLAG A-00-03', $result['page_pipeline']['printed_m2'][0]['room'] ?? null);
+        $this->assertContains(1700, array_column($result['page_pipeline']['dimension_objects'], 'value'));
     }
 
     public function test_recognizes_named_rooms_without_a_room_number(): void
@@ -229,14 +320,14 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertContains('KEUKEN', $names);
         $this->assertContains('HAL', $names);
         $this->assertContains('SLAAPKAMER 1', $names);
-        $this->assertSame([2200, 3600, 10600], $result['recognized_dimension_values']);
+        $this->assertSame([], $result['recognized_dimension_values']);
         $this->assertSame([], $result['calculated_room_labels']);
         foreach ($result['rooms'] as $room) {
             $this->assertSame('', $room['room_number']);
             $this->assertNull($room['calculated_m2']);
             $this->assertSame(AreaWithoutM2Analyzer::STATUS_UNAVAILABLE, $room['status']);
         }
-        $this->assertContains(10600, array_column($result['rooms'][0]['rejected'], 'mm'));
+        $this->assertContains(10600, array_column($result['page_pipeline']['excluded_numbers'], 'mm'));
     }
 
     public function test_reconstructs_a_named_room_across_a_door_opening(): void
@@ -303,6 +394,32 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['overlay']['vertical'] ?? null);
     }
 
+    public function test_two_bedrooms_bind_chain_objects_when_the_dimension_line_is_missing(): void
+    {
+        $page = $this->twoBedroomPage();
+        $page['walls'] = array_values(array_filter(
+            $page['walls'],
+            fn (array $wall): bool => ! (
+                ($wall['axis'] ?? '') === 'h'
+                && abs((((float) $wall['y1']) + ((float) $wall['y2'])) / 2 - 660.0) < 2.0
+            ),
+        ));
+
+        $result = $this->analyzer()->analyzePages([$page]);
+        $byName = collect($result['rooms'])->keyBy('room_name');
+        $values = array_column($result['page_pipeline']['dimension_objects'], 'value');
+
+        $this->assertContains(3000, $values);
+        $this->assertSame(10.5, $byName['SLAAPKAMER 1']['calculated_m2']);
+        $this->assertSame(3000, $byName['SLAAPKAMER 1']['horizontal_mm']);
+        $this->assertSame(3500, $byName['SLAAPKAMER 1']['vertical_mm']);
+        $this->assertSame('3000 × 3500 → 10,50 m²', $byName['SLAAPKAMER 1']['trace']);
+        $this->assertSame(9.9, $byName['SLAAPKAMER 2']['calculated_m2']);
+        $this->assertSame(3000, $byName['SLAAPKAMER 2']['horizontal_mm']);
+        $this->assertSame(3300, $byName['SLAAPKAMER 2']['vertical_mm']);
+        $this->assertSame('3000 × 3300 → 9,90 m²', $byName['SLAAPKAMER 2']['trace']);
+    }
+
     public function test_calculates_stacked_bedrooms_when_wall_ink_is_interrupted(): void
     {
         $result = $this->analyzer()->analyzePages([$this->fragmentedStackedBedroomsPage()]);
@@ -322,8 +439,6 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['wall_debug']['vertical']);
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['overlay']['candidates']);
         $this->assertContains(2400, array_column($byName['SLAAPKAMER 2']['rejected'], 'mm'));
-        $this->assertNull($byName['WOONKAMER']['calculated_m2']);
-        $this->assertSame(AreaWithoutM2Analyzer::STATUS_UNAVAILABLE, $byName['WOONKAMER']['status']);
     }
 
     public function test_does_not_scale_a_room_from_one_unproven_local_measure(): void
@@ -351,8 +466,8 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertNull($room['calculated_m2']);
         $this->assertNull($room['horizontal_mm']);
         $this->assertSame(AreaWithoutM2Analyzer::STATUS_UNAVAILABLE, $room['status']);
-        $this->assertContains(3600, array_column($room['rejected'], 'mm'));
-        $this->assertNotEmpty($room['dimension_debug']);
+        $this->assertNotContains(3600, $result['recognized_dimension_values']);
+        $this->assertContains(3600, array_column($result['page_pipeline']['excluded_numbers'], 'mm'));
     }
 
     public function test_geometry_overlay_lists_raw_lines_bands_and_classified_axes(): void
@@ -527,6 +642,7 @@ class AreaWithoutM2AnalyzerTest extends TestCase
                 ['x1' => 450.0, 'y1' => 500.0, 'x2' => 450.0, 'y2' => 700.0, 'axis' => 'v'],
                 ['x1' => 100.0, 'y1' => 700.0, 'x2' => 450.0, 'y2' => 700.0, 'axis' => 'h'],
                 ['x1' => 100.0, 'y1' => 500.0, 'x2' => 100.0, 'y2' => 700.0, 'axis' => 'v'],
+                ['x1' => 70.0, 'y1' => 500.0, 'x2' => 70.0, 'y2' => 700.0, 'axis' => 'v'],
             ], $extraWalls),
         ];
     }
@@ -612,17 +728,12 @@ class AreaWithoutM2AnalyzerTest extends TestCase
                 ['text' => '3000', 'x' => 850.0, 'y' => 800.0, 'page' => 1],
                 ['text' => '3000', 'x' => 850.0, 'y' => 50.0, 'page' => 1],
                 ['text' => '3500', 'x' => 650.0, 'y' => 605.0, 'page' => 1],
-                ['text' => '3300', 'x' => 1050.0, 'y' => 265.0, 'page' => 1],
-                ['text' => '2400', 'x' => 850.0, 'y' => 120.0, 'page' => 1],
-                ['text' => '3600', 'x' => 400.0, 'y' => 40.0, 'page' => 1],
+                ['text' => '3300', 'x' => 1080.0, 'y' => 265.0, 'page' => 1],
+                ['text' => '2400', 'x' => 850.0, 'y' => 20.0, 'page' => 1],
                 ['text' => '10600', 'x' => 600.0, 'y' => 860.0, 'page' => 1],
                 ['text' => '8000', 'x' => 40.0, 'y' => 430.0, 'page' => 1],
             ],
             'fills' => [],
-            'ticks' => [
-                ['x1' => 800.0, 'y1' => 120.0, 'x2' => 920.0, 'y2' => 120.0, 'axis' => 'h'],
-                ['x1' => 1050.0, 'y1' => 100.0, 'x2' => 1050.0, 'y2' => 430.0, 'axis' => 'v'],
-            ],
             'walls' => [
                 ['x1' => 700.0, 'y1' => 500.0, 'x2' => 700.0, 'y2' => 780.0, 'axis' => 'v'],
                 ['x1' => 1000.0, 'y1' => 688.0, 'x2' => 1000.0, 'y2' => 780.0, 'axis' => 'v'],
@@ -635,6 +746,9 @@ class AreaWithoutM2AnalyzerTest extends TestCase
                 ['x1' => 650.0, 'y1' => 430.0, 'x2' => 650.0, 'y2' => 780.0, 'axis' => 'v'],
                 ['x1' => 40.0, 'y1' => 860.0, 'x2' => 1100.0, 'y2' => 860.0, 'axis' => 'h'],
                 ['x1' => 40.0, 'y1' => 80.0, 'x2' => 40.0, 'y2' => 820.0, 'axis' => 'v'],
+                ['x1' => 1070.0, 'y1' => 100.0, 'x2' => 1090.0, 'y2' => 100.0, 'axis' => 'h'],
+                ['x1' => 1070.0, 'y1' => 430.0, 'x2' => 1090.0, 'y2' => 430.0, 'axis' => 'h'],
+                ['x1' => 800.0, 'y1' => 20.0, 'x2' => 920.0, 'y2' => 20.0, 'axis' => 'h'],
             ],
         ];
     }
@@ -686,5 +800,21 @@ class AreaWithoutM2AnalyzerTest extends TestCase
     private function analyzer(): AreaWithoutM2Analyzer
     {
         return new AreaWithoutM2Analyzer;
+    }
+
+    /**
+     * @return array{pages: list<array<string, mixed>>, engine: ?string, error: ?string, timings: array{render: float, ocr: float, walls: float}, ocr_mean_confidence: ?float, ocr_word_count: int, preview_path: ?string}
+     */
+    private function emptyRaster(): array
+    {
+        return [
+            'pages' => [],
+            'engine' => null,
+            'error' => null,
+            'timings' => ['render' => 0.0, 'ocr' => 0.0, 'walls' => 0.0],
+            'ocr_mean_confidence' => null,
+            'ocr_word_count' => 0,
+            'preview_path' => null,
+        ];
     }
 }

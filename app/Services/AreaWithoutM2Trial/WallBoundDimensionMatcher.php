@@ -72,8 +72,10 @@ class WallBoundDimensionMatcher
             }
             $hChain = $this->chains->pickHorizontalChain($dimension, $lines, $sides, $pageMin);
             $vChain = $this->chains->pickVerticalChain($dimension, $lines, $sides, $pageMin);
-            $hDebug = $this->chains->endpointDebug($hChain, $sides['left'], $sides['right'], true);
-            $vDebug = $this->chains->endpointDebug($vChain, $sides['bottom'], $sides['top'], false);
+            $hNear = $hChain ?? $this->chains->horizontalChain($dimension, $lines, $pageMin);
+            $vNear = $vChain ?? $this->chains->verticalChain($dimension, $lines, $pageMin);
+            $hDebug = $this->chains->endpointDebug($hNear, $sides['left'], $sides['right'], true);
+            $vDebug = $this->chains->endpointDebug($vNear, $sides['bottom'], $sides['top'], false);
             if (is_array($matchBox) && $this->closerToOtherBox($dimension, $matchBox, $otherBoxes)) {
                 $rejected[] = $this->rejectRow(
                     $mm,
@@ -98,8 +100,8 @@ class WallBoundDimensionMatcher
             }
 
             if ($asWidth === null && $asHeight === null) {
-                $reason = $this->endpointRejectReason($hChain, $vChain, $pairKnownH, $pairKnownV, $hDebug, $vDebug)
-                    ?? $this->chains->rejectReason($dimension, $lines, $anchor, $anchors, $pageMin, $sides)
+                $reason = $this->chains->rejectReason($dimension, $lines, $anchor, $anchors, $pageMin, $sides)
+                    ?? $this->endpointRejectReason($hChain, $vChain, $pairKnownH, $pairKnownV, $hDebug, $vDebug)
                     ?? (is_array($matchBox) ? $this->rejectReason($dimension, $matchBox, $overallWalls) : 'maatketting sluit niet aan op de wanden van deze ruimte');
                 $rejected[] = $this->rejectRow($mm, $reason, $hDebug, $vDebug);
                 $dimensionDebug[] = $this->debugRow($mm, 'afgewezen', $reason, $hDebug, $vDebug);
@@ -137,7 +139,10 @@ class WallBoundDimensionMatcher
                 $boundary['bottom_pos'] = $sides['bottom'];
             }
         }
-        if ($horizontal !== null && $vertical !== null && $this->scalesAgree($horizontal, $vertical, $box)) {
+        if ($horizontal !== null && $vertical !== null && (
+            (($horizontal['source'] ?? '') === 'chain' && ($vertical['source'] ?? '') === 'chain')
+            || $this->scalesAgree($horizontal, $vertical, $box)
+        )) {
             $confidence = 0.9;
         } elseif ($horizontal !== null && $vertical !== null) {
             $keepHorizontal = ((float) $horizontal['score']) >= ((float) $vertical['score']);

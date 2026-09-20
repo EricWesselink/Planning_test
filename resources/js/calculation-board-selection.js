@@ -1,6 +1,21 @@
+export function reviewKindOf(room) {
+    if (room?.review_kind === 'manual' || room?.review_kind === 'review' || room?.review_kind === 'certain') {
+        return room.review_kind;
+    }
+
+    return room?.needs_review ? 'review' : 'certain';
+}
+
+export function reviewKindClass(room) {
+    return `is-${reviewKindOf(room)}`;
+}
+
 export function roomMatchesFilter(room, filter) {
     if (filter === 'review') {
-        return Boolean(room?.needs_review);
+        return reviewKindOf(room) === 'review';
+    }
+    if (filter === 'manual') {
+        return reviewKindOf(room) === 'manual';
     }
     if (filter === 'floors') {
         return Boolean(room?.has_floor);
@@ -143,5 +158,67 @@ export function localAreaPatchBody(finishId, quantity) {
             id: Number(finishId),
             quantity,
         }],
+    };
+}
+
+export const ROOM_DOUBLE_MS = 450;
+
+export function isDoubleActivation(previous, key, now = Date.now()) {
+    return Boolean(previous)
+        && String(previous.key ?? '') !== ''
+        && String(previous.key) === String(key)
+        && (now - Number(previous.at || 0)) < ROOM_DOUBLE_MS;
+}
+
+export function legendMaterialChoices(legend, current = {}) {
+    const options = [];
+    const seen = new Set();
+    const addOption = (entry) => {
+        const code = String(entry?.code || entry?.key || '').toLowerCase();
+        if (code === '' || seen.has(code)) {
+            return;
+        }
+        seen.add(code);
+        options.push({
+            code,
+            product: entry.product || '',
+            label: entry.label || [entry.code || code, entry.product].filter(Boolean).join(' – '),
+            color: entry.color || '',
+        });
+    };
+    (legend || []).forEach(addOption);
+    const currentCode = String(current.code || '').toLowerCase();
+    if (currentCode !== '') {
+        addOption({
+            code: currentCode,
+            product: current.product || '',
+            label: [current.code, current.product].filter(Boolean).join(' – '),
+            color: current.color || '',
+        });
+    }
+
+    return options;
+}
+
+export function materialChoicePatch(room, choice) {
+    const code = String(choice?.code || '').toLowerCase();
+    const product = choice?.product || '';
+    const finishId = Number(choice?.finishId || 0);
+    const local = (Array.isArray(room?.floors) ? room.floors : []).find((finish) => (
+        Number(finish.id) === finishId && String(finish.role || '') === 'local'
+    ));
+    if (local) {
+        return {
+            floors: [{
+                id: local.id,
+                code,
+                product,
+            }],
+        };
+    }
+
+    return {
+        floor_code: code,
+        floor_product: product,
     };
 }

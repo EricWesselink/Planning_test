@@ -279,7 +279,7 @@ class WorkItem extends Model
 
     public function displayColor(): string
     {
-        return MaterialColor::resolve($this->display_color, $this->name);
+        return MaterialColor::forWork($this->display_color, $this->name);
     }
 
     public function productLabel(): ?string

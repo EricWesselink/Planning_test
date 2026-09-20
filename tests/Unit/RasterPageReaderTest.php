@@ -401,6 +401,45 @@ class RasterPageReaderTest extends TestCase
         );
     }
 
+    public function test_can_render_walls_when_tesseract_is_missing(): void
+    {
+        $reader = new class extends RasterPageReader
+        {
+            protected function findBinary(string $name): ?string
+            {
+                return $name === 'pdftoppm' ? '/usr/bin/pdftoppm' : null;
+            }
+        };
+
+        $this->assertTrue($reader->canRender());
+        $this->assertFalse($reader->isAvailable());
+    }
+
+    public function test_geometry_read_reports_missing_pdftoppm_without_requiring_tesseract(): void
+    {
+        $reader = new class extends RasterPageReader
+        {
+            protected function findBinary(string $name): ?string
+            {
+                return null;
+            }
+        };
+
+        $path = SimplePdf::path('scan');
+        try {
+            $result = $reader->readGeometry($path);
+        } finally {
+            @unlink($path);
+        }
+
+        $this->assertSame([], $result['pages']);
+        $this->assertSame(0.0, $result['timings']['ocr']);
+        $this->assertSame(
+            'pdftoppm ontbreekt. Installeer deze tool om wandgeometrie te lezen.',
+            $result['error'],
+        );
+    }
+
     public function test_reports_missing_pdf_tools_when_binary_lookup_throws(): void
     {
         $reader = new class extends RasterPageReader

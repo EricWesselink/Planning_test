@@ -25,6 +25,7 @@ class DimensionedRoomPdf
         $ops .= "BT /F1 9 Tf 1 0 0 1 250 485 Tm (3500) Tj ET\n";
         $ops .= "BT /F1 9 Tf 1 0 0 1 70 590 Tm (2000) Tj ET\n";
         $ops .= "1 w\n50 450 m 545 450 l S\n";
+        $ops .= "1 w\n70 500 m 70 700 l S\n";
         $ops .= "BT /F1 9 Tf 1 0 0 1 250 455 Tm (6975) Tj ET\n";
 
         $objects = [

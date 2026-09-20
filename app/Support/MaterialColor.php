@@ -32,6 +32,14 @@ class MaterialColor
     ];
 
     /**
+     * @var list<string>
+     */
+    private const GENERIC_FALLBACKS = [
+        '#c4a06a',
+        '#65a30d',
+    ];
+
+    /**
      * Centrale materiaalkleur: opgeslagen hex uit legenda/import, anders
      * deterministische productnaam-mapping, anders neutraal grijs.
      */
@@ -48,6 +56,44 @@ class MaterialColor
         }
 
         return self::UNKNOWN;
+    }
+
+    /**
+     * Zelfde kleuren als het calculatiebord: code (v01.a / pl01) wint,
+     * daarna een echte legendakleur, daarna per product — niet per type.
+     */
+    public static function forWork(?string $storedHex = null, ?string $productName = null, ?string $code = null): string
+    {
+        $code = mb_strtolower(trim((string) ($code ?: self::codeFromLabel($productName))));
+        if ($code !== '') {
+            return self::fromCode($code, $productName);
+        }
+
+        $normalized = self::normalizeHex($storedHex);
+        if ($normalized !== null && ! self::isGenericFallback($normalized)) {
+            return $normalized;
+        }
+
+        return self::resolve(null, $productName);
+    }
+
+    /**
+     * Vloer-/plintcode uit een productlabel, gelijk aan calculatieregels.
+     */
+    public static function codeFromLabel(?string $label): ?string
+    {
+        $hay = trim((string) $label);
+        if ($hay === '') {
+            return null;
+        }
+        if (preg_match('/\b(v\d{2}(?:\.[a-z])?)\b/iu', $hay, $match) === 1) {
+            return mb_strtolower($match[1]);
+        }
+        if (preg_match('/\b(pl\d{2})\b/iu', $hay, $match) === 1) {
+            return mb_strtolower($match[1]);
+        }
+
+        return null;
     }
 
     /**
@@ -158,11 +204,33 @@ class MaterialColor
             str_contains($hay, 'antislip') => '#fa050b',
             str_contains($hay, 'gietvloer') && ! str_contains($hay, 'antislip') => '#d4d6c2',
             str_contains($hay, 'directie') => '#d6e4eb',
-            str_contains($hay, 'marmoleum') || str_contains($hay, 'linoleum') => '#c4a06a',
+            str_contains($hay, 'marmoleum') || str_contains($hay, 'linoleum') => self::hashedColor('product:'.self::productKey($hay)),
             str_contains($hay, 'primen') || str_contains($hay, 'egal') => '#5b7c99',
-            str_contains($hay, 'plint') => '#65a30d',
+            str_contains($hay, 'plint') => self::CODE_COLORS['v01.b'],
             default => null,
         };
+    }
+
+    public static function isGenericFallback(?string $hex): bool
+    {
+        $normalized = self::normalizeHex($hex);
+        if ($normalized === null) {
+            return false;
+        }
+        foreach (self::GENERIC_FALLBACKS as $generic) {
+            if (self::hexesMatch($normalized, $generic, 8)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function productKey(string $hay): string
+    {
+        $key = preg_replace('/,?\s*(linoleum|pvc|vinyl|coating|plinten?|tapijt(?:tegels)?)\s*$/u', '', $hay) ?? $hay;
+
+        return preg_replace('/\s+/u', ' ', trim($key)) ?: $hay;
     }
 
     /**

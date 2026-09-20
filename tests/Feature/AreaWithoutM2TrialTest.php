@@ -306,6 +306,10 @@ TXT, 'proef-namen.pdf'),
             ->assertSee('Confidence:')
             ->assertSee('Afgewezen maten')
             ->assertSee('Maatkoppeling')
+            ->assertSee('Pagina-pipeline')
+            ->assertSee('Dimension objects')
+            ->assertSee('Uitgesloten legenda-getallen')
+            ->assertSee('Bestaande m² per ruimte')
             ->assertSee('6975')
             ->getContent();
 

@@ -285,19 +285,36 @@ class ProjectBoardService
      */
     private function groupDisplayColor(ProjectArea $area, array $group, ?AreaTask $primary): string
     {
-        $name = $group['label'] ?? $primary?->workItem?->name;
+        $item = $primary?->workItem;
+        $name = $group['label'] ?? $item?->name;
         $groupKey = $primary?->phase()->group();
-        if ($groupKey === 'vloer') {
-            return $area->materialColor();
-        }
+        $stored = $item?->display_color;
         if ($groupKey === 'plinten') {
-            return MaterialColor::resolve(
-                $area->plintLegendColor() ?? $primary?->workItem?->display_color,
+            return MaterialColor::forWork(
+                $area->plintLegendColor() ?? $stored,
                 $name,
             );
         }
+        if ($groupKey === 'vloer' && $this->hexMatchesPlintLegend($area, $stored)) {
+            $stored = null;
+        }
 
-        return MaterialColor::resolve($primary?->workItem?->display_color, $name);
+        return MaterialColor::forWork($stored, $name);
+    }
+
+    private function hexMatchesPlintLegend(ProjectArea $area, ?string $hex): bool
+    {
+        $normalized = MaterialColor::normalizeHex($hex);
+        if ($normalized === null) {
+            return false;
+        }
+        foreach ($area->plintDisplayColors() as $plintHex) {
+            if (MaterialColor::hexesMatch($normalized, $plintHex, 8)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function workFilterRank(string $key): int

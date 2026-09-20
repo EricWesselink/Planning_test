@@ -69,6 +69,20 @@ class CalculationRoomRowsTest extends TestCase
         $this->assertSame('v01.d', $table['rows'][0]['floor']?->product_code);
     }
 
+    public function test_splits_rooms_that_share_a_number_but_not_a_name(): void
+    {
+        $table = (new CalculationRoomRows)->table(collect([
+            $this->line(1, 'K-01-09', 'SER', 'v01', 9.8, WorkUnit::SquareMeter, QuantitySource::FromDrawing),
+            $this->line(2, 'K-01-09', 'KANTOOR MAS', 'v06.b', 8.6, WorkUnit::SquareMeter, QuantitySource::Manual),
+        ]));
+
+        $this->assertSame(2, $table['room_count']);
+        $names = collect($table['rows'])->pluck('room_name')->sort()->values()->all();
+        $this->assertSame(['KANTOOR MAS', 'SER'], $names);
+        $codes = collect($table['rows'])->map(fn (array $row): string => (string) $row['floor']?->product_code)->sort()->values()->all();
+        $this->assertSame(['v01', 'v06.b'], $codes);
+    }
+
     public function test_marks_a_room_without_floor_finish_as_not_applicable(): void
     {
         $table = (new CalculationRoomRows)->table(collect([

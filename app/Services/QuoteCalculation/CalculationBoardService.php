@@ -44,6 +44,7 @@ class CalculationBoardService
             'routes' => [
                 'drawing' => route('calculations.drawings.show', [$calculation, '__DRAWING__']),
                 'update_room' => route('calculations.board.rooms.update', [$calculation, '__LINE__']),
+                'create_room' => route('calculations.board.rooms.store', $calculation),
                 'confirm_room' => route('calculations.board.rooms.confirm', [$calculation, '__LINE__']),
             ],
             'drawings' => $calculation->drawings
@@ -108,6 +109,7 @@ class CalculationBoardService
                 'material_color' => $color,
                 'material_color_soft' => $color === null ? null : MaterialColor::softBackground($color, 0.18),
                 'overlay' => $this->overlayFromTrace($line->calculation_trace),
+                'chip' => $this->chipFromTrace($line->calculation_trace),
             ];
         }
         $code = trim((string) ($floor?->product_code ?? ''));
@@ -117,6 +119,8 @@ class CalculationBoardService
         $roomArea = is_numeric($row['room_area'] ?? null) ? (float) $row['room_area'] : ($floor?->quantity !== null ? (float) $floor->quantity : null);
         $m2 = $roomArea;
         $needsReview = (bool) ($row['needs_review'] ?? false);
+        $issues = is_array($row['issues'] ?? null) ? $row['issues'] : [];
+        $reviewKind = $this->reviewKind($floor, $issues);
         $groups = $this->roomMaterialGroups($finishes, $plinth, $status);
         $groupCount = count($groups);
         $groupsDone = $needsReview ? 0 : $groupCount;
@@ -160,10 +164,12 @@ class CalculationBoardService
             'progress' => $groupCount > 0 ? $groupsDone.'/'.$groupCount : '',
             'contour' => $this->roomContourFrom($floor?->calculation_trace),
             'needs_review' => $needsReview,
+            'review_kind' => $reviewKind,
+            'review_kind_label' => $this->reviewKindLabel($reviewKind),
             'can_confirm' => (bool) ($row['can_confirm'] ?? false),
             'status' => $status->value,
             'status_label' => $status->label(),
-            'tone' => $status->isBlocking() ? ($status === CheckStatus::Missing ? 'missing' : 'review') : 'ok',
+            'tone' => $reviewKind === 'manual' ? 'manual' : ($status->isBlocking() ? ($status === CheckStatus::Missing ? 'missing' : 'review') : 'ok'),
             'has_floor' => $floors !== [],
             'has_plinth' => $plinth instanceof CalculationLine,
             'search' => $row['search'] ?? '',
@@ -180,6 +186,7 @@ class CalculationBoardService
             'chip' => $this->chipFromTrace($floor?->calculation_trace),
             'original_floor_code' => $floor?->original_product_code,
             'original_floor_product' => $floor?->original_product,
+            'original_floor_quantity' => $floor?->original_quantity !== null ? (float) $floor->original_quantity : null,
         ];
     }
 
@@ -300,7 +307,7 @@ class CalculationBoardService
     }
 
     /**
-     * @return list<array{code: string, product: string, label: string}>
+     * @return list<array{code: string, product: string, label: string, color: string}>
      */
     private function legendOptions(Calculation $calculation): array
     {
@@ -316,6 +323,7 @@ class CalculationBoardService
                     'code' => $code,
                     'product' => $product,
                     'label' => trim($code.($product !== '' ? ' – '.$product : '')),
+                    'color' => MaterialColor::fromCode($code, $product !== '' ? $product : null),
                 ];
             }
         }
@@ -486,6 +494,47 @@ class CalculationBoardService
         }
 
         return $this->normalizedOverlay($decoded);
+    }
+
+    /**
+     * @param  list<string>  $issues
+     */
+    private function reviewKind(?CalculationLine $floor, array $issues): string
+    {
+        if ($issues !== []) {
+            return 'review';
+        }
+        if ($this->isManuallyAdjusted($floor)) {
+            return 'manual';
+        }
+
+        return 'certain';
+    }
+
+    private function isManuallyAdjusted(?CalculationLine $floor): bool
+    {
+        if (! $floor instanceof CalculationLine) {
+            return false;
+        }
+        $originalCode = mb_strtolower(trim((string) $floor->original_product_code));
+        $currentCode = mb_strtolower(trim((string) $floor->product_code));
+        if ($originalCode !== '' && $currentCode !== $originalCode) {
+            return true;
+        }
+        if ($floor->original_quantity === null || $floor->quantity === null) {
+            return false;
+        }
+
+        return abs((float) $floor->quantity - (float) $floor->original_quantity) > 0.001;
+    }
+
+    private function reviewKindLabel(string $kind): string
+    {
+        return match ($kind) {
+            'manual' => 'Handmatig aangepast',
+            'review' => 'Controleren',
+            default => 'Zeker',
+        };
     }
 
     /**

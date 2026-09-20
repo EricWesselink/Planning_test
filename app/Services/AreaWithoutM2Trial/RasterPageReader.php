@@ -44,6 +44,17 @@ class RasterPageReader
         return $this->pdftoppm !== null && $this->tesseract !== null;
     }
 
+    public function canRender(): bool
+    {
+        try {
+            $this->resolveBinaries();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $this->pdftoppm !== null;
+    }
+
     /**
      * @return array{
      *     pages: list<array<string, mixed>>,
@@ -68,7 +79,7 @@ class RasterPageReader
             'preview_path' => null,
         ];
         try {
-            return $this->readCached($pdfPath, $empty, $emptyTimings);
+            return $this->readCached($pdfPath, $empty, $emptyTimings, true);
         } catch (\Throwable $e) {
             report($e);
 
@@ -85,22 +96,64 @@ class RasterPageReader
     }
 
     /**
+     * Render the page and detect walls without OCR. Used when a text layer already supplies words.
+     *
+     * @return array{
+     *     pages: list<array<string, mixed>>,
+     *     engine: ?string,
+     *     error: ?string,
+     *     timings: array{render: float, ocr: float, walls: float},
+     *     ocr_mean_confidence: ?float,
+     *     ocr_word_count: int,
+     *     preview_path: ?string
+     * }
+     */
+    public function readGeometry(string $pdfPath): array
+    {
+        $emptyTimings = ['render' => 0.0, 'ocr' => 0.0, 'walls' => 0.0];
+        $empty = [
+            'pages' => [],
+            'engine' => null,
+            'error' => 'Bestand ontbreekt.',
+            'timings' => $emptyTimings,
+            'ocr_mean_confidence' => null,
+            'ocr_word_count' => 0,
+            'preview_path' => null,
+        ];
+        try {
+            return $this->readCached($pdfPath, $empty, $emptyTimings, false);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [
+                'pages' => [],
+                'engine' => null,
+                'error' => 'De pagina kon niet worden gerenderd voor wanddetectie. Controleer of pdftoppm beschikbaar is.',
+                'timings' => $emptyTimings,
+                'ocr_mean_confidence' => null,
+                'ocr_word_count' => 0,
+                'preview_path' => null,
+            ];
+        }
+    }
+
+    /**
      * @param  array{pages: list<array<string, mixed>>, engine: ?string, error: ?string, timings: array{render: float, ocr: float, walls: float}, ocr_mean_confidence: ?float, ocr_word_count: int, preview_path: ?string}  $empty
      * @param  array{render: float, ocr: float, walls: float}  $emptyTimings
      * @return array{pages: list<array<string, mixed>>, engine: ?string, error: ?string, timings: array{render: float, ocr: float, walls: float}, ocr_mean_confidence: ?float, ocr_word_count: int, preview_path: ?string}
      */
-    private function readCached(string $pdfPath, array $empty, array $emptyTimings): array
+    private function readCached(string $pdfPath, array $empty, array $emptyTimings, bool $withOcr): array
     {
         if (! is_file($pdfPath)) {
             return $empty;
         }
 
-        $cacheKey = (hash_file('sha256', $pdfPath) ?: '').'|'.filesize($pdfPath);
+        $cacheKey = (hash_file('sha256', $pdfPath) ?: '').'|'.filesize($pdfPath).'|'.($withOcr ? 'ocr' : 'geom');
         if (isset($this->cache[$cacheKey])) {
             return $this->cache[$cacheKey];
         }
 
-        if (! $this->isAvailable()) {
+        if ($withOcr && ! $this->isAvailable()) {
             $result = [
                 'pages' => [],
                 'engine' => null,
@@ -115,11 +168,27 @@ class RasterPageReader
             return $result;
         }
 
+        if (! $withOcr && ! $this->canRender()) {
+            $result = [
+                'pages' => [],
+                'engine' => null,
+                'error' => 'pdftoppm ontbreekt. Installeer deze tool om wandgeometrie te lezen.',
+                'timings' => $emptyTimings,
+                'ocr_mean_confidence' => null,
+                'ocr_word_count' => 0,
+                'preview_path' => null,
+            ];
+            $this->cache[$cacheKey] = $result;
+
+            return $result;
+        }
+
+        $engine = $withOcr ? 'tesseract' : null;
         $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-area-ocr-'.bin2hex(random_bytes(8));
         if (! mkdir($dir) && ! is_dir($dir)) {
             $result = [
                 'pages' => [],
-                'engine' => 'tesseract',
+                'engine' => $engine,
                 'error' => 'Tijdelijke map kon niet worden gemaakt.',
                 'timings' => $emptyTimings,
                 'ocr_mean_confidence' => null,
@@ -147,7 +216,7 @@ class RasterPageReader
             if ($code !== 0 || ! is_string($image) || ! is_file($image)) {
                 $result = [
                     'pages' => [],
-                    'engine' => 'tesseract',
+                    'engine' => $engine,
                     'error' => 'De pagina kon niet naar een afbeelding worden gerenderd.',
                     'timings' => ['render' => $renderSeconds, 'ocr' => 0.0, 'walls' => 0.0],
                     'ocr_mean_confidence' => null,
@@ -159,9 +228,13 @@ class RasterPageReader
                 return $result;
             }
 
-            $ocrStarted = hrtime(true);
-            $ocr = $this->ocrWords($image);
-            $ocrSeconds = $this->secondsSince($ocrStarted);
+            $ocr = ['words' => [], 'mean_confidence' => null];
+            $ocrSeconds = 0.0;
+            if ($withOcr) {
+                $ocrStarted = hrtime(true);
+                $ocr = $this->ocrWords($image);
+                $ocrSeconds = $this->secondsSince($ocrStarted);
+            }
 
             $size = getimagesize($image);
             $width = (float) ($size[0] ?? 1);
@@ -173,6 +246,9 @@ class RasterPageReader
 
             $previewPath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-area-preview-'.bin2hex(random_bytes(8)).'.png';
             $copied = @copy($image, $previewPath);
+            $ocrError = $withOcr && $ocr['words'] === []
+                ? 'Tesseract vond geen leesbare tekst op de afbeelding.'
+                : null;
             $result = [
                 'pages' => [[
                     'page' => 1,
@@ -185,8 +261,8 @@ class RasterPageReader
                     'raw_walls' => $detected['raw_walls'],
                     'wall_extract' => $detected['wall_extract'],
                 ]],
-                'engine' => 'tesseract',
-                'error' => $ocr['words'] === [] ? 'Tesseract vond geen leesbare tekst op de afbeelding.' : null,
+                'engine' => $engine,
+                'error' => $ocrError,
                 'timings' => [
                     'render' => $renderSeconds,
                     'ocr' => $ocrSeconds,

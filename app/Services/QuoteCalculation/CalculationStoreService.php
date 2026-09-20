@@ -468,7 +468,10 @@ class CalculationStoreService
                 $next = $this->applyChosenFloorVariant($line, $next, $legend);
                 $source = QuantitySource::tryFrom((string) ($payload['source'] ?? $line->source?->value));
                 if ($this->changed($line, $next)) {
-                    $source = QuantitySource::Manual;
+                    $next = $this->preserveAutomaticOriginals($line, $next, $payload);
+                    $source = (($payload['keep_found_source'] ?? false) === true)
+                        ? ($line->found_source ?? QuantitySource::FromDrawing)
+                        : QuantitySource::Manual;
                     $next['confirmed_at'] = null;
                     $next['confirmed_manually'] = false;
                 }
@@ -518,7 +521,8 @@ class CalculationStoreService
                 return $calculation->fresh(['lines', 'drawings']) ?? $calculation;
             }
         }
-        if (($fields['restore_automatic'] ?? false) === true) {
+        $restoring = ($fields['restore_automatic'] ?? false) === true;
+        if ($restoring) {
             $fields = $this->restoreAutomaticFields($match, $fields);
         }
 
@@ -557,7 +561,10 @@ class CalculationStoreService
                     ? $finish['quantity']
                     : ($isMain && array_key_exists('floor_quantity', $fields) ? $fields['floor_quantity'] : $floor->quantity),
                 'unit' => $floor->unit?->value ?? WorkUnit::SquareMeter->value,
-                'source' => $floor->source?->value ?? QuantitySource::Manual->value,
+                'source' => $restoring
+                    ? ($floor->found_source?->value ?? QuantitySource::FromDrawing->value)
+                    : ($floor->source?->value ?? QuantitySource::Manual->value),
+                'keep_found_source' => $restoring,
                 'note' => $fields['note'] ?? $floor->note,
             ];
         }
@@ -597,6 +604,68 @@ class CalculationStoreService
         ]);
     }
 
+    /**
+     * @param  array<string, mixed>  $fields
+     */
+    public function createBoardRoom(Calculation $calculation, array $fields, CalculationRoomRows $rows): CalculationLine
+    {
+        $calculation->loadMissing('lines');
+        $drawing = CalculationDrawing::query()->findOrFail((int) $fields['document_id']);
+        abort_unless((int) $drawing->calculation_id === (int) $calculation->id, 404);
+
+        $number = trim((string) ($fields['room_number'] ?? ''));
+        $name = trim((string) ($fields['room_name'] ?? ''));
+        $existing = $this->existingBoardFloor($calculation, (int) $drawing->id, $number, $name);
+        if ($existing instanceof CalculationLine) {
+            $this->updateBoardRoom($calculation, $existing, $fields, $rows);
+
+            return $existing->fresh() ?? $existing;
+        }
+
+        $code = mb_strtolower(trim((string) ($fields['floor_code'] ?? '')));
+        $product = trim((string) ($fields['floor_product'] ?? ''));
+        if ($product === '' && $code !== '') {
+            foreach ($drawing->legend ?? [] as $entry) {
+                if (mb_strtolower(trim((string) ($entry['code'] ?? ''))) === $code) {
+                    $product = trim((string) ($entry['product'] ?? ''));
+                    break;
+                }
+            }
+        }
+        $quantity = $fields['floor_quantity'] ?? null;
+        $page = max(1, (int) ($fields['page'] ?? 1));
+        $chip = is_array($fields['chip'] ?? null) ? $fields['chip'] : null;
+        $trace = [
+            'chip' => [
+                'x' => max(0.0, min(1.0, (float) ($chip['x'] ?? 0.5))),
+                'y' => max(0.0, min(1.0, (float) ($chip['y'] ?? 0.5))),
+                'page' => max(1, (int) ($chip['page'] ?? $page)),
+                'manual' => true,
+            ],
+        ];
+        $sort = (int) $calculation->lines()->max('sort_order') + 1;
+
+        return CalculationLine::query()->create([
+            'calculation_id' => $calculation->id,
+            'calculation_drawing_id' => $drawing->id,
+            'sort_order' => $sort,
+            'room_number' => $number !== '' ? $number : null,
+            'room_name' => trim((string) ($fields['room_name'] ?? '')) ?: ($number !== '' ? $number : 'Ruimte'),
+            'product_code' => $code !== '' ? $code : null,
+            'product' => $product !== '' ? $product : null,
+            'original_product_code' => $code !== '' ? $code : null,
+            'original_product' => $product !== '' ? $product : null,
+            'quantity' => $quantity,
+            'original_quantity' => $quantity,
+            'room_area' => $quantity,
+            'unit' => WorkUnit::SquareMeter->value,
+            'finish_role' => FinishRole::Main->value,
+            'source' => QuantitySource::Manual->value,
+            'found_source' => QuantitySource::Manual->value,
+            'calculation_trace' => json_encode($trace, JSON_UNESCAPED_UNICODE),
+        ]);
+    }
+
     public function confirmRoom(Calculation $calculation, CalculationLine $line, CalculationRoomRows $rows): bool
     {
         $calculation->loadMissing('lines');
@@ -613,16 +682,8 @@ class CalculationStoreService
             return false;
         }
 
-        $number = mb_strtolower(trim((string) $line->room_number));
-        $query = $calculation->lines();
-        if ($number === '') {
-            $query->where('id', $line->id);
-        } else {
-            $query->where('room_number', $line->room_number)
-                ->where('calculation_drawing_id', $line->calculation_drawing_id);
-        }
-
-        $query->update([
+        $ids = $this->rowLineIds($match);
+        $calculation->lines()->whereIn('id', $ids)->update([
             'confirmed_at' => now(),
             'confirmed_manually' => true,
         ]);
@@ -954,7 +1015,19 @@ class CalculationStoreService
      */
     private function isLocalAreaOnly(array $fields): bool
     {
-        return array_keys($fields) === ['floors'];
+        if (array_keys($fields) !== ['floors'] || ! is_array($fields['floors'] ?? null) || $fields['floors'] === []) {
+            return false;
+        }
+        foreach ($fields['floors'] as $finish) {
+            if (! is_array($finish) || ! array_key_exists('quantity', $finish)) {
+                return false;
+            }
+            if (array_key_exists('code', $finish) || array_key_exists('product', $finish)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -966,10 +1039,53 @@ class CalculationStoreService
         if (! array_key_exists('chip', $fields) && ! array_key_exists('chip_reset', $fields)) {
             return false;
         }
-        $floor = $row['floor'] ?? (($row['floors'][0] ?? null));
-        if (! $floor instanceof CalculationLine || $floor->unit !== WorkUnit::SquareMeter) {
+        $floors = [];
+        foreach ($row['floors'] ?? [] as $floor) {
+            if ($floor instanceof CalculationLine && $floor->unit === WorkUnit::SquareMeter) {
+                $floors[] = $floor;
+            }
+        }
+        if ($floors === []) {
+            $floor = $row['floor'] ?? null;
+            if ($floor instanceof CalculationLine && $floor->unit === WorkUnit::SquareMeter) {
+                $floors[] = $floor;
+            }
+        }
+        $finishId = (int) (is_array($fields['chip'] ?? null) ? ($fields['chip']['finish_id'] ?? 0) : 0);
+        if (($fields['chip_reset'] ?? false) === true) {
+            $targets = $finishId > 0
+                ? array_values(array_filter($floors, fn (CalculationLine $floor): bool => (int) $floor->id === $finishId))
+                : $floors;
+            $saved = false;
+            foreach ($targets as $floor) {
+                $saved = $this->writeFloorChip($floor, null) || $saved;
+            }
+
+            return $saved;
+        }
+        if (! is_array($fields['chip'] ?? null)) {
             return false;
         }
+        $floor = $finishId > 0
+            ? collect($floors)->first(fn (CalculationLine $item): bool => (int) $item->id === $finishId)
+            : ($floors[0] ?? null);
+        if (! $floor instanceof CalculationLine) {
+            return false;
+        }
+
+        return $this->writeFloorChip($floor, [
+            'x' => max(0.0, min(1.0, (float) $fields['chip']['x'])),
+            'y' => max(0.0, min(1.0, (float) $fields['chip']['y'])),
+            'page' => max(1, (int) ($fields['chip']['page'] ?? 1)),
+            'manual' => true,
+        ]);
+    }
+
+    /**
+     * @param  array{x: float, y: float, page: int, manual: bool}|null  $chip
+     */
+    private function writeFloorChip(CalculationLine $floor, ?array $chip): bool
+    {
         $decoded = json_decode((string) $floor->calculation_trace, true);
         if (! is_array($decoded)) {
             if (filled($floor->calculation_trace)) {
@@ -977,15 +1093,10 @@ class CalculationStoreService
             }
             $decoded = [];
         }
-        if (($fields['chip_reset'] ?? false) === true) {
+        if ($chip === null) {
             unset($decoded['chip']);
-        } elseif (is_array($fields['chip'] ?? null)) {
-            $decoded['chip'] = [
-                'x' => max(0.0, min(1.0, (float) $fields['chip']['x'])),
-                'y' => max(0.0, min(1.0, (float) $fields['chip']['y'])),
-                'page' => max(1, (int) ($fields['chip']['page'] ?? 1)),
-                'manual' => true,
-            ];
+        } else {
+            $decoded['chip'] = $chip;
         }
         $floor->update([
             'calculation_trace' => $decoded === [] ? null : json_encode($decoded, JSON_UNESCAPED_UNICODE),
@@ -1005,6 +1116,39 @@ class CalculationStoreService
         return $keys === ['chip'] || $keys === ['chip_reset'] || $keys === ['chip', 'chip_reset'];
     }
 
+    private function existingBoardFloor(Calculation $calculation, int $drawingId, string $number, string $name = ''): ?CalculationLine
+    {
+        $needle = mb_strtolower(trim($number));
+        if ($needle === '') {
+            return null;
+        }
+        $matches = $calculation->lines
+            ->filter(function (CalculationLine $line) use ($drawingId, $needle): bool {
+                return (int) $line->calculation_drawing_id === $drawingId
+                    && $line->unit === WorkUnit::SquareMeter
+                    && mb_strtolower(trim((string) $line->room_number)) === $needle;
+            });
+        $nameNeedle = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $name) ?? ''));
+        if ($nameNeedle !== '') {
+            $named = $matches->first(function (CalculationLine $line) use ($nameNeedle): bool {
+                return mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $line->room_name) ?? '')) === $nameNeedle;
+            });
+            if ($named instanceof CalculationLine) {
+                return $named;
+            }
+            $hasOtherName = $matches->contains(function (CalculationLine $line) use ($nameNeedle): bool {
+                $current = mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $line->room_name) ?? ''));
+
+                return $current !== '' && $current !== $nameNeedle;
+            });
+            if ($hasOtherName) {
+                return null;
+            }
+        }
+
+        return $matches->count() === 1 ? $matches->first() : null;
+    }
+
     /**
      * @param  array<string, mixed>  $row
      * @param  array<string, mixed>  $fields
@@ -1021,6 +1165,9 @@ class CalculationStoreService
         }
         if (filled($floor->original_product)) {
             $fields['floor_product'] = $floor->original_product;
+        }
+        if ($floor->original_quantity !== null) {
+            $fields['floor_quantity'] = $floor->original_quantity;
         }
         unset($fields['restore_automatic']);
 
@@ -1099,6 +1246,32 @@ class CalculationStoreService
         ];
 
         return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $next
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function preserveAutomaticOriginals(CalculationLine $line, array $next, array $payload): array
+    {
+        if (($payload['keep_found_source'] ?? false) === true) {
+            return $next;
+        }
+        if ($line->original_quantity === null && $line->quantity !== null) {
+            $next['original_quantity'] = $line->quantity;
+        }
+        if (! filled($line->original_product_code) && filled($line->product_code)) {
+            $next['original_product_code'] = $line->product_code;
+        }
+        if (! filled($line->original_product) && filled($line->product)) {
+            $next['original_product'] = $line->product;
+        }
+        if ($line->found_source === null && $line->source !== null && $line->source !== QuantitySource::Manual) {
+            $next['found_source'] = $line->source;
+        }
+
+        return $next;
     }
 
     /**

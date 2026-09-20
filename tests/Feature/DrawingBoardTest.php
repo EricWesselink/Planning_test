@@ -454,6 +454,8 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString("if (tool === 'select' || snagMode || moveMode) {", $js);
         $this->assertStringNotContainsString('moveMode || roomMeasureMode', $js);
         $this->assertStringContainsString('sleep om te verschuiven', $js);
+        $this->assertStringContainsString('persistNameOverlay', $js);
+        $this->assertStringContainsString('nameOverlayPoint', $js);
         $this->assertStringContainsString('.room-measure-btn.is-on', $css);
         $this->assertStringNotContainsString('.room-select-fill', $css);
         $this->assertStringNotContainsString('Selectie uitbesteden', $view);
@@ -1637,6 +1639,54 @@ class DrawingBoardTest extends TestCase
         $this->assertSame('manual', $this->actingAs($user)
             ->getJson(route('projects.areas.show', [$project, $area]))
             ->json('area.marker.source'));
+    }
+
+    public function test_board_moves_a_room_label_without_changing_the_room_shape(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+        $area = $project->areas()->where('area_number', '0.07')->first();
+        $document = $project->plattegrond();
+        $polygon = [
+            ['x' => 0.1, 'y' => 0.2],
+            ['x' => 0.3, 'y' => 0.2],
+            ['x' => 0.3, 'y' => 0.4],
+            ['x' => 0.1, 'y' => 0.4],
+        ];
+        AreaDrawingMarker::query()->create([
+            'project_area_id' => $area->id,
+            'project_document_id' => $document->id,
+            'page' => 1,
+            'x' => 0.10,
+            'y' => 0.20,
+            'width' => 0.20,
+            'height' => 0.20,
+            'label_text' => '0.07 groepsruimte',
+            'polygon' => $polygon,
+            'source' => 'text',
+            'confidence' => 0.9,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson(route('projects.areas.marker', [$project, $area]), [
+                'document_id' => $document->id,
+                'page' => 1,
+                'label_only' => true,
+                'label_x' => 0.22,
+                'label_y' => 0.31,
+            ])
+            ->assertOk()
+            ->assertJsonPath('marker.label_x', 0.22)
+            ->assertJsonPath('marker.label_y', 0.31)
+            ->assertJsonPath('marker.source', 'text');
+
+        $marker = $this->markerFor($project, '0.07');
+        $this->assertEqualsWithDelta(0.22, (float) $marker->label_x, 0.0001);
+        $this->assertEqualsWithDelta(0.31, (float) $marker->label_y, 0.0001);
+        $this->assertEqualsWithDelta(0.10, (float) $marker->x, 0.0001);
+        $this->assertEqualsWithDelta(0.20, (float) $marker->y, 0.0001);
+        $this->assertSame('text', $marker->source);
+        $this->assertEquals($polygon, $marker->polygon);
     }
 
     public function test_detect_does_not_overwrite_manual_position_if_loaded_markers_are_stale(): void

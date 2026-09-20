@@ -40,43 +40,10 @@ class CalculationRoomRows
     public function table(Collection $lines, array $legend = []): array
     {
         $groups = [];
-        foreach ($lines as $line) {
-            $key = $this->groupKey($line);
-            if (! isset($groups[$key])) {
-                $groups[$key] = [
-                    'key' => $key,
-                    'room_number' => $line->room_number,
-                    'room_name' => $line->room_name,
-                    'floor' => null,
-                    'floors' => [],
-                    'plinth' => null,
-                ];
+        foreach ($this->groupedLines($lines) as $key => $bucket) {
+            foreach ($bucket as $line) {
+                $this->pushLineIntoGroup($groups, $key, $line);
             }
-            if ($line->unit === WorkUnit::SquareMeter) {
-                $groups[$key]['floors'][] = $line;
-                if ($this->isMainFloor($line, $groups[$key]['floor'])) {
-                    $groups[$key]['floor'] = $line;
-                    if (filled($line->room_name)) {
-                        $groups[$key]['room_name'] = $line->room_name;
-                    }
-                }
-
-                continue;
-            }
-            if ($line->unit === WorkUnit::LinearMeter && $groups[$key]['plinth'] === null) {
-                $groups[$key]['plinth'] = $line;
-
-                continue;
-            }
-            $extraKey = 'line-'.$line->id;
-            $groups[$extraKey] = [
-                'key' => $extraKey,
-                'room_number' => $line->room_number,
-                'room_name' => $line->room_name,
-                'floor' => $line->unit === WorkUnit::LinearMeter ? null : $line,
-                'floors' => $line->unit === WorkUnit::LinearMeter ? [] : [$line],
-                'plinth' => $line->unit === WorkUnit::LinearMeter ? $line : null,
-            ];
         }
 
         $rows = [];
@@ -199,7 +166,82 @@ class CalculationRoomRows
         ];
     }
 
-    private function groupKey(CalculationLine $line): string
+    private function groupedLines(Collection $lines): array
+    {
+        $buckets = [];
+        foreach ($lines as $line) {
+            $buckets[$this->numberKey($line)][] = $line;
+        }
+        $grouped = [];
+        foreach ($buckets as $base => $bucket) {
+            $names = [];
+            foreach ($bucket as $line) {
+                if ($line->unit !== WorkUnit::SquareMeter) {
+                    continue;
+                }
+                $name = $this->normalizedRoomName($line->room_name);
+                if ($name !== '') {
+                    $names[$name] = true;
+                }
+            }
+            if (count($names) <= 1) {
+                $grouped[$base] = $bucket;
+
+                continue;
+            }
+            foreach ($bucket as $line) {
+                $name = $this->normalizedRoomName($line->room_name);
+                $key = $name !== '' ? $base.'|'.$name : 'line-'.$line->id;
+                $grouped[$key][] = $line;
+            }
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $groups
+     */
+    private function pushLineIntoGroup(array &$groups, string $key, CalculationLine $line): void
+    {
+        if (! isset($groups[$key])) {
+            $groups[$key] = [
+                'key' => $key,
+                'room_number' => $line->room_number,
+                'room_name' => $line->room_name,
+                'floor' => null,
+                'floors' => [],
+                'plinth' => null,
+            ];
+        }
+        if ($line->unit === WorkUnit::SquareMeter) {
+            $groups[$key]['floors'][] = $line;
+            if ($this->isMainFloor($line, $groups[$key]['floor'])) {
+                $groups[$key]['floor'] = $line;
+                if (filled($line->room_name)) {
+                    $groups[$key]['room_name'] = $line->room_name;
+                }
+            }
+
+            return;
+        }
+        if ($line->unit === WorkUnit::LinearMeter && $groups[$key]['plinth'] === null) {
+            $groups[$key]['plinth'] = $line;
+
+            return;
+        }
+        $extraKey = 'line-'.$line->id;
+        $groups[$extraKey] = [
+            'key' => $extraKey,
+            'room_number' => $line->room_number,
+            'room_name' => $line->room_name,
+            'floor' => $line->unit === WorkUnit::LinearMeter ? null : $line,
+            'floors' => $line->unit === WorkUnit::LinearMeter ? [] : [$line],
+            'plinth' => $line->unit === WorkUnit::LinearMeter ? $line : null,
+        ];
+    }
+
+    private function numberKey(CalculationLine $line): string
     {
         $number = mb_strtolower(trim((string) $line->room_number));
         if ($number === '') {
@@ -207,6 +249,11 @@ class CalculationRoomRows
         }
 
         return (string) ($line->calculation_drawing_id ?? '0').'|'.$number;
+    }
+
+    private function normalizedRoomName(mixed $name): string
+    {
+        return mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $name) ?? ''));
     }
 
     /**
