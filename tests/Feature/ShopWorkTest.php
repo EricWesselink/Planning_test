@@ -1216,7 +1216,7 @@ class ShopWorkTest extends TestCase
             ->assertSee('Eric Wesselink - Keijenborg')
             ->assertSee('Wolsinkweg 4')
             ->assertSee('Tel. 0612345678')
-            ->assertSee('wesselinkeric@hotmail.com')
+            ->assertDontSee('wesselinkeric@hotmail.com')
             ->assertSee('PVC banen — rechterplank donker eiken')
             ->assertSee('18,77 m²')
             ->assertSee('Tapijt')

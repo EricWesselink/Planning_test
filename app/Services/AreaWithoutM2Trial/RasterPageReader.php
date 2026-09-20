@@ -12,9 +12,11 @@ class RasterPageReader
 {
     private const SCALE_TO = 1200;
 
-    private const WALL_MAX_EDGE = 800;
+    private const WALL_MAX_EDGE = 1200;
 
-    private const WALL_STEP = 3;
+    private const WALL_STEP = 2;
+
+    private const WALL_INK = 105;
 
     private const OCR_TIMEOUT_SECONDS = 15.0;
 
@@ -150,6 +152,8 @@ class RasterPageReader
                     'fills' => [],
                     'walls' => $detected['walls'],
                     'ticks' => $detected['ticks'],
+                    'raw_walls' => $detected['raw_walls'],
+                    'wall_extract' => $detected['wall_extract'],
                 ]],
                 'engine' => 'tesseract',
                 'error' => $ocr['words'] === [] ? 'Tesseract vond geen leesbare tekst op de afbeelding.' : null,
@@ -331,13 +335,46 @@ class RasterPageReader
     }
 
     /**
-     * @return array{walls: list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>, ticks: list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>}
+     * Trace H/V ink on a PNG without OCR. Isolated for unit tests of wall extraction.
+     *
+     * @return array{
+     *     walls: list<array<string, mixed>>,
+     *     ticks: list<array<string, mixed>>,
+     *     raw_walls: list<array<string, mixed>>,
+     *     wall_extract: array<string, mixed>,
+     *     width: float,
+     *     height: float
+     * }
+     */
+    public function tracePng(string $imagePath): array
+    {
+        $size = @getimagesize($imagePath);
+        $width = (float) ($size[0] ?? 1);
+        $height = (float) ($size[1] ?? 1);
+        $detected = $this->detectWalls($imagePath, $width, $height);
+
+        return $detected + ['width' => $width, 'height' => $height];
+    }
+
+    /**
+     * @return array{
+     *     walls: list<array<string, mixed>>,
+     *     ticks: list<array<string, mixed>>,
+     *     raw_walls: list<array<string, mixed>>,
+     *     wall_extract: array<string, mixed>
+     * }
      */
     private function detectWalls(string $imagePath, float $width, float $height): array
     {
+        $empty = [
+            'walls' => [],
+            'ticks' => [],
+            'raw_walls' => [],
+            'wall_extract' => ['bands_h' => [], 'bands_v' => [], 'axes' => []],
+        ];
         $image = @imagecreatefrompng($imagePath);
         if ($image === false) {
-            return ['walls' => [], 'ticks' => []];
+            return $empty;
         }
 
         $srcW = imagesx($image);
@@ -350,7 +387,7 @@ class RasterPageReader
             if ($small === false) {
                 imagedestroy($image);
 
-                return ['walls' => [], 'ticks' => []];
+                return $empty;
             }
             imagecopyresampled($small, $image, 0, 0, 0, 0, $w, $h, $srcW, $srcH);
             imagedestroy($image);
@@ -411,13 +448,29 @@ class RasterPageReader
                 $ticks[] = $this->vWall($col, $start, $h - 1, $scale, $srcH);
             }
         }
+
+        $bands = $this->detectDarkBands($image, $w, $h, $scale, $srcH, $minH, $minV);
         imagedestroy($image);
+
+        $raw = $this->mergeWalls($walls);
+        $mergedTicks = $this->mergeWalls($ticks, 12);
+        $assembled = (new WallAxisAssembler)->assemble(
+            array_merge($raw, $bands),
+            $width > 1 ? $width : $srcW,
+            $height > 1 ? $height : $srcH,
+        );
 
         unset($width, $height);
 
         return [
-            'walls' => $this->mergeWalls($walls),
-            'ticks' => $this->mergeWalls($ticks, 12),
+            'walls' => $assembled['walls'],
+            'ticks' => $mergedTicks,
+            'raw_walls' => $raw,
+            'wall_extract' => [
+                'bands_h' => $assembled['bands_h'],
+                'bands_v' => $assembled['bands_v'],
+                'axes' => $assembled['axes'],
+            ],
         ];
     }
 
@@ -431,7 +484,143 @@ class RasterPageReader
         $g = ($rgb >> 8) & 255;
         $b = $rgb & 255;
 
-        return (($r + $g + $b) / 3) < 90;
+        return (($r + $g + $b) / 3) < self::WALL_INK;
+    }
+
+    /**
+     * Long dark bands of wall thickness, separate from thin 1-pixel traces.
+     *
+     * @param  \GdImage  $image
+     * @return list<array<string, mixed>>
+     */
+    private function detectDarkBands($image, int $w, int $h, float $scale, int $srcH, int $minH, int $minV): array
+    {
+        $minThickness = 5;
+        $maxThickness = max(18, (int) round(min($w, $h) * 0.045));
+        $vHits = [];
+        for ($row = 0; $row < $h; $row += 2) {
+            $run = 0;
+            $start = 0;
+            for ($col = 0; $col <= $w; $col++) {
+                $ink = $col < $w && $this->isInk($image, $col, $row);
+                if ($ink) {
+                    if ($run === 0) {
+                        $start = $col;
+                    }
+                    $run++;
+                } else {
+                    if ($run >= $minThickness && $run <= $maxThickness) {
+                        $vHits[] = ['along' => ($start + $col - 1) / 2, 'perp' => $row, 'thickness' => $run];
+                    }
+                    $run = 0;
+                }
+            }
+        }
+        $hHits = [];
+        for ($col = 0; $col < $w; $col += 2) {
+            $run = 0;
+            $start = 0;
+            for ($row = 0; $row <= $h; $row++) {
+                $ink = $row < $h && $this->isInk($image, $col, $row);
+                if ($ink) {
+                    if ($run === 0) {
+                        $start = $row;
+                    }
+                    $run++;
+                } else {
+                    if ($run >= $minThickness && $run <= $maxThickness) {
+                        $hHits[] = ['along' => ($start + $row - 1) / 2, 'perp' => $col, 'thickness' => $run];
+                    }
+                    $run = 0;
+                }
+            }
+        }
+
+        return array_merge(
+            $this->clusterBandHits($vHits, 'v', $scale, $srcH, $minV),
+            $this->clusterBandHits($hHits, 'h', $scale, $srcH, $minH),
+        );
+    }
+
+    /**
+     * @param  list<array{along: float, perp: float, thickness: int}>  $hits
+     * @return list<array<string, mixed>>
+     */
+    private function clusterBandHits(array $hits, string $axis, float $scale, int $srcH, int $minLength): array
+    {
+        if ($hits === []) {
+            return [];
+        }
+        usort($hits, function (array $a, array $b): int {
+            $along = $a['along'] <=> $b['along'];
+
+            return $along !== 0 ? $along : $a['perp'] <=> $b['perp'];
+        });
+
+        $groups = [];
+        foreach ($hits as $hit) {
+            $attached = false;
+            foreach ($groups as &$group) {
+                if (abs($group['along'] - $hit['along']) > 4) {
+                    continue;
+                }
+                if ($hit['perp'] - $group['perp_hi'] > 8) {
+                    continue;
+                }
+                $n = $group['count'];
+                $group['along'] = (($group['along'] * $n) + $hit['along']) / ($n + 1);
+                $group['perp_lo'] = min($group['perp_lo'], $hit['perp']);
+                $group['perp_hi'] = max($group['perp_hi'], $hit['perp']);
+                $group['thickness'] = max($group['thickness'], $hit['thickness']);
+                $group['count'] = $n + 1;
+                $attached = true;
+                break;
+            }
+            unset($group);
+            if (! $attached) {
+                $groups[] = [
+                    'along' => $hit['along'],
+                    'perp_lo' => $hit['perp'],
+                    'perp_hi' => $hit['perp'],
+                    'thickness' => $hit['thickness'],
+                    'count' => 1,
+                ];
+            }
+        }
+
+        $bands = [];
+        foreach ($groups as $group) {
+            $length = ($group['perp_hi'] - $group['perp_lo']) / $scale;
+            if ($length < $minLength) {
+                continue;
+            }
+            if ($axis === 'v') {
+                $x = $group['along'] / $scale;
+                $bands[] = [
+                    'x1' => $x,
+                    'y1' => $srcH - ($group['perp_hi'] / $scale),
+                    'x2' => $x,
+                    'y2' => $srcH - ($group['perp_lo'] / $scale),
+                    'axis' => 'v',
+                    'kind' => WallAxisAssembler::KIND_BAND,
+                    'thickness' => $group['thickness'] / $scale,
+                ];
+
+                continue;
+            }
+            $y = $srcH - ($group['along'] / $scale);
+            $bands[] = [
+                'x1' => $group['perp_lo'] / $scale,
+                'y1' => $y,
+                'x2' => $group['perp_hi'] / $scale,
+                'y2' => $y,
+                'axis' => 'h',
+                'kind' => WallAxisAssembler::KIND_BAND,
+                'thickness' => $group['thickness'] / $scale,
+            ];
+        }
+
+        return $bands;
     }
 
     /**

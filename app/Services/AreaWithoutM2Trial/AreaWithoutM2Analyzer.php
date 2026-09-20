@@ -648,6 +648,12 @@ class AreaWithoutM2Analyzer
         ];
         $overlay['walls'] = $this->overlayWallLines($boundary, $pageWidth, $pageHeight);
         $overlay['candidates'] = $this->overlayCandidateLines($boundary, $pageWidth, $pageHeight);
+        $overlay['raw'] = $this->overlayNamedWalls($page['raw_walls'] ?? [], $pageWidth, $pageHeight);
+        $overlay['bands'] = $this->overlayNamedWalls(array_merge(
+            $page['wall_extract']['bands_h'] ?? [],
+            $page['wall_extract']['bands_v'] ?? [],
+        ), $pageWidth, $pageHeight);
+        $overlay['axes'] = $this->overlayNamedWalls($boundary['main_walls'] ?? [], $pageWidth, $pageHeight);
         $overlay['horizontal'] = $this->overlayLine($bound['horizontal']['overlay'] ?? null, $pageWidth, $pageHeight);
         $overlay['vertical'] = $this->overlayLine($bound['vertical']['overlay'] ?? null, $pageWidth, $pageHeight);
 
@@ -708,8 +714,32 @@ class AreaWithoutM2Analyzer
     }
 
     /**
-     * @param  array{x1?: float, y1?: float, x2?: float, y2?: float}|null  $line
-     * @return array{x1: float, y1: float, x2: float, y2: float}|null
+     * @param  list<array<string, mixed>>  $walls
+     * @return list<array<string, mixed>>
+     */
+    private function overlayNamedWalls(array $walls, float $pageWidth, float $pageHeight): array
+    {
+        $lines = [];
+        foreach ($walls as $wall) {
+            $line = $this->overlayLine([
+                'x1' => (float) ($wall['x1'] ?? $wall['x'] ?? 0),
+                'y1' => (float) ($wall['y1'] ?? $wall['y'] ?? 0),
+                'x2' => (float) ($wall['x2'] ?? $wall['x'] ?? 0),
+                'y2' => (float) ($wall['y2'] ?? $wall['y'] ?? 0),
+                'role' => $wall['role'] ?? null,
+                'kind' => $wall['kind'] ?? null,
+            ], $pageWidth, $pageHeight);
+            if ($line !== null) {
+                $lines[] = $line;
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array{x1?: float, y1?: float, x2?: float, y2?: float, role?: mixed, kind?: mixed}|null  $line
+     * @return array<string, mixed>|null
      */
     private function overlayLine(?array $line, float $pageWidth, float $pageHeight): ?array
     {
@@ -717,12 +747,20 @@ class AreaWithoutM2Analyzer
             return null;
         }
 
-        return [
+        $out = [
             'x1' => round(100 * ((float) ($line['x1'] ?? 0)) / $pageWidth, 2),
             'y1' => round(100 * ($pageHeight - (float) ($line['y1'] ?? 0)) / $pageHeight, 2),
             'x2' => round(100 * ((float) ($line['x2'] ?? 0)) / $pageWidth, 2),
             'y2' => round(100 * ($pageHeight - (float) ($line['y2'] ?? 0)) / $pageHeight, 2),
         ];
+        if (is_string($line['role'] ?? null) && $line['role'] !== '') {
+            $out['role'] = $line['role'];
+        }
+        if (is_string($line['kind'] ?? null) && $line['kind'] !== '') {
+            $out['kind'] = $line['kind'];
+        }
+
+        return $out;
     }
 
     /**

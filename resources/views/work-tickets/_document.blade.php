@@ -87,9 +87,6 @@
                 @if (filled($contactPhone ?? null))
                     <p>Tel. {{ $contactPhone }}</p>
                 @endif
-                @if (filled($contactEmail ?? null))
-                    <p>{{ $contactEmail }}</p>
-                @endif
             </td>
             <td>
                 <div class="block-title">{{ $whoHeading }}</div>

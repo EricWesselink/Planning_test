@@ -122,9 +122,17 @@
                         $colors = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
                         $color = $colors[$index % count($colors)];
                     @endphp
-                    @foreach ($room['overlay']['candidates'] ?? [] as $line)
-                        <line data-wall-candidate x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="#94a3b8" stroke-width="0.25" />
-                    @endforeach
+                    @if ($index === 0)
+                        @foreach ($room['overlay']['raw'] ?? $room['overlay']['candidates'] ?? [] as $line)
+                            <line data-wall-candidate x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="#cbd5e1" stroke-width="0.2" />
+                        @endforeach
+                        @foreach ($room['overlay']['bands'] ?? [] as $line)
+                            <line data-wall-band x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="#ea580c" stroke-width="0.7" stroke-dasharray="0.8 0.5" />
+                        @endforeach
+                        @foreach ($room['overlay']['axes'] ?? [] as $line)
+                            <line data-wall-axis data-wall-role="{{ $line['role'] ?? '' }}" x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="{{ ($line['role'] ?? '') === 'buitenwand' ? '#0f172a' : '#475569' }}" stroke-width="{{ ($line['role'] ?? '') === 'buitenwand' ? '0.55' : '0.4' }}" stroke-dasharray="{{ ($line['role'] ?? '') === 'buitenwand' ? '1.6 0.7' : '0.4 0.5' }}" />
+                        @endforeach
+                    @endif
                     @foreach ($room['overlay']['walls'] ?? [] as $line)
                         <line x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="{{ $color }}" stroke-width="0.4" />
                     @endforeach
@@ -175,11 +183,35 @@
                     <p>Getest wandpaar verticaal: {{ $room['wall_debug']['tested_pair']['vertical'] ?? '—' }}</p>
                     <p>Getest wandpaar horizontaal: {{ $room['wall_debug']['tested_pair']['horizontal'] ?? '—' }}</p>
                 @endif
+                @if (($room['wall_debug']['bands_v'] ?? []) !== [])
+                    <p class="mt-2 font-medium text-nicon-ink">Dikke verticale banden</p>
+                    <ul class="list-disc pl-5">
+                        @foreach ($room['wall_debug']['bands_v'] as $band)
+                            <li>{{ $band }}</li>
+                        @endforeach
+                    </ul>
+                @endif
+                @if (($room['wall_debug']['bands_h'] ?? []) !== [])
+                    <p class="mt-2 font-medium text-nicon-ink">Dikke horizontale banden</p>
+                    <ul class="list-disc pl-5">
+                        @foreach ($room['wall_debug']['bands_h'] as $band)
+                            <li>{{ $band }}</li>
+                        @endforeach
+                    </ul>
+                @endif
+                @if (($room['wall_debug']['axes'] ?? []) !== [])
+                    <p class="mt-2 font-medium text-nicon-ink">Samengevoegde wandassen</p>
+                    <ul class="list-disc pl-5">
+                        @foreach ($room['wall_debug']['axes'] as $axis)
+                            <li>{{ $axis }}</li>
+                        @endforeach
+                    </ul>
+                @endif
                 @if (($room['wall_debug']['vertical'] ?? []) !== [])
                     <p class="mt-2 font-medium text-nicon-ink">Verticale wandkandidaten</p>
                     <ul class="list-disc pl-5">
                         @foreach ($room['wall_debug']['vertical'] as $candidate)
-                            <li>{{ $candidate['span'] ?? '' }} · afstand {{ $candidate['dist'] ?? '—' }} px · {{ $candidate['decision'] ?? '' }}</li>
+                            <li>{{ $candidate['span'] ?? '' }} · {{ $candidate['kind'] ?? 'lijn' }} · {{ $candidate['role'] ?? '—' }} · afstand {{ $candidate['dist'] ?? '—' }} px · {{ $candidate['decision'] ?? '' }}</li>
                         @endforeach
                     </ul>
                 @endif
@@ -187,7 +219,7 @@
                     <p class="mt-2 font-medium text-nicon-ink">Horizontale wandkandidaten</p>
                     <ul class="list-disc pl-5">
                         @foreach ($room['wall_debug']['horizontal'] as $candidate)
-                            <li>{{ $candidate['span'] ?? '' }} · afstand {{ $candidate['dist'] ?? '—' }} px · {{ $candidate['decision'] ?? '' }}</li>
+                            <li>{{ $candidate['span'] ?? '' }} · {{ $candidate['kind'] ?? 'lijn' }} · {{ $candidate['role'] ?? '—' }} · afstand {{ $candidate['dist'] ?? '—' }} px · {{ $candidate['decision'] ?? '' }}</li>
                         @endforeach
                     </ul>
                 @endif

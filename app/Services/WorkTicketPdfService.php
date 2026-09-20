@@ -148,9 +148,11 @@ class WorkTicketPdfService
             'colleagues' => $this->colleagueNames($ticket),
             'showPrices' => $showPrices && $ticket->kind === WorkTicketKind::Opdrachtbon,
             'includeMeasurementForm' => $includeMeasurementForm && $this->measurements->isFilled($ticket->project?->measurementForm),
-            'measurementForm' => ($includeMeasurementForm && $ticket->project instanceof Project)
-                ? $this->measurements->pdfData($ticket->project)
-                : null,
+            'measurementForm' => $this->measurementFormWithoutCustomerEmail(
+                ($includeMeasurementForm && $ticket->project instanceof Project)
+                    ? $this->measurements->pdfData($ticket->project)
+                    : null,
+            ),
         ];
     }
 
@@ -214,7 +216,6 @@ class WorkTicketPdfService
             'workNumber' => $project->workNumber(),
             'address' => $project->nawLine(),
             'contactPhone' => $project->contact_phone ?: $project->customer?->phone,
-            'contactEmail' => $project->contact_email ?: $project->customer?->email,
             'period' => $this->shopPeriod($project),
             'floors' => '',
             'rooms' => '',
@@ -236,7 +237,9 @@ class WorkTicketPdfService
             'colleagues' => [],
             'showPrices' => false,
             'includeMeasurementForm' => $includeMeasurement,
-            'measurementForm' => $includeMeasurement ? $this->measurements->pdfData($project) : null,
+            'measurementForm' => $this->measurementFormWithoutCustomerEmail(
+                $includeMeasurement ? $this->measurements->pdfData($project) : null,
+            ),
         ];
     }
 
@@ -645,6 +648,21 @@ class WorkTicketPdfService
         }
 
         return ($start ?? $end)->translatedFormat('j-m-Y');
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $data
+     * @return array<string, mixed>|null
+     */
+    private function measurementFormWithoutCustomerEmail(?array $data): ?array
+    {
+        if ($data === null) {
+            return null;
+        }
+
+        $data['email'] = null;
+
+        return $data;
     }
 
     private function safeSegment(string $value): string
