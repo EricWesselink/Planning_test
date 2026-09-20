@@ -5409,11 +5409,7 @@ button.plan-labor-toggle:hover {
 }
 
 .calc-print-kicker {
-    margin: 0;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-nicon-muted);
+    display: none;
 }
 
 .calc-print-head h1 {
@@ -5573,11 +5569,24 @@ img.calc-print-canvas {
 
 @page {
     size: A3 landscape;
-    margin: 8mm;
+    margin: 0;
+    @top-left { content: ""; }
+    @top-center { content: ""; }
+    @top-right { content: ""; }
+    @bottom-left { content: ""; }
+    @bottom-center { content: ""; }
+    @bottom-right { content: ""; }
 }
 
 @page portrait-a3 {
     size: A3 portrait;
+    margin: 0;
+    @top-left { content: ""; }
+    @top-center { content: ""; }
+    @top-right { content: ""; }
+    @bottom-left { content: ""; }
+    @bottom-center { content: ""; }
+    @bottom-right { content: ""; }
 }
 
 .calc-print-drawing-page.is-portrait {
@@ -5610,17 +5619,18 @@ img.calc-print-canvas {
     .calc-print-page {
         width: auto;
         min-height: 0;
-        height: 281mm;
+        height: 297mm;
         margin: 0;
-        padding: 0;
+        padding: 8mm;
         overflow: hidden;
         box-shadow: none;
+        box-sizing: border-box;
         break-inside: avoid;
         page-break-inside: avoid;
     }
 
     .calc-print-drawing-page.is-portrait {
-        height: 404mm;
+        height: 420mm;
     }
 
     .calc-print-sheet,

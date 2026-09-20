@@ -701,7 +701,7 @@ class RoomBoundaryReconstructor
         $envelopeRows = array_values(array_filter(
             $rows,
             fn (array $row): bool => ($row['role'] ?? '') === WallAxisAssembler::ROLE_OUTER
-                || in_array($row['kind'] ?? '', [WallAxisAssembler::KIND_BAND, WallAxisAssembler::KIND_PAIR], true),
+                || in_array($row['kind'] ?? '', [WallAxisAssembler::KIND_BAND, WallAxisAssembler::KIND_PAIR, WallAxisAssembler::KIND_CLUSTER], true),
         ));
         $merged = [];
         foreach (array_merge($envelopeRows, $nearest) as $row) {
@@ -922,7 +922,7 @@ class RoomBoundaryReconstructor
 
     private function strongerKind(string $left, string $right): string
     {
-        foreach ([WallAxisAssembler::KIND_BAND, WallAxisAssembler::KIND_PAIR, WallAxisAssembler::KIND_LINE] as $kind) {
+        foreach ([WallAxisAssembler::KIND_BAND, WallAxisAssembler::KIND_CLUSTER, WallAxisAssembler::KIND_PAIR, WallAxisAssembler::KIND_LINE] as $kind) {
             if ($left === $kind || $right === $kind) {
                 return $kind;
             }
@@ -941,7 +941,8 @@ class RoomBoundaryReconstructor
 
         return $role === WallAxisAssembler::ROLE_OUTER
             || $kind === WallAxisAssembler::KIND_BAND
-            || $kind === WallAxisAssembler::KIND_PAIR;
+            || $kind === WallAxisAssembler::KIND_PAIR
+            || $kind === WallAxisAssembler::KIND_CLUSTER;
     }
 
     /**

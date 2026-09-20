@@ -28,7 +28,6 @@ class CalculationPrintService
 
     public const DEFAULT_INCLUDES = [
         'colored',
-        'rooms',
         'codes',
         'legend',
     ];

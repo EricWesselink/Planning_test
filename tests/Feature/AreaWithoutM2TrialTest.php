@@ -10,6 +10,7 @@ use App\Services\AreaWithoutM2Trial\TrialStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Tests\Support\DimensionedRoomPdf;
 use Tests\Support\ImageOnlyPdf;
 use Tests\Support\SimplePdf;
@@ -388,8 +389,11 @@ TXT, 'proef-namen.pdf'),
         $this->actingAs($user)
             ->get(route('calculations.area-without-m2.show', $id))
             ->assertSee('data-area-without-m2-overlay', false)
-            ->assertSee('data-room-overlay', false)
-            ->assertSee('data-h-chain', false)
+            ->assertSee('data-ocr-label', false)
+            ->assertSee('calc-code-chip', false)
+            ->assertSee('data-geometry-debug', false)
+            ->assertSee('rechter buitengevel:', false)
+            ->assertSee('onderste buitengevel:', false)
             ->assertSee('OCR-positie ruimtenaam:')
             ->assertSee('Linkerwand:')
             ->assertSee('Virtueel gesloten gaten:');
@@ -398,6 +402,112 @@ TXT, 'proef-namen.pdf'),
             ->get(route('calculations.area-without-m2.preview', $id))
             ->assertOk()
             ->assertHeader('content-type', 'image/png');
+    }
+
+    public function test_trial_preview_renders_raw_geometry_layers_and_facade_log(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $id = (string) Str::uuid();
+        $preview = sys_get_temp_dir().DIRECTORY_SEPARATOR.'area-without-m2-preview-'.$id.'.png';
+        file_put_contents($preview, 'png');
+
+        app(TrialStore::class)->saveResult([
+            'id' => $id,
+            'original_filename' => 'proef.pdf',
+            'absolute_path' => $preview,
+            'file_size' => 3,
+            'file_hash' => 'abc',
+        ], [
+            'rooms' => [[
+                'room_name' => 'SLAAPKAMER 1',
+                'room_number' => '',
+                'dimensions_label' => '—',
+                'method' => 'niet berekenbaar',
+                'calculated_label' => 'Niet berekenbaar',
+                'printed_label' => '—',
+                'deviation_label' => '—',
+                'status' => 'unavailable',
+                'status_label' => 'Rood – niet berekenbaar',
+                'trace' => 'Niet berekenbaar',
+                'overlay' => [
+                    'anchor' => ['x' => 78.8, 'y' => 33.3, 'label' => 'SLAAPKAMER 1'],
+                    'chip' => [
+                        'x' => 62.4, 'y' => 48.1, 'text' => 'S1',
+                        'bg' => '#be0032', 'fg' => '#fff',
+                    ],
+                    'walls' => [[
+                        'x1' => 51.4, 'y1' => 22.2, 'x2' => 51.4, 'y2' => 66.7,
+                        'side' => 'links', 'caption' => 'SLAAPKAMER 1 · links',
+                        'mx' => 51.4, 'my' => 44.5,
+                    ]],
+                ],
+            ], [
+                'room_name' => 'WOONKAMER',
+                'room_number' => '',
+                'dimensions_label' => '—',
+                'method' => 'niet berekenbaar',
+                'calculated_label' => 'Niet berekenbaar',
+                'printed_label' => '—',
+                'deviation_label' => '—',
+                'status' => 'unavailable',
+                'status_label' => 'Rood – niet berekenbaar',
+                'trace' => 'Niet berekenbaar',
+                'overlay' => null,
+            ]],
+            'geometry' => [
+                'raw_v' => [['x1' => 51.4, 'y1' => 22.2, 'x2' => 51.4, 'y2' => 66.7]],
+                'raw_h' => [['x1' => 16.7, 'y1' => 40.7, 'x2' => 66.7, 'y2' => 40.7]],
+                'bands' => [['x1' => 51.0, 'y1' => 22.2, 'x2' => 51.8, 'y2' => 66.7]],
+                'axes' => [[
+                    'x1' => 51.4, 'y1' => 22.2, 'x2' => 51.4, 'y2' => 66.7,
+                    'role' => 'interne wand',
+                    'caption' => 'interne wand · paar · x=617',
+                    'mx' => 51.4, 'my' => 44.5,
+                ]],
+            ],
+            'geometry_debug' => [
+                'right' => 'rechter buitengevel: niet gevonden',
+                'right_detail' => 'x = 617, y-bereik = 300–700, bron = paar (niet rechts van OCR x=945.3)',
+                'bottom' => 'onderste buitengevel: niet gevonden',
+                'bottom_detail' => 'y = 534, x-bereik = 200–800, bron = lijn (niet onder OCR y=400)',
+                'counts' => 'ruwe V 1 · ruwe H 1 · banden 1 · assen 1',
+                'log' => [
+                    'Rechter zoekgebied x=945.3..1200',
+                    'verticale donkere runs: 2',
+                    'kandidaat x=987 y=199–210 breedte=1.5 → afgewezen omdat te kort',
+                    'kandidaat x=1064 y=185–745 breedte=4.5 → geaccepteerd (cluster)',
+                ],
+            ],
+            'preview_path' => $preview,
+        ]);
+
+        $storedTrial = app(TrialStore::class)->find($id);
+        $this->assertNotNull($storedTrial);
+        $this->assertSame('SLAAPKAMER 1', $storedTrial['rooms'][0]['room_name'] ?? null);
+        $this->assertTrue($storedTrial['has_preview']);
+        $this->assertSame(78.8, $storedTrial['rooms'][0]['overlay']['anchor']['x'] ?? null);
+
+        $html = $this->actingAs($user)
+            ->get(route('calculations.area-without-m2.show', $id))
+            ->assertSee('data-geometry-debug', false)
+            ->assertSee('rechter buitengevel: niet gevonden')
+            ->assertSee('x = 617, y-bereik = 300–700, bron = paar', false)
+            ->assertSee('onderste buitengevel: niet gevonden')
+            ->assertSee('y = 534, x-bereik = 200–800, bron = lijn', false)
+            ->assertSee('Rechter zoekgebied x=945.3..1200')
+            ->assertSee('kandidaat x=1064 y=185–745 breedte=4.5 → geaccepteerd (cluster)')
+            ->assertSee('data-ocr-label', false)
+            ->assertSee('calc-code-chip', false)
+            ->assertSee('>S1</span>', false)
+            ->assertSee('SLAAPKAMER 1')
+            ->assertSee('WOONKAMER')
+            ->assertDontSee('data-raw-v', false)
+            ->assertDontSee('data-chosen-wall', false)
+            ->assertDontSee('interne wand · paar · x=617')
+            ->getContent();
+
+        $this->assertSame(1, substr_count($html, 'data-ocr-label'));
     }
 
     public function test_vakman_is_forbidden_from_the_trial_preview(): void

@@ -30,6 +30,7 @@ import {
     roomMatchesSearch,
     roomOverlayContent,
 } from './calculation-board-selection';
+import { chipAnchorInRoom, attachRoomCaptions } from './calculation-board-overlay';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -173,8 +174,8 @@ function boot() {
             y,
             width,
             height,
-            tw: Number(hit.tw) > 0 ? Number(hit.tw) : undefined,
-            th: Number(hit.th) > 0 ? Number(hit.th) : undefined,
+            tw: Number(hit.tw) > 0 ? Number(hit.tw) : (Number(hit.w) || Number(hit.width) || undefined),
+            th: Number(hit.th) > 0 ? Number(hit.th) : (Number(hit.h) || Number(hit.height) || undefined),
             label_text: String(hit.label_text || hit.text || room.number || '').slice(0, 160),
             source: hit.source || 'text',
         };
@@ -210,6 +211,10 @@ function boot() {
                 || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
             assignHit(room, hit);
         });
+        attachRoomCaptions(
+            rooms.filter((room) => Number(room.drawing_id) === Number(drawingId)),
+            finishItems,
+        );
         assignFinishHits(finishItems);
     }
 
@@ -445,12 +450,12 @@ function boot() {
                             floor_code: finish.code,
                             floor_codes_label: finish.code,
                             material_color: finish.material_color || room.material_color,
-                        }, localBox, { ...finishState, highlighted: true });
+                        }, chipAnchorInRoom(room, { interior: localBox, text: finish.code }) || localBox, { ...finishState, highlighted: true });
                     }
                 }
             });
             if (finishes.length <= 1 || materialSet.size === 0 || materialSet.has(String(room.material_key || '').toLowerCase())) {
-                appendCodeChip(room, box, state);
+                appendCodeChip(room, chipAnchorInRoom(room, { text: roomOverlayContent(room).code, rooms }) || box, state);
             }
         });
         applyTransform();

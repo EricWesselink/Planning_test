@@ -5,6 +5,7 @@ namespace App\Services\AreaWithoutM2Trial;
 use App\Services\Meetstaat\PdfPageGeometry;
 use App\Support\DutchNumber;
 use App\Support\Format;
+use App\Support\MaterialColor;
 
 /**
  * Experimental floor-area probe. Never writes to quote calculations or reuse their parser.
@@ -180,6 +181,8 @@ class AreaWithoutM2Analyzer
             'unavailable_room_labels' => $unavailable,
             'timings' => $this->timings,
             'timing_labels' => $this->timingLabels(),
+            'geometry' => $this->pageGeometryOverlay($pages[0] ?? []),
+            'geometry_debug' => $this->geometryDiagnosis($pages[0] ?? [], $rooms),
         ];
     }
 
@@ -617,7 +620,7 @@ class AreaWithoutM2Analyzer
             'ocr_y' => round((float) ($anchor['y'] ?? 0), 1),
             'horizontal_segment' => $horizontal['segment'] ?? '—',
             'vertical_segment' => $vertical['segment'] ?? '—',
-            'overlay' => $this->overlayGeometry($bound, $page, $anchor),
+            'overlay' => $this->overlayGeometry($bound, $page, $anchor, $name, $roomNumber),
         ];
     }
 
@@ -627,7 +630,7 @@ class AreaWithoutM2Analyzer
      * @param  array{x?: float, y?: float}  $anchor
      * @return array<string, mixed>|null
      */
-    private function overlayGeometry(array $bound, array $page, array $anchor): ?array
+    private function overlayGeometry(array $bound, array $page, array $anchor, ?string $name = null, string $roomNumber = ''): ?array
     {
         $pageWidth = (float) ($page['width'] ?? 0);
         $pageHeight = (float) ($page['height'] ?? 0);
@@ -645,15 +648,24 @@ class AreaWithoutM2Analyzer
         $overlay['anchor'] = [
             'x' => round(100 * ((float) ($anchor['x'] ?? 0)) / $pageWidth, 2),
             'y' => round(100 * ($pageHeight - (float) ($anchor['y'] ?? 0)) / $pageHeight, 2),
+            'label' => is_string($name) && $name !== '' ? $name : 'Ruimte',
         ];
-        $overlay['walls'] = $this->overlayWallLines($boundary, $pageWidth, $pageHeight);
+        $overlay['chip'] = $this->overlayChip($overlay, $roomNumber, $name, $boundary, $pageWidth, $pageHeight);
+        $overlay['walls'] = $this->overlayWallLines($boundary, $pageWidth, $pageHeight, $overlay['anchor']['label']);
         $overlay['candidates'] = $this->overlayCandidateLines($boundary, $pageWidth, $pageHeight);
-        $overlay['raw'] = $this->overlayNamedWalls($page['raw_walls'] ?? [], $pageWidth, $pageHeight);
+        $raw = $this->overlayNamedWalls($page['raw_walls'] ?? [], $pageWidth, $pageHeight, 'lijn');
+        $overlay['raw'] = $raw;
+        $overlay['raw_v'] = array_values(array_filter($raw, fn (array $line): bool => ($line['axis'] ?? '') === 'v'));
+        $overlay['raw_h'] = array_values(array_filter($raw, fn (array $line): bool => ($line['axis'] ?? '') === 'h'));
         $overlay['bands'] = $this->overlayNamedWalls(array_merge(
             $page['wall_extract']['bands_h'] ?? [],
             $page['wall_extract']['bands_v'] ?? [],
-        ), $pageWidth, $pageHeight);
-        $overlay['axes'] = $this->overlayNamedWalls($boundary['main_walls'] ?? [], $pageWidth, $pageHeight);
+        ), $pageWidth, $pageHeight, WallAxisAssembler::KIND_BAND);
+        $overlay['axes'] = $this->overlayNamedWalls(
+            $page['wall_extract']['axes'] ?? ($boundary['main_walls'] ?? []),
+            $pageWidth,
+            $pageHeight,
+        );
         $overlay['horizontal'] = $this->overlayLine($bound['horizontal']['overlay'] ?? null, $pageWidth, $pageHeight);
         $overlay['vertical'] = $this->overlayLine($bound['vertical']['overlay'] ?? null, $pageWidth, $pageHeight);
 
@@ -661,10 +673,318 @@ class AreaWithoutM2Analyzer
     }
 
     /**
-     * @param  array<string, mixed>  $boundary
-     * @return list<array{x1: float, y1: float, x2: float, y2: float}>
+     * Page-level detection overlay so the preview is not limited to the first room's clustered walls.
+     *
+     * @param  array<string, mixed>  $page
+     * @return array<string, mixed>
      */
-    private function overlayWallLines(array $boundary, float $pageWidth, float $pageHeight): array
+    private function pageGeometryOverlay(array $page): array
+    {
+        $pageWidth = (float) ($page['width'] ?? 0);
+        $pageHeight = (float) ($page['height'] ?? 0);
+        $raw = $this->overlayNamedWalls($page['raw_walls'] ?? [], $pageWidth, $pageHeight, 'lijn');
+
+        return [
+            'raw_v' => array_values(array_filter($raw, fn (array $line): bool => ($line['axis'] ?? '') === 'v')),
+            'raw_h' => array_values(array_filter($raw, fn (array $line): bool => ($line['axis'] ?? '') === 'h')),
+            'bands' => $this->overlayNamedWalls(array_merge(
+                $page['wall_extract']['bands_h'] ?? [],
+                $page['wall_extract']['bands_v'] ?? [],
+            ), $pageWidth, $pageHeight, WallAxisAssembler::KIND_BAND),
+            'axes' => $this->overlayNamedWalls(
+                $page['wall_extract']['axes'] ?? ($page['walls'] ?? []),
+                $pageWidth,
+                $pageHeight,
+            ),
+        ];
+    }
+
+    /**
+     * Report whether existing detections sit to the right of / below the bedroom OCR points.
+     *
+     * @param  array<string, mixed>  $page
+     * @param  list<array<string, mixed>>  $rooms
+     * @return array{right: string, right_detail: string, bottom: string, bottom_detail: string, counts: string, log: list<string>}
+     */
+    private function geometryDiagnosis(array $page, array $rooms): array
+    {
+        $items = $this->detectionItems($page);
+        $verticals = array_values(array_filter($items, fn (array $item): bool => $item['axis'] === 'v'));
+        $horizontals = array_values(array_filter($items, fn (array $item): bool => $item['axis'] === 'h'));
+        $ocrX = $this->bedroomOcrExtreme($rooms, 'ocr_x', true);
+        $ocrY = $this->bedroomOcrExtreme($rooms, 'ocr_y', false);
+
+        $rightmost = $this->extremeDetection($verticals, 'pos', true);
+        $lowest = $this->extremeDetection($horizontals, 'pos', false);
+
+        $rightFound = $rightmost !== null && $ocrX !== null && $rightmost['pos'] > $ocrX + 8;
+        $bottomFound = $lowest !== null && $ocrY !== null && $lowest['pos'] < $ocrY - 8;
+
+        return [
+            'right' => $rightFound ? 'rechter buitengevel: gevonden' : 'rechter buitengevel: niet gevonden',
+            'right_detail' => $this->facadeDetail('vertical', $rightmost, $rightFound, $ocrX, 'OCR x'),
+            'bottom' => $bottomFound ? 'onderste buitengevel: gevonden' : 'onderste buitengevel: niet gevonden',
+            'bottom_detail' => $this->facadeDetail('horizontal', $lowest, $bottomFound, $ocrY, 'OCR y'),
+            'counts' => 'ruwe V '.count(array_filter($items, fn (array $item): bool => $item['axis'] === 'v' && $item['layer'] === 'lijn'))
+                .' · ruwe H '.count(array_filter($items, fn (array $item): bool => $item['axis'] === 'h' && $item['layer'] === 'lijn'))
+                .' · banden '.count(array_filter($items, fn (array $item): bool => $item['layer'] === 'band'))
+                .' · assen '.count(array_filter($items, fn (array $item): bool => $item['layer'] === 'as')),
+            'log' => $this->rightSearchLog($page, $ocrX, $verticals),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $page
+     * @param  list<array{axis: string, pos: float, span_lo: float, span_hi: float, bron: string, layer: string}>  $verticals
+     * @return list<string>
+     */
+    private function rightSearchLog(array $page, ?float $ocrX, array $verticals): array
+    {
+        $pageWidth = (float) ($page['width'] ?? 0);
+        $start = $ocrX ?? max(0.0, $pageWidth * 0.7);
+        $end = $pageWidth > 1 ? $pageWidth : $start;
+        $log = ['Rechter zoekgebied x='.round($start, 1).'..'.round($end)];
+        $candidates = is_array($page['wall_extract']['vertical_candidates'] ?? null)
+            ? $page['wall_extract']['vertical_candidates']
+            : [];
+        $inRegion = array_values(array_filter(
+            $candidates,
+            fn (array $row): bool => (float) ($row['x'] ?? 0) >= $start - 0.5,
+        ));
+        if ($inRegion === []) {
+            $detected = array_values(array_filter($verticals, fn (array $item): bool => $item['pos'] >= $start - 0.5));
+            $log[] = 'verticale donkere runs: '.count($detected);
+            if ($detected === []) {
+                $log[] = 'geen verticale kandidaat rechts van het zoekgebied';
+            }
+            foreach ($detected as $item) {
+                $log[] = 'kandidaat x='.round($item['pos'], 1)
+                    .' y='.round($item['span_lo']).'–'.round($item['span_hi'])
+                    .' breedte=— → geaccepteerd ('.$item['bron'].')';
+            }
+
+            return $log;
+        }
+        $log[] = 'verticale donkere runs: '.count($inRegion);
+        foreach ($this->compactRightCandidates($inRegion) as $line) {
+            $log[] = $line;
+        }
+
+        return $log;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $candidates
+     * @return list<string>
+     */
+    private function compactRightCandidates(array $candidates): array
+    {
+        $lines = [];
+        $count = count($candidates);
+        $i = 0;
+        while ($i < $count) {
+            $row = $candidates[$i];
+            $y1 = min((float) ($row['y1'] ?? 0), (float) ($row['y2'] ?? 0));
+            $y2 = max((float) ($row['y1'] ?? 0), (float) ($row['y2'] ?? 0));
+            $reason = (string) ($row['reason'] ?? '');
+            $decision = (string) ($row['decision'] ?? '');
+            if ($decision === 'rejected' && $reason === 'te kort') {
+                $j = $i;
+                while ($j + 1 < $count) {
+                    $next = $candidates[$j + 1];
+                    if ((string) ($next['decision'] ?? '') !== 'rejected' || (string) ($next['reason'] ?? '') !== 'te kort') {
+                        break;
+                    }
+                    $nextY1 = min((float) ($next['y1'] ?? 0), (float) ($next['y2'] ?? 0));
+                    $nextY2 = max((float) ($next['y1'] ?? 0), (float) ($next['y2'] ?? 0));
+                    if (abs($nextY1 - $y1) > 8 || abs($nextY2 - $y2) > 8) {
+                        break;
+                    }
+                    $j++;
+                }
+                if ($j > $i) {
+                    $lines[] = 'kandidaat x='.round((float) ($row['x'] ?? 0), 1).'–'.round((float) ($candidates[$j]['x'] ?? 0), 1)
+                        .' y='.round($y1).'–'.round($y2)
+                        .' breedte=— → afgewezen omdat te kort ('.($j - $i + 1).' kolommen)';
+                    $i = $j + 1;
+
+                    continue;
+                }
+            }
+            $verdict = $decision === 'accepted'
+                ? 'geaccepteerd ('.$reason.')'
+                : 'afgewezen omdat '.$reason;
+            $lines[] = 'kandidaat x='.round((float) ($row['x'] ?? 0), 1)
+                .' y='.round($y1).'–'.round($y2)
+                .' breedte='.round((float) ($row['width'] ?? 1), 1)
+                .' → '.$verdict;
+            $i++;
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $page
+     * @return list<array{axis: string, pos: float, span_lo: float, span_hi: float, bron: string, layer: string}>
+     */
+    private function detectionItems(array $page): array
+    {
+        $items = [];
+        foreach ($page['raw_walls'] ?? [] as $wall) {
+            $item = $this->detectionItem($wall, 'lijn', 'lijn');
+            if ($item !== null) {
+                $items[] = $item;
+            }
+        }
+        foreach (array_merge($page['wall_extract']['bands_h'] ?? [], $page['wall_extract']['bands_v'] ?? []) as $wall) {
+            $item = $this->detectionItem($wall, 'band', 'band');
+            if ($item !== null) {
+                $items[] = $item;
+            }
+        }
+        foreach ($page['wall_extract']['axes'] ?? [] as $wall) {
+            $item = $this->detectionItem($wall, (string) ($wall['kind'] ?? 'lijn'), 'as');
+            if ($item !== null) {
+                $items[] = $item;
+            }
+        }
+        if ($items !== []) {
+            return $items;
+        }
+        foreach ($page['walls'] ?? [] as $wall) {
+            $item = $this->detectionItem($wall, (string) ($wall['kind'] ?? 'lijn'), 'as');
+            if ($item !== null) {
+                $items[] = $item;
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param  array<string, mixed>  $wall
+     * @return array{axis: string, pos: float, span_lo: float, span_hi: float, bron: string, layer: string}|null
+     */
+    private function detectionItem(array $wall, string $bron, string $layer): ?array
+    {
+        $x1 = (float) ($wall['x1'] ?? $wall['x'] ?? 0);
+        $y1 = (float) ($wall['y1'] ?? $wall['y'] ?? 0);
+        $x2 = (float) ($wall['x2'] ?? $wall['x'] ?? 0);
+        $y2 = (float) ($wall['y2'] ?? $wall['y'] ?? 0);
+        $axis = (string) ($wall['axis'] ?? '');
+        if ($axis !== 'h' && $axis !== 'v') {
+            $axis = abs($x2 - $x1) < abs($y2 - $y1) + 0.1 ? 'v' : 'h';
+        }
+        $kind = (string) ($wall['kind'] ?? $bron);
+        if ($kind === WallAxisAssembler::KIND_PAIR) {
+            $bron = 'paar';
+        } elseif ($kind === WallAxisAssembler::KIND_CLUSTER) {
+            $bron = 'cluster';
+        } elseif ($kind === WallAxisAssembler::KIND_BAND) {
+            $bron = 'band';
+        } else {
+            $bron = $bron === 'band' ? 'band' : 'lijn';
+        }
+
+        if ($axis === 'v') {
+            return [
+                'axis' => 'v',
+                'pos' => ($x1 + $x2) / 2,
+                'span_lo' => min($y1, $y2),
+                'span_hi' => max($y1, $y2),
+                'bron' => $bron,
+                'layer' => $layer,
+            ];
+        }
+
+        return [
+            'axis' => 'h',
+            'pos' => ($y1 + $y2) / 2,
+            'span_lo' => min($x1, $x2),
+            'span_hi' => max($x1, $x2),
+            'bron' => $bron,
+            'layer' => $layer,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rooms
+     */
+    private function bedroomOcrExtreme(array $rooms, string $key, bool $maximum): ?float
+    {
+        $values = [];
+        foreach ($rooms as $room) {
+            $name = strtoupper((string) ($room['room_name'] ?? ''));
+            if (! str_contains($name, 'SLAAPKAMER')) {
+                continue;
+            }
+            if (! is_numeric($room[$key] ?? null)) {
+                continue;
+            }
+            $values[] = (float) $room[$key];
+        }
+        if ($values === []) {
+            return null;
+        }
+
+        return $maximum ? max($values) : min($values);
+    }
+
+    /**
+     * @param  list<array{pos: float, span_lo: float, span_hi: float, bron: string}>  $items
+     * @return array{pos: float, span_lo: float, span_hi: float, bron: string}|null
+     */
+    private function extremeDetection(array $items, string $key, bool $maximum): ?array
+    {
+        $best = null;
+        foreach ($items as $item) {
+            if ($best === null) {
+                $best = $item;
+
+                continue;
+            }
+            if ($maximum && $item[$key] > $best[$key]) {
+                $best = $item;
+            }
+            if (! $maximum && $item[$key] < $best[$key]) {
+                $best = $item;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * @param  array{pos: float, span_lo: float, span_hi: float, bron: string}|null  $item
+     */
+    private function facadeDetail(string $orientation, ?array $item, bool $found, ?float $ocr, string $ocrLabel): string
+    {
+        if ($item === null) {
+            return $orientation === 'vertical'
+                ? 'geen verticale lijn, band of as gedetecteerd'
+                : 'geen horizontale lijn, band of as gedetecteerd';
+        }
+        if ($orientation === 'vertical') {
+            $coords = 'x = '.round($item['pos'], 1).', y-bereik = '.round($item['span_lo']).'–'.round($item['span_hi']).', bron = '.$item['bron'];
+        } else {
+            $coords = 'y = '.round($item['pos'], 1).', x-bereik = '.round($item['span_lo']).'–'.round($item['span_hi']).', bron = '.$item['bron'];
+        }
+        if ($found) {
+            return $coords;
+        }
+        if ($ocr === null) {
+            return $coords.' (geen slaapkamer-OCR om tegen af te zetten)';
+        }
+
+        return $coords.' (niet '.($orientation === 'vertical' ? 'rechts van' : 'onder').' '.$ocrLabel.'='.round($ocr, 1).')';
+    }
+
+    /**
+     * @param  array<string, mixed>  $boundary
+     * @return list<array<string, mixed>>
+     */
+    private function overlayWallLines(array $boundary, float $pageWidth, float $pageHeight, string $roomLabel): array
     {
         $left = $boundary['left_pos'] ?? null;
         $right = $boundary['right_pos'] ?? null;
@@ -676,16 +996,28 @@ class AreaWithoutM2Analyzer
         $x2 = is_numeric($right) ? (float) $right : $pageWidth;
         $lines = [];
         if (is_numeric($left)) {
-            $lines[] = $this->overlayLine(['x1' => (float) $left, 'y1' => $y1, 'x2' => (float) $left, 'y2' => $y2], $pageWidth, $pageHeight);
+            $lines[] = $this->overlayLine([
+                'x1' => (float) $left, 'y1' => $y1, 'x2' => (float) $left, 'y2' => $y2,
+                'side' => 'links', 'caption' => $roomLabel.' · links',
+            ], $pageWidth, $pageHeight);
         }
         if (is_numeric($right)) {
-            $lines[] = $this->overlayLine(['x1' => (float) $right, 'y1' => $y1, 'x2' => (float) $right, 'y2' => $y2], $pageWidth, $pageHeight);
+            $lines[] = $this->overlayLine([
+                'x1' => (float) $right, 'y1' => $y1, 'x2' => (float) $right, 'y2' => $y2,
+                'side' => 'rechts', 'caption' => $roomLabel.' · rechts',
+            ], $pageWidth, $pageHeight);
         }
         if (is_numeric($top)) {
-            $lines[] = $this->overlayLine(['x1' => $x1, 'y1' => (float) $top, 'x2' => $x2, 'y2' => (float) $top], $pageWidth, $pageHeight);
+            $lines[] = $this->overlayLine([
+                'x1' => $x1, 'y1' => (float) $top, 'x2' => $x2, 'y2' => (float) $top,
+                'side' => 'boven', 'caption' => $roomLabel.' · boven',
+            ], $pageWidth, $pageHeight);
         }
         if (is_numeric($bottom)) {
-            $lines[] = $this->overlayLine(['x1' => $x1, 'y1' => (float) $bottom, 'x2' => $x2, 'y2' => (float) $bottom], $pageWidth, $pageHeight);
+            $lines[] = $this->overlayLine([
+                'x1' => $x1, 'y1' => (float) $bottom, 'x2' => $x2, 'y2' => (float) $bottom,
+                'side' => 'onder', 'caption' => $roomLabel.' · onder',
+            ], $pageWidth, $pageHeight);
         }
 
         return array_values(array_filter($lines));
@@ -717,17 +1049,27 @@ class AreaWithoutM2Analyzer
      * @param  list<array<string, mixed>>  $walls
      * @return list<array<string, mixed>>
      */
-    private function overlayNamedWalls(array $walls, float $pageWidth, float $pageHeight): array
+    private function overlayNamedWalls(array $walls, float $pageWidth, float $pageHeight, ?string $defaultKind = null): array
     {
         $lines = [];
         foreach ($walls as $wall) {
+            $axis = (string) ($wall['axis'] ?? '');
+            if ($axis !== 'h' && $axis !== 'v') {
+                $x1 = (float) ($wall['x1'] ?? $wall['x'] ?? 0);
+                $y1 = (float) ($wall['y1'] ?? $wall['y'] ?? 0);
+                $x2 = (float) ($wall['x2'] ?? $wall['x'] ?? 0);
+                $y2 = (float) ($wall['y2'] ?? $wall['y'] ?? 0);
+                $axis = abs($x2 - $x1) < abs($y2 - $y1) + 0.1 ? 'v' : 'h';
+            }
             $line = $this->overlayLine([
                 'x1' => (float) ($wall['x1'] ?? $wall['x'] ?? 0),
                 'y1' => (float) ($wall['y1'] ?? $wall['y'] ?? 0),
                 'x2' => (float) ($wall['x2'] ?? $wall['x'] ?? 0),
                 'y2' => (float) ($wall['y2'] ?? $wall['y'] ?? 0),
                 'role' => $wall['role'] ?? null,
-                'kind' => $wall['kind'] ?? null,
+                'kind' => $wall['kind'] ?? $defaultKind,
+                'axis' => $axis,
+                'caption' => $this->wallCaption($wall, $defaultKind, $axis),
             ], $pageWidth, $pageHeight);
             if ($line !== null) {
                 $lines[] = $line;
@@ -738,7 +1080,24 @@ class AreaWithoutM2Analyzer
     }
 
     /**
-     * @param  array{x1?: float, y1?: float, x2?: float, y2?: float, role?: mixed, kind?: mixed}|null  $line
+     * @param  array<string, mixed>  $wall
+     */
+    private function wallCaption(array $wall, ?string $defaultKind, string $axis): string
+    {
+        $role = is_string($wall['role'] ?? null) && $wall['role'] !== '' ? (string) $wall['role'] : null;
+        $kind = is_string($wall['kind'] ?? null) && $wall['kind'] !== '' ? (string) $wall['kind'] : ($defaultKind ?? 'lijn');
+        $parts = array_values(array_filter([$role, $kind]));
+        if ($axis === 'v') {
+            $parts[] = 'x='.round((float) ($wall['x1'] ?? $wall['x'] ?? 0));
+        } else {
+            $parts[] = 'y='.round((float) ($wall['y1'] ?? $wall['y'] ?? 0));
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    /**
+     * @param  array{x1?: float, y1?: float, x2?: float, y2?: float, role?: mixed, kind?: mixed, axis?: mixed, side?: mixed, caption?: mixed}|null  $line
      * @return array<string, mixed>|null
      */
     private function overlayLine(?array $line, float $pageWidth, float $pageHeight): ?array
@@ -753,11 +1112,22 @@ class AreaWithoutM2Analyzer
             'x2' => round(100 * ((float) ($line['x2'] ?? 0)) / $pageWidth, 2),
             'y2' => round(100 * ($pageHeight - (float) ($line['y2'] ?? 0)) / $pageHeight, 2),
         ];
+        $out['mx'] = round(($out['x1'] + $out['x2']) / 2, 2);
+        $out['my'] = round(($out['y1'] + $out['y2']) / 2, 2);
         if (is_string($line['role'] ?? null) && $line['role'] !== '') {
             $out['role'] = $line['role'];
         }
         if (is_string($line['kind'] ?? null) && $line['kind'] !== '') {
             $out['kind'] = $line['kind'];
+        }
+        if (is_string($line['axis'] ?? null) && $line['axis'] !== '') {
+            $out['axis'] = $line['axis'];
+        }
+        if (is_string($line['side'] ?? null) && $line['side'] !== '') {
+            $out['side'] = $line['side'];
+        }
+        if (is_string($line['caption'] ?? null) && $line['caption'] !== '') {
+            $out['caption'] = $line['caption'];
         }
 
         return $out;
@@ -779,6 +1149,122 @@ class AreaWithoutM2Analyzer
             'top' => round(100 * ($pageHeight - (float) $box['top']) / $pageHeight, 2),
             'height' => round(100 * ((float) $box['height']) / $pageHeight, 2),
         ];
+    }
+
+    /**
+     * Same placement and look as the calculation-board code chips: room centre, short code, material colour.
+     *
+     * @param  array<string, mixed>  $overlay
+     * @param  array<string, mixed>  $boundary
+     * @return array{x: float, y: float, text: string, bg: string, fg: string}
+     */
+    private function overlayChip(array $overlay, string $roomNumber, ?string $name, array $boundary, float $pageWidth, float $pageHeight): array
+    {
+        $center = $this->overlayChipCenter($overlay, $boundary, $pageWidth, $pageHeight);
+        $bg = MaterialColor::fromCode($this->overlayChipMaterialCode($roomNumber, $name));
+
+        return [
+            'x' => $center['x'],
+            'y' => $center['y'],
+            'text' => $this->overlayChipText($name, $roomNumber),
+            'bg' => $bg,
+            'fg' => $this->overlayChipForeground($bg),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $overlay
+     * @param  array<string, mixed>  $boundary
+     * @return array{x: float, y: float}
+     */
+    private function overlayChipCenter(array $overlay, array $boundary, float $pageWidth, float $pageHeight): array
+    {
+        $left = $boundary['left_pos'] ?? null;
+        $right = $boundary['right_pos'] ?? null;
+        $top = $boundary['top_pos'] ?? null;
+        $bottom = $boundary['bottom_pos'] ?? null;
+        $boxLeft = $overlay['left'] ?? null;
+        $boxTop = $overlay['top'] ?? null;
+        $boxWidth = $overlay['width'] ?? null;
+        $boxHeight = $overlay['height'] ?? null;
+
+        if (is_numeric($left) && is_numeric($right) && $pageWidth > 0) {
+            $x = round(100 * (((float) $left + (float) $right) / 2) / $pageWidth, 2);
+        } elseif (is_numeric($boxLeft) && is_numeric($boxWidth) && (float) $boxWidth > 0) {
+            $x = round((float) $boxLeft + ((float) $boxWidth / 2), 2);
+        } else {
+            $x = (float) ($overlay['anchor']['x'] ?? 0);
+        }
+
+        if (is_numeric($top) && is_numeric($bottom) && $pageHeight > 0) {
+            $y = round(100 * ($pageHeight - (((float) $top + (float) $bottom) / 2)) / $pageHeight, 2);
+        } elseif (is_numeric($boxTop) && is_numeric($boxHeight) && (float) $boxHeight > 0) {
+            $y = round((float) $boxTop + ((float) $boxHeight / 2), 2);
+        } else {
+            $y = (float) ($overlay['anchor']['y'] ?? 0);
+        }
+
+        return ['x' => $x, 'y' => $y];
+    }
+
+    private function overlayChipText(?string $name, string $roomNumber = ''): string
+    {
+        $label = strtoupper(trim(preg_replace('/\s+/', ' ', (string) $name) ?? ''));
+        if (preg_match('/^SLAAPKAMER\s+(\d+)$/u', $label, $match) === 1) {
+            return 'S'.$match[1];
+        }
+
+        $compact = [
+            'WOONKAMER' => 'WK',
+            'WOONKEUKEN' => 'WKE',
+            'KEUKEN' => 'KE',
+            'BIJKEUKEN' => 'BK',
+            'HAL' => 'HAL',
+            'GANG' => 'GANG',
+            'ENTREE' => 'ENT',
+            'TOILET' => 'TOI',
+            'WC' => 'WC',
+            'BADKAMER' => 'BAD',
+            'OPSLAG' => 'OPS',
+            'BERGING' => 'BER',
+            'KANTOOR' => 'KAN',
+            'OVERLOOP' => 'OVL',
+            'GARAGE' => 'GAR',
+            'TECHNIEK' => 'TE',
+            'ZOLDER' => 'ZOL',
+            'KELDER' => 'KEL',
+        ];
+        if ($label !== '' && isset($compact[$label])) {
+            return $compact[$label];
+        }
+        if ($label !== '') {
+            return mb_substr(str_replace(' ', '', $label), 0, 4);
+        }
+        $number = trim($roomNumber);
+
+        return $number !== '' ? $number : 'R';
+    }
+
+    private function overlayChipMaterialCode(string $roomNumber, ?string $name): string
+    {
+        $codes = ['v01.a', 'v01.b', 'v01.c', 'v01.d', 'v01.e', 'v01.f', 'v01.g', 'v02', 'v03', 'v04', 'v06', 'v08'];
+        $index = (crc32(strtolower(trim($roomNumber.' '.$name))) & 0x7FFFFFFF) % count($codes);
+
+        return $codes[$index];
+    }
+
+    private function overlayChipForeground(string $hex): string
+    {
+        $value = ltrim($hex, '#');
+        if (! preg_match('/^[0-9a-f]{6}$/i', $value)) {
+            return '#1c1917';
+        }
+        $red = hexdec(substr($value, 0, 2));
+        $green = hexdec(substr($value, 2, 2));
+        $blue = hexdec(substr($value, 4, 2));
+        $luma = ((0.299 * $red) + (0.587 * $green) + (0.114 * $blue)) / 255;
+
+        return $luma > 0.62 ? '#1c1917' : '#fff';
     }
 
     private function deviationLabel(?float $calculated, ?float $printed): string

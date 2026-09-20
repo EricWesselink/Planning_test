@@ -3,13 +3,24 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $calculation->name }} calculatie</title>
+    <title> </title>
     @vite(['resources/css/app.css', 'resources/js/calculation-print.js'])
+    <style>
+        @media print {
+            @page {
+                margin: 0;
+                @top-left { content: ""; }
+                @top-center { content: ""; }
+                @top-right { content: ""; }
+                @bottom-left { content: ""; }
+                @bottom-center { content: ""; }
+                @bottom-right { content: ""; }
+            }
+            html, body { margin: 0 !important; }
+        }
+    </style>
 </head>
-<body
-    class="calc-print"
-    data-print-title="{{ $calculation->name }} calculatie"
->
+<body class="calc-print">
     @php
         $include = $document['include'];
         $output = $document['output'];
@@ -24,7 +35,7 @@
         @if ($document['show_drawings'])
             Tekeningen opbouwen…
         @endif
-        {{ $output === 'print' ? 'Kies A3 liggend in het afdrukvenster.' : 'Kies in het afdrukvenster Opslaan als PDF, papierformaat A3 liggend.' }}
+        {{ $output === 'print' ? 'Kies A3 liggend in het afdrukvenster. Zet kop- en voetteksten uit.' : 'Klik op PDF maken. De PDF wordt als A3 liggend gedownload, zonder browserkop.' }}
     </p>
 
     <div id="calc-print-sheets"></div>

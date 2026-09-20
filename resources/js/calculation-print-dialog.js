@@ -1,4 +1,4 @@
-const INCLUDE_DEFAULTS = ['colored', 'rooms', 'codes', 'legend'];
+const INCLUDE_DEFAULTS = ['colored', 'codes', 'legend'];
 
 export function printDocumentUrl(base, state) {
     const params = new URLSearchParams();

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     applyRoomGeometry,
+    chipAnchorInRoom,
     overlayChipText,
     overlayPlan,
     overlayRoomsOnPage,
@@ -21,6 +22,10 @@ import {
     printLegendGoesBelow,
     waitForPrintAssets,
     waitForPrintImage,
+    drawingStoreyPrefix,
+    roomsOnDrawing,
+    mergePrintRoomChips,
+    attachRoomCaptions,
 } from '../../resources/js/calculation-board-overlay.js';
 
 function room(overrides = {}) {
@@ -78,8 +83,11 @@ test('code sits at the contour center of its own room', () => {
     assert.equal(Number((box.y + box.h / 2).toFixed(2)), 0.66);
     assert.equal(plan[0].number, 'K-00-23');
     assert.equal(plan[0].source, 'contour');
-    assert.equal(plan[0].text, 'K-00-23 · v04');
+    assert.equal(plan[0].text, 'v04');
     assert.ok(plan[0].box.y > 0.5);
+    const chip = plan[0].chip;
+    assert.ok(chip.x > 0.41 && chip.x < 0.51);
+    assert.ok(chip.y > 0.62 && chip.y < 0.70);
 });
 
 test('does not collect codes into a strip above the drawing when rooms have geometry', () => {
@@ -112,6 +120,7 @@ test('rooms codes colored and legend flags stay independent', () => {
         contour: { page: 1, reliable: true, rects: [{ x: 0.4, y: 0.6, w: 0.1, h: 0.08 }] },
     });
 
+    assert.equal(overlayChipText(kitchen, { roomLabels: true, materialCodes: true }), 'v04');
     assert.equal(overlayChipText(kitchen, { roomLabels: true, materialCodes: false }), 'A-01-01');
     assert.equal(overlayChipText(kitchen, { roomLabels: false, materialCodes: true }), 'v04');
     assert.equal(overlayChipText(kitchen, { roomLabels: false, materialCodes: false }), '');
@@ -146,7 +155,7 @@ test('rooms without geometry still use their stored label position', () => {
     assert.equal(Number(box.w.toFixed(2)), 0.06);
     assert.equal(Number(box.h.toFixed(2)), 0.03);
     assert.equal(plan[0].source, 'text');
-    assert.equal(plan[0].text, 'A-01-99 · v04');
+    assert.equal(plan[0].text, 'v04');
 });
 
 test('ignores a dense legend strip of room codes above the plan', () => {
@@ -227,8 +236,51 @@ test('print keeps a room on the plan and drops labels that only exist in a legen
 
     assert.equal(usableLabelHits(hits).length, 0);
     assert.deepEqual(plan.map((item) => item.number), ['K-01-10']);
-    assert.equal(plan[0].text, 'K-01-10 · v04');
+    assert.equal(plan[0].text, 'v04');
     assert.equal(overlayRoomsOnPage(rooms, 336, 1).length, 1);
+});
+
+test('a full basement floor keeps in-plan material labels', () => {
+    const rooms = [];
+    const hits = [];
+    for (let index = 1; index <= 16; index += 1) {
+        const col = (index - 1) % 8;
+        const row = Math.floor((index - 1) / 8);
+        const number = `K-00-${String(index).padStart(2, '0')}`;
+        rooms.push(room({
+            key: number.toLowerCase(),
+            number,
+            floor_codes_label: index % 3 === 0 ? 'v09' : 'v01.a',
+            contour: null,
+        }));
+        hits.push({
+            number,
+            page: 1,
+            x: 0.08 + col * 0.06,
+            y: 0.32 + row * 0.12,
+            w: 0.05,
+            h: 0.02,
+            source: 'text',
+        });
+        hits.push({
+            number,
+            page: 1,
+            x: 0.78,
+            y: 0.12 + index * 0.03,
+            w: 0.04,
+            h: 0.016,
+            source: 'text',
+        });
+    }
+
+    placeBoardRooms(rooms, 336, hits);
+    const plan = overlayPlan(rooms, 336, 1, { roomLabels: true, materialCodes: true });
+
+    assert.equal(plan.length, 16);
+    assert.ok(plan.every((item) => item.box.x < 0.60));
+    assert.ok(plan.every((item) => item.box.y > 0.20));
+    assert.equal(plan.find((item) => item.number === 'K-00-01').text, 'v01.a');
+    assert.equal(plan.find((item) => item.number === 'K-00-03').text, 'v09');
 });
 
 test('legend totals come from the rooms on that sheet, not the whole calculation', () => {
@@ -360,8 +412,8 @@ test('page legend contains every material code that a printed label shows', () =
     const legendCodes = legend.map((item) => item.code);
     const labelCodes = [...new Set(plan.flatMap((item) => materialCodesInOverlayText(item.text)))];
 
-    assert.equal(plan.find((item) => item.number === 'K-01-18').text, 'K-01-18 · v08');
-    assert.equal(plan.find((item) => item.number === 'K-01-12').text, 'K-01-12 · v06.b + v01.i + v01.d');
+    assert.equal(plan.find((item) => item.number === 'K-01-18').text, 'v08');
+    assert.equal(plan.find((item) => item.number === 'K-01-12').text, 'v06.b + v01.i + v01.d');
     assert.equal(plan.some((item) => item.number === 'A-02-03'), false);
     assert.ok(legendCodes.includes('v08'));
     assert.deepEqual(legendCodes, ['v01.d', 'v01.i', 'v06.b', 'v08']);
@@ -505,10 +557,10 @@ test('print does not fill from rects, text boxes or title-block strips', () => {
     assert.equal(printFillContour(strip), null);
     assert.equal(printFillContour(textPoly), null);
     assert.equal(plan.every((item) => item.fill === null), true);
-    assert.equal(plan.find((item) => item.number === 'A-01-13').text, 'A-01-13 · v04');
-    assert.equal(plan.find((item) => item.number === 'A-01-12').text, 'A-01-12 · v06.c + v01.i + v01.f');
+    assert.equal(plan.find((item) => item.number === 'A-01-13').text, 'v04');
+    assert.equal(plan.find((item) => item.number === 'A-01-12').text, 'v06.c + v01.i + v01.f');
     assert.ok(plan.find((item) => item.number === 'A-01-13').box.x < 0.55);
-    assert.ok(center.x <= 0.63);
+    assert.ok(center.x < 0.55);
     assert.equal(overlayRoomsOnPage([empty], 338, 1).length, 0);
 });
 
@@ -542,21 +594,182 @@ test('print fills only an explicit reliable room polygon', () => {
     assert.equal(filled[0].fill.type, 'polygon');
     assert.equal(filled[0].fill.points.length, 5);
     assert.equal(labeled[0].fill, null);
-    assert.equal(labeled[0].text, 'A-01-04 · v04');
+    assert.equal(labeled[0].text, 'v04');
 });
 
-test('print nudges overlapping labels and keeps them on the drawing', () => {
-    const centers = separatePrintLabelCenters([
-        { x: 0.40, y: 0.40 },
-        { x: 0.41, y: 0.40 },
-        { x: 0.96, y: 0.12 },
-    ]);
+test('print keeps neighbouring room codes in their own rooms', () => {
+    const toilets = [
+        room({
+            key: 'k-01-03',
+            number: 'K-01-03',
+            floor_codes_label: 'v04',
+            contour: null,
+            marker: { page: 1, x: 0.22, y: 0.68, width: 0.04, height: 0.05, source: 'contour' },
+            jump_target: { page: 1, bbox: { x: 0.22, y: 0.68, w: 0.04, h: 0.05 }, geometry: 'contour' },
+        }),
+        room({
+            key: 'k-01-04',
+            number: 'K-01-04',
+            floor_codes_label: 'v04',
+            contour: null,
+            marker: { page: 1, x: 0.22, y: 0.74, width: 0.04, height: 0.05, source: 'contour' },
+            jump_target: { page: 1, bbox: { x: 0.22, y: 0.74, w: 0.04, h: 0.05 }, geometry: 'contour' },
+        }),
+        room({
+            key: 'k-01-05',
+            number: 'K-01-05',
+            floor_codes_label: 'v04',
+            contour: null,
+            marker: { page: 1, x: 0.22, y: 0.80, width: 0.04, height: 0.05, source: 'contour' },
+            jump_target: { page: 1, bbox: { x: 0.22, y: 0.80, w: 0.04, h: 0.05 }, geometry: 'contour' },
+        }),
+    ];
+    const plan = overlayPlan(toilets, 336, 1, { roomLabels: false, materialCodes: true });
+    const ys = plan.map((item) => item.box.y + item.box.h / 2);
     const clamped = clampPrintLabelCenter({ x: 0.92, y: 0.08, w: 0.12, h: 0.50 });
 
-    assert.ok(Math.abs(centers[1].y - centers[0].y) >= 0.03);
-    assert.equal(clamped.x, 0.63);
-    assert.ok(clamped.y >= 0.08);
-    assert.ok(clamped.y <= 0.92);
+    assert.equal(plan.length, 3);
+    assert.ok(ys[0] < ys[1] && ys[1] < ys[2]);
+    assert.ok(ys[2] < 0.90);
+    assert.ok(plan.every((item) => item.text === 'v04'));
+    assert.deepEqual(separatePrintLabelCenters([{ x: 0.40, y: 0.40 }, { x: 0.41, y: 0.40 }]).map((center) => center.y), [0.40, 0.40]);
+    assert.equal(Number(clamped.x.toFixed(2)), 0.97);
+});
+
+test('a toilet v04 stays inside the stall and not on the wall', () => {
+    const stall = { x: 0.20, y: 0.42, w: 0.028, h: 0.038 };
+    const toilet = room({
+        key: 'k-01-03',
+        number: 'K-01-03',
+        name: 'TOILET',
+        floor_codes_label: 'v04',
+        floor_code: 'v04',
+        contour: { page: 1, reliable: true, role: 'room_floor', rects: [stall] },
+        marker: { page: 1, x: 0.204, y: 0.428, width: 0.018, height: 0.012, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.204, y: 0.428, w: 0.018, h: 0.012 }, geometry: 'label' },
+    });
+    const chip = chipAnchorInRoom(toilet, { roomLabels: false, materialCodes: true });
+    const plan = overlayPlan([toilet], 336, 1, { roomLabels: false, materialCodes: true });
+
+    assert.equal(plan[0].text, 'v04');
+    assert.ok(chip.x > stall.x);
+    assert.ok(chip.x < stall.x + stall.w);
+    assert.ok(chip.y > stall.y);
+    assert.ok(chip.y < stall.y + stall.h);
+    assert.ok(chip.x < stall.x + stall.w - 0.001);
+});
+
+test('a toilet without a floor box keeps v04 beside the room name before the door', () => {
+    const items = [
+        { text: 'TOILET', page: 1, x: 0.180, y: 0.400, w: 0.05, h: 0.010 },
+        { text: 'K-01-03', page: 1, x: 0.180, y: 0.412, w: 0.05, h: 0.009 },
+        { text: '1.3 m²', page: 1, x: 0.180, y: 0.422, w: 0.04, h: 0.008 },
+        { text: 'BI.H01', page: 1, x: 0.214, y: 0.408, w: 0.018, h: 0.008 },
+        { text: 'TOILET', page: 1, x: 0.180, y: 0.460, w: 0.05, h: 0.010 },
+        { text: 'K-01-04', page: 1, x: 0.180, y: 0.472, w: 0.05, h: 0.009 },
+        { text: '1.3 m²', page: 1, x: 0.180, y: 0.482, w: 0.04, h: 0.008 },
+        { text: 'BI.H01', page: 1, x: 0.214, y: 0.468, w: 0.018, h: 0.008 },
+    ];
+    const toilet = room({
+        key: 'k-01-03',
+        number: 'K-01-03',
+        name: 'TOILET',
+        floor_codes_label: 'v04',
+        floor_code: 'v04',
+        contour: null,
+        marker: { page: 1, x: 0.180, y: 0.412, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.180, y: 0.412, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+    const below = room({
+        key: 'k-01-04',
+        number: 'K-01-04',
+        name: 'TOILET',
+        floor_codes_label: 'v04',
+        contour: null,
+        marker: { page: 1, x: 0.180, y: 0.472, width: 0.05, height: 0.02, source: 'text' },
+    });
+    attachRoomCaptions([toilet, below], items);
+    const chip = chipAnchorInRoom(toilet, {
+        items,
+        rooms: [toilet, below],
+        roomLabels: false,
+        materialCodes: true,
+    });
+    const inflatedRight = 0.180 + 0.05;
+
+    assert.ok(chip.x > 0.180);
+    assert.ok(chip.x < 0.214);
+    assert.ok(chip.x < inflatedRight);
+    assert.ok(chip.y >= 0.398);
+    assert.ok(chip.y < 0.455);
+});
+
+test('stacked toilets without floor boxes keep each v04 inside their own stall', () => {
+    const stalls = [
+        { number: 'K-01-03', key: 'k-01-03', y: 0.300, doorY: 0.308 },
+        { number: 'K-01-04', key: 'k-01-04', y: 0.360, doorY: 0.368 },
+        { number: 'K-01-05', key: 'k-01-05', y: 0.420, doorY: 0.428 },
+    ];
+    const items = stalls.flatMap((stall) => [
+        { text: 'TOILET', page: 1, x: 0.180, y: stall.y, w: 0.05, h: 0.010 },
+        { text: stall.number, page: 1, x: 0.180, y: stall.y + 0.012, w: 0.05, h: 0.009 },
+        { text: '1.3 m²', page: 1, x: 0.180, y: stall.y + 0.022, w: 0.04, h: 0.008 },
+        { text: 'BI.H01', page: 1, x: 0.214, y: stall.doorY, w: 0.018, h: 0.008 },
+    ]);
+    const toilets = stalls.map((stall) => room({
+        key: stall.key,
+        number: stall.number,
+        name: 'TOILET',
+        floor_codes_label: 'v04',
+        floor_code: 'v04',
+        contour: null,
+        marker: { page: 1, x: 0.180, y: stall.y + 0.012, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.180, y: stall.y + 0.012, w: 0.05, h: 0.02 }, geometry: 'label' },
+    }));
+    attachRoomCaptions(toilets, items);
+    const chips = toilets.map((toilet) => chipAnchorInRoom(toilet, {
+        items,
+        rooms: toilets,
+        roomLabels: false,
+        materialCodes: true,
+    }));
+
+    chips.forEach((chip, index) => {
+        assert.ok(chip.x > 0.180);
+        assert.ok(chip.x < 0.214, `${stalls[index].number} leaked past the door`);
+        assert.ok(chip.y >= stalls[index].y - 0.006);
+        assert.ok(chip.y < stalls[index].y + 0.050);
+    });
+    assert.ok(chips[0].y < chips[1].y);
+    assert.ok(chips[1].y < chips[2].y);
+});
+
+test('a saved label inside the room stays put and one outside snaps in', () => {
+    const office = { x: 0.40, y: 0.30, w: 0.12, h: 0.10 };
+    const inside = room({
+        key: 'k-01-08',
+        number: 'K-01-08',
+        floor_codes_label: 'v01.a',
+        contour: { page: 1, reliable: true, rects: [office] },
+        marker: { page: 1, x: 0.46, y: 0.34, width: 0.03, height: 0.02, source: 'user' },
+        jump_target: { page: 1, bbox: { x: 0.46, y: 0.34, w: 0.03, h: 0.02 }, geometry: 'label' },
+    });
+    const outside = room({
+        key: 'k-01-07',
+        number: 'K-01-07',
+        floor_codes_label: 'v01.a',
+        contour: { page: 1, reliable: true, rects: [office] },
+        marker: { page: 1, x: 0.56, y: 0.34, width: 0.03, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.56, y: 0.34, w: 0.03, h: 0.02 }, geometry: 'label' },
+    });
+    const kept = chipAnchorInRoom(inside, { roomLabels: false, materialCodes: true });
+    const snapped = chipAnchorInRoom(outside, { roomLabels: false, materialCodes: true });
+
+    assert.ok(Math.abs(kept.x - 0.475) < 0.02);
+    assert.ok(kept.y > office.y && kept.y < office.y + office.h);
+    assert.ok(snapped.x <= office.x + office.w);
+    assert.ok(snapped.x >= office.x);
+    assert.ok(snapped.y >= office.y && snapped.y <= office.y + office.h);
 });
 
 test('print ignores a cloud of trace rects and a title-block copy of the room number', () => {
@@ -574,8 +787,8 @@ test('print ignores a cloud of trace rects and a title-block copy of the room nu
                 h: 0.01,
             })),
         },
-        marker: { page: 1, x: 0.82, y: 0.12, width: 0.05, height: 0.02, source: 'text' },
-        jump_target: { page: 1, bbox: { x: 0.82, y: 0.12, w: 0.05, h: 0.02 }, geometry: 'label' },
+        marker: { page: 1, x: 0.52, y: 0.14, width: 0.05, height: 0.02, source: 'contour' },
+        jump_target: { page: 1, bbox: { x: 0.52, y: 0.14, w: 0.05, h: 0.02 }, geometry: 'contour' },
     });
     const duplicate = room({
         key: 'a-00-18',
@@ -602,7 +815,7 @@ test('print ignores a cloud of trace rects and a title-block copy of the room nu
 
     assert.equal(roomLabelAnchor(blob)?.x, 0.52);
     assert.equal(eighteen.box.x, 0.58);
-    assert.ok(clampPrintLabelCenter(eighteen.box).x <= 0.63);
+    assert.ok(clampPrintLabelCenter(eighteen.box).x < 0.70);
     assert.ok(two.box.x < 0.60);
     assert.ok(two.box.y > 0.10);
     assert.equal(printLegendGoesBelow(Array.from({ length: 8 }, (_, index) => ({ code: `v${index}` }))), false);
@@ -642,4 +855,92 @@ test('print does not put a title-block room number on the drawing', () => {
     assert.equal(plan.some((item) => item.number === 'A-00-13'), false);
     assert.equal(plan.find((item) => item.number === 'A-00-05').box.x, 0.33);
     assert.ok(plan.find((item) => item.number === 'A-00-05').box.x < 0.60);
+});
+
+test('print keeps only this storey on a K_00 drawing and merges duplicate room numbers', () => {
+    const label = '2401531_TEK_BK5_1_K_00 - Plattegrond begane grond';
+    const rooms = [
+        room({ key: 'k-00-34-a', number: 'K-00-34', floor_codes_label: 'v01.c', floor_code: 'v01.c', material_color: '#7c3aed' }),
+        room({ key: 'k-00-34-b', number: 'K-00-34', floor_code: 'v01.i', floor_codes_label: 'v01.i', material_color: '#c2410c' }),
+        room({ key: 'k-01-28', number: 'K-01-28', floor_codes_label: 'v09', floor_code: 'v09' }),
+        room({ key: 'a-00-26', number: 'A-00-26', floor_codes_label: 'v04', floor_code: 'v04' }),
+        room({ key: 'k-00-07', number: 'K-00-07', floor_codes_label: 'v01.a', floor_code: 'v01.a' }),
+    ];
+    const hits = [
+        { number: 'K-00-34', page: 1, x: 0.22, y: 0.36, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-00-01', page: 1, x: 0.12, y: 0.34, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-00-02', page: 1, x: 0.18, y: 0.38, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-00-08', page: 1, x: 0.28, y: 0.40, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-00-10', page: 1, x: 0.24, y: 0.48, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-00-12', page: 1, x: 0.32, y: 0.42, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-01-28', page: 1, x: 0.20, y: 0.86, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-00-07', page: 1, x: 0.16, y: 0.87, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-26', page: 1, x: 0.40, y: 0.44, w: 0.05, h: 0.02, source: 'text' },
+    ];
+
+    assert.equal(drawingStoreyPrefix(label), 'k-00');
+    assert.deepEqual(roomsOnDrawing(rooms, 336, label).map((item) => item.number).sort(), ['K-00-07', 'K-00-34', 'K-00-34']);
+    placeBoardRooms(rooms, 336, hits, label);
+    const plan = overlayPlan(rooms, 336, 1, { roomLabels: true, materialCodes: true, drawingLabel: label });
+    const merged = mergePrintRoomChips(roomsOnDrawing(rooms, 336, label));
+
+    assert.equal(plan.some((item) => item.number === 'K-01-28'), false);
+    assert.equal(plan.some((item) => item.number === 'A-00-26'), false);
+    assert.equal(plan.some((item) => item.number === 'K-00-07'), false);
+    assert.equal(plan.filter((item) => item.number === 'K-00-34').length, 1);
+    assert.equal(plan.find((item) => item.number === 'K-00-34').text, 'v01.c + v01.i');
+    assert.ok(plan.find((item) => item.number === 'K-00-34').box.y < 0.50);
+    assert.equal(merged.filter((item) => item.number === 'K-00-34').length, 1);
+});
+
+test('print keeps short codes on the right side of a full-width floor', () => {
+    const left = room({
+        key: 'k-00-01',
+        number: 'K-00-01',
+        floor_codes_label: 'v01.b',
+        floor_code: 'v01.b',
+        contour: null,
+        marker: { page: 1, x: 0.18, y: 0.36, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.18, y: 0.36, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+    const right = room({
+        key: 'k-00-20',
+        number: 'K-00-20',
+        floor_codes_label: 'v04',
+        floor_code: 'v04',
+        contour: null,
+        marker: { page: 1, x: 0.78, y: 0.40, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.78, y: 0.40, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+
+    const plan = overlayPlan([left, right], 336, 1, { roomLabels: false, materialCodes: true });
+    const rightChip = plan.find((item) => item.number === 'K-00-20');
+
+    assert.equal(plan.find((item) => item.number === 'K-00-01').text, 'v01.b');
+    assert.equal(rightChip.text, 'v04');
+    assert.ok(rightChip.box.x > 0.70);
+    assert.ok(clampPrintLabelCenter(rightChip.box).x > 0.70);
+});
+
+test('print keeps the website room box when the pdf has another copy of the number', () => {
+    const office = room({
+        key: 'k-01-15',
+        number: 'K-01-15',
+        floor_codes_label: 'v06.b',
+        floor_code: 'v06.b',
+        contour: null,
+        marker: { page: 1, x: 0.58, y: 0.42, width: 0.10, height: 0.08, source: 'contour' },
+        jump_target: { page: 1, bbox: { x: 0.58, y: 0.42, w: 0.10, h: 0.08 }, geometry: 'contour' },
+    });
+    const hits = [
+        { number: 'K-01-15', page: 1, x: 0.12, y: 0.88, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'K-01-15', page: 1, x: 0.58, y: 0.42, w: 0.05, h: 0.02, source: 'text' },
+    ];
+
+    placeBoardRooms([office], 336, hits);
+    const box = roomLabelAnchor(office);
+
+    assert.equal(Number(box.x.toFixed(2)), 0.58);
+    assert.equal(Number(box.y.toFixed(2)), 0.42);
+    assert.equal(overlayPlan([office], 336, 1, { roomLabels: false, materialCodes: true })[0].text, 'v06.b');
 });

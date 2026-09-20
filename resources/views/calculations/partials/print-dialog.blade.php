@@ -9,7 +9,7 @@
         <fieldset class="space-y-1">
             <legend class="text-xs font-semibold uppercase tracking-wide text-nicon-muted">Wat wil je exporteren?</legend>
             <label class="calc-print-check"><input type="checkbox" data-print-include value="colored" checked><span>Gekleurde calculatietekeningen</span></label>
-            <label class="calc-print-check"><input type="checkbox" data-print-include value="rooms" checked><span>Ruimtenummers en ruimtenamen</span></label>
+            <label class="calc-print-check"><input type="checkbox" data-print-include value="rooms"><span>Ruimtenummers en ruimtenamen</span></label>
             <label class="calc-print-check"><input type="checkbox" data-print-include value="codes" checked><span>Materiaalcodes op de tekening</span></label>
             <label class="calc-print-check"><input type="checkbox" data-print-include value="legend" checked><span>Materiaallegenda</span></label>
             <label class="calc-print-check"><input type="checkbox" data-print-include value="room_list"><span>Ruimtelijst per tekening</span></label>

@@ -58,6 +58,8 @@ class CalculationPrintTest extends TestCase
 
         $this->assertStringContainsString(route('calculations.print.options', $calculation), $html);
         $this->assertStringContainsString('data-print-open', $html);
+        $this->assertStringContainsString('value="codes" checked', $html);
+        $this->assertStringNotContainsString('value="rooms" checked', $html);
     }
 
     public function test_print_options_list_drawing_names_and_materials(): void
@@ -71,7 +73,7 @@ class CalculationPrintTest extends TestCase
             ->assertJsonPath('name', 'Offerte Wepro')
             ->assertJsonPath('drawings.0.label', 'fase 1 verdieping 1')
             ->assertJsonPath('materials.0.code', 'v04')
-            ->assertJsonPath('defaults.include.0', 'colored');
+            ->assertJsonPath('defaults.include', ['colored', 'codes', 'legend']);
     }
 
     public function test_print_view_puts_each_drawing_on_a3_and_keeps_the_legend_beside_it(): void
@@ -89,7 +91,7 @@ class CalculationPrintTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('A3 liggend')
-            ->assertSee('Opslaan als PDF')
+            ->assertSee('De PDF wordt als A3 liggend gedownload, zonder browserkop.')
             ->assertSee('id="calc-print-sheets"', false)
             ->assertSee('data-print-start', false)
             ->getContent();
@@ -273,7 +275,7 @@ class CalculationPrintTest extends TestCase
             ->assertSee('Detailregels calculatie')
             ->assertSee('3,70')
             ->assertSee('12,84')
-            ->assertSee('Kies A3 liggend in het afdrukvenster.');
+            ->assertSee('Kies A3 liggend in het afdrukvenster. Zet kop- en voetteksten uit.');
     }
 
     public function test_selected_materials_limit_totals_to_those_codes(): void
@@ -388,6 +390,29 @@ class CalculationPrintTest extends TestCase
             ->assertOk();
 
         $this->assertSame($quantity, (float) $calculation->fresh()->lines()->where('unit', WorkUnit::SquareMeter)->value('quantity'));
+    }
+
+    public function test_print_hides_the_browser_title_and_url(): void
+    {
+        $user = User::factory()->create();
+        $calculation = $this->makeCalculation($user);
+
+        $html = $this->actingAs($user)
+            ->get(route('calculations.print', [
+                'calculation' => $calculation,
+                'include' => ['details'],
+            ]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringNotContainsString('<title>'.$calculation->name, $html);
+        $this->assertStringContainsString('@page {', $html);
+        $this->assertStringContainsString('margin: 0;', $html);
+        $this->assertStringContainsString('@top-center { content: ""; }', $html);
+        $this->assertStringContainsString('@bottom-right { content: ""; }', $html);
+        $this->assertStringContainsString("document.title = '';", file_get_contents(resource_path('js/calculation-print.js')));
+        $this->assertStringContainsString('downloadCalculationPdf', file_get_contents(resource_path('js/calculation-print.js')));
+        $this->assertStringContainsString('jpegsToPdf', file_get_contents(resource_path('js/calculation-print-pdf.js')));
     }
 
     private function makeCalculation(?User $user = null, string $roomName = 'MIVA T'): Calculation

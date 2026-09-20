@@ -77,6 +77,8 @@ class TrialStore
             'unavailable_room_labels' => $result['unavailable_room_labels'] ?? [],
             'timings' => is_array($result['timings'] ?? null) ? $result['timings'] : [],
             'timing_labels' => is_array($result['timing_labels'] ?? null) ? $result['timing_labels'] : [],
+            'geometry' => is_array($result['geometry'] ?? null) ? $result['geometry'] : [],
+            'geometry_debug' => is_array($result['geometry_debug'] ?? null) ? $result['geometry_debug'] : [],
             'created_at' => now()->toIso8601String(),
         ];
         Storage::disk('local')->put(
@@ -144,6 +146,8 @@ class TrialStore
             'unavailable_room_labels' => is_array($decoded['unavailable_room_labels'] ?? null) ? $decoded['unavailable_room_labels'] : [],
             'timings' => is_array($decoded['timings'] ?? null) ? $decoded['timings'] : [],
             'timing_labels' => is_array($decoded['timing_labels'] ?? null) ? $decoded['timing_labels'] : [],
+            'geometry' => is_array($decoded['geometry'] ?? null) ? $decoded['geometry'] : [],
+            'geometry_debug' => is_array($decoded['geometry_debug'] ?? null) ? $decoded['geometry_debug'] : [],
             'created_at' => isset($decoded['created_at']) ? (string) $decoded['created_at'] : null,
             'has_preview' => Storage::disk('local')->exists(self::DIRECTORY.'/'.$id.'/preview.png'),
         ];

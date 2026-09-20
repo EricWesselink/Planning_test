@@ -19,7 +19,7 @@ class WallAxisAssembler
 
     public const KIND_PAIR = 'paar';
 
-    private const MIN_PAIR_GAP = 5.0;
+    public const KIND_CLUSTER = 'cluster';
 
     private const MAX_PAIR_GAP = 36.0;
 
@@ -146,16 +146,13 @@ class WallAxisAssembler
             if (isset($used[$i])) {
                 continue;
             }
-            $partner = null;
-            $partnerGap = null;
+            $members = [$i];
+            $origin = $this->axisPos($walls[$i], $vertical);
             for ($j = $i + 1; $j < $count; $j++) {
                 if (isset($used[$j])) {
                     continue;
                 }
-                $gap = $this->axisPos($walls[$j], $vertical) - $this->axisPos($walls[$i], $vertical);
-                if ($gap < self::MIN_PAIR_GAP) {
-                    continue;
-                }
+                $gap = $this->axisPos($walls[$j], $vertical) - $origin;
                 if ($gap > self::MAX_PAIR_GAP) {
                     break;
                 }
@@ -165,38 +162,49 @@ class WallAxisAssembler
                 if (! $this->pairableLengths($walls[$i], $walls[$j], $vertical)) {
                     continue;
                 }
-                if ($partner === null || $gap < $partnerGap) {
-                    $partner = $j;
-                    $partnerGap = $gap;
-                }
+                $members[] = $j;
             }
-            if ($partner === null) {
+            foreach ($members as $index) {
+                $used[$index] = true;
+            }
+            if (count($members) === 1) {
                 $out[] = $walls[$i];
 
                 continue;
             }
-            $used[$i] = true;
-            $used[$partner] = true;
-            $out[] = $this->midline($walls[$i], $walls[$partner], $vertical, (float) $partnerGap);
+            $grouped = array_map(fn (int $index): array => $walls[$index], $members);
+            $out[] = $this->midlineCluster($grouped, $vertical);
         }
 
         return $out;
     }
 
     /**
-     * @param  array<string, mixed>  $left
-     * @param  array<string, mixed>  $right
+     * @param  list<array<string, mixed>>  $walls
      * @return array<string, mixed>
      */
-    private function midline(array $left, array $right, bool $vertical, float $gap): array
+    private function midlineCluster(array $walls, bool $vertical): array
     {
-        $mid = ($this->axisPos($left, $vertical) + $this->axisPos($right, $vertical)) / 2;
-        $start = min($this->spanStart($left, $vertical), $this->spanStart($right, $vertical));
-        $end = max($this->spanEnd($left, $vertical), $this->spanEnd($right, $vertical));
-        $kind = self::KIND_PAIR;
-        if (($left['kind'] ?? '') === self::KIND_BAND || ($right['kind'] ?? '') === self::KIND_BAND) {
-            $kind = self::KIND_BAND;
+        $positions = array_map(fn (array $wall): float => $this->axisPos($wall, $vertical), $walls);
+        $mid = (min($positions) + max($positions)) / 2;
+        $start = min(array_map(fn (array $wall): float => $this->spanStart($wall, $vertical), $walls));
+        $end = max(array_map(fn (array $wall): float => $this->spanEnd($wall, $vertical), $walls));
+        $gap = max($positions) - min($positions);
+        $kind = count($walls) >= 3 ? self::KIND_CLUSTER : self::KIND_PAIR;
+        foreach ($walls as $wall) {
+            $wallKind = (string) ($wall['kind'] ?? self::KIND_LINE);
+            if ($wallKind === self::KIND_BAND) {
+                $kind = self::KIND_BAND;
+                break;
+            }
+            if ($wallKind === self::KIND_CLUSTER) {
+                $kind = self::KIND_CLUSTER;
+            }
         }
+        $thickness = max([
+            $gap,
+            ...array_map(fn (array $wall): float => (float) ($wall['thickness'] ?? 1), $walls),
+        ]);
 
         if ($vertical) {
             return [
@@ -206,7 +214,7 @@ class WallAxisAssembler
                 'y2' => $end,
                 'axis' => 'v',
                 'kind' => $kind,
-                'thickness' => max($gap, (float) ($left['thickness'] ?? 1), (float) ($right['thickness'] ?? 1)),
+                'thickness' => $thickness,
                 'role' => null,
             ];
         }
@@ -218,7 +226,7 @@ class WallAxisAssembler
             'y2' => $mid,
             'axis' => 'h',
             'kind' => $kind,
-            'thickness' => max($gap, (float) ($left['thickness'] ?? 1), (float) ($right['thickness'] ?? 1)),
+            'thickness' => $thickness,
             'role' => null,
         ];
     }
@@ -249,7 +257,7 @@ class WallAxisAssembler
             }
             $junctions = $this->structuralJunctions($index, $walls, $neighbours, $minMain);
             $kind = (string) ($wall['kind'] ?? self::KIND_LINE);
-            $thick = $kind === self::KIND_BAND || $kind === self::KIND_PAIR;
+            $thick = $kind === self::KIND_BAND || $kind === self::KIND_PAIR || $kind === self::KIND_CLUSTER;
             if ($junctions >= 2 || ($thick && $junctions >= 1)) {
                 $structural[] = $index;
             }
@@ -319,7 +327,7 @@ class WallAxisAssembler
         if ($junctions > 0) {
             return false;
         }
-        if (($wall['kind'] ?? self::KIND_LINE) !== self::KIND_LINE) {
+        if (($wall['kind'] ?? self::KIND_LINE) === self::KIND_BAND) {
             return false;
         }
         if (! $this->outsideCore($wall, $bbox, $margin)) {

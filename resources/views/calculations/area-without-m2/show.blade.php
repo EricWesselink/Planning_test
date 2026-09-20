@@ -21,6 +21,7 @@
         $receivedFiles = is_array($received['all_files'] ?? null) ? $received['all_files'] : [];
         $label = static fn (mixed $value): string => ($value === null || $value === '') ? '—' : (string) $value;
         $mismatch = (string) ($received['mismatch'] ?? '');
+        $geometryDebug = is_array($trial['geometry_debug'] ?? null) ? $trial['geometry_debug'] : [];
     @endphp
     <div class="mt-4 border border-nicon-warn bg-white p-4 text-sm space-y-1">
         <p class="font-medium">Ontvangen upload</p>
@@ -113,54 +114,44 @@
         </table>
     </div>
 
+    @if ($geometryDebug !== [])
+        <div data-geometry-debug class="mt-4 border border-nicon-line bg-white p-4 text-sm space-y-1">
+            <p class="font-medium">Geometrie-diagnose</p>
+            <p>{{ $geometryDebug['right'] ?? 'rechter buitengevel: niet gevonden' }}</p>
+            <p class="text-nicon-muted">{{ $geometryDebug['right_detail'] ?? '' }}</p>
+            <p>{{ $geometryDebug['bottom'] ?? 'onderste buitengevel: niet gevonden' }}</p>
+            <p class="text-nicon-muted">{{ $geometryDebug['bottom_detail'] ?? '' }}</p>
+            <p class="text-xs text-nicon-muted">{{ $geometryDebug['counts'] ?? '' }}</p>
+            @foreach ($geometryDebug['log'] ?? [] as $line)
+                <p class="text-xs font-mono text-nicon-muted">{{ $line }}</p>
+            @endforeach
+        </div>
+    @endif
+
     @if (! empty($trial['has_preview']))
         <div data-area-without-m2-overlay class="relative mt-6 max-w-4xl overflow-hidden border border-nicon-line bg-white">
-            <img src="{{ route('calculations.area-without-m2.preview', $trial['id']) }}" alt="Tekening met gevonden ruimtecontouren" class="block w-full">
-            <svg class="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                @foreach ($trial['rooms'] as $index => $room)
-                    @php
-                        $colors = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
-                        $color = $colors[$index % count($colors)];
-                    @endphp
-                    @if ($index === 0)
-                        @foreach ($room['overlay']['raw'] ?? $room['overlay']['candidates'] ?? [] as $line)
-                            <line data-wall-candidate x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="#cbd5e1" stroke-width="0.2" />
-                        @endforeach
-                        @foreach ($room['overlay']['bands'] ?? [] as $line)
-                            <line data-wall-band x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="#ea580c" stroke-width="0.7" stroke-dasharray="0.8 0.5" />
-                        @endforeach
-                        @foreach ($room['overlay']['axes'] ?? [] as $line)
-                            <line data-wall-axis data-wall-role="{{ $line['role'] ?? '' }}" x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="{{ ($line['role'] ?? '') === 'buitenwand' ? '#0f172a' : '#475569' }}" stroke-width="{{ ($line['role'] ?? '') === 'buitenwand' ? '0.55' : '0.4' }}" stroke-dasharray="{{ ($line['role'] ?? '') === 'buitenwand' ? '1.6 0.7' : '0.4 0.5' }}" />
-                        @endforeach
-                    @endif
-                    @foreach ($room['overlay']['walls'] ?? [] as $line)
-                        <line x1="{{ $line['x1'] }}" y1="{{ $line['y1'] }}" x2="{{ $line['x2'] }}" y2="{{ $line['y2'] }}" stroke="{{ $color }}" stroke-width="0.4" />
-                    @endforeach
-                    @if (! empty($room['overlay']['horizontal']))
-                        <line data-h-chain x1="{{ $room['overlay']['horizontal']['x1'] }}" y1="{{ $room['overlay']['horizontal']['y1'] }}" x2="{{ $room['overlay']['horizontal']['x2'] }}" y2="{{ $room['overlay']['horizontal']['y2'] }}" stroke="{{ $color }}" stroke-width="0.7" stroke-dasharray="1.5 0.8" />
-                    @endif
-                    @if (! empty($room['overlay']['vertical']))
-                        <line data-v-chain x1="{{ $room['overlay']['vertical']['x1'] }}" y1="{{ $room['overlay']['vertical']['y1'] }}" x2="{{ $room['overlay']['vertical']['x2'] }}" y2="{{ $room['overlay']['vertical']['y2'] }}" stroke="{{ $color }}" stroke-width="0.7" stroke-dasharray="1.5 0.8" />
-                    @endif
-                    @if (! empty($room['overlay']['anchor']))
-                        <circle data-room-anchor cx="{{ $room['overlay']['anchor']['x'] }}" cy="{{ $room['overlay']['anchor']['y'] }}" r="1.1" fill="{{ $color }}" />
-                    @endif
-                @endforeach
-            </svg>
-            @foreach ($trial['rooms'] as $index => $room)
-                @if (! empty($room['overlay']['left']) && ! empty($room['overlay']['width']))
-                    @php
-                        $colors = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
-                        $color = $colors[$index % count($colors)];
-                    @endphp
-                    <div
-                        data-room-overlay
-                        class="pointer-events-none absolute border-2"
-                        style="left: {{ $room['overlay']['left'] }}%; top: {{ $room['overlay']['top'] }}%; width: {{ $room['overlay']['width'] }}%; height: {{ $room['overlay']['height'] }}%; border-color: {{ $color }};"
-                    >
-                        <span class="absolute left-0 top-0 bg-white/90 px-1 text-[10px] leading-4 text-nicon-ink">{{ $room['room_name'] ?: ($room['room_number'] ?: 'Ruimte') }}</span>
-                    </div>
+            <img src="{{ route('calculations.area-without-m2.preview', $trial['id']) }}" alt="Tekening met herkende ruimtes" class="block w-full">
+            @foreach ($trial['rooms'] as $room)
+                @php
+                    $chip = is_array($room['overlay']['chip'] ?? null) ? $room['overlay']['chip'] : null;
+                    if ($chip === null && isset($room['overlay']['anchor']['x'], $room['overlay']['anchor']['y'])) {
+                        $chip = [
+                            'x' => $room['overlay']['anchor']['x'],
+                            'y' => $room['overlay']['anchor']['y'],
+                            'text' => $room['overlay']['anchor']['label'] ?? ($room['room_name'] ?: ($room['room_number'] ?: 'Ruimte')),
+                            'bg' => '#be0032',
+                            'fg' => '#fff',
+                        ];
+                    }
+                @endphp
+                @if (! isset($chip['x'], $chip['y'], $chip['text']))
+                    @continue
                 @endif
+                <span
+                    data-ocr-label
+                    class="calc-code-chip"
+                    style="left: {{ $chip['x'] }}%; top: {{ $chip['y'] }}%; transform: translate(-50%, -50%); background: {{ $chip['bg'] ?? '#be0032' }}; color: {{ $chip['fg'] ?? '#fff' }}; pointer-events: none; white-space: nowrap;"
+                >{{ $chip['text'] }}</span>
             @endforeach
         </div>
     @endif

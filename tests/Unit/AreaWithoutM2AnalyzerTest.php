@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\AreaWithoutM2Trial\AreaWithoutM2Analyzer;
 use App\Services\AreaWithoutM2Trial\RasterPageReader;
+use App\Services\AreaWithoutM2Trial\WallAxisAssembler;
 use App\Services\Meetstaat\PdfPageGeometry;
 use Mockery;
 use Tests\Support\DimensionedRoomPdf;
@@ -319,6 +320,130 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['overlay']['candidates']);
     }
 
+    public function test_geometry_overlay_lists_raw_lines_bands_and_classified_axes(): void
+    {
+        $result = $this->analyzer()->analyzePages([$this->bedroomDiagnosisPage()]);
+
+        $geometry = $result['geometry'];
+        $roles = array_column($geometry['axes'], 'role');
+        $byName = collect($result['rooms'])->keyBy('room_name');
+
+        $this->assertCount(1, $geometry['raw_v']);
+        $this->assertSame('v', $geometry['raw_v'][0]['axis']);
+        $this->assertCount(1, $geometry['raw_h']);
+        $this->assertSame('h', $geometry['raw_h'][0]['axis']);
+        $this->assertCount(1, $geometry['bands']);
+        $this->assertContains(WallAxisAssembler::ROLE_INTERNAL, $roles);
+        $this->assertContains(WallAxisAssembler::ROLE_OUTER, $roles);
+        $this->assertContains(WallAxisAssembler::ROLE_DIMENSION, $roles);
+        $this->assertSame('SLAAPKAMER 1', $byName['SLAAPKAMER 1']['overlay']['anchor']['label']);
+        $this->assertSame('S1', $byName['SLAAPKAMER 1']['overlay']['chip']['text']);
+        $this->assertSame('S2', $byName['SLAAPKAMER 2']['overlay']['chip']['text']);
+        $this->assertSame('SLAAPKAMER 2', $byName['SLAAPKAMER 2']['overlay']['anchor']['label']);
+    }
+
+    public function test_overlay_chip_sits_in_the_room_centre_with_a_board_material_colour(): void
+    {
+        $result = $this->analyzer()->analyzePages([$this->opslagPage()]);
+
+        $chip = $result['rooms'][0]['overlay']['chip'];
+
+        $this->assertSame('OPS', $chip['text']);
+        $this->assertSame(46.22, $chip['x']);
+        $this->assertSame(28.74, $chip['y']);
+        $this->assertNotSame($result['rooms'][0]['overlay']['anchor']['y'], $chip['y']);
+        $this->assertContains($chip['bg'], [
+            '#be0032', '#f38400', '#dcd300', '#008856', '#c026d3', '#1d4ed8',
+            '#7c3aed', '#e68fac', '#5eead4', '#8db600', '#604e97', '#2b3d26',
+        ]);
+        $this->assertContains($chip['fg'], ['#fff', '#1c1917']);
+    }
+
+    public function test_reports_right_and_bottom_facades_missing_when_detections_stay_left_and_above_bedroom_ocr(): void
+    {
+        $result = $this->analyzer()->analyzePages([$this->bedroomDiagnosisPage()]);
+
+        $this->assertSame('rechter buitengevel: niet gevonden', $result['geometry_debug']['right']);
+        $this->assertSame(
+            'x = 617, y-bereik = 300–700, bron = paar (niet rechts van OCR x=945.3)',
+            $result['geometry_debug']['right_detail'],
+        );
+        $this->assertSame('onderste buitengevel: niet gevonden', $result['geometry_debug']['bottom']);
+        $this->assertSame(
+            'y = 534, x-bereik = 200–800, bron = lijn (niet onder OCR y=400)',
+            $result['geometry_debug']['bottom_detail'],
+        );
+    }
+
+    public function test_reports_right_and_bottom_facades_found_when_detections_sit_beyond_bedroom_ocr(): void
+    {
+        $result = $this->analyzer()->analyzePages([$this->bedroomDiagnosisPage(withOuterEnvelope: true)]);
+
+        $this->assertSame('rechter buitengevel: gevonden', $result['geometry_debug']['right']);
+        $this->assertSame('x = 1100, y-bereik = 200–800, bron = lijn', $result['geometry_debug']['right_detail']);
+        $this->assertSame('onderste buitengevel: gevonden', $result['geometry_debug']['bottom']);
+        $this->assertSame('y = 200, x-bereik = 200–1100, bron = band', $result['geometry_debug']['bottom_detail']);
+    }
+
+    public function test_geometry_debug_lists_rejected_vertical_runs_in_the_right_search_area(): void
+    {
+        $page = $this->bedroomDiagnosisPage(withOuterEnvelope: true);
+        $page['wall_extract']['vertical_candidates'] = [
+            [
+                'x' => 987.0, 'y1' => 199.0, 'y2' => 210.0, 'width' => 1.5,
+                'decision' => 'rejected', 'reason' => 'te kort',
+            ],
+            [
+                'x' => 1045.0, 'y1' => 185.0, 'y2' => 745.0, 'width' => 1.5,
+                'decision' => 'rejected', 'reason' => 'niet voldoende donker',
+            ],
+            [
+                'x' => 1064.0, 'y1' => 185.0, 'y2' => 745.0, 'width' => 4.5,
+                'decision' => 'accepted', 'reason' => 'cluster',
+            ],
+        ];
+
+        $result = $this->analyzer()->analyzePages([$page]);
+        $log = $result['geometry_debug']['log'];
+
+        $this->assertSame('rechter buitengevel: gevonden', $result['geometry_debug']['right']);
+        $this->assertSame('Rechter zoekgebied x=945.3..1200', $log[0]);
+        $this->assertSame('verticale donkere runs: 3', $log[1]);
+        $this->assertSame('kandidaat x=987 y=199–210 breedte=1.5 → afgewezen omdat te kort', $log[2]);
+        $this->assertSame('kandidaat x=1045 y=185–745 breedte=1.5 → afgewezen omdat niet voldoende donker', $log[3]);
+        $this->assertSame('kandidaat x=1064 y=185–745 breedte=4.5 → geaccepteerd (cluster)', $log[4]);
+    }
+
+    public function test_geometry_debug_groups_consecutive_short_vertical_ticks(): void
+    {
+        $page = $this->bedroomDiagnosisPage();
+        $page['wall_extract']['vertical_candidates'] = [
+            [
+                'x' => 988.5, 'y1' => 726.0, 'y2' => 746.0, 'width' => 1.5,
+                'decision' => 'rejected', 'reason' => 'te kort',
+            ],
+            [
+                'x' => 990.0, 'y1' => 726.0, 'y2' => 746.0, 'width' => 1.5,
+                'decision' => 'rejected', 'reason' => 'te kort',
+            ],
+            [
+                'x' => 991.5, 'y1' => 726.0, 'y2' => 746.0, 'width' => 1.5,
+                'decision' => 'rejected', 'reason' => 'te kort',
+            ],
+            [
+                'x' => 1064.0, 'y1' => 185.0, 'y2' => 745.0, 'width' => 4.5,
+                'decision' => 'accepted', 'reason' => 'donkere kolom',
+            ],
+        ];
+
+        $result = $this->analyzer()->analyzePages([$page]);
+        $log = $result['geometry_debug']['log'];
+
+        $this->assertSame('verticale donkere runs: 4', $log[1]);
+        $this->assertSame('kandidaat x=988.5–991.5 y=726–746 breedte=— → afgewezen omdat te kort (3 kolommen)', $log[2]);
+        $this->assertSame('kandidaat x=1064 y=185–745 breedte=4.5 → geaccepteerd (donkere kolom)', $log[3]);
+    }
+
     public function test_does_not_duplicate_a_named_room_that_already_has_a_number(): void
     {
         $result = $this->analyzer()->analyzePages([$this->opslagPage()]);
@@ -470,6 +595,50 @@ class AreaWithoutM2AnalyzerTest extends TestCase
                 ['x1' => 1050.0, 'y1' => 100.0, 'x2' => 1050.0, 'y2' => 430.0, 'axis' => 'v'],
                 ['x1' => 40.0, 'y1' => 860.0, 'x2' => 1100.0, 'y2' => 860.0, 'axis' => 'h'],
                 ['x1' => 40.0, 'y1' => 80.0, 'x2' => 40.0, 'y2' => 820.0, 'axis' => 'v'],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function bedroomDiagnosisPage(bool $withOuterEnvelope = false): array
+    {
+        $raw = [
+            ['x1' => 610.0, 'y1' => 300.0, 'x2' => 610.0, 'y2' => 700.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_LINE],
+            ['x1' => 200.0, 'y1' => 534.0, 'x2' => 800.0, 'y2' => 534.0, 'axis' => 'h', 'kind' => WallAxisAssembler::KIND_LINE],
+        ];
+        $bandsH = [];
+        $bandsV = [
+            ['x1' => 612.0, 'y1' => 300.0, 'x2' => 621.0, 'y2' => 700.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_BAND],
+        ];
+        $axes = [
+            ['x1' => 617.0, 'y1' => 300.0, 'x2' => 617.0, 'y2' => 700.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_PAIR, 'role' => WallAxisAssembler::ROLE_INTERNAL],
+            ['x1' => 200.0, 'y1' => 534.0, 'x2' => 800.0, 'y2' => 534.0, 'axis' => 'h', 'kind' => WallAxisAssembler::KIND_LINE, 'role' => WallAxisAssembler::ROLE_OUTER],
+            ['x1' => 40.0, 'y1' => 100.0, 'x2' => 40.0, 'y2' => 800.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_LINE, 'role' => WallAxisAssembler::ROLE_DIMENSION],
+        ];
+        if ($withOuterEnvelope) {
+            $raw[] = ['x1' => 1100.0, 'y1' => 200.0, 'x2' => 1100.0, 'y2' => 800.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_LINE];
+            $bandsH[] = ['x1' => 200.0, 'y1' => 200.0, 'x2' => 1100.0, 'y2' => 200.0, 'axis' => 'h', 'kind' => WallAxisAssembler::KIND_BAND];
+            $axes[] = ['x1' => 1100.0, 'y1' => 200.0, 'x2' => 1100.0, 'y2' => 800.0, 'axis' => 'v', 'kind' => WallAxisAssembler::KIND_LINE, 'role' => WallAxisAssembler::ROLE_OUTER];
+            $axes[] = ['x1' => 200.0, 'y1' => 200.0, 'x2' => 1100.0, 'y2' => 200.0, 'axis' => 'h', 'kind' => WallAxisAssembler::KIND_BAND, 'role' => WallAxisAssembler::ROLE_OUTER];
+        }
+
+        return [
+            'page' => 1,
+            'width' => 1200.0,
+            'height' => 900.0,
+            'texts' => [
+                ['text' => 'SLAAPKAMER 1', 'x' => 945.3, 'y' => 600.0, 'page' => 1],
+                ['text' => 'SLAAPKAMER 2', 'x' => 945.0, 'y' => 400.0, 'page' => 1],
+            ],
+            'fills' => [],
+            'walls' => $axes,
+            'raw_walls' => $raw,
+            'wall_extract' => [
+                'bands_h' => $bandsH,
+                'bands_v' => $bandsV,
+                'axes' => $axes,
             ],
         ];
     }
