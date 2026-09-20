@@ -137,6 +137,7 @@ class DimensionChainReconstructor
             $overallMm = is_array($overall) ? (int) $overall['mm'] : null;
             $sumMatches = $overallMm !== null && $sum >= 800 && abs($overallMm - $sum) / max($overallMm, 1) <= 0.08;
             $score = $fit['error']
+                + ($fit['center'] ?? 0) * 0.02
                 - (count($window) * 0.01)
                 - ($sumMatches ? 0.16 : 0.0);
             if ($best !== null && $score >= $best['score']) {
@@ -261,6 +262,7 @@ class DimensionChainReconstructor
                 continue;
             }
             $error = 0.0;
+            $center = 0.0;
             $ok = true;
             foreach ($window as $i => $row) {
                 $span = $bounds[$i + 1] - $bounds[$i];
@@ -268,18 +270,25 @@ class DimensionChainReconstructor
                     $ok = false;
                     break;
                 }
-                $error = max($error, abs(($span / $totalPx) - ((int) $row['mm'] / $sum)));
+                $ratioErr = abs(($span / $totalPx) - ((int) $row['mm'] / $sum));
+                $error += $ratioErr * $ratioErr;
                 $along = $horizontal ? (float) ($row['x'] ?? 0) : (float) ($row['y'] ?? 0);
+                $center += abs($along - (($bounds[$i] + $bounds[$i + 1]) / 2)) / $span;
                 if ($along < $bounds[$i] - $slack || $along > $bounds[$i + 1] + $slack) {
                     $ok = false;
                     break;
                 }
             }
-            if (! $ok || $error > 0.22) {
+            $maxErr = $window === [] ? 1.0 : sqrt($error / count($window));
+            $centerErr = $window === [] ? 1.0 : $center / count($window);
+            if (! $ok || $maxErr > 0.22) {
                 continue;
             }
-            if ($best === null || $error < $best['error']) {
-                $best = ['bounds' => $bounds, 'error' => $error];
+            $better = $best === null
+                || $maxErr < $best['error'] - 0.002
+                || (abs($maxErr - $best['error']) <= 0.002 && $centerErr < ($best['center'] ?? 99));
+            if ($better) {
+                $best = ['bounds' => $bounds, 'error' => $maxErr, 'center' => $centerErr, 'total_px' => $totalPx];
             }
         }
 
@@ -364,6 +373,9 @@ class DimensionChainReconstructor
         $seen = [];
         foreach ($this->collinearGroups($numbers, $horizontal, $pageMin) as $group) {
             if (count($group) < 2) {
+                continue;
+            }
+            if (! $horizontal && ! $this->liesBesideBuilding($group, $vAxes, $pageMin)) {
                 continue;
             }
             $groups[] = $group;
@@ -467,6 +479,23 @@ class DimensionChainReconstructor
     }
 
     /**
+     * Vertical chains sit beside the building. Interior labels with the same X are stacked widths, not a height chain.
+     *
+     * @param  list<array{x?: float, y?: float}>  $group
+     * @param  list<float>  $vAxes
+     */
+    private function liesBesideBuilding(array $group, array $vAxes, float $pageMin): bool
+    {
+        if ($vAxes === []) {
+            return true;
+        }
+        $margin = max(36.0, $pageMin * 0.04);
+        $x = $this->groupAlong($group, false);
+
+        return $x <= min($vAxes) + $margin || $x >= max($vAxes) - $margin;
+    }
+
+    /**
      * @param  list<array{mm: int, x?: float, y?: float}>  $group
      * @return list<array{mm: int, x?: float, y?: float}>
      */
@@ -502,7 +531,10 @@ class DimensionChainReconstructor
                 }
                 $largestOther = max($largestOther, (int) $other['mm']);
             }
-            if (count($group) >= 3 && (int) $row['mm'] > $largestOther && $others >= 800 && abs((int) $row['mm'] - $others) / max($others, 1) <= 0.08) {
+            if (count($group) >= 3 && (int) $row['mm'] > $largestOther && $largestOther > 0 && (
+                ($others >= 800 && abs((int) $row['mm'] - $others) / max($others, 1) <= 0.08)
+                || (int) $row['mm'] >= (int) round($largestOther * 1.45)
+            )) {
                 $keys[$this->candidateKey($row)] = true;
             }
         }

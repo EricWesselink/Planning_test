@@ -108,11 +108,21 @@ class DimensionObjectFactory
             ];
         }
 
+        $accepted = $this->unique($accepted);
+        $acceptedKeys = [];
+        foreach ($accepted as $object) {
+            $acceptedKeys[$this->candidateKey($object)] = true;
+        }
+        $misses = array_values(array_filter(
+            $reconstruction['misses'],
+            fn (array $miss): bool => ! isset($acceptedKeys[$this->candidateKey($miss)]),
+        ));
+
         return [
-            'accepted' => $this->unique($accepted),
+            'accepted' => $accepted,
             'excluded' => $this->uniqueExcluded($excluded),
             'chains' => $reconstruction['chains'],
-            'misses' => $reconstruction['misses'],
+            'misses' => $misses,
         ];
     }
 
@@ -177,7 +187,6 @@ class DimensionObjectFactory
             $overall ? 0.7 : 0.9,
         );
     }
-
 
     /**
      * @param  array{x?: float, y?: float}  $dimension
@@ -367,6 +376,7 @@ class DimensionObjectFactory
             'source' => 'chain',
             'evidence' => $evidence,
             'confidence' => $confidence,
+            'overall' => $evidence === 'gebouwmaat',
         ];
     }
 

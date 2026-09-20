@@ -392,6 +392,9 @@ class AreaWithoutM2AnalyzerTest extends TestCase
         $this->assertSame(320.0, $byName['SLAAPKAMER 1']['ocr_x']);
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['overlay']['horizontal'] ?? null);
         $this->assertNotEmpty($byName['SLAAPKAMER 1']['overlay']['vertical'] ?? null);
+        $this->assertArrayHasKey('horizontal_chains', $result['page_pipeline']);
+        $this->assertArrayHasKey('vertical_chains', $result['page_pipeline']);
+        $this->assertNotEmpty($byName['SLAAPKAMER 1']['chain_bind'] ?? []);
     }
 
     public function test_two_bedrooms_bind_chain_objects_when_the_dimension_line_is_missing(): void

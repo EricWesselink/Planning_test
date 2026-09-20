@@ -162,6 +162,8 @@ class AreaWithoutM2Analyzer
                     'page' => $page,
                     'objects' => $objects['accepted'],
                     'excluded' => $objects['excluded'],
+                    'chains' => $objects['chains'] ?? [],
+                    'misses' => $objects['misses'] ?? [],
                     'zones' => $zones,
                 ];
             }
@@ -620,9 +622,11 @@ class AreaWithoutM2Analyzer
             'horizontal_mm' => $horizontal['mm'] ?? null,
             'horizontal_position' => $horizontal === null ? '—' : 'x='.round((float) $horizontal['x']).', y='.round((float) $horizontal['y']),
             'horizontal_walls' => $horizontal['wall_label'] ?? '—',
+            'horizontal_bind_reason' => $horizontal['bind_reason'] ?? '—',
             'vertical_mm' => $vertical['mm'] ?? null,
             'vertical_position' => $vertical === null ? '—' : 'x='.round((float) $vertical['x']).', y='.round((float) $vertical['y']),
             'vertical_walls' => $vertical['wall_label'] ?? '—',
+            'vertical_bind_reason' => $vertical['bind_reason'] ?? '—',
             'rejected' => $bound['rejected'] ?? [],
             'wall_left' => is_string($boundary['left'] ?? null) ? $boundary['left'] : '—',
             'wall_right' => is_string($boundary['right'] ?? null) ? $boundary['right'] : '—',
@@ -646,6 +650,13 @@ class AreaWithoutM2Analyzer
             'vertical_expected' => $vertical['expected'] ?? '—',
             'vertical_delta' => $vertical['delta'] ?? '—',
             'dimension_debug' => is_array($bound['dimension_debug'] ?? null) ? $bound['dimension_debug'] : [],
+            'chain_bind' => array_values(array_filter(
+                array_map(
+                    fn (mixed $row): string => is_array($row) ? (string) ($row['chain_bind'] ?? '') : '',
+                    is_array($bound['dimension_debug'] ?? null) ? $bound['dimension_debug'] : [],
+                ),
+                fn (string $label): bool => $label !== '',
+            )),
             'overlay' => $this->overlayGeometry($bound, $page, $anchor, $name, $roomNumber),
         ];
     }
@@ -856,6 +867,13 @@ class AreaWithoutM2Analyzer
                 'printed_m2' => $room['printed_m2'] ?? null,
             ], $rooms),
             'wall_axes' => $axes,
+            'horizontal_chains' => $this->chainsOf($meta['chains'] ?? [], 'horizontal'),
+            'vertical_chains' => $this->chainsOf($meta['chains'] ?? [], 'vertical'),
+            'chain_misses' => array_values(array_filter(
+                is_array($meta['misses'] ?? null) ? $meta['misses'] : [],
+                fn (mixed $row): bool => is_array($row),
+            )),
+            'ocr_standalone' => $this->ocrStandaloneMm($page),
             'dimension_objects' => array_map(fn (array $object): array => [
                 'value' => (int) ($object['value'] ?? $object['mm'] ?? 0),
                 'orientation' => (string) ($object['orientation'] ?? ''),
@@ -921,6 +939,45 @@ class AreaWithoutM2Analyzer
             'horizontal' => count($horizontal),
             'samples' => array_slice($samples, 0, 24),
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function chainsOf(mixed $chains, string $orientation): array
+    {
+        if (! is_array($chains)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $chains,
+            fn (mixed $chain): bool => is_array($chain) && ($chain['orientation'] ?? '') === $orientation,
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $page
+     * @return list<int>
+     */
+    private function ocrStandaloneMm(array $page): array
+    {
+        $found = [];
+        foreach ($page['texts'] ?? [] as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $text = trim((string) ($item['text'] ?? ''));
+            if (preg_match('/^(\d{3,5})(?:\s*mm)?$/iu', $text, $match) !== 1) {
+                continue;
+            }
+            $mm = (int) $match[1];
+            if ($mm >= 400 && $mm <= 30000) {
+                $found[$mm] = $mm;
+            }
+        }
+
+        return array_values($found);
     }
 
     /**

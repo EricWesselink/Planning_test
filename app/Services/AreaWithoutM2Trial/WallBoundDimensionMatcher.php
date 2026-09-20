@@ -234,6 +234,7 @@ class WallBoundDimensionMatcher
             'endpoints' => $debug['endpoints'],
             'expected' => $debug['expected'],
             'delta' => $debug['delta'],
+            'chain_bind' => 'wandpaar '.$debug['expected'].' → gekoppeld kettingsegment '.$debug['endpoints'].' → '.$mm.' → '.$reason,
         ];
     }
 

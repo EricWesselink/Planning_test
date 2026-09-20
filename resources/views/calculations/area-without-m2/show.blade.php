@@ -130,6 +130,37 @@
                     @endforeach
                 </ul>
             @endif
+            <p class="font-medium text-nicon-ink">H-maatkettingen</p>
+            @if (($pagePipeline['horizontal_chains'] ?? []) === [])
+                <p class="text-nicon-muted">geen</p>
+            @else
+                <ul class="list-disc pl-5 text-xs font-mono">
+                    @foreach ($pagePipeline['horizontal_chains'] as $chain)
+                        <li>{{ $chain['id'] ?? 'H' }} | {{ implode(', ', $chain['segments'] ?? []) }} | {{ implode(', ', $chain['extensions'] ?? []) }} | {{ $chain['total'] ?? '—' }} | {{ $chain['sum'] ?? '—' }} | {{ ! empty($chain['valid']) ? 'ja' : 'nee' }}</li>
+                    @endforeach
+                </ul>
+            @endif
+            <p class="font-medium text-nicon-ink">V-maatkettingen</p>
+            @if (($pagePipeline['vertical_chains'] ?? []) === [])
+                <p class="text-nicon-muted">geen verticale ketting</p>
+            @else
+                <ul class="list-disc pl-5 text-xs font-mono">
+                    @foreach ($pagePipeline['vertical_chains'] as $chain)
+                        <li>{{ $chain['id'] ?? 'V' }} | {{ implode(', ', $chain['segments'] ?? []) }} | {{ implode(', ', $chain['extensions'] ?? []) }} | {{ $chain['total'] ?? '—' }} | {{ $chain['sum'] ?? '—' }} | {{ ! empty($chain['valid']) ? 'ja' : 'nee' }}</li>
+                    @endforeach
+                </ul>
+            @endif
+            <p class="font-medium text-nicon-ink">Ontbrekende kettingmaten</p>
+            @if (($pagePipeline['chain_misses'] ?? []) === [])
+                <p class="text-nicon-muted">geen</p>
+            @else
+                <ul class="list-disc pl-5 text-xs">
+                    @foreach ($pagePipeline['chain_misses'] as $miss)
+                        <li>{{ ($miss['mm'] ?? 0) > 0 ? $miss['mm'] : '—' }} — {{ $miss['reason'] ?? '' }}</li>
+                    @endforeach
+                </ul>
+            @endif
+            <p class="text-xs text-nicon-muted">OCR-standalone: {{ empty($pagePipeline['ocr_standalone']) ? '—' : implode(', ', $pagePipeline['ocr_standalone']) }}</p>
             <p class="font-medium text-nicon-ink">Dimension objects</p>
             @if (($pagePipeline['dimension_objects'] ?? []) === [])
                 <p class="text-nicon-muted">geen</p>
@@ -270,11 +301,21 @@
                 <p>Maatsegment horizontaal: {{ $room['horizontal_segment'] ?? '—' }}</p>
                 <p>Endpoints horizontaal: {{ $room['horizontal_endpoints'] ?? '—' }} · verwacht {{ $room['horizontal_expected'] ?? '—' }} · Δ {{ $room['horizontal_delta'] ?? '—' }}</p>
                 <p>Wanden horizontale maat: {{ $room['horizontal_walls'] ?? '—' }}</p>
+                <p>Koppeling horizontaal: {{ $room['horizontal_bind_reason'] ?? '—' }}</p>
                 <p>Gekozen verticale maat: {{ $room['vertical_mm'] ?? '—' }} · {{ $room['vertical_position'] ?? '—' }}</p>
                 <p>Maatsegment verticaal: {{ $room['vertical_segment'] ?? '—' }}</p>
                 <p>Endpoints verticaal: {{ $room['vertical_endpoints'] ?? '—' }} · verwacht {{ $room['vertical_expected'] ?? '—' }} · Δ {{ $room['vertical_delta'] ?? '—' }}</p>
                 <p>Wanden verticale maat: {{ $room['vertical_walls'] ?? '—' }}</p>
+                <p>Koppeling verticaal: {{ $room['vertical_bind_reason'] ?? '—' }}</p>
                 <p>Confidence: {{ number_format((float) ($room['confidence'] ?? 0), 2, ',', '.') }}</p>
+                @if (($room['chain_bind'] ?? []) !== [])
+                    <p class="mt-2 font-medium text-nicon-ink">Wandpaar → kettingsegment</p>
+                    <ul class="list-disc pl-5">
+                        @foreach ($room['chain_bind'] as $bind)
+                            <li>{{ $bind }}</li>
+                        @endforeach
+                    </ul>
+                @endif
                 @if (($room['dimension_debug'] ?? []) !== [])
                     <p class="mt-2 font-medium text-nicon-ink">Maatkoppeling</p>
                     <ul class="list-disc pl-5">

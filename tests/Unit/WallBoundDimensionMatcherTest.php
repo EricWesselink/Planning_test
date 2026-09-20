@@ -238,6 +238,50 @@ class WallBoundDimensionMatcherTest extends TestCase
         $this->assertSame(0.0, $match['confidence']);
     }
 
+    public function test_maps_an_offset_chain_segment_onto_the_room_wall_pair(): void
+    {
+        $match = (new WallBoundDimensionMatcher)->match(
+            ['x' => 320.0, 'y' => 440.0, 'page' => 1, 'room_key' => 's1', 'text' => 'SLAAPKAMER 1'],
+            [
+                [
+                    'text' => '3000',
+                    'x' => 320.0,
+                    'y' => 80.0,
+                    'page' => 1,
+                    'mm' => 3000,
+                    'orientation' => 'horizontal',
+                    'endpoint1' => ['x' => 150.0, 'y' => 80.0],
+                    'endpoint2' => ['x' => 390.0, 'y' => 80.0],
+                    'evidence' => 'maatketting + extension-lines',
+                    'source' => 'chain',
+                    'confidence' => 0.92,
+                ],
+                [
+                    'text' => '3500',
+                    'x' => 120.0,
+                    'y' => 440.0,
+                    'page' => 1,
+                    'mm' => 3500,
+                    'orientation' => 'vertical',
+                    'endpoint1' => ['x' => 120.0, 'y' => 250.0],
+                    'endpoint2' => ['x' => 120.0, 'y' => 530.0],
+                    'evidence' => 'maatketting + extension-lines',
+                    'source' => 'chain',
+                    'confidence' => 0.92,
+                ],
+            ],
+            $this->chainPage(),
+            [
+                ['x' => 320.0, 'y' => 440.0, 'page' => 1, 'room_key' => 's1'],
+            ],
+        );
+
+        $this->assertSame(3000, $match['horizontal']['mm'] ?? null);
+        $this->assertSame(3500, $match['vertical']['mm'] ?? null);
+        $this->assertSame('kettingsegment topologisch op wandpaar', $match['horizontal']['bind_reason'] ?? null);
+        $this->assertSame(0.9, $match['confidence']);
+    }
+
     /**
      * @return array<string, mixed>
      */
