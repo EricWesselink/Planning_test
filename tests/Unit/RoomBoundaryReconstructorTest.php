@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\AreaWithoutM2Trial\RoomBoundaryReconstructor;
+use App\Services\AreaWithoutM2Trial\WallAxisAssembler;
 use Tests\TestCase;
 
 class RoomBoundaryReconstructorTest extends TestCase
@@ -89,7 +90,7 @@ class RoomBoundaryReconstructorTest extends TestCase
         );
 
         $this->assertSame(400.0, $result['left_pos']);
-        $this->assertSame(621.0, $result['right_pos']);
+        $this->assertSame(616.5, $result['right_pos']);
         $this->assertGreaterThan(80.0, (float) $result['right_pos'] - (float) $result['left_pos']);
     }
 
@@ -110,12 +111,12 @@ class RoomBoundaryReconstructorTest extends TestCase
             $anchors,
         );
 
-        $this->assertSame(621.0, $first['left_pos']);
+        $this->assertSame(616.5, $first['left_pos']);
         $this->assertSame(1100.0, $first['right_pos']);
         $this->assertSame(480.0, $first['bottom_pos']);
         $this->assertSame(746.0, $first['top_pos']);
         $this->assertNotNull($first['box']);
-        $this->assertSame(621.0, $second['left_pos']);
+        $this->assertSame(616.5, $second['left_pos']);
         $this->assertSame(1100.0, $second['right_pos']);
         $this->assertSame(200.0, $second['bottom_pos']);
         $this->assertSame(480.0, $second['top_pos']);
@@ -141,17 +142,73 @@ class RoomBoundaryReconstructorTest extends TestCase
             $anchors,
         );
 
-        $this->assertSame(621.0, $first['left_pos']);
+        $this->assertSame(616.5, $first['left_pos']);
         $this->assertSame(1100.0, $first['right_pos']);
         $this->assertSame(480.0, $first['bottom_pos']);
         $this->assertSame(746.0, $first['top_pos']);
-        $this->assertSame(621.0, $second['left_pos']);
+        $this->assertSame(616.5, $second['left_pos']);
         $this->assertSame(1100.0, $second['right_pos']);
         $this->assertSame(200.0, $second['bottom_pos']);
         $this->assertSame(480.0, $second['top_pos']);
         $this->assertSame($first['bottom_pos'], $second['top_pos']);
         $this->assertNotEmpty($first['wall_debug']['vertical']);
         $this->assertNotEmpty($second['wall_debug']['horizontal']);
+        $this->assertNotEmpty($first['wall_debug']['axes']);
+    }
+
+    public function test_uses_a_double_line_outer_facade_as_the_right_room_bound(): void
+    {
+        $page = $this->proefLikePage();
+        $page['walls'][] = ['x1' => 1112.0, 'y1' => 200.0, 'x2' => 1112.0, 'y2' => 760.0, 'axis' => 'v'];
+        $anchors = $this->proefLikeAnchors();
+
+        $first = (new RoomBoundaryReconstructor)->reconstruct(
+            ['x' => 945.3, 'y' => 620.5, 'page' => 1, 'room_key' => 's1', 'text' => 'SLAAPKAMER 1'],
+            $page,
+            $anchors,
+        );
+
+        $this->assertSame(616.5, $first['left_pos']);
+        $this->assertEqualsWithDelta(1106.0, (float) $first['right_pos'], 0.6);
+        $this->assertStringContainsString('buitenwand', (string) $first['right']);
+    }
+
+    public function test_keeps_a_long_outer_band_instead_of_skipping_it_as_a_page_span_line(): void
+    {
+        $page = $this->proefLikePage();
+        foreach ($page['walls'] as &$wall) {
+            if (($wall['axis'] ?? '') === 'v' && (float) $wall['x1'] === 1100.0) {
+                $wall['y1'] = 20.0;
+                $wall['y2'] = 880.0;
+                $wall['kind'] = WallAxisAssembler::KIND_BAND;
+            }
+        }
+        unset($wall);
+
+        $first = (new RoomBoundaryReconstructor)->reconstruct(
+            ['x' => 945.3, 'y' => 620.5, 'page' => 1, 'room_key' => 's1', 'text' => 'SLAAPKAMER 1'],
+            $page,
+            $this->proefLikeAnchors(),
+        );
+
+        $this->assertEqualsWithDelta(1100.0, (float) $first['right_pos'], 0.6);
+        $this->assertSame(746.0, $first['top_pos']);
+        $this->assertNotSame(800.0, $first['top_pos']);
+    }
+
+    public function test_does_not_use_an_isolated_dimension_line_as_the_bottom_facade(): void
+    {
+        $page = $this->proefLikePage();
+        $page['walls'][] = ['x1' => 20.0, 'y1' => 40.0, 'x2' => 1180.0, 'y2' => 40.0, 'axis' => 'h'];
+
+        $second = (new RoomBoundaryReconstructor)->reconstruct(
+            ['x' => 945.0, 'y' => 333.5, 'page' => 1, 'room_key' => 's2', 'text' => 'SLAAPKAMER 2'],
+            $page,
+            $this->proefLikeAnchors(),
+        );
+
+        $this->assertSame(200.0, $second['bottom_pos']);
+        $this->assertNotSame(40.0, $second['bottom_pos']);
     }
 
     /**

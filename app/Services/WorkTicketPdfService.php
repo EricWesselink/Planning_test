@@ -11,6 +11,7 @@ use App\Models\ProjectArea;
 use App\Models\ProjectDocument;
 use App\Models\WorkActivity;
 use App\Models\WorkerAssignment;
+use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use App\Support\Format;
 use Illuminate\Support\Facades\Storage;
@@ -256,6 +257,87 @@ class WorkTicketPdfService
             ->implode('_');
 
         return ($safe !== '' ? $safe : 'werkbon').'.pdf';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildForSmallWork(Project $project): array
+    {
+        $project->loadMissing([
+            'customer',
+            'workItems',
+            'assignments.worker',
+            'assignments.crewMembers',
+            'assignments.foreman',
+            'assignments.workTicketHolder',
+        ]);
+
+        $kindLabel = $project->printedBonLabel();
+        $logoRelative = $project->issuerLogo();
+
+        return [
+            'ticket' => null,
+            'filename' => $this->smallWorkFilename($project),
+            'documentTitle' => mb_strtoupper($kindLabel),
+            'kindLabel' => $kindLabel,
+            'number' => $project->workNumber(),
+            'issuedOn' => ($project->planned_start_date ?? $project->created_at)?->format('d-m-Y') ?? now()->format('d-m-Y'),
+            'logo' => $this->publicImagePath($logoRelative),
+            'logoUrl' => asset($logoRelative),
+            'companyName' => $project->issuerName(),
+            'companyAddress' => (string) config('company.address'),
+            'companyPostalCode' => (string) config('company.postal_code'),
+            'companyCity' => (string) config('company.city'),
+            'companyEmail' => (string) config('company.email'),
+            'companyPhone' => (string) config('company.phone'),
+            'customerName' => trim((string) ($project->customer?->name ?? '')),
+            'recipient' => $this->shopVakmanNames($project),
+            'recipientKind' => null,
+            'foreman' => $this->shopRoleNames($project, 'foreman'),
+            'workTicketHolder' => $this->shopRoleNames($project, 'workTicketHolder'),
+            'whoHeading' => 'Vakmannen',
+            'whenHeading' => 'Wanneer',
+            'recipientCompact' => true,
+            'projectTitle' => $project->displayTitle(),
+            'projectNumber' => $project->workCode(),
+            'workNumber' => $project->workNumber(),
+            'address' => $project->nawLine(),
+            'contactPhone' => $project->contact_phone ?: $project->customer?->phone,
+            'period' => $this->shopPeriod($project),
+            'floors' => '',
+            'rooms' => '',
+            'rows' => $this->smallWorkRows($project),
+            'notesText' => '',
+            'drawings' => [],
+            'drawingItems' => [],
+            'drawingEmbeds' => [],
+            'drawingUrl' => null,
+            'drawingIsPdf' => false,
+            'drawingIsImage' => false,
+            'drawingName' => null,
+            'floorLayers' => [],
+            'drawingRender' => 'image',
+            'colleagues' => [],
+            'showPrices' => false,
+            'includeMeasurementForm' => false,
+            'measurementForm' => null,
+        ];
+    }
+
+    public function smallWorkFilename(Project $project): string
+    {
+        $parts = [
+            $project->printedBonLabel(),
+            $project->displayTitle(),
+            $project->workNumber(),
+        ];
+        $safe = collect($parts)
+            ->map(fn (mixed $part): string => $this->safeSegment((string) $part))
+            ->filter()
+            ->implode('_');
+
+        return ($safe !== '' ? $safe : 'servicebon').'.pdf';
     }
 
     public function filename(WorkTicket $ticket): string
@@ -541,6 +623,42 @@ class WorkTicketPdfService
         }
 
         return $worker->displayName();
+    }
+
+    /**
+     * @return list<array{title: string, quantity: string, unit: string}>
+     */
+    private function smallWorkRows(Project $project): array
+    {
+        $rows = $project->workItems
+            ->sortBy(fn (WorkItem $item): array => [
+                (int) ($item->sort_order ?? 0),
+                (int) $item->id,
+            ])
+            ->map(function (WorkItem $item): array {
+                $hours = (float) ($item->begrote_uren ?? 0);
+
+                return [
+                    'title' => trim((string) $item->name),
+                    'quantity' => $hours > 0.0001 ? Format::hours($hours) : '',
+                    'unit' => '',
+                ];
+            })
+            ->filter(fn (array $row): bool => $row['title'] !== '')
+            ->values()
+            ->all();
+
+        if ($rows !== []) {
+            return $rows;
+        }
+
+        $title = trim((string) $project->name);
+
+        return $title === '' ? [] : [[
+            'title' => $title,
+            'quantity' => '',
+            'unit' => '',
+        ]];
     }
 
     /**

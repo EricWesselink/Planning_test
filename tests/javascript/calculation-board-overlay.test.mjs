@@ -18,6 +18,7 @@ import {
     clampPrintLabelCenter,
     separatePrintLabelCenters,
     usableLabelHits,
+    printLegendGoesBelow,
     waitForPrintAssets,
     waitForPrintImage,
 } from '../../resources/js/calculation-board-overlay.js';
@@ -175,7 +176,7 @@ test('ignores a dense legend strip of room codes above the plan', () => {
     assert.deepEqual(usableLabelHits([...hits, inRoom]).map((hit) => hit.y), [0.64]);
 });
 
-test('print still places every known board room when labels sit in a dense strip', () => {
+test('print keeps a room on the plan and drops labels that only exist in a legend strip', () => {
     const rooms = [
         room({ key: 'k-01-01', number: 'K-01-01', contour: null, floor_codes_label: 'v04' }),
         room({ key: 'k-01-02', number: 'K-01-02', contour: null, floor_codes_label: 'v01.d' }),
@@ -225,9 +226,9 @@ test('print still places every known board room when labels sit in a dense strip
     const plan = overlayPlan(rooms, 336, 1, { roomLabels: true, materialCodes: true });
 
     assert.equal(usableLabelHits(hits).length, 0);
-    assert.deepEqual(plan.map((item) => item.number).sort(), ['K-01-01', 'K-01-02', 'K-01-06', 'K-01-10', 'K-01-12']);
-    assert.equal(plan.find((item) => item.number === 'K-01-12').text, 'K-01-12 · v06.b + v01.i + v01.d');
-    assert.equal(overlayRoomsOnPage(rooms, 336, 1).length, 5);
+    assert.deepEqual(plan.map((item) => item.number), ['K-01-10']);
+    assert.equal(plan[0].text, 'K-01-10 · v04');
+    assert.equal(overlayRoomsOnPage(rooms, 336, 1).length, 1);
 });
 
 test('legend totals come from the rooms on that sheet, not the whole calculation', () => {
@@ -507,7 +508,7 @@ test('print does not fill from rects, text boxes or title-block strips', () => {
     assert.equal(plan.find((item) => item.number === 'A-01-13').text, 'A-01-13 · v04');
     assert.equal(plan.find((item) => item.number === 'A-01-12').text, 'A-01-12 · v06.c + v01.i + v01.f');
     assert.ok(plan.find((item) => item.number === 'A-01-13').box.x < 0.55);
-    assert.ok(center.x <= 0.80);
+    assert.ok(center.x <= 0.63);
     assert.equal(overlayRoomsOnPage([empty], 338, 1).length, 0);
 });
 
@@ -553,7 +554,92 @@ test('print nudges overlapping labels and keeps them on the drawing', () => {
     const clamped = clampPrintLabelCenter({ x: 0.92, y: 0.08, w: 0.12, h: 0.50 });
 
     assert.ok(Math.abs(centers[1].y - centers[0].y) >= 0.03);
-    assert.equal(clamped.x, 0.80);
-    assert.ok(clamped.y >= 0.05);
-    assert.ok(clamped.y <= 0.93);
+    assert.equal(clamped.x, 0.63);
+    assert.ok(clamped.y >= 0.08);
+    assert.ok(clamped.y <= 0.92);
+});
+
+test('print ignores a cloud of trace rects and a title-block copy of the room number', () => {
+    const blob = room({
+        key: 'a-00-02',
+        number: 'A-00-02',
+        floor_codes_label: 'v01.e',
+        contour: {
+            page: 1,
+            reliable: true,
+            rects: Array.from({ length: 40 }, (_, index) => ({
+                x: 0.46 + (index % 8) * 0.012,
+                y: 0.01 + Math.floor(index / 8) * 0.02,
+                w: 0.01,
+                h: 0.01,
+            })),
+        },
+        marker: { page: 1, x: 0.82, y: 0.12, width: 0.05, height: 0.02, source: 'text' },
+        jump_target: { page: 1, bbox: { x: 0.82, y: 0.12, w: 0.05, h: 0.02 }, geometry: 'label' },
+    });
+    const duplicate = room({
+        key: 'a-00-18',
+        number: 'A-00-18',
+        floor_codes_label: 'v01.g + v09',
+        contour: null,
+        marker: null,
+    });
+    const hits = [
+        { number: 'A-00-01', page: 1, x: 0.22, y: 0.48, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-03', page: 1, x: 0.31, y: 0.36, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-04', page: 1, x: 0.28, y: 0.42, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-08', page: 1, x: 0.40, y: 0.50, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-10', page: 1, x: 0.18, y: 0.72, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-18', page: 1, x: 0.82, y: 0.44, w: 0.04, h: 0.02, source: 'text' },
+        { number: 'A-00-18', page: 1, x: 0.58, y: 0.46, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-02', page: 1, x: 0.52, y: 0.14, w: 0.05, h: 0.02, source: 'text' },
+    ];
+
+    placeBoardRooms([blob, duplicate], 336, hits);
+    const plan = overlayPlan([blob, duplicate], 336, 1, { colored: true, roomLabels: true, materialCodes: true });
+    const eighteen = plan.find((item) => item.number === 'A-00-18');
+    const two = plan.find((item) => item.number === 'A-00-02');
+
+    assert.equal(roomLabelAnchor(blob)?.x, 0.52);
+    assert.equal(eighteen.box.x, 0.58);
+    assert.ok(clampPrintLabelCenter(eighteen.box).x <= 0.63);
+    assert.ok(two.box.x < 0.60);
+    assert.ok(two.box.y > 0.10);
+    assert.equal(printLegendGoesBelow(Array.from({ length: 8 }, (_, index) => ({ code: `v${index}` }))), false);
+    assert.equal(printLegendGoesBelow(Array.from({ length: 22 }, (_, index) => ({ code: `v${index}` }))), true);
+});
+
+test('print does not put a title-block room number on the drawing', () => {
+    const onlyBlock = room({
+        key: 'a-00-13',
+        number: 'A-00-13',
+        floor_codes_label: 'v04',
+        contour: null,
+        marker: null,
+    });
+    const onPlan = room({
+        key: 'a-00-05',
+        number: 'A-00-05',
+        floor_codes_label: 'v04',
+        contour: null,
+        marker: null,
+    });
+    const hits = [
+        { number: 'A-00-01', page: 1, x: 0.18, y: 0.42, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-04', page: 1, x: 0.26, y: 0.40, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-05', page: 1, x: 0.33, y: 0.38, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-08', page: 1, x: 0.41, y: 0.36, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-13', page: 1, x: 0.78, y: 0.16, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-13', page: 1, x: 0.79, y: 0.22, w: 0.04, h: 0.018, source: 'text' },
+        { number: 'A-00-14', page: 1, x: 0.78, y: 0.28, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-16', page: 1, x: 0.78, y: 0.34, w: 0.05, h: 0.02, source: 'text' },
+        { number: 'A-00-05', page: 1, x: 0.78, y: 0.40, w: 0.05, h: 0.02, source: 'text' },
+    ];
+
+    placeBoardRooms([onlyBlock, onPlan], 336, hits);
+    const plan = overlayPlan([onlyBlock, onPlan], 336, 1, { roomLabels: true, materialCodes: true });
+
+    assert.equal(plan.some((item) => item.number === 'A-00-13'), false);
+    assert.equal(plan.find((item) => item.number === 'A-00-05').box.x, 0.33);
+    assert.ok(plan.find((item) => item.number === 'A-00-05').box.x < 0.60);
 });

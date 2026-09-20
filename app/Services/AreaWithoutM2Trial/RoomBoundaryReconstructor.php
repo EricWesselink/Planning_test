@@ -10,9 +10,11 @@ namespace App\Services\AreaWithoutM2Trial;
 class RoomBoundaryReconstructor
 {
     /**
-     * @var array<string, array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, gaps: list<string>}>
+     * @var array<string, array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, gaps: list<string>, extract: array<string, mixed>}>
      */
     private array $clusterCache = [];
+
+    public function __construct(private WallAxisAssembler $assembler = new WallAxisAssembler) {}
 
     /**
      * @param  array{x: float, y: float, page?: int, room_key?: string, room_number?: string}  $anchor
@@ -48,7 +50,14 @@ class RoomBoundaryReconstructor
             'right_pos' => null,
             'top_pos' => null,
             'bottom_pos' => null,
-            'wall_debug' => ['vertical' => [], 'horizontal' => [], 'tested_pair' => ['vertical' => 'geen', 'horizontal' => 'geen']],
+            'wall_debug' => [
+                'vertical' => [],
+                'horizontal' => [],
+                'tested_pair' => ['vertical' => 'geen', 'horizontal' => 'geen'],
+                'bands_h' => [],
+                'bands_v' => [],
+                'axes' => [],
+            ],
         ];
 
         $fill = $this->containingFill($anchor, $page['fills'] ?? []);
@@ -158,46 +167,23 @@ class RoomBoundaryReconstructor
             'right_pos' => $right['pos'] ?? null,
             'top_pos' => $top['pos'] ?? null,
             'bottom_pos' => $bottom['pos'] ?? null,
-            'wall_debug' => [
-                'vertical' => $this->debugCandidates(
-                    $clustered['v'],
-                    $x,
-                    $y,
-                    true,
-                    $anchor,
-                    $otherAnchors,
-                    $minPick,
-                    $pageWidth * 0.55,
-                    $thickness,
-                    $nameBand,
-                    $pageHeight,
-                    $left,
-                    $right,
-                ),
-                'horizontal' => $this->debugCandidates(
-                    $clustered['h'],
-                    $y,
-                    $x,
-                    false,
-                    $anchor,
-                    $otherAnchors,
-                    $minPick,
-                    $pageHeight * 0.55,
-                    $thickness,
-                    $nameBand,
-                    $pageWidth,
-                    $bottom,
-                    $top,
-                ),
-                'tested_pair' => [
-                    'vertical' => $left === null || $right === null
-                        ? 'geen compleet linker-/rechterpaar'
-                        : 'x='.round((float) $left['pos']).'–'.round((float) $right['pos']),
-                    'horizontal' => $bottom === null || $top === null
-                        ? 'geen compleet onder-/bovenpaar'
-                        : 'y='.round((float) $bottom['pos']).'–'.round((float) $top['pos']),
-                ],
-            ],
+            'wall_debug' => $this->wallDebug(
+                $clustered,
+                $page,
+                $x,
+                $y,
+                $anchor,
+                $otherAnchors,
+                $minPick,
+                $thickness,
+                $nameBand,
+                $pageWidth,
+                $pageHeight,
+                $left,
+                $right,
+                $bottom,
+                $top,
+            ),
         ];
 
         if ($left === null || $right === null || $bottom === null || $top === null) {
@@ -233,15 +219,25 @@ class RoomBoundaryReconstructor
 
     /**
      * @param  array<string, mixed>  $page
-     * @return array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, gaps: list<string>}
+     * @return array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, gaps: list<string>, extract: array<string, mixed>}
      */
     private function clusteredFor(array $page, float $doorGap, float $axisTol, float $minMain): array
     {
         $walls = array_merge($page['walls'] ?? [], $page['ticks'] ?? []);
+        $pageWidth = (float) ($page['width'] ?? 0);
+        $pageHeight = (float) ($page['height'] ?? 0);
         $key = ((int) ($page['page'] ?? 1)).'|'.count($walls).'|'
-            .round((float) ($page['width'] ?? 0), 1).'|'.round((float) ($page['height'] ?? 0), 1);
+            .round($pageWidth, 1).'|'.round($pageHeight, 1);
         if (! isset($this->clusterCache[$key])) {
-            $this->clusterCache[$key] = $this->clusterWalls($walls, $doorGap, $axisTol, $minMain);
+            $clustered = $this->clusterWalls($walls, $doorGap, $axisTol, $minMain, $pageWidth, $pageHeight);
+            if (is_array($page['wall_extract'] ?? null)) {
+                $clustered['extract'] = [
+                    'bands_h' => $page['wall_extract']['bands_h'] ?? $clustered['extract']['bands_h'],
+                    'bands_v' => $page['wall_extract']['bands_v'] ?? $clustered['extract']['bands_v'],
+                    'axes' => $page['wall_extract']['axes'] ?? $clustered['extract']['axes'],
+                ];
+            }
+            $this->clusterCache[$key] = $clustered;
         }
 
         return $this->clusterCache[$key];
@@ -249,13 +245,20 @@ class RoomBoundaryReconstructor
 
     /**
      * @param  list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>  $walls
-     * @return array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, gaps: list<string>}
+     * @return array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, gaps: list<string>, extract: array<string, mixed>}
      */
-    public function clusterWalls(array $walls, float $doorGap, float $axisTol, float $minMain): array
+    public function clusterWalls(array $walls, float $doorGap, float $axisTol, float $minMain, float $pageWidth = 0.0, float $pageHeight = 0.0): array
     {
+        if ($pageWidth < 8 || $pageHeight < 8) {
+            foreach ($walls as $wall) {
+                $pageWidth = max($pageWidth, (float) ($wall['x1'] ?? 0), (float) ($wall['x2'] ?? 0));
+                $pageHeight = max($pageHeight, (float) ($wall['y1'] ?? 0), (float) ($wall['y2'] ?? 0));
+            }
+        }
+        $assembled = $this->assembler->assemble($walls, max(1.0, $pageWidth), max(1.0, $pageHeight));
         $horizontal = [];
         $vertical = [];
-        foreach ($walls as $wall) {
+        foreach ($assembled['walls'] as $wall) {
             $length = $this->length($wall);
             if ($length < 16) {
                 continue;
@@ -266,6 +269,9 @@ class RoomBoundaryReconstructor
                     'x2' => max((float) $wall['x1'], (float) $wall['x2']),
                     'y' => ((float) $wall['y1'] + (float) $wall['y2']) / 2,
                     'gaps' => [],
+                    'kind' => $wall['kind'] ?? WallAxisAssembler::KIND_LINE,
+                    'role' => $wall['role'] ?? null,
+                    'thickness' => $wall['thickness'] ?? null,
                 ];
             }
             if (($wall['axis'] ?? '') === 'v') {
@@ -274,6 +280,9 @@ class RoomBoundaryReconstructor
                     'y2' => max((float) $wall['y1'], (float) $wall['y2']),
                     'x' => ((float) $wall['x1'] + (float) $wall['x2']) / 2,
                     'gaps' => [],
+                    'kind' => $wall['kind'] ?? WallAxisAssembler::KIND_LINE,
+                    'role' => $wall['role'] ?? null,
+                    'thickness' => $wall['thickness'] ?? null,
                 ];
             }
         }
@@ -282,7 +291,16 @@ class RoomBoundaryReconstructor
         $h = $this->mergeCollinear($horizontal, 'h', $doorGap, $axisTol, $minMain, $gaps);
         $v = $this->mergeCollinear($vertical, 'v', $doorGap, $axisTol, $minMain, $gaps);
 
-        return ['h' => $h, 'v' => $v, 'gaps' => $gaps];
+        return [
+            'h' => $h,
+            'v' => $v,
+            'gaps' => $gaps,
+            'extract' => [
+                'bands_h' => $assembled['bands_h'],
+                'bands_v' => $assembled['bands_v'],
+                'axes' => $assembled['axes'],
+            ],
+        ];
     }
 
     /**
@@ -328,6 +346,7 @@ class RoomBoundaryReconstructor
                     }
                     $existing['x1'] = min((float) $existing['x1'], (float) $segment['x1']);
                     $existing['x2'] = max((float) $existing['x2'], (float) $segment['x2']);
+                    $this->mergeWallMeta($existing, $segment);
                     $attached = true;
                     break;
                 }
@@ -347,6 +366,7 @@ class RoomBoundaryReconstructor
                 }
                 $existing['y1'] = min((float) $existing['y1'], (float) $segment['y1']);
                 $existing['y2'] = max((float) $existing['y2'], (float) $segment['y2']);
+                $this->mergeWallMeta($existing, $segment);
                 $attached = true;
                 break;
             }
@@ -505,6 +525,9 @@ class RoomBoundaryReconstructor
             if ($this->otherNameBetween($origin, $pos, $vertical, $cover, $anchor, $others, $nameBand)) {
                 continue;
             }
+            if (($wall['role'] ?? '') === WallAxisAssembler::ROLE_DIMENSION) {
+                continue;
+            }
             $candidates[] = [
                 'pos' => $pos,
                 'dist' => $dist,
@@ -639,8 +662,12 @@ class RoomBoundaryReconstructor
             }
             $length = $spanEnd - $spanStart;
             $dist = abs($origin - $pos);
-            $decision = 'afgewezen';
-            if ($length < $minLength) {
+            $kind = (string) ($wall['kind'] ?? WallAxisAssembler::KIND_LINE);
+            $role = (string) ($wall['role'] ?? '—');
+            $envelope = $this->isEnvelopeWall($wall);
+            if (($wall['role'] ?? '') === WallAxisAssembler::ROLE_DIMENSION) {
+                $decision = 'afgewezen: maatlijn buiten de gevel';
+            } elseif ($length < $minLength) {
                 $decision = 'afgewezen: te kort ('.round($length).' px)';
             } elseif ($dist < 0.5 || $dist > $maxDist) {
                 $decision = 'afgewezen: afstand tot OCR '.round($dist).' px';
@@ -649,9 +676,13 @@ class RoomBoundaryReconstructor
             } elseif ($this->otherNameBetween($origin, $pos, $vertical, $cover, $anchor, $others, $nameBand)) {
                 $decision = 'afgewezen: andere ruimtenaam ertussen';
             } elseif ($chosenLow !== null && abs($pos - (float) $chosenLow['pos']) <= $excludeTol) {
-                $decision = 'geaccepteerd als '.$lowSide.'wand';
+                $decision = 'geaccepteerd als '.$lowSide.'wand'
+                    .($role !== '—' ? ' ('.$role.')' : '');
             } elseif ($chosenHigh !== null && abs($pos - (float) $chosenHigh['pos']) <= $excludeTol) {
-                $decision = 'geaccepteerd als '.$highSide.'wand';
+                $decision = 'geaccepteerd als '.$highSide.'wand'
+                    .($role !== '—' ? ' ('.$role.')' : '');
+            } elseif (! $envelope && $length > $pageSpan * 0.65) {
+                $decision = 'afgewezen: te lang als interne lijn ('.round($length).' px); buitenwand zou wel mogen';
             } else {
                 $decision = 'kandidaat, niet het dichtstbijzijnde paar';
             }
@@ -660,12 +691,26 @@ class RoomBoundaryReconstructor
                 'pos' => round($pos, 1),
                 'span' => $span,
                 'dist' => round($dist, 1),
+                'kind' => $kind,
+                'role' => $role,
                 'decision' => $decision,
             ];
         }
         usort($rows, fn (array $a, array $b): int => $a['dist'] <=> $b['dist']);
+        $nearest = array_slice($rows, 0, 12);
+        $envelopeRows = array_values(array_filter(
+            $rows,
+            fn (array $row): bool => ($row['role'] ?? '') === WallAxisAssembler::ROLE_OUTER
+                || in_array($row['kind'] ?? '', [WallAxisAssembler::KIND_BAND, WallAxisAssembler::KIND_PAIR], true),
+        ));
+        $merged = [];
+        foreach (array_merge($envelopeRows, $nearest) as $row) {
+            $merged[$row['axis'].':'.$row['pos'].':'.$row['span']] = $row;
+        }
+        $combined = array_values($merged);
+        usort($combined, fn (array $a, array $b): int => $a['dist'] <=> $b['dist']);
 
-        return array_slice($rows, 0, 12);
+        return array_slice($combined, 0, 20);
     }
 
     /**
@@ -795,15 +840,31 @@ class RoomBoundaryReconstructor
     private function sideLabel(string $role, array $wall): string
     {
         if (isset($wall['x'], $wall['y1'], $wall['y2'])) {
-            return $role.' x='.round((float) $wall['x']).' (y '.round((float) $wall['y1']).'–'.round((float) $wall['y2']).')';
+            return $role.' x='.round((float) $wall['x']).' (y '.round((float) $wall['y1']).'–'.round((float) $wall['y2']).')'.$this->wallMetaSuffix($wall);
         }
 
-        return $role.' y='.round((float) ($wall['y'] ?? 0)).' (x '.round((float) ($wall['x1'] ?? 0)).'–'.round((float) ($wall['x2'] ?? 0)).')';
+        return $role.' y='.round((float) ($wall['y'] ?? 0)).' (x '.round((float) ($wall['x1'] ?? 0)).'–'.round((float) ($wall['x2'] ?? 0)).')'.$this->wallMetaSuffix($wall);
     }
 
     /**
-     * @param  array{h: list<array<string, mixed>>, v: list<array<string, mixed>>}  $clustered
-     * @return list<array{x1: float, y1: float, x2: float, y2: float, axis: string}>
+     * @param  array<string, mixed>  $wall
+     */
+    private function wallMetaSuffix(array $wall): string
+    {
+        $parts = [];
+        if (is_string($wall['role'] ?? null) && $wall['role'] !== '') {
+            $parts[] = (string) $wall['role'];
+        }
+        if (is_string($wall['kind'] ?? null) && $wall['kind'] !== '' && $wall['kind'] !== WallAxisAssembler::KIND_LINE) {
+            $parts[] = (string) $wall['kind'];
+        }
+
+        return $parts === [] ? '' : ' · '.implode(', ', $parts);
+    }
+
+    /**
+     * @param  array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, extract?: array<string, mixed>}  $clustered
+     * @return list<array<string, mixed>>
      */
     private function toAxisWalls(array $clustered): array
     {
@@ -815,6 +876,8 @@ class RoomBoundaryReconstructor
                 'x2' => (float) $wall['x2'],
                 'y2' => (float) $wall['y'],
                 'axis' => 'h',
+                'kind' => $wall['kind'] ?? WallAxisAssembler::KIND_LINE,
+                'role' => $wall['role'] ?? null,
             ];
         }
         foreach ($clustered['v'] as $wall) {
@@ -824,10 +887,167 @@ class RoomBoundaryReconstructor
                 'x2' => (float) $wall['x'],
                 'y2' => (float) $wall['y2'],
                 'axis' => 'v',
+                'kind' => $wall['kind'] ?? WallAxisAssembler::KIND_LINE,
+                'role' => $wall['role'] ?? null,
             ];
         }
 
         return $walls;
+    }
+
+    /**
+     * @param  array<string, mixed>  $existing
+     * @param  array<string, mixed>  $segment
+     */
+    private function mergeWallMeta(array &$existing, array $segment): void
+    {
+        $existing['role'] = $this->strongerRole($existing['role'] ?? null, $segment['role'] ?? null);
+        $existing['kind'] = $this->strongerKind(
+            (string) ($existing['kind'] ?? WallAxisAssembler::KIND_LINE),
+            (string) ($segment['kind'] ?? WallAxisAssembler::KIND_LINE),
+        );
+        $existing['thickness'] = max((float) ($existing['thickness'] ?? 0), (float) ($segment['thickness'] ?? 0));
+    }
+
+    private function strongerRole(mixed $left, mixed $right): ?string
+    {
+        foreach ([WallAxisAssembler::ROLE_OUTER, WallAxisAssembler::ROLE_INTERNAL] as $role) {
+            if ($left === $role || $right === $role) {
+                return $role;
+            }
+        }
+
+        return is_string($left) ? $left : (is_string($right) ? $right : null);
+    }
+
+    private function strongerKind(string $left, string $right): string
+    {
+        foreach ([WallAxisAssembler::KIND_BAND, WallAxisAssembler::KIND_PAIR, WallAxisAssembler::KIND_LINE] as $kind) {
+            if ($left === $kind || $right === $kind) {
+                return $kind;
+            }
+        }
+
+        return WallAxisAssembler::KIND_LINE;
+    }
+
+    /**
+     * @param  array<string, mixed>  $wall
+     */
+    private function isEnvelopeWall(array $wall): bool
+    {
+        $role = (string) ($wall['role'] ?? '');
+        $kind = (string) ($wall['kind'] ?? '');
+
+        return $role === WallAxisAssembler::ROLE_OUTER
+            || $kind === WallAxisAssembler::KIND_BAND
+            || $kind === WallAxisAssembler::KIND_PAIR;
+    }
+
+    /**
+     * @param  array{h: list<array<string, mixed>>, v: list<array<string, mixed>>, extract?: array<string, mixed>}  $clustered
+     * @param  array<string, mixed>  $page
+     * @param  list<array{x: float, y: float, page?: int, room_key?: string, room_number?: string}>  $others
+     * @param  array{pos: float, wall: array<string, mixed>}|null  $left
+     * @param  array{pos: float, wall: array<string, mixed>}|null  $right
+     * @param  array{pos: float, wall: array<string, mixed>}|null  $bottom
+     * @param  array{pos: float, wall: array<string, mixed>}|null  $top
+     * @return array<string, mixed>
+     */
+    private function wallDebug(
+        array $clustered,
+        array $page,
+        float $x,
+        float $y,
+        array $anchor,
+        array $others,
+        float $minPick,
+        float $thickness,
+        float $nameBand,
+        float $pageWidth,
+        float $pageHeight,
+        ?array $left,
+        ?array $right,
+        ?array $bottom,
+        ?array $top,
+    ): array {
+        $extract = is_array($clustered['extract'] ?? null) ? $clustered['extract'] : ['bands_h' => [], 'bands_v' => [], 'axes' => []];
+        if (is_array($page['wall_extract'] ?? null)) {
+            $extract = [
+                'bands_h' => $page['wall_extract']['bands_h'] ?? $extract['bands_h'],
+                'bands_v' => $page['wall_extract']['bands_v'] ?? $extract['bands_v'],
+                'axes' => $page['wall_extract']['axes'] ?? $extract['axes'],
+            ];
+        }
+
+        return [
+            'vertical' => $this->debugCandidates(
+                $clustered['v'],
+                $x,
+                $y,
+                true,
+                $anchor,
+                $others,
+                $minPick,
+                $pageWidth * 0.55,
+                $thickness,
+                $nameBand,
+                $pageHeight,
+                $left,
+                $right,
+            ),
+            'horizontal' => $this->debugCandidates(
+                $clustered['h'],
+                $y,
+                $x,
+                false,
+                $anchor,
+                $others,
+                $minPick,
+                $pageHeight * 0.55,
+                $thickness,
+                $nameBand,
+                $pageWidth,
+                $bottom,
+                $top,
+            ),
+            'tested_pair' => [
+                'vertical' => $left === null || $right === null
+                    ? 'geen compleet linker-/rechterpaar'
+                    : 'x='.round((float) $left['pos']).'–'.round((float) $right['pos']),
+                'horizontal' => $bottom === null || $top === null
+                    ? 'geen compleet onder-/bovenpaar'
+                    : 'y='.round((float) $bottom['pos']).'–'.round((float) $top['pos']),
+            ],
+            'bands_h' => $this->debugExtractList($extract['bands_h'] ?? []),
+            'bands_v' => $this->debugExtractList($extract['bands_v'] ?? []),
+            'axes' => $this->debugExtractList($extract['axes'] ?? []),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     * @return list<string>
+     */
+    private function debugExtractList(array $items): array
+    {
+        $lines = [];
+        foreach ($items as $item) {
+            $axis = (string) ($item['axis'] ?? '');
+            $kind = (string) ($item['kind'] ?? WallAxisAssembler::KIND_LINE);
+            $role = (string) ($item['role'] ?? '—');
+            if ($axis === 'v') {
+                $lines[] = 'x='.round((float) ($item['x1'] ?? $item['x'] ?? 0))
+                    .' y='.round((float) ($item['y1'] ?? 0)).'–'.round((float) ($item['y2'] ?? 0))
+                    .' · '.$kind.' · '.$role;
+            } else {
+                $lines[] = 'y='.round((float) ($item['y1'] ?? $item['y'] ?? 0))
+                    .' x='.round((float) ($item['x1'] ?? 0)).'–'.round((float) ($item['x2'] ?? 0))
+                    .' · '.$kind.' · '.$role;
+            }
+        }
+
+        return array_slice($lines, 0, 24);
     }
 
     /**

@@ -8,9 +8,12 @@ use App\Models\Project;
 use App\Models\Worker;
 use App\Models\WorkItem;
 use App\Services\SmallWorkService;
+use App\Services\WorkTicketPdfService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -54,6 +57,34 @@ class SmallWorkController extends Controller
         return redirect()
             ->route('projects.show', $project)
             ->with('status', 'Klein werk opgeslagen.');
+    }
+
+    public function werkbon(Project $project, WorkTicketPdfService $pdfs): View
+    {
+        Gate::authorize('view', $project);
+        abort_unless($project->isSmallWork(), 404);
+
+        return view('work-tickets.small', [
+            ...$pdfs->buildForSmallWork($project),
+            'project' => $project,
+        ]);
+    }
+
+    public function werkbonPdf(Project $project, WorkTicketPdfService $pdfs): Response
+    {
+        Gate::authorize('view', $project);
+        abort_unless($project->isSmallWork(), 404);
+        $data = $pdfs->buildForSmallWork($project);
+
+        $pdf = Pdf::loadView('work-tickets.pdf', $data)
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['documentTitle'].' '.$data['number'],
+            'Author' => $data['companyName'],
+        ]);
+
+        return $pdf->download($data['filename']);
     }
 
     public function editExtra(Project $project, WorkItem $workItem): View

@@ -7,10 +7,9 @@ import {
     paintCalculationOverlays,
     printDrawingSheets,
     printImageFromCanvas,
+    printLegendGoesBelow,
     printPaper,
     waitForPrintAssets,
-    overlayRoomsOnPage,
-    legendFromRooms,
     roomsForDrawing,
 } from './calculation-board-overlay';
 
@@ -107,8 +106,8 @@ function createDrawingPage(sheets, documentData, drawing, page, pageCount) {
     pageEl.className = 'calc-print-page calc-print-drawing-page';
     pageEl.dataset.drawingId = String(drawing.id);
     pageEl.dataset.page = String(page);
-    const legendBelow = (documentData.materials || []).length > 18;
-    if (documentData.include?.legend && legendBelow) {
+    const materials = drawing.materials || [];
+    if (documentData.include?.legend && printLegendGoesBelow(materials)) {
         pageEl.classList.add('has-legend-below');
     }
     const label = pageCount > 1 ? `${drawing.label} · pagina ${page}` : drawing.label;
@@ -128,7 +127,7 @@ function createDrawingPage(sheets, documentData, drawing, page, pageCount) {
                     <div class="calc-print-markers"></div>
                 </div>
             </div>
-            ${documentData.include?.legend ? legendMarkup(drawing.materials || []) : ''}
+            ${documentData.include?.legend ? legendMarkup(materials) : ''}
         </div>
     `;
     sheets.append(pageEl);
@@ -137,14 +136,18 @@ function createDrawingPage(sheets, documentData, drawing, page, pageCount) {
 }
 
 function legendMarkup(materials) {
-    const rows = materials.map((material) => `
+    const rows = materials.map((material) => {
+        const color = escapeHtml(material.color || '#e7e5e4');
+
+        return `
         <div class="calc-legend-row">
-            <i style="background: ${escapeHtml(material.color || '#e7e5e4')}"></i>
+            <i class="calc-print-swatch" style="background:${color};border-color:${color};box-shadow:inset 0 0 0 8px ${color}"></i>
             <span class="calc-legend-code">${escapeHtml(material.code || '')}</span>
             <span class="calc-legend-product">${escapeHtml(material.product || '—')}</span>
             <span class="calc-legend-m2">${escapeHtml(material.m2_label || '')}</span>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     return `<aside class="calc-print-legend"><h2>Materiaallegenda</h2>${rows || '<p>Geen materialen.</p>'}</aside>`;
 }
@@ -200,11 +203,6 @@ async function renderDrawingPage(host, pdf, pageNumber, paint) {
         chipTag: 'span',
         showChips: Boolean(paint.roomLabels || paint.materialCodes),
     });
-    const legend = host.querySelector('.calc-print-legend');
-    if (legend) {
-        const sheetRooms = overlayRoomsOnPage(paint.rooms, paint.drawingId, pageNumber);
-        legend.outerHTML = legendMarkup(legendFromRooms(sheetRooms));
-    }
 }
 
 async function waitUntilPrintable(documentData = null) {

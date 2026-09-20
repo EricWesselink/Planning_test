@@ -13,6 +13,8 @@
         <span class="bg-nicon-ink px-2 py-0.5 text-[11px] font-semibold tracking-[0.14em] text-white">{{ $project->kind?->badge() }}</span>
         <h1 class="text-2xl font-semibold">{{ $project->displayTitle() }}</h1>
         <span class="text-nicon-muted">{{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span>
+        <a href="{{ route('projects.small.werkbon', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">{{ $project->printedBonLabel() }}</a>
+        <a href="{{ route('projects.small.werkbon.pdf', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">Download PDF</a>
     </div>
     @if (auth()->user()?->canViewLaborCosts())
         @include('projects.partials.labor-summary', ['labor' => $labor])

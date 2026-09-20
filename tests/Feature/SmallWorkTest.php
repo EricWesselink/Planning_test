@@ -26,6 +26,8 @@ class SmallWorkTest extends TestCase
         $this->get(route('projects.small.create'))->assertRedirect(route('login'));
         $this->post(route('projects.small.store'), [])->assertRedirect(route('login'));
         $this->patch(route('projects.small.update', $this->makeService()), [])->assertRedirect(route('login'));
+        $this->get(route('projects.small.werkbon', 1))->assertRedirect(route('login'));
+        $this->get(route('projects.small.werkbon.pdf', 1))->assertRedirect(route('login'));
     }
 
     public function test_uitvoerder_cannot_open_or_create_small_work(): void
@@ -751,6 +753,130 @@ class SmallWorkTest extends TestCase
             ])
             ->assertRedirect(route('projects.small.create'))
             ->assertSessionHasErrors(['hours' => 'Kies 2, 4, 6 of 8 uur.']);
+    }
+
+    public function test_service_page_offers_servicebon_view_and_pdf(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Polinder',
+            'description' => 'vlekken in het tapijt',
+            'address' => 'Straat 12',
+            'postal_code' => '7411 HD',
+            'location' => 'Kampen',
+            'date' => '2026-09-21',
+            'hours' => 2,
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('>Servicebon</a>', false)
+            ->assertSee('Download PDF')
+            ->assertSee(route('projects.small.werkbon', $project, false), false)
+            ->assertSee(route('projects.small.werkbon.pdf', $project, false), false);
+    }
+
+    public function test_servicebon_shows_the_job_and_print_download(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Polinder',
+            'description' => 'vlekken in het tapijt',
+            'address' => 'Straat 12',
+            'postal_code' => '7411 HD',
+            'location' => 'Kampen',
+            'date' => '2026-09-21',
+            'hours' => 2,
+            'worker_id' => $worker->id,
+            'work_number' => '2026-041',
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('SERVICEBON')
+            ->assertSee('Servicebon')
+            ->assertSee('Nicon Vloeren')
+            ->assertSee('Kampen – vlekken in het tapijt')
+            ->assertSee('Klant Polinder')
+            ->assertSee('Straat 12')
+            ->assertSee('7411 HD')
+            ->assertSee('Werknummer 2026-041')
+            ->assertSee('vlekken in het tapijt')
+            ->assertSee('2 u')
+            ->assertSee('Albert')
+            ->assertSee('Vakmannen')
+            ->assertSee('Wanneer')
+            ->assertSee('21-09-2026')
+            ->assertSee('Afdrukken')
+            ->assertSee('Download PDF')
+            ->assertSee(route('projects.small.werkbon.pdf', $project, false), false)
+            ->assertDontSee('€')
+            ->assertDontSee('Kloppenburg');
+    }
+
+    public function test_servicebon_pdf_downloads(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Polinder',
+            'description' => 'vlekken in het tapijt',
+            'location' => 'Kampen',
+            'date' => '2026-09-21',
+            'hours' => 2,
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+
+        $response = $this->actingAs($user)->get(route('projects.small.werkbon.pdf', $project));
+        $response->assertOk();
+        $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
+        $response->assertDownload();
+    }
+
+    public function test_klein_werk_page_offers_a_werkbon_pdf(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Klein->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => '25 m² PVC',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 8,
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Klein)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('>Werkbon</a>', false)
+            ->assertDontSee('>Servicebon</a>', false);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('WERKBON')
+            ->assertDontSee('SERVICEBON');
+    }
+
+    public function test_construction_project_has_no_small_work_bon(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeConstruction('Nieuwbouw');
+
+        $this->actingAs($user)->get(route('projects.small.werkbon', $project))->assertNotFound();
+        $this->actingAs($user)->get(route('projects.small.werkbon.pdf', $project))->assertNotFound();
     }
 
     #[DataProvider('rolesThatMayCreate')]

@@ -52,7 +52,7 @@ class WallAxisAssembler
         $classified = $this->classify($collapsed, $pageWidth, $pageHeight, $minMain);
         $walls = array_values(array_filter(
             $classified,
-            fn (array $wall): bool => ($wall['role'] ?? '') !== self::ROLE_DIMENSION,
+            fn (array $wall): bool => $this->usableAsBound($wall),
         ));
 
         return [
@@ -162,6 +162,9 @@ class WallAxisAssembler
                 if ($this->overlapRatio($walls[$i], $walls[$j], $vertical) < self::MIN_OVERLAP_RATIO) {
                     continue;
                 }
+                if (! $this->pairableLengths($walls[$i], $walls[$j], $vertical)) {
+                    continue;
+                }
                 if ($partner === null || $gap < $partnerGap) {
                     $partner = $j;
                     $partnerGap = $gap;
@@ -265,7 +268,7 @@ class WallAxisAssembler
 
                 continue;
             }
-            if ($this->outsideCore($wall, $bbox, $outsideMargin) && $junctions < 2) {
+            if ($this->isIsolatedDimension($wall, $bbox, $outsideMargin, $junctions, $pageWidth, $pageHeight)) {
                 $wall['role'] = self::ROLE_DIMENSION;
                 $wall['junctions'] = $junctions;
 
@@ -299,6 +302,66 @@ class WallAxisAssembler
         }
 
         return $count;
+    }
+
+    /**
+     * @param  array<string, mixed>  $wall
+     * @param  array{left: float, right: float, bottom: float, top: float}  $bbox
+     */
+    private function isIsolatedDimension(
+        array $wall,
+        array $bbox,
+        float $margin,
+        int $junctions,
+        float $pageWidth,
+        float $pageHeight,
+    ): bool {
+        if ($junctions > 0) {
+            return false;
+        }
+        if (($wall['kind'] ?? self::KIND_LINE) !== self::KIND_LINE) {
+            return false;
+        }
+        if (! $this->outsideCore($wall, $bbox, $margin)) {
+            return false;
+        }
+        $length = $this->length($wall);
+        $pageSpan = ($wall['axis'] ?? '') === 'h' ? $pageWidth : $pageHeight;
+
+        return $length >= $pageSpan * 0.55;
+    }
+
+    /**
+     * Internal dark blobs (text, hatching) stay in debug axes; only lines, pairs and outer bands bound rooms.
+     *
+     * @param  array<string, mixed>  $wall
+     */
+    private function usableAsBound(array $wall): bool
+    {
+        $kind = (string) ($wall['kind'] ?? self::KIND_LINE);
+        $role = (string) ($wall['role'] ?? '');
+        if ($kind === self::KIND_BAND && $role !== self::ROLE_OUTER) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $a
+     * @param  array<string, mixed>  $b
+     */
+    private function pairableLengths(array $a, array $b, bool $vertical): bool
+    {
+        $lenA = $this->spanEnd($a, $vertical) - $this->spanStart($a, $vertical);
+        $lenB = $this->spanEnd($b, $vertical) - $this->spanStart($b, $vertical);
+        $longer = max($lenA, $lenB);
+        $shorter = min($lenA, $lenB);
+        if ($shorter < 40) {
+            return false;
+        }
+
+        return $longer < 1 ? false : ($shorter / $longer) >= 0.25;
     }
 
     /**

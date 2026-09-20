@@ -161,6 +161,8 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/projecten/klein/nieuw', [SmallWorkController::class, 'create'])->name('projects.small.create');
     Route::post('/projecten/klein', [SmallWorkController::class, 'store'])->name('projects.small.store');
     Route::patch('/projecten/klein/{project}', [SmallWorkController::class, 'update'])->name('projects.small.update');
+    Route::get('/projecten/{project}/klein/werkbon', [SmallWorkController::class, 'werkbon'])->name('projects.small.werkbon');
+    Route::get('/projecten/{project}/klein/werkbon.pdf', [SmallWorkController::class, 'werkbonPdf'])->name('projects.small.werkbon.pdf');
     Route::get('/projecten/{project}/extra-werk/{workItem}', [SmallWorkController::class, 'editExtra'])->name('projects.extra.edit')->scopeBindings();
     Route::patch('/projecten/{project}/extra-werk/{workItem}', [SmallWorkController::class, 'updateExtra'])->name('projects.extra.update')->scopeBindings();
     Route::post('/projecten/inlezen', [MeetstaatImportController::class, 'preview'])->name('projects.preview');

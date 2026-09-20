@@ -233,6 +233,11 @@ class Project extends Model
         return $this->kind?->isSmallWork() ?? false;
     }
 
+    public function printedBonLabel(): string
+    {
+        return $this->kind === ProjectKind::Service ? 'Servicebon' : 'Werkbon';
+    }
+
     public function assignments(): HasMany
     {
         return $this->hasMany(WorkerAssignment::class);

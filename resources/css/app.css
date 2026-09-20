@@ -5497,7 +5497,10 @@ img.calc-print-canvas {
 .calc-print-world,
 .calc-print-hit,
 .calc-print-markers,
-.calc-print-markers .calc-code-chip {
+.calc-print-markers .calc-code-chip,
+.calc-print-legend,
+.calc-print-legend .calc-legend-row i,
+.calc-print-swatch {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
 }
@@ -5522,13 +5525,27 @@ img.calc-print-canvas {
 .calc-print-legend {
     flex: 0 0 68mm;
     min-width: 58mm;
-    overflow: hidden;
+    overflow: auto;
     font-size: 9px;
 }
 
 .calc-print-page.has-legend-below .calc-print-legend {
     flex: 0 0 auto;
-    max-height: 48mm;
+    max-height: none;
+    overflow: visible;
+    column-count: 3;
+    column-gap: 6mm;
+}
+
+.calc-print-page.has-legend-below .calc-legend-row {
+    break-inside: avoid;
+}
+
+.calc-print-swatch {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 1px solid rgba(28, 25, 23, 0.2);
 }
 
 .calc-print-legend h2 {

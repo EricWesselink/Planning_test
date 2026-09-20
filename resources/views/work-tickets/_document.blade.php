@@ -75,6 +75,9 @@
             <td>
                 <div class="block-title">Project</div>
                 <p><strong>{{ $projectTitle }}</strong></p>
+                @if (filled($customerName ?? null))
+                    <p>Klant {{ $customerName }}</p>
+                @endif
                 @if ($projectNumber)
                     <p>Projectnr. {{ $projectNumber }}</p>
                 @endif

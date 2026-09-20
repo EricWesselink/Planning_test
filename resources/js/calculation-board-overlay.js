@@ -61,21 +61,14 @@ export async function hydrateRoomMarkers(pdfDoc, rooms, drawingId) {
 export function placeBoardRooms(rooms, drawingId, hits) {
     const usable = usableLabelHits(hits);
     roomsForDrawing(rooms, drawingId).forEach((room) => {
-        if (roomLabelAnchor(room)) {
-            return;
-        }
-        const hit = exactRoomHitForArea({ number: room.number, number_raw: room.number }, usable)
-            || usable.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number))
-            || exactRoomHitForArea({ number: room.number, number_raw: room.number }, hits)
-            || hits.find((item) => normalizeRoomNumber(item.number) === normalizeRoomNumber(room.number));
-        assignHit(room, hit);
+        assignHit(room, pickRoomLabelHit(room, usable));
     });
 }
 
 export function usableLabelHits(hits) {
     const items = hits || [];
 
-    return items.filter((hit) => !isTextLegendCluster(items, hit));
+    return items.filter((hit) => !isTextLegendCluster(items, hit) && !isTitleBlockHit(items, hit));
 }
 
 export function isTextLegendCluster(hits, hit) {
@@ -87,6 +80,60 @@ export function isTextLegendCluster(hits, hit) {
     const tiny = Number(hit.h) < 0.035 && Number(hit.w) < 0.12;
 
     return tiny && neighbors >= 8;
+}
+
+export function isTitleBlockHit(hits, hit) {
+    const x = Number(hit?.x) || 0;
+    if (x >= 0.70) {
+        return true;
+    }
+    if (x < 0.62) {
+        return false;
+    }
+    const pageHits = (hits || []).filter((item) => Number(item.page) === Number(hit.page));
+    const column = pageHits.filter((item) => (
+        Number(item.x) >= 0.62
+        && Math.abs(Number(item.x) - x) <= 0.10
+    ));
+
+    return column.length >= 4;
+}
+
+export function isPlanLabelHit(hits, hit) {
+    if (!hit) {
+        return false;
+    }
+    if (isTextLegendCluster(hits, hit) || isTitleBlockHit(hits, hit)) {
+        return false;
+    }
+
+    return isDrawingAreaBox({
+        x: Number(hit.x) || 0,
+        y: Number(hit.y) || 0,
+        w: Number(hit.w) || 0,
+        h: Number(hit.h) || 0,
+    });
+}
+
+export function pickRoomLabelHit(room, hits) {
+    const wanted = normalizeRoomNumber(room?.number);
+    if (!wanted) {
+        return null;
+    }
+    const matches = (hits || []).filter((hit) => (
+        normalizeRoomNumber(hit.number) === wanted
+        || normalizeRoomNumber(hit.number) === normalizeRoomNumber(room.number_raw)
+    )).filter((hit) => isPlanLabelHit(hits, hit));
+    if (matches.length === 0) {
+        return null;
+    }
+    const exact = exactRoomHitForArea({ number: room.number, number_raw: room.number }, matches);
+    if (exact) {
+        return exact;
+    }
+    matches.sort((left, right) => (Number(right.score) || 0) - (Number(left.score) || 0));
+
+    return matches[0];
 }
 
 export function reliableTraceRects(source) {
@@ -173,37 +220,51 @@ export function printFillContour(room) {
     return { type: 'polygon', points, room };
 }
 
+export function isDrawingAreaBox(box) {
+    if (!box) {
+        return false;
+    }
+    const x = (Number(box.x) || 0) + (Number(box.w) || 0) / 2;
+    const y = (Number(box.y) || 0) + (Number(box.h) || 0) / 2;
+
+    return x >= 0.03 && x <= 0.63 && y >= 0.08 && y <= 0.92;
+}
+
 export function roomLabelAnchor(room) {
-    const fillBox = contourBox(printFillContour(room));
-    if (fillBox) {
-        return fillBox;
-    }
-    const contour = contourBox(roomTraceContour(room));
-    if (isPlausibleRoomBox(contour)) {
-        return contour;
-    }
-    const stored = storedJumpTarget(room)?.box;
-    if (isCompactLabelBox(stored)) {
-        return stored;
-    }
     const marker = roomFocusBox(room.marker);
-    if (marker && room.marker?.source !== 'contour') {
+    const stored = storedJumpTarget(room)?.box;
+    if (marker && room.marker?.source !== 'contour' && isCompactLabelBox(marker) && isDrawingAreaBox(marker)) {
         return marker;
     }
-    if (stored) {
+    if (stored && isCompactLabelBox(stored) && isDrawingAreaBox(stored) && String(room.jump_target?.geometry || '') === 'label') {
+        return stored;
+    }
+    const fillBox = contourBox(printFillContour(room));
+    if (fillBox && isDrawingAreaBox(fillBox)) {
+        return fillBox;
+    }
+    const trace = roomTraceContour(room);
+    if (trace?.type === 'box' && isPlausibleRoomBox(trace.box) && isDrawingAreaBox(trace.box)) {
+        return trace.box;
+    }
+    if (stored && isDrawingAreaBox(stored)) {
         return stored;
     }
 
-    return marker || null;
+    return marker && isDrawingAreaBox(marker) ? marker : null;
 }
 
 export function clampPrintLabelCenter(box) {
     const width = Number(box?.w) || 0;
     const height = Number(box?.h) || 0;
-    const x = clampRange((Number(box?.x) || 0) + width / 2, 0.04, 0.80);
-    const y = clampRange((Number(box?.y) || 0) + height / 2, 0.05, 0.93);
+    const x = clampRange((Number(box?.x) || 0) + width / 2, 0.04, 0.63);
+    const y = clampRange((Number(box?.y) || 0) + height / 2, 0.08, 0.92);
 
     return { x, y };
+}
+
+export function printLegendGoesBelow(materials) {
+    return (materials || []).length > 18;
 }
 
 export function separatePrintLabelCenters(centers) {
@@ -540,7 +601,7 @@ export function paintCalculationOverlays({
             return;
         }
         const box = roomLabelAnchor(room);
-        if (!box) {
+        if (!box || !isDrawingAreaBox(box)) {
             return;
         }
         if (colored) {

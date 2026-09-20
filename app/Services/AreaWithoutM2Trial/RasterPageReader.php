@@ -12,11 +12,11 @@ class RasterPageReader
 {
     private const SCALE_TO = 1200;
 
-    private const WALL_MAX_EDGE = 1200;
+    private const WALL_MAX_EDGE = 800;
 
-    private const WALL_STEP = 2;
+    private const WALL_STEP = 3;
 
-    private const WALL_INK = 105;
+    private const WALL_INK = 90;
 
     private const OCR_TIMEOUT_SECONDS = 15.0;
 
@@ -495,7 +495,7 @@ class RasterPageReader
      */
     private function detectDarkBands($image, int $w, int $h, float $scale, int $srcH, int $minH, int $minV): array
     {
-        $minThickness = 5;
+        $minThickness = 8;
         $maxThickness = max(18, (int) round(min($w, $h) * 0.045));
         $vHits = [];
         for ($row = 0; $row < $h; $row += 2) {
