@@ -209,7 +209,7 @@ class ProjectController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'notes' => ['nullable', 'string'],
-            'plattegrond' => ['nullable', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:pdf,jpg,jpeg,png,webp', 'extensions:pdf,jpg,jpeg,png,webp'],
+            'plattegrond' => ['nullable', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:pdf,jpg,jpeg,png,webp,gif,bmp', 'extensions:pdf,jpg,jpeg,png,webp,gif,bmp'],
             'meetstaat' => ['nullable', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:csv,txt,xlsx,xlsm,xls,pdf', 'extensions:csv,txt,xlsx,xlsm,xls,pdf'],
             'excel' => ['nullable', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:csv,txt,xlsx,xlsm', 'extensions:csv,txt,xlsx,xlsm'],
             ...PlanningWeek::rules(),
@@ -458,7 +458,7 @@ class ProjectController extends Controller
     ): RedirectResponse {
         Gate::authorize('update', $project);
         $request->validate([
-            'plattegrond' => ['required', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:pdf,jpg,jpeg,png,webp', 'extensions:pdf,jpg,jpeg,png,webp'],
+            'plattegrond' => ['required', 'file', 'max:'.(int) config('filesystems.project_file_max_kilobytes'), 'mimes:pdf,jpg,jpeg,png,webp,gif,bmp', 'extensions:pdf,jpg,jpeg,png,webp,gif,bmp'],
         ]);
 
         $file = $request->file('plattegrond');

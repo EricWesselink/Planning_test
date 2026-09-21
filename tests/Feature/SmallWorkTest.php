@@ -213,7 +213,7 @@ class SmallWorkTest extends TestCase
             ->assertSee('Materiaal')
             ->assertSee('Regel toevoegen')
             ->assertSee('Tekening')
-            ->assertSee('Foto’s, PDF’s of tekeningen');
+            ->assertSee('Foto, PDF of tekening');
     }
 
     #[DataProvider('standaloneTypes')]
@@ -267,7 +267,7 @@ class SmallWorkTest extends TestCase
                 'attachments' => [UploadedFile::fake()->create('virus.exe', 20)],
             ])
             ->assertRedirect(route('projects.small.create'))
-            ->assertSessionHasErrors(['attachments.0' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.']);
+            ->assertSessionHasErrors(['attachments.0' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.']);
 
         $this->assertSame(0, Project::query()->count());
     }

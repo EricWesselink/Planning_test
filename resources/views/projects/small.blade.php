@@ -86,8 +86,8 @@
         @if ($canUpdate)
             <div>
                 <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Tekening</label>
-                <input id="attachments" type="file" name="attachments[]" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf" class="mt-1 w-full text-sm">
-                <p class="mt-1 text-xs text-nicon-muted">Foto’s, PDF’s of tekeningen. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
+                <input id="attachments" type="file" name="attachments[]" multiple accept="image/*,.pdf,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp" class="mt-1 w-full text-sm">
+                <p class="mt-1 text-xs text-nicon-muted">Foto, PDF of tekening. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
             </div>
         @endif
         <div class="flex flex-wrap gap-2">
@@ -102,15 +102,22 @@
         <h2 class="text-xs uppercase tracking-wide text-nicon-muted">Tekeningen</h2>
         <ul class="mt-3 space-y-2 text-sm">
             @forelse ($tekeningen as $document)
-                <li class="flex items-center justify-between gap-2">
-                    <a href="{{ route('projects.documents.show', [$project, $document]) }}" class="text-nicon-orange-dark">{{ $document->original_filename }}</a>
-                    @can('update', $project)
-                        <form method="POST" action="{{ route('projects.small.attachments.destroy', [$project, $document]) }}" onsubmit="return confirm('Deze tekening verwijderen?')">
-                            @csrf
-                            @method('DELETE')
-                            <button class="text-nicon-danger">Verwijderen</button>
-                        </form>
-                    @endcan
+                <li class="space-y-2">
+                    @if ($document->isImage())
+                        <a href="{{ route('projects.documents.show', [$project, $document]) }}" class="block">
+                            <img src="{{ route('projects.documents.show', [$project, $document]) }}" alt="{{ $document->original_filename }}" class="max-h-80 w-full border border-nicon-line object-contain bg-nicon-sand/40">
+                        </a>
+                    @endif
+                    <div class="flex items-center justify-between gap-2">
+                        <a href="{{ route('projects.documents.show', [$project, $document]) }}" class="text-nicon-orange-dark">{{ $document->original_filename }}</a>
+                        @can('update', $project)
+                            <form method="POST" action="{{ route('projects.small.attachments.destroy', [$project, $document]) }}" onsubmit="return confirm('Deze tekening verwijderen?')">
+                                @csrf
+                                @method('DELETE')
+                                <button class="text-nicon-danger">Verwijderen</button>
+                            </form>
+                        @endcan
+                    </div>
                 </li>
             @empty
                 <li class="text-nicon-muted">Nog geen tekening.</li>

@@ -35,7 +35,7 @@ class SourceUpdateController extends Controller
             'types' => ['nullable', 'array'],
             'types.*' => ['nullable', 'string', 'max:32'],
             'meetstaat' => ['nullable', 'file', 'max:'.$maxKilobytes, 'mimes:csv,txt,xlsx,xlsm,xls,pdf', 'extensions:csv,txt,xlsx,xlsm,xls,pdf'],
-            'plattegrond' => ['nullable', 'file', 'max:'.$maxKilobytes, 'mimes:pdf,jpg,jpeg,png,webp', 'extensions:pdf,jpg,jpeg,png,webp'],
+            'plattegrond' => ['nullable', 'file', 'max:'.$maxKilobytes, 'mimes:pdf,jpg,jpeg,png,webp,gif,bmp', 'extensions:pdf,jpg,jpeg,png,webp,gif,bmp'],
             'source_file' => ['nullable', 'file', 'max:'.$maxKilobytes],
         ]);
 

@@ -116,8 +116,8 @@
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Tekening</label>
-            <input id="attachments" type="file" name="attachments[]" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf" class="mt-1 w-full text-sm">
-            <p class="mt-1 text-xs text-nicon-muted">Foto’s, PDF’s of tekeningen. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
+            <input id="attachments" type="file" name="attachments[]" multiple accept="image/*,.pdf,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp" class="mt-1 w-full text-sm">
+            <p class="mt-1 text-xs text-nicon-muted">Foto, PDF of tekening. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
         </div>
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>

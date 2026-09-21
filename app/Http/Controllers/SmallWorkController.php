@@ -264,8 +264,8 @@ class SmallWorkController extends Controller
             'hours.required' => 'Kies de geplande uren.',
             'hours.in' => 'Kies 2, 4, 6 of 8 uur.',
             'work_number.unique' => 'Dit werknummer bestaat al.',
-            'attachments.*.mimes' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
-            'attachments.*.extensions' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
+            'attachments.*.mimes' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
+            'attachments.*.extensions' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
         ];
     }
 
@@ -278,7 +278,7 @@ class SmallWorkController extends Controller
 
         return [
             'attachments' => ['nullable', 'array', 'max:20'],
-            'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,pdf', 'extensions:jpg,jpeg,png,webp,gif,pdf'],
+            'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,bmp,pdf', 'extensions:jpg,jpeg,png,webp,gif,bmp,pdf'],
         ];
     }
 

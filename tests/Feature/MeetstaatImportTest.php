@@ -322,7 +322,7 @@ TXT),
         $this->actingAs($user)
             ->get(route('projects.show', $project))
             ->assertOk()
-            ->assertSee('Nog geen tekening. Upload een plattegrond (PDF).');
+            ->assertSee('Nog geen tekening. Upload een plattegrond (PDF of foto).');
     }
 
     public function test_meetstaat_and_drawing_are_stored_as_separate_documents(): void
@@ -369,7 +369,7 @@ TXT),
         $this->actingAs($user)
             ->get(route('projects.show', $project))
             ->assertOk()
-            ->assertDontSee('Nog geen tekening. Upload een plattegrond (PDF).')
+            ->assertDontSee('Nog geen tekening. Upload een plattegrond (PDF of foto).')
             ->assertSee('Plattegrond_BG.pdf')
             ->assertSee(route('projects.drawings.detect', [$project, $drawing], false));
     }

@@ -327,11 +327,11 @@
                             </div>
                         @endif
                         <div>
-                            Nog geen tekening. Upload een plattegrond (PDF).
+                            Nog geen tekening. Upload een plattegrond (PDF of foto).
                             @can('update', $project)
                                 <form method="POST" action="{{ route('projects.plattegrond.store', $project) }}" enctype="multipart/form-data" class="mt-3 flex gap-2">
                                     @csrf
-                                    <input type="file" name="plattegrond" accept=".pdf,.jpg,.jpeg,.png,.webp" required class="text-xs">
+                                    <input type="file" name="plattegrond" accept="image/*,.pdf,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp" required class="text-xs">
                                     <button class="border border-nicon-line bg-white px-3 py-1">Uploaden</button>
                                 </form>
                             @endcan
