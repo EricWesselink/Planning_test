@@ -74,6 +74,8 @@
             @include('projects.partials.small-work-activities', [
                 'floorActivities' => $floorActivities,
                 'selectedIds' => $selectedIds,
+                'activityQuantities' => $activityQuantities ?? [],
+                'activityNotes' => $activityNotes ?? [],
             ])
         </div>
 

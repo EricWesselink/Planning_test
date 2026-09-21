@@ -35,6 +35,9 @@
                                             {{ \App\Support\Format::qty($material['quantity'], 2) }}
                                             {{ $material['unit']?->label() }}
                                         </span>
+                                        @if (($material['note'] ?? '') !== '')
+                                            <span class="block text-xs text-nicon-muted">{{ $material['note'] }}</span>
+                                        @endif
                                     </span>
                                 </li>
                             @endforeach

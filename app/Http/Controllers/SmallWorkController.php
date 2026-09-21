@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Enums\ContactRole;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
-use App\Enums\WorkUnit;
 use App\Models\Project;
 use App\Models\ProjectDocument;
+use App\Models\WorkActivity;
 use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Models\WorkItem;
@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -195,12 +196,11 @@ class SmallWorkController extends Controller
             'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
             'contactRoles' => Project::contactRoleChoices(),
             'lines' => old('lines', $this->defaultExtraLines()),
-            'floorActivities' => WorkActivityCategory::floorFormActivities(
-                collect(old('work_activity_ids', []))->map(fn (mixed $id): int => (int) $id)->all()
+            ...$this->kleinActivityForm(
+                old('work_activity_ids', []),
+                old('activity_quantities', []),
+                old('activity_notes', []),
             ),
-            'selectedIds' => old('work_activity_ids', []),
-            'activityQuantities' => old('activity_quantities', []),
-            'activityUnits' => old('activity_units', []),
         ];
     }
 
@@ -298,8 +298,8 @@ class SmallWorkController extends Controller
             'attachments.*.mimes' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
             'work_activity_ids.*.exists' => 'Deze werkzaamheid is niet beschikbaar.',
-            'activity_quantities.*.numeric' => 'Vul een geldig aantal in.',
-            'activity_units.*.in' => 'Kies m², m¹ of stuks.',
+            'activity_quantities.*.numeric' => 'Vul een geldige hoeveelheid in.',
+            'activity_notes.*.max' => 'De omschrijving mag maximaal 500 tekens zijn.',
         ];
     }
 
@@ -359,8 +359,6 @@ class SmallWorkController extends Controller
             $allowed = [0];
         }
 
-        $shopUnits = array_map(fn (WorkUnit $unit): string => $unit->value, WorkUnit::shopCases());
-
         return [
             'work_activity_ids' => ['nullable', 'array'],
             'work_activity_ids.*' => [
@@ -369,8 +367,32 @@ class SmallWorkController extends Controller
             ],
             'activity_quantities' => ['nullable', 'array'],
             'activity_quantities.*' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
-            'activity_units' => ['nullable', 'array'],
-            'activity_units.*' => ['nullable', Rule::in($shopUnits)],
+            'activity_notes' => ['nullable', 'array'],
+            'activity_notes.*' => ['nullable', 'string', 'max:500'],
+        ];
+    }
+
+    /**
+     * @param  iterable<int|string>  $selectedIds
+     * @return array{
+     *     floorActivities: Collection<int, WorkActivity>,
+     *     selectedIds: list<int>,
+     *     activityQuantities: array<int|string, mixed>,
+     *     activityNotes: array<int|string, mixed>
+     * }
+     */
+    private function kleinActivityForm(iterable $selectedIds, mixed $quantities, mixed $notes = []): array
+    {
+        $ids = collect($selectedIds)->map(fn (mixed $id): int => (int) $id)->all();
+        $quantityMap = is_array($quantities) ? $quantities : [];
+        $noteMap = is_array($notes) ? $notes : [];
+        [$formIds, $formQuantities, $formNotes] = WorkActivityCategory::kleinFormSelection($ids, $quantityMap, $noteMap);
+
+        return [
+            'floorActivities' => WorkActivityCategory::kleinFormActivities($ids),
+            'selectedIds' => $formIds,
+            'activityQuantities' => $formQuantities,
+            'activityNotes' => $formNotes,
         ];
     }
 

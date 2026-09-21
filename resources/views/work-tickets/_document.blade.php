@@ -192,6 +192,10 @@
                 @forelse ($rows as $row)
                     @php
                         $title = is_array($row) ? ($row['title'] ?? 'Werkzaamheid') : ($row->workItem?->name ?? $row->workItem?->planningTitle() ?? 'Werkzaamheid');
+                        $note = is_array($row) ? trim((string) ($row['note'] ?? '')) : trim((string) ($row->workItem?->notes ?? ''));
+                        if ($note !== '' && ! str_contains($title, $note)) {
+                            $title .= ' — '.$note;
+                        }
                         $qty = is_array($row) ? ($row['quantity'] ?? '') : \App\Support\Format::qty($row->quantity, 2);
                         $unit = is_array($row) ? ($row['unit'] ?? '') : ($row->unit?->label() ?? '');
                         $priceLabel = is_array($row)

@@ -683,20 +683,30 @@ class WorkTicketPdfService
             ->map(fn (array $row): string => mb_strtolower($row['title']))
             ->all();
 
-        foreach ($project->workActivities as $activity) {
-            $title = trim((string) $activity->name);
+        $activityItems = $project->workItems
+            ->filter(fn (WorkItem $item): bool => $item->work_activity_id !== null)
+            ->sortBy(fn (WorkItem $item): array => [
+                (int) ($item->sort_order ?? 0),
+                (int) $item->id,
+            ]);
+
+        foreach ($activityItems as $item) {
+            $title = trim((string) $item->name);
             if ($title === '' || in_array(mb_strtolower($title), $seen, true)) {
                 continue;
             }
 
-            $quantity = $activity->pivot?->quantity;
-            $unit = $activity->pivot?->unit;
-            $hasQuantity = $quantity !== null && (float) $quantity > 0.0001;
+            $quantity = (float) $item->ordered_quantity;
+            $hasQuantity = $quantity > 0.0001;
             $qtyLabel = '';
             if ($hasQuantity) {
-                $qty = Format::qty($quantity, fmod((float) $quantity, 1.0) === 0.0 ? 0 : 2);
-                $label = $unit instanceof WorkUnit ? $unit->label() : '';
-                $qtyLabel = trim($qty.' '.$label);
+                $qty = Format::qty($quantity, fmod($quantity, 1.0) === 0.0 ? 0 : 2);
+                $qtyLabel = trim($qty.' '.($item->unit?->label() ?? ''));
+            }
+
+            $note = trim((string) $item->notes);
+            if ($note !== '') {
+                $title .= ' — '.$note;
             }
 
             $rows->push([
@@ -705,6 +715,37 @@ class WorkTicketPdfService
                 'unit' => '',
             ]);
             $seen[] = mb_strtolower($title);
+        }
+
+        if ($activityItems->isEmpty()) {
+            foreach ($project->workActivities as $activity) {
+                $title = trim((string) $activity->name);
+                if ($title === '' || in_array(mb_strtolower($title), $seen, true)) {
+                    continue;
+                }
+
+                $quantity = $activity->pivot?->quantity;
+                $unit = $activity->pivot?->unit;
+                $hasQuantity = $quantity !== null && (float) $quantity > 0.0001;
+                $qtyLabel = '';
+                if ($hasQuantity) {
+                    $qty = Format::qty($quantity, fmod((float) $quantity, 1.0) === 0.0 ? 0 : 2);
+                    $label = $unit instanceof WorkUnit ? $unit->label() : '';
+                    $qtyLabel = trim($qty.' '.$label);
+                }
+
+                $note = trim((string) ($activity->pivot?->notes ?? ''));
+                if ($note !== '') {
+                    $title .= ' — '.$note;
+                }
+
+                $rows->push([
+                    'title' => $title,
+                    'quantity' => $qtyLabel,
+                    'unit' => '',
+                ]);
+                $seen[] = mb_strtolower($title);
+            }
         }
 
         if ($rows->isNotEmpty()) {

@@ -161,7 +161,10 @@ class MeetstaatImportController extends Controller
             'areas.*.tasks.*.seams' => ['nullable', 'string', 'max:32'],
             'calculation_labor' => ['nullable', 'array'],
             'calculation_labor.*.work_name' => ['nullable', 'string', 'max:255'],
-        ], array_merge($this->uploadMessages(), PlanningWeek::messages()));
+        ], array_merge($this->uploadMessages(), PlanningWeek::messages(), [
+            'customer_name.required' => 'Vul een klantnaam in.',
+            'project_name.required' => 'Vul een projectnaam in.',
+        ]));
         $validator->after(fn ($weekValidator) => PlanningWeek::validateOrder($weekValidator));
         $data = PlanningWeek::applyTo($validator->validate(), $request->input('date'));
 

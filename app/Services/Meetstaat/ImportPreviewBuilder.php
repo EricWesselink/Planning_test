@@ -20,6 +20,7 @@ class ImportPreviewBuilder
         private MeetstaatParser $spreadsheetParser,
         private SpreadsheetReader $spreadsheetReader,
         private RoomImportAssembler $assembler,
+        private PdfTextExtractor $extractor,
     ) {}
 
     /**
@@ -39,6 +40,7 @@ class ImportPreviewBuilder
         $materials = null;
         $snijmaten = null;
         $ocrError = null;
+        $looseHeader = ProjectDocumentHeader::empty();
 
         foreach ($uploads as $upload) {
             $file = $upload['file'];
@@ -75,6 +77,8 @@ class ImportPreviewBuilder
             ];
 
             if ($parsed === null) {
+                $this->captureLooseHeader($looseHeader, $file);
+
                 continue;
             }
 
@@ -112,6 +116,7 @@ class ImportPreviewBuilder
         }
 
         $preview = $this->assembler->assemble($meetstaat, $drawing, $materials, $snijmaten);
+        $preview['header'] = $this->fillBlankHeader($preview['header'] ?? [], $looseHeader);
         $preview['source_analysis'] = $sourceAnalysis;
         $preview['source_priority_note'] = $this->sourcePriorityNote($preview['sources'] ?? [], $sourceAnalysis);
         if ($ocrError !== null && ($preview['areas'] ?? []) !== []) {
@@ -308,6 +313,43 @@ class ImportPreviewBuilder
         }
 
         return $parsed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $header
+     */
+    private function captureLooseHeader(array &$header, UploadedFile $file): void
+    {
+        if (strtolower($file->getClientOriginalExtension()) !== 'pdf') {
+            return;
+        }
+
+        $path = $file->getRealPath();
+        if (! is_string($path) || $path === '') {
+            return;
+        }
+
+        $header = $this->fillBlankHeader($header, ProjectDocumentHeader::parseFromText($this->extractor->extract($path)['text']));
+    }
+
+    /**
+     * @param  array<string, mixed>  $header
+     * @param  array<string, mixed>  $fallback
+     * @return array<string, mixed>
+     */
+    private function fillBlankHeader(array $header, array $fallback): array
+    {
+        foreach ($fallback as $key => $value) {
+            if (blank($header[$key] ?? null) && filled($value)) {
+                $header[$key] = $value;
+            }
+        }
+
+        if (blank($header['project_name'] ?? null) && filled($header['reference'] ?? null)) {
+            $header['project_name'] = (string) $header['reference'];
+        }
+
+        return $header;
     }
 
     private function isSpreadsheet(UploadedFile $file): bool

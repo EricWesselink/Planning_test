@@ -26,6 +26,7 @@ class ShopWorkCatalog
                     ['name' => 'Egaliseren', 'slug' => 'egaliseren'],
                     ['name' => 'Plinten', 'slug' => 'plinten'],
                     ['name' => 'Reparatie / herstel', 'slug' => 'reparatie-herstel'],
+                    ['name' => 'Vloer aanhelen / herstel', 'slug' => 'vloer-aanhelen-herstel'],
                     ['name' => 'Overig vloerwerk', 'slug' => 'overig-vloerwerk'],
                 ],
             ],

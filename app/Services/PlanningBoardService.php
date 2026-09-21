@@ -1554,19 +1554,30 @@ class PlanningBoardService
             ? (float) $items->max(fn (WorkItem $item): float => (float) $item->ordered_quantity)
             : (float) $primary->ordered_quantity;
         $hasQuantity = $ordered > 0.0001;
+        $completed = $hasQuantity
+            ? (float) $items->sum(fn (WorkItem $item): float => $item->completedQuantity())
+            : null;
+        $remaining = $hasQuantity
+            ? (float) $items->sum(fn (WorkItem $item): float => $item->remainingQuantity())
+            : null;
 
         return [
             'type' => 'work',
             'id' => $primary->id,
             'project_id' => $project->id,
             'title' => $grouped ? $primary->packageLabel() : $primary->name,
-            'steps' => [],
+            'steps' => $items
+                ->map(fn (WorkItem $item): string => trim((string) $item->notes))
+                ->filter(fn (string $note): bool => $note !== '')
+                ->unique()
+                ->values()
+                ->all(),
             'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
             'ordered' => $hasQuantity ? $ordered : null,
             'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
-            'completed' => null,
-            'remaining' => null,
-            'percent' => null,
+            'completed' => $completed,
+            'remaining' => $remaining,
+            'percent' => $hasQuantity ? $this->progressPercent($completed, $ordered) : null,
             'who' => collect(),
             'bar' => null,
             'person_bars' => [],

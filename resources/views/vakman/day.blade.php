@@ -32,7 +32,12 @@
                             <div class="text-[11px] uppercase tracking-wide text-nicon-muted">Werkzaamheden</div>
                             <ul class="mt-1 space-y-1">
                                 @foreach ($job['works'] as $work)
-                                    <li>{{ $work['title'] }} · {{ $work['quantity'] }} {{ $work['unit'] }}</li>
+                                    <li>
+                                        {{ $work['title'] }} · {{ $work['quantity'] }} {{ $work['unit'] }}
+                                        @if (($work['note'] ?? '') !== '')
+                                            <span class="text-nicon-muted">— {{ $work['note'] }}</span>
+                                        @endif
+                                    </li>
                                 @endforeach
                             </ul>
                         </div>

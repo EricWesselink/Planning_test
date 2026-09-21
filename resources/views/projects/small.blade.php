@@ -50,15 +50,9 @@
         </div>
         @include('projects.partials.small-work-activities', [
             'floorActivities' => $floorActivities,
-            'selectedIds' => old('work_activity_ids', $project->workActivities->pluck('id')),
-            'activityQuantities' => old(
-                'activity_quantities',
-                $project->workActivities->mapWithKeys(fn ($activity) => [$activity->id => $activity->pivot->quantity])->all()
-            ),
-            'activityUnits' => old(
-                'activity_units',
-                $project->workActivities->mapWithKeys(fn ($activity) => [$activity->id => $activity->pivot->unit?->value])->all()
-            ),
+            'selectedIds' => $selectedIds,
+            'activityQuantities' => $activityQuantities,
+            'activityNotes' => $activityNotes ?? [],
             'canUpdate' => $canUpdate,
         ])
         <div>

@@ -238,19 +238,24 @@ class SmallWorkTest extends TestCase
             ->assertOk()
             ->assertSee('Korte omschrijving')
             ->assertSee('Werkzaamheden')
-            ->assertSee('Vink aan wat er gedaan moet worden. Vul per onderdeel het aantal in (m² of m¹).')
+            ->assertSee('Vink aan wat er gedaan moet worden. Vul daarna de hoeveelheid en een korte omschrijving in.')
+            ->assertSee('placeholder="Korte omschrijving"', false)
+            ->assertSee('data-small-activity-details', false)
             ->assertSee('PVC banen')
             ->assertSee('PVC stroken')
             ->assertSee('Marmoleum')
             ->assertSee('Tapijt')
             ->assertSee('Tapijttegels')
-            ->assertSee('Primen')
+            ->assertSee('Primen & Egaliseren')
+            ->assertDontSee('>Primen</span>', false)
+            ->assertDontSee('>Egaliseren</span>', false)
             ->assertSee('Plinten')
             ->assertSee('Reparatie / herstel')
+            ->assertSee('Vloer aanhelen / herstel')
             ->assertSee('Overig vloerwerk')
-            ->assertSee('Aantal')
-            ->assertSee('>m²</option>', false)
-            ->assertSee('>m¹</option>', false);
+            ->assertSee('Hoeveelheid')
+            ->assertDontSee('>m²</option>', false)
+            ->assertDontSee('>m¹</option>', false);
     }
 
     #[DataProvider('standaloneTypes')]
@@ -338,10 +343,10 @@ class SmallWorkTest extends TestCase
     public function test_planner_saves_floor_quantities_and_shows_them_on_the_planning_board(): void
     {
         $user = User::factory()->create();
-        $pvc = $this->floorActivity('pvc-stroken');
-        $primen = $this->floorActivity('primen');
+        $pvc = $this->floorActivity('pvc-banen');
         $egaliseren = $this->floorActivity('egaliseren');
         $plinten = $this->floorActivity('plinten');
+        $aanhelen = $this->floorActivity('vloer-aanhelen-herstel');
 
         $this->actingAs($user)->post(route('projects.small.store'), [
             'type' => SmallWorkType::Service->value,
@@ -350,18 +355,12 @@ class SmallWorkTest extends TestCase
             'location' => 'Soest',
             'date' => '2026-09-08',
             'hours' => 4,
-            'work_activity_ids' => [$pvc->id, $primen->id, $egaliseren->id, $plinten->id],
+            'work_activity_ids' => [$pvc->id, $egaliseren->id, $plinten->id, $aanhelen->id],
             'activity_quantities' => [
-                $pvc->id => '26',
-                $primen->id => '26',
-                $egaliseren->id => '26',
-                $plinten->id => '12,5',
-            ],
-            'activity_units' => [
-                $pvc->id => WorkUnit::SquareMeter->value,
-                $primen->id => WorkUnit::SquareMeter->value,
-                $egaliseren->id => WorkUnit::SquareMeter->value,
-                $plinten->id => WorkUnit::LinearMeter->value,
+                $pvc->id => '35',
+                $egaliseren->id => '35',
+                $plinten->id => '22',
+                $aanhelen->id => '4',
             ],
         ])->assertRedirect();
 
@@ -370,20 +369,28 @@ class SmallWorkTest extends TestCase
         $hoursItem = $project->workItems()->whereNull('work_activity_id')->first();
         $this->assertSame(WorkUnit::Hours, $hoursItem?->unit);
         $this->assertSame(4.0, (float) $hoursItem?->begrote_uren);
-        $this->assertSame(26.0, (float) $project->workItems()->where('name', 'PVC stroken')->value('ordered_quantity'));
-        $this->assertSame(26.0, (float) $project->workItems()->where('name', 'Primen')->value('ordered_quantity'));
-        $this->assertSame(12.5, (float) $project->workItems()->where('name', 'Plinten')->value('ordered_quantity'));
+        $this->assertSame(1, $project->workItems()->where('name', 'Primen & Egaliseren')->count());
+        $this->assertSame(35.0, (float) $project->workItems()->where('name', 'Primen & Egaliseren')->value('ordered_quantity'));
+        $this->assertSame(35.0, (float) $project->workItems()->where('name', 'PVC banen')->value('ordered_quantity'));
+        $this->assertSame(22.0, (float) $project->workItems()->where('name', 'Plinten')->value('ordered_quantity'));
         $this->assertSame(WorkUnit::LinearMeter, $project->workItems()->where('name', 'Plinten')->first()?->unit);
-        $this->assertSame(12.5, (float) $project->workActivities()->where('slug', 'plinten')->first()?->pivot?->quantity);
+        $this->assertSame(4.0, (float) $project->workItems()->where('name', 'Vloer aanhelen / herstel')->value('ordered_quantity'));
+        $this->assertSame(WorkUnit::SquareMeter, $project->workItems()->where('name', 'Vloer aanhelen / herstel')->first()?->unit);
+        $this->assertSame(
+            ['PVC banen', 'Primen', 'Egaliseren', 'Plinten', 'Vloer aanhelen / herstel'],
+            $project->workActivities()->orderByPivot('sort_order')->pluck('name')->all()
+        );
 
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
             ->assertOk()
             ->assertSee('Primen & Egaliseren')
-            ->assertSee('PVC stroken')
+            ->assertSee('PVC banen')
             ->assertSee('Plinten')
-            ->assertSee('26 m²')
-            ->assertSee('12,50 m¹');
+            ->assertSee('Vloer aanhelen / herstel')
+            ->assertSee('35 m²')
+            ->assertSee('22 m¹')
+            ->assertSee('4 m²');
 
         $request = Request::create('/planning', 'GET', [
             'week' => '2026-09-07',
@@ -394,19 +401,28 @@ class SmallWorkTest extends TestCase
             ->firstWhere('id', $project->id);
 
         $this->assertNotNull($row);
-        $this->assertSame(['Primen & Egaliseren', 'PVC stroken', 'Plinten'], collect($row['children'])->pluck('title')->all());
-        $this->assertSame(26.0, $row['children'][0]['ordered']);
+        $this->assertSame(
+            ['Primen & Egaliseren', 'PVC banen', 'Plinten', 'Vloer aanhelen / herstel'],
+            collect($row['children'])->pluck('title')->all()
+        );
+        $this->assertSame(35.0, $row['children'][0]['ordered']);
         $this->assertSame('m²', $row['children'][0]['unit']);
-        $this->assertSame(26.0, $row['children'][1]['ordered']);
-        $this->assertSame(12.5, $row['children'][2]['ordered']);
+        $this->assertSame(0.0, $row['children'][0]['completed']);
+        $this->assertSame(35.0, $row['children'][0]['remaining']);
+        $this->assertSame(0, $row['children'][0]['percent']);
+        $this->assertSame(22.0, $row['children'][2]['ordered']);
         $this->assertSame('m¹', $row['children'][2]['unit']);
+        $this->assertSame(4.0, $row['children'][3]['ordered']);
+        $this->assertSame([], $row['children'][1]['steps']);
 
         $this->actingAs($user)
             ->get(route('projects.small.werkbon', $project))
             ->assertOk()
-            ->assertSee('PVC stroken')
-            ->assertSee('26 m²')
-            ->assertSee('12,50 m¹');
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('PVC banen')
+            ->assertSee('35 m²')
+            ->assertSee('22 m¹')
+            ->assertSee('4 m²');
     }
 
     public function test_rejects_small_work_when_floor_quantity_is_not_numeric(): void
@@ -427,12 +443,123 @@ class SmallWorkTest extends TestCase
                 'activity_quantities' => [$pvc->id => 'veel'],
             ])
             ->assertRedirect(route('projects.small.create'))
-            ->assertSessionHasErrors(['activity_quantities.'.$pvc->id => 'Vul een geldig aantal in.']);
+            ->assertSessionHasErrors(['activity_quantities.'.$pvc->id => 'Vul een geldige hoeveelheid in.']);
 
         $this->assertSame(0, Project::query()->count());
     }
 
-    public function test_rejects_small_work_when_floor_unit_is_hours(): void
+    public function test_planner_saves_floor_notes_on_planning_and_werkbon(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->floorActivity('pvc-banen');
+        $egaliseren = $this->floorActivity('egaliseren');
+        $plinten = $this->floorActivity('plinten');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Griftland college',
+            'description' => 'vloer herstellen',
+            'location' => 'Soest',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'work_activity_ids' => [$pvc->id, $egaliseren->id, $plinten->id],
+            'activity_quantities' => [
+                $pvc->id => '35',
+                $egaliseren->id => '35',
+                $plinten->id => '22',
+            ],
+            'activity_notes' => [
+                $pvc->id => 'aula en gangen',
+                $egaliseren->id => 'ondergrond voor PVC',
+                $plinten->id => 'wit RAL 9010',
+            ],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('aula en gangen', $project->workActivities()->where('slug', 'pvc-banen')->first()?->pivot?->notes);
+        $this->assertSame('ondergrond voor PVC', $project->workActivities()->where('slug', 'egaliseren')->first()?->pivot?->notes);
+        $this->assertSame('ondergrond voor PVC', $project->workActivities()->where('slug', 'primen')->first()?->pivot?->notes);
+        $this->assertSame('aula en gangen', $project->workItems()->where('name', 'PVC banen')->value('notes'));
+        $this->assertSame('ondergrond voor PVC', $project->workItems()->where('name', 'Primen & Egaliseren')->value('notes'));
+        $this->assertSame('wit RAL 9010', $project->workItems()->where('name', 'Plinten')->value('notes'));
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('aula en gangen')
+            ->assertSee('ondergrond voor PVC')
+            ->assertSee('wit RAL 9010');
+
+        $request = Request::create('/planning', 'GET', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]);
+        $request->setUserResolver(fn () => $user);
+        $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
+            ->firstWhere('id', $project->id);
+
+        $this->assertNotNull($row);
+        $this->assertSame(['ondergrond voor PVC'], $row['children'][0]['steps']);
+        $this->assertSame(['aula en gangen'], $row['children'][1]['steps']);
+        $this->assertSame(['wit RAL 9010'], $row['children'][2]['steps']);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('PVC banen — aula en gangen')
+            ->assertSee('Primen & Egaliseren — ondergrond voor PVC')
+            ->assertSee('Plinten — wit RAL 9010');
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('value="aula en gangen"', false)
+            ->assertSee('value="ondergrond voor PVC"', false)
+            ->assertSee('value="wit RAL 9010"', false);
+
+        $this->actingAs($user)
+            ->get(route('planning.export', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('aula en gangen')
+            ->assertSee('ondergrond voor PVC')
+            ->assertSee('wit RAL 9010');
+    }
+
+    public function test_vakman_sees_the_floor_note_on_the_work_line(): void
+    {
+        $planner = User::factory()->create();
+        $worker = $this->makeWorker();
+        $vakman = User::query()->where('worker_id', $worker->id)->first();
+        $this->assertNotNull($vakman);
+        $pvc = $this->floorActivity('pvc-banen');
+
+        $this->actingAs($planner)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Griftland college',
+            'description' => 'vloer herstellen',
+            'location' => 'Soest',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '35'],
+            'activity_notes' => [$pvc->id => 'PVC leggen in woonkamer en hal'],
+        ])->assertRedirect();
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-08'))
+            ->assertOk()
+            ->assertSee('PVC banen')
+            ->assertSee('PVC leggen in woonkamer en hal');
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning.werkbon', '2026-09-08'))
+            ->assertOk()
+            ->assertSee('PVC banen — PVC leggen in woonkamer en hal');
+    }
+
+    public function test_rejects_small_work_when_floor_note_is_too_long(): void
     {
         $user = User::factory()->create();
         $pvc = $this->floorActivity('pvc-stroken');
@@ -447,21 +574,39 @@ class SmallWorkTest extends TestCase
                 'date' => '2026-09-08',
                 'hours' => 4,
                 'work_activity_ids' => [$pvc->id],
-                'activity_quantities' => [$pvc->id => '26'],
-                'activity_units' => [$pvc->id => WorkUnit::Hours->value],
+                'activity_notes' => [$pvc->id => str_repeat('a', 501)],
             ])
             ->assertRedirect(route('projects.small.create'))
-            ->assertSessionHasErrors(['activity_units.'.$pvc->id => 'Kies m², m¹ of stuks.']);
+            ->assertSessionHasErrors(['activity_notes.'.$pvc->id => 'De omschrijving mag maximaal 500 tekens zijn.']);
 
         $this->assertSame(0, Project::query()->count());
     }
 
-    public function test_planner_updates_floor_quantities_on_service(): void
+    public function test_legacy_primen_checkbox_opens_as_combined_prep_on_service(): void
     {
         $user = User::factory()->create();
         $project = $this->makeService();
-        $pvc = $this->floorActivity('pvc-stroken');
         $primen = $this->floorActivity('primen');
+        $egaliseren = $this->floorActivity('egaliseren');
+        $project->workActivities()->sync([
+            $primen->id => ['quantity' => 12, 'unit' => WorkUnit::SquareMeter, 'sort_order' => 1],
+        ]);
+        $project->workItems()->create([
+            'work_activity_id' => $primen->id,
+            'name' => 'Primen',
+            'unit' => WorkUnit::SquareMeter,
+            'ordered_quantity' => 12,
+            'status' => 'gepland',
+            'sort_order' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertDontSee('>Primen</span>', false)
+            ->assertSee('value="'.$egaliseren->id.'"', false)
+            ->assertSee('value="12"', false);
 
         $this->actingAs($user)
             ->patch(route('projects.small.update', $project), [
@@ -470,14 +615,95 @@ class SmallWorkTest extends TestCase
                 'location' => 'Deventer',
                 'date' => '2026-09-11',
                 'hours' => 4,
-                'work_activity_ids' => [$pvc->id, $primen->id],
+                'work_activity_ids' => [$egaliseren->id],
+                'activity_quantities' => [$egaliseren->id => '12'],
+            ])
+            ->assertRedirect(route('projects.show', $project));
+
+        $project = $project->fresh(['workItems', 'workActivities']);
+        $this->assertSame(['Primen', 'Egaliseren'], $project->workActivities()->pluck('name')->all());
+        $this->assertSame(1, $project->workItems()->whereNotNull('work_activity_id')->count());
+        $this->assertSame('Primen & Egaliseren', $project->workItems()->whereNotNull('work_activity_id')->value('name'));
+        $this->assertSame(12.0, (float) $project->workItems()->where('name', 'Primen & Egaliseren')->value('ordered_quantity'));
+    }
+
+    public function test_planning_shows_gereed_rest_and_percent_for_small_work_quantities(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-banen');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Griftland college',
+            'description' => 'vloer herstellen',
+            'location' => 'Soest',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '35'],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $item = $project->workItems()->where('name', 'PVC banen')->first();
+        $this->assertNotNull($item);
+
+        WorkProgressEntry::query()->create([
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'worker_id' => $worker->id,
+            'date' => '2026-09-08',
+            'completed_quantity' => 10,
+            'unit' => WorkUnit::SquareMeter,
+            'worked_hours' => 4,
+            'created_by' => $user->id,
+        ]);
+
+        $request = Request::create('/planning', 'GET', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]);
+        $request->setUserResolver(fn () => $user);
+        $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
+            ->firstWhere('id', $project->id);
+
+        $this->assertNotNull($row);
+        $this->assertSame('PVC banen', $row['children'][0]['title']);
+        $this->assertSame(35.0, $row['children'][0]['ordered']);
+        $this->assertSame(10.0, $row['children'][0]['completed']);
+        $this->assertSame(25.0, $row['children'][0]['remaining']);
+        $this->assertSame(29, $row['children'][0]['percent']);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('PVC banen')
+            ->assertSee('35 m²')
+            ->assertSee('10')
+            ->assertSee('25')
+            ->assertSee('29%');
+    }
+
+    public function test_planner_updates_floor_quantities_on_service(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeService();
+        $pvc = $this->floorActivity('pvc-stroken');
+        $egaliseren = $this->floorActivity('egaliseren');
+
+        $this->actingAs($user)
+            ->patch(route('projects.small.update', $project), [
+                'customer_name' => 'hegemanbouwgroep',
+                'description' => 'hestel schoon maken',
+                'location' => 'Deventer',
+                'date' => '2026-09-11',
+                'hours' => 4,
+                'work_activity_ids' => [$pvc->id, $egaliseren->id],
                 'activity_quantities' => [
                     $pvc->id => '18',
-                    $primen->id => '18',
-                ],
-                'activity_units' => [
-                    $pvc->id => WorkUnit::SquareMeter->value,
-                    $primen->id => WorkUnit::SquareMeter->value,
+                    $egaliseren->id => '18',
                 ],
             ])
             ->assertRedirect(route('projects.show', $project));

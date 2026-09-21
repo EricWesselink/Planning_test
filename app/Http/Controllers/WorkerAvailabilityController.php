@@ -115,7 +115,7 @@ class WorkerAvailabilityController extends Controller
         return back()->with('status', $kind->label().' opgeslagen.');
     }
 
-    public function destroy(Worker $worker, WorkerAvailability $availability): RedirectResponse
+    public function destroy(Request $request, Worker $worker, WorkerAvailability $availability): RedirectResponse
     {
         abort_unless(
             $request->user()?->canManageWorkers() || $request->user()?->canAdjustAbsence(),

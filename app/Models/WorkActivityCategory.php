@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\WorkPhase;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -76,6 +77,86 @@ class WorkActivityCategory extends Model
             ->first(fn (self $category): bool => $category->slug === 'vloeren');
 
         return $category?->activities ?? collect();
+    }
+
+    /**
+     * Floor activities for Klein/Service: Primen and Egaliseren as one checkbox.
+     *
+     * @param  list<int>  $keepIds
+     * @return Collection<int, WorkActivity>
+     */
+    public static function kleinFormActivities(array $keepIds = []): Collection
+    {
+        $activities = static::floorFormActivities($keepIds);
+        $insertAt = $activities->search(
+            fn (WorkActivity $activity): bool => $activity->isOndergrondPrep()
+        );
+        $source = $activities->first(fn (WorkActivity $activity): bool => $activity->slug === 'egaliseren')
+            ?? $activities->first(fn (WorkActivity $activity): bool => $activity->slug === 'primen');
+
+        $rows = $activities
+            ->reject(fn (WorkActivity $activity): bool => $activity->isOndergrondPrep())
+            ->values();
+
+        if (! $source instanceof WorkActivity) {
+            return $rows;
+        }
+
+        $combined = clone $source;
+        $combined->name = WorkPhase::Egaliseren->groupLabel();
+
+        if ($insertAt === false) {
+            return $rows->push($combined)->values();
+        }
+
+        return $rows
+            ->slice(0, (int) $insertAt)
+            ->push($combined)
+            ->concat($rows->slice((int) $insertAt))
+            ->values();
+    }
+
+    /**
+     * Map stored primen/egaliseren IDs onto the combined Klein-work checkbox.
+     *
+     * @param  iterable<int|string>  $selectedIds
+     * @param  array<int|string, mixed>  $quantities
+     * @param  array<int|string, mixed>  $notes
+     * @return array{0: list<int>, 1: array<int|string, mixed>, 2: array<int|string, mixed>}
+     */
+    public static function kleinFormSelection(iterable $selectedIds, array $quantities, array $notes = []): array
+    {
+        $ids = collect($selectedIds)
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+        $prep = WorkActivity::query()
+            ->whereIn('slug', WorkActivity::PREP_SLUGS)
+            ->get()
+            ->keyBy('slug');
+        $primenId = (int) ($prep->get('primen')?->id ?? 0);
+        $egaliserenId = (int) ($prep->get('egaliseren')?->id ?? 0);
+        $formId = $egaliserenId > 0 ? $egaliserenId : $primenId;
+
+        if ($formId > 0 && ($ids->contains($primenId) || $ids->contains($egaliserenId))) {
+            $ids = $ids
+                ->reject(fn (int $id): bool => in_array($id, [$primenId, $egaliserenId], true))
+                ->push($formId)
+                ->values();
+            $quantities[$formId] = $quantities[$egaliserenId] ?? $quantities[$primenId] ?? ($quantities[$formId] ?? '');
+            $note = '';
+            foreach ([$egaliserenId, $primenId, $formId] as $id) {
+                $candidate = trim((string) ($notes[$id] ?? ''));
+                if ($id > 0 && $candidate !== '') {
+                    $note = $candidate;
+                    break;
+                }
+            }
+            $notes[$formId] = $note;
+        }
+
+        return [$ids->all(), $quantities, $notes];
     }
 
     public function isMisc(): bool

@@ -5,6 +5,7 @@
 @section('content')
     @php
         $header = $preview['header'] ?? [];
+        $projectIdentityMissing = blank($header['customer_name'] ?? null) || blank($header['project_name'] ?? null);
         $works = $preview['works'] ?? [];
         $areas = collect($preview['areas'] ?? []);
         $reviewCount = $areas->where('needs_review', true)->count();
@@ -39,11 +40,14 @@
 
             return abs(round($calculated - $declared, 2)) > 0.05;
         });
-        $openProject = ! $closureReady && (
-            $issueCategories->contains('project_header')
-            || $failedCheckKeys->contains('project_header')
-            || ! empty($preview['project_header_mismatches'])
-        );
+        $openProject = $projectIdentityMissing
+            || $errors->has('customer_name')
+            || $errors->has('project_name')
+            || (! $closureReady && (
+                $issueCategories->contains('project_header')
+                || $failedCheckKeys->contains('project_header')
+                || ! empty($preview['project_header_mismatches'])
+            ));
         $openSources = ! $closureReady && (
             $issueCategories->contains('source_rules')
             || $failedCheckKeys->contains('source_rules')
@@ -129,6 +133,9 @@
                 @endif
             @elseif (($closure['summary'] ?? null))
                 <p class="mt-2 text-sm font-medium text-nicon-danger">{{ $closure['summary'] }}</p>
+            @endif
+            @if ($projectIdentityMissing)
+                <p class="mt-2 text-sm">Klantnaam en projectnaam zijn niet in de geüploade bestanden gevonden. Vul ze in bij <a href="#projectgegevens" class="underline">Projectgegevens</a> voordat je definitief importeert.</p>
             @endif
             <div class="mt-3 flex flex-wrap items-end justify-between gap-4 text-sm">
                 <div>
@@ -246,8 +253,11 @@
             id="projectgegevens"
             title="Projectgegevens"
             :expanded="$openProject"
-            :badge="$openProject ? 'Controleren' : null"
+            :badge="$projectIdentityMissing ? 'Invullen' : ($openProject ? 'Controleren' : null)"
         >
+            @if ($projectIdentityMissing)
+                <p class="text-sm">Deze gegevens staan niet in de geüploade bestanden. Vul klantnaam en projectnaam hier in.</p>
+            @endif
             @if (!empty($header['source_label']))
                 <p class="text-xs uppercase tracking-wide text-nicon-muted">Bron: {{ $header['source_label'] }}</p>
             @endif
@@ -269,16 +279,22 @@
             @endif
             <div class="grid gap-3 sm:grid-cols-2">
                 <div>
-                    <label class="text-xs uppercase tracking-wide text-nicon-muted">Opdrachtgever</label>
-                    <input name="customer_name" value="{{ old('customer_name', $header['customer_name']) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2">
+                    <label class="text-xs uppercase tracking-wide text-nicon-muted" for="customer_name">Klantnaam</label>
+                    <input id="customer_name" name="customer_name" value="{{ old('customer_name', $header['customer_name']) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2">
+                    @error('customer_name')
+                        <p class="mt-1 text-sm text-nicon-warn">{{ $message }}</p>
+                    @enderror
                 </div>
                 <div>
                     <label class="text-xs uppercase tracking-wide text-nicon-muted">Werknummer</label>
                     <input name="project_number" value="{{ old('project_number', $header['project_number']) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" inputmode="text">
                 </div>
                 <div class="sm:col-span-2">
-                    <label class="text-xs uppercase tracking-wide text-nicon-muted">Project / referentie</label>
-                    <input name="project_name" value="{{ old('project_name', $header['project_name']) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2">
+                    <label class="text-xs uppercase tracking-wide text-nicon-muted" for="project_name">Projectnaam</label>
+                    <input id="project_name" name="project_name" value="{{ old('project_name', $header['project_name']) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2">
+                    @error('project_name')
+                        <p class="mt-1 text-sm text-nicon-warn">{{ $message }}</p>
+                    @enderror
                     @if ($header['reference'] && ($header['reference'] !== $header['project_name']))
                         <p class="mt-1 text-xs text-nicon-muted">Uit PDF: {{ $header['reference'] }}</p>
                     @endif

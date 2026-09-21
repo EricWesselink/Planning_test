@@ -174,13 +174,7 @@ class SnijmatenParser
 
         return [
             'format' => 'snijmaten',
-            'header' => [
-                'customer_name' => null,
-                'reference' => null,
-                'project_name' => null,
-                'project_number' => null,
-                'date' => null,
-            ],
+            'header' => ProjectDocumentHeader::parseFromText($text),
             'works' => [],
             'areas' => array_values($areas),
             'floors' => array_keys($floors),

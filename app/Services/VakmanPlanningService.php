@@ -695,7 +695,7 @@ class VakmanPlanningService
 
     /**
      * @param  Collection<int, WorkTicket>  $tickets
-     * @return list<array{title: string, quantity: string, unit: string, unit_enum: WorkUnit, item: ?WorkItem, quantity_value: float}>
+     * @return list<array{title: string, quantity: string, unit: string, unit_enum: WorkUnit, item: ?WorkItem, quantity_value: float, note: string}>
      */
     private function works(WorkerAssignment $assignment, Collection $tickets): array
     {
@@ -716,6 +716,7 @@ class VakmanPlanningService
                         'unit' => $unit->label(),
                         'unit_enum' => $unit,
                         'item' => $item,
+                        'note' => trim((string) ($item?->notes ?? '')),
                     ];
                 })
                 ->values()
@@ -726,22 +727,41 @@ class VakmanPlanningService
             ? $assignment->project->workOrders->where('worker_id', $assignment->worker_id)
             : collect();
 
-        return $this->workItems($assignment)->map(function (WorkItem $item) use ($orders): array {
-            $order = $orders->first(fn ($row): bool => (int) $row->work_item_id === (int) $item->id);
-            $quantity = $order !== null && (float) $order->assigned_quantity > 0.0001
-                ? (float) $order->assigned_quantity
-                : (float) $item->ordered_quantity;
-            $unit = $order?->unit ?? $item->unit;
+        return $this->workItems($assignment)
+            ->concat($this->smallWorkActivityItems($assignment))
+            ->unique('id')
+            ->map(function (WorkItem $item) use ($orders): array {
+                $order = $orders->first(fn ($row): bool => (int) $row->work_item_id === (int) $item->id);
+                $quantity = $order !== null && (float) $order->assigned_quantity > 0.0001
+                    ? (float) $order->assigned_quantity
+                    : (float) $item->ordered_quantity;
+                $unit = $order?->unit ?? $item->unit;
 
-            return [
-                'title' => $item->planningTitle(),
-                'quantity' => Format::qty($quantity, abs($quantity - round($quantity)) < 0.001 ? 0 : 2),
-                'quantity_value' => $quantity,
-                'unit' => $unit->label(),
-                'unit_enum' => $unit,
-                'item' => $item,
-            ];
-        })->values()->all();
+                return [
+                    'title' => $item->work_activity_id !== null ? $item->name : $item->planningTitle(),
+                    'quantity' => Format::qty($quantity, abs($quantity - round($quantity)) < 0.001 ? 0 : 2),
+                    'quantity_value' => $quantity,
+                    'unit' => $unit->label(),
+                    'unit_enum' => $unit,
+                    'item' => $item,
+                    'note' => trim((string) $item->notes),
+                ];
+            })->values()->all();
+    }
+
+    /**
+     * @return Collection<int, WorkItem>
+     */
+    private function smallWorkActivityItems(WorkerAssignment $assignment): Collection
+    {
+        $project = $assignment->project;
+        if ($project === null || ! $project->isSmallWork()) {
+            return collect();
+        }
+
+        return $project->workItems
+            ->filter(fn (WorkItem $item): bool => $item->work_activity_id !== null)
+            ->values();
     }
 
     /**

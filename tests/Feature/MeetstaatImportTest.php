@@ -136,6 +136,126 @@ TXT),
             ->assertDontSee('value="Andere klant"', false);
     }
 
+    public function test_review_fills_customer_and_project_name_from_projectgegevens(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [
+                $this->simplePdf('Meetstaat.pdf', <<<'TXT'
+Meetstaat
+Opdrachtgever : Nicon vloeren
+Referentie    : 11P260141 Laakse Tuinen Amersfoort
+Werknr        : 260200090
+Bouwlaag: begane grond
+Marmoleum Real, 3120 rosato, Linoleum
+0.07 groepsruimte 50,97 m²
+Totaal 50,97 m²
+Netto : 50,97 m²
+TXT),
+            ],
+            'types' => ['meetstaat'],
+        ]);
+
+        $response->assertRedirect();
+        $this->followRedirects($response)
+            ->assertOk()
+            ->assertSee('value="Nicon vloeren"', false)
+            ->assertSee('value="11P260141 Laakse Tuinen Amersfoort"', false)
+            ->assertDontSee('niet in de geüploade bestanden gevonden');
+    }
+
+    public function test_review_reads_projectgegevens_from_plattegrond(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [
+                $this->simplePdf('Plattegrond.pdf', <<<'TXT'
+Opdrachtgever : Nicon vloeren
+Referentie    : Laakse Tuinen
+begane grond
+0.07 groepsruimte 50,97 m2
+TXT),
+            ],
+            'types' => ['plattegrond'],
+        ]);
+
+        $response->assertRedirect();
+        $this->followRedirects($response)
+            ->assertOk()
+            ->assertSee('0.07')
+            ->assertSee('groepsruimte')
+            ->assertSee('value="Nicon vloeren"', false)
+            ->assertSee('value="Laakse Tuinen"', false)
+            ->assertDontSee('niet in de geüploade bestanden gevonden');
+    }
+
+    public function test_review_reads_projectgegevens_from_unclassified_pdf(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [
+                $this->simplePdf('bijlage.pdf', <<<'TXT'
+Opdrachtgever : Bakker BV
+Referentie    : Magazijn Hal 2
+TXT),
+            ],
+        ]);
+
+        $response->assertRedirect();
+        $this->followRedirects($response)
+            ->assertOk()
+            ->assertSee('value="Bakker BV"', false)
+            ->assertSee('value="Magazijn Hal 2"', false)
+            ->assertDontSee('niet in de geüploade bestanden gevonden');
+    }
+
+    public function test_review_requires_manual_customer_and_project_name_when_sources_have_none(): void
+    {
+        $user = User::factory()->create();
+        $csv = UploadedFile::fake()->createWithContent('calculatie.csv', implode("\n", [
+            'KM;Groep;M/U;Productie Eenheid Omschrijving;Artikel Omschrijving;Aantal;EH;Kostprijs;Kostprijs Tot.',
+            'L;4843;U;slopen;slopen;4;uur;48;192',
+        ]));
+
+        $response = $this->actingAs($user)->post(route('projects.preview'), [
+            'files' => [$csv],
+        ]);
+
+        $response->assertRedirect();
+        $token = basename((string) parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        $this->followRedirects($response)
+            ->assertOk()
+            ->assertSee('Klantnaam')
+            ->assertSee('Projectnaam')
+            ->assertSee('niet in de geüploade bestanden gevonden')
+            ->assertSee('data-review-fold="projectgegevens" open data-review-open="1"', false)
+            ->assertDontSee('value="Onbekende klant"', false)
+            ->assertDontSee('value="Nieuw project"', false);
+
+        $this->actingAs($user)
+            ->from(route('projects.review', $token))
+            ->post(route('projects.import', $token), [])
+            ->assertRedirect(route('projects.review', $token))
+            ->assertSessionHasErrors([
+                'customer_name' => 'Vul een klantnaam in.',
+                'project_name' => 'Vul een projectnaam in.',
+            ]);
+        $this->assertSame(0, Project::query()->count());
+
+        $this->makeCachedPreviewReady($token);
+        $this->actingAs($user)->post(route('projects.import', $token), [
+            'customer_name' => 'Gemeente Deventer',
+            'project_name' => 'Keizerstraat renovatie',
+        ])->assertRedirect();
+
+        $project = Project::query()->where('name', 'Keizerstraat renovatie')->first();
+        $this->assertNotNull($project);
+        $this->assertSame('Gemeente Deventer', $project->customer?->name);
+    }
+
     public function test_imported_project_keeps_full_materialenstaat_reference(): void
     {
         $user = User::factory()->create();

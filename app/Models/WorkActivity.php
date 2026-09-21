@@ -14,6 +14,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class WorkActivity extends Model
 {
     /**
+     * @var list<string>
+     */
+    public const PREP_SLUGS = ['primen', 'egaliseren'];
+
+    /**
      * @var array<string, mixed>
      */
     protected $attributes = [
@@ -74,7 +79,12 @@ class WorkActivity extends Model
             return false;
         }
 
-        return ! in_array($this->slug, ['primen', 'egaliseren', 'reparatie-herstel'], true);
+        return ! in_array($this->slug, [...self::PREP_SLUGS, 'reparatie-herstel', 'vloer-aanhelen-herstel'], true);
+    }
+
+    public function isOndergrondPrep(): bool
+    {
+        return in_array($this->slug, self::PREP_SLUGS, true);
     }
 
     public function isFloorCovering(?WorkActivityCategory $category = null): bool

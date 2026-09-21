@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ContactRole;
 use App\Enums\ProjectStatus;
 use App\Enums\SmallWorkType;
+use App\Enums\WorkPhase;
 use App\Enums\WorkUnit;
 use App\Models\Customer;
 use App\Models\Project;
@@ -48,7 +49,7 @@ class SmallWorkService
      *     work_number?: ?string,
      *     work_activity_ids?: array<int, mixed>,
      *     activity_quantities?: array<int|string, mixed>,
-     *     activity_units?: array<int|string, mixed>,
+     *     activity_notes?: array<int|string, mixed>,
      *     contact_name?: ?string,
      *     contact_phone?: ?string,
      *     contact_role?: ?string
@@ -134,7 +135,7 @@ class SmallWorkService
      *     work_number?: ?string,
      *     work_activity_ids?: array<int, mixed>,
      *     activity_quantities?: array<int|string, mixed>,
-     *     activity_units?: array<int|string, mixed>,
+     *     activity_notes?: array<int|string, mixed>,
      *     contact_name?: ?string,
      *     contact_phone?: ?string,
      *     contact_role?: ?string
@@ -397,6 +398,9 @@ class SmallWorkService
             ->filter(fn (int $id): bool => $id > 0)
             ->unique()
             ->values();
+        $quantities = is_array($data['activity_quantities'] ?? null) ? $data['activity_quantities'] : [];
+        $notes = is_array($data['activity_notes'] ?? null) ? $data['activity_notes'] : [];
+        [$ids, $quantities, $notes] = $this->expandOndergrondSelection($ids, $quantities, $notes);
 
         $activities = WorkActivity::query()
             ->with('category')
@@ -409,59 +413,87 @@ class SmallWorkService
             ])
             ->values();
 
-        $quantities = is_array($data['activity_quantities'] ?? null) ? $data['activity_quantities'] : [];
-        $units = is_array($data['activity_units'] ?? null) ? $data['activity_units'] : [];
-
         $sync = [];
         foreach ($activities as $index => $activity) {
             $quantity = $this->parseQuantity($quantities[$activity->id] ?? null);
-            $unit = $this->shopUnit($units[$activity->id] ?? null, $activity);
             $sync[$activity->id] = [
+                'notes' => $this->noteFrom($notes, $activity->id),
                 'quantity' => $quantity,
-                'unit' => $unit,
+                'unit' => $activity->defaultShopUnit(),
                 'sort_order' => $index + 1,
             ];
         }
 
         $project->workActivities()->sync($sync);
-        $this->syncActivityWorkItems($project, $activities, $quantities, $units);
+        $this->syncActivityWorkItems($project, $activities, $quantities, $notes);
+    }
+
+    /**
+     * @param  Collection<int, int>  $ids
+     * @param  array<int|string, mixed>  $quantities
+     * @param  array<int|string, mixed>  $notes
+     * @return array{0: Collection<int, int>, 1: array<int|string, mixed>, 2: array<int|string, mixed>}
+     */
+    private function expandOndergrondSelection(Collection $ids, array $quantities, array $notes): array
+    {
+        $prep = WorkActivity::query()
+            ->whereIn('slug', WorkActivity::PREP_SLUGS)
+            ->get();
+        if ($prep->isEmpty() || $ids->intersect($prep->modelKeys())->isEmpty()) {
+            return [$ids, $quantities, $notes];
+        }
+
+        $quantity = null;
+        foreach ($prep as $activity) {
+            $parsed = $this->parseQuantity($quantities[$activity->id] ?? null);
+            if ($parsed !== null) {
+                $quantity = $quantity === null ? $parsed : max($quantity, $parsed);
+            }
+        }
+        $primary = $prep->first(fn (WorkActivity $activity): bool => $activity->slug === 'egaliseren')
+            ?? $prep->first();
+        $note = $this->noteFrom($notes, $primary?->id)
+            ?? $prep
+                ->map(fn (WorkActivity $activity): ?string => $this->noteFrom($notes, $activity->id))
+                ->filter()
+                ->first();
+        foreach ($prep as $activity) {
+            $quantities[$activity->id] = $quantity;
+            $notes[$activity->id] = $note;
+        }
+
+        return [$ids->diff($prep->modelKeys())->concat($prep->modelKeys())->unique()->values(), $quantities, $notes];
     }
 
     /**
      * @param  Collection<int, WorkActivity>  $activities
      * @param  array<int|string, mixed>  $quantities
-     * @param  array<int|string, mixed>  $units
+     * @param  array<int|string, mixed>  $notes
      */
-    private function syncActivityWorkItems(Project $project, Collection $activities, array $quantities, array $units): void
+    private function syncActivityWorkItems(Project $project, Collection $activities, array $quantities, array $notes): void
     {
         $keep = [];
+        $sort = 2;
+        $prep = $activities->filter(fn (WorkActivity $activity): bool => $activity->isOndergrondPrep());
+        $rest = $activities
+            ->reject(fn (WorkActivity $activity): bool => $activity->isOndergrondPrep())
+            ->values();
 
-        foreach ($activities as $index => $activity) {
-            $quantity = $this->parseQuantity($quantities[$activity->id] ?? null);
-            $unit = $this->shopUnit($units[$activity->id] ?? null, $activity);
-            $item = $project->workItems()
-                ->where('work_activity_id', $activity->id)
-                ->first();
+        if ($prep->isNotEmpty()) {
+            $keep[] = $this->syncOndergrondWorkItem($project, $prep, $quantities, $notes, $sort);
+            $sort++;
+        }
 
-            $payload = [
-                'name' => $activity->name,
-                'unit' => $unit,
-                'ordered_quantity' => $quantity ?? 0,
-                'uurtarief' => $project->basis_uurtarief,
-                'status' => $item?->status ?? 'gepland',
-                'sort_order' => $index + 2,
-                'work_activity_id' => $activity->id,
-                'planned_start_date' => $item?->planned_start_date ?? $project->planned_start_date,
-                'planned_end_date' => $item?->planned_end_date ?? $project->planned_end_date,
-            ];
-
-            if ($item) {
-                $item->update($payload);
-            } else {
-                $item = $project->workItems()->create($payload);
-            }
-
-            $keep[] = (int) $item->id;
+        foreach ($rest as $activity) {
+            $keep[] = $this->upsertActivityWorkItem(
+                $project,
+                $activity,
+                $activity->name,
+                $this->parseQuantity($quantities[$activity->id] ?? null),
+                $sort,
+                $this->noteFrom($notes, $activity->id)
+            );
+            $sort++;
         }
 
         $project->workItems()
@@ -472,6 +504,88 @@ class SmallWorkService
                 $item->assignments()->update(['work_item_id' => null]);
                 $item->delete();
             });
+    }
+
+    /**
+     * @param  Collection<int, WorkActivity>  $prep
+     * @param  array<int|string, mixed>  $quantities
+     * @param  array<int|string, mixed>  $notes
+     */
+    private function syncOndergrondWorkItem(Project $project, Collection $prep, array $quantities, array $notes, int $sort): int
+    {
+        $primary = $prep->first(fn (WorkActivity $activity): bool => $activity->slug === 'egaliseren')
+            ?? $prep->first();
+        $quantity = $prep
+            ->map(fn (WorkActivity $activity): ?float => $this->parseQuantity($quantities[$activity->id] ?? null))
+            ->filter()
+            ->max();
+        $note = $this->noteFrom($notes, $primary?->id)
+            ?? $prep
+                ->map(fn (WorkActivity $activity): ?string => $this->noteFrom($notes, $activity->id))
+                ->filter()
+                ->first();
+
+        $existing = $project->workItems()
+            ->whereNotNull('work_activity_id')
+            ->where(function ($query) use ($prep): void {
+                $query->whereIn('work_activity_id', $prep->modelKeys())
+                    ->orWhere('name', WorkPhase::Egaliseren->groupLabel());
+            })
+            ->orderBy('id')
+            ->get();
+        $item = $existing->first();
+        foreach ($existing->skip(1) as $duplicate) {
+            if ($item instanceof WorkItem) {
+                $duplicate->assignments()->update(['work_item_id' => $item->id]);
+                $duplicate->progressEntries()->update(['work_item_id' => $item->id]);
+            }
+            $duplicate->delete();
+        }
+
+        return $this->upsertActivityWorkItem(
+            $project,
+            $primary,
+            WorkPhase::Egaliseren->groupLabel(),
+            is_numeric($quantity) ? (float) $quantity : null,
+            $sort,
+            $note,
+            $item
+        );
+    }
+
+    private function upsertActivityWorkItem(
+        Project $project,
+        WorkActivity $activity,
+        string $name,
+        ?float $quantity,
+        int $sort,
+        ?string $note = null,
+        ?WorkItem $item = null,
+    ): int {
+        $item ??= $project->workItems()
+            ->where('work_activity_id', $activity->id)
+            ->first();
+
+        $payload = [
+            'name' => $name,
+            'unit' => $activity->defaultShopUnit(),
+            'ordered_quantity' => $quantity ?? 0,
+            'uurtarief' => $project->basis_uurtarief,
+            'status' => $item?->status ?? 'gepland',
+            'sort_order' => $sort,
+            'notes' => $note,
+            'work_activity_id' => $activity->id,
+            'planned_start_date' => $item?->planned_start_date ?? $project->planned_start_date,
+            'planned_end_date' => $item?->planned_end_date ?? $project->planned_end_date,
+        ];
+
+        if ($item) {
+            $item->update($payload);
+        } else {
+            $item = $project->workItems()->create($payload);
+        }
+
+        return (int) $item->id;
     }
 
     private function hoursWorkItem(Project $project): ?WorkItem
@@ -494,15 +608,15 @@ class SmallWorkService
         return $quantity > 0 ? $quantity : null;
     }
 
-    private function shopUnit(mixed $value, WorkActivity $activity): WorkUnit
+    private function noteFrom(array $notes, int|string|null $id): ?string
     {
-        $unit = WorkUnit::tryFrom((string) $value);
-
-        if (in_array($unit, WorkUnit::shopCases(), true)) {
-            return $unit;
+        if ($id === null || $id === '') {
+            return null;
         }
 
-        return $activity->defaultShopUnit();
+        $note = trim((string) ($notes[$id] ?? ''));
+
+        return $note === '' ? null : $note;
     }
 
     /**

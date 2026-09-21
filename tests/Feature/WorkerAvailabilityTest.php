@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Enums\AvailabilityKind;
+use App\Enums\LeaveRequestStatus;
 use App\Models\Customer;
+use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Worker;
@@ -258,15 +260,66 @@ class WorkerAvailabilityTest extends TestCase
             'end_date' => '2026-09-12',
             'kind' => AvailabilityKind::Unavailable,
         ]);
+        $kept = $nick->availabilities()->create([
+            'start_date' => '2026-09-14',
+            'end_date' => '2026-09-18',
+            'kind' => AvailabilityKind::Available,
+        ]);
+        $leave = LeaveRequest::factory()->approved()->create([
+            'user_id' => $nick->user->id,
+            'worker_id' => $nick->id,
+            'worker_availability_id' => $kept->id,
+            'reviewed_by' => $user->id,
+        ]);
 
         $this->actingAs($user)
             ->from(route('workers.index'))
             ->delete(route('workers.availability.destroy', [$nick, $window]))
-            ->assertRedirect(route('workers.index'));
+            ->assertRedirect(route('workers.index'))
+            ->assertSessionHas('status', 'Periode verwijderd.');
 
         $this->assertDatabaseMissing('worker_availabilities', [
             'id' => $window->id,
         ]);
+        $this->assertModelExists($kept);
+        $leave->refresh();
+        $this->assertSame(LeaveRequestStatus::Approved, $leave->status);
+        $this->assertSame($kept->id, $leave->worker_availability_id);
+    }
+
+    public function test_removing_another_workers_availability_period_returns_not_found(): void
+    {
+        $user = User::factory()->create();
+        $nick = $this->makeWorker('Nick Seine', 'zzp');
+        $peter = $this->makeWorker('Peter', 'eigen');
+        $window = $peter->availabilities()->create([
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-12',
+            'kind' => AvailabilityKind::Unavailable,
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('workers.availability.destroy', [$nick, $window]))
+            ->assertNotFound();
+
+        $this->assertModelExists($window);
+    }
+
+    public function test_uitvoerder_cannot_remove_an_availability_period(): void
+    {
+        $user = User::factory()->uitvoerder()->create();
+        $nick = $this->makeWorker('Nick Seine', 'zzp');
+        $window = $nick->availabilities()->create([
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-12',
+            'kind' => AvailabilityKind::Unavailable,
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('workers.availability.destroy', [$nick, $window]))
+            ->assertForbidden();
+
+        $this->assertModelExists($window);
     }
 
     public function test_rejects_an_end_date_before_the_start_date(): void

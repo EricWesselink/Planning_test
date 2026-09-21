@@ -88,6 +88,33 @@ class ShopWorkCatalogTest extends TestCase
         $this->assertSame(1, WorkActivity::query()->where('slug', 'werkopname')->count());
     }
 
+    public function test_ensure_missing_adds_vloer_aanhelen_after_reparatie_herstel_without_duplicating_it(): void
+    {
+        $aanhelen = WorkActivity::query()->where('slug', 'vloer-aanhelen-herstel')->first();
+        $this->assertNotNull($aanhelen);
+        $aanhelen->delete();
+
+        $herstel = WorkActivity::query()->where('slug', 'reparatie-herstel')->firstOrFail();
+        $herstel->update(['sort_order' => 9]);
+        $overig = WorkActivity::query()->where('slug', 'overig-vloerwerk')->firstOrFail();
+        $overig->update(['sort_order' => 10]);
+
+        ShopWorkCatalog::ensureMissing();
+
+        $aanhelen = WorkActivity::query()->where('slug', 'vloer-aanhelen-herstel')->first();
+        $overig = $overig->fresh();
+
+        $this->assertNotNull($aanhelen);
+        $this->assertSame('Vloer aanhelen / herstel', $aanhelen->name);
+        $this->assertSame($herstel->work_activity_category_id, $aanhelen->work_activity_category_id);
+        $this->assertSame(10, $aanhelen->sort_order);
+        $this->assertSame(11, $overig->sort_order);
+        $this->assertSame(1, WorkActivity::query()->where('slug', 'reparatie-herstel')->count());
+        $this->assertSame(1, WorkActivity::query()->where('slug', 'vloer-aanhelen-herstel')->count());
+        $this->assertFalse($aanhelen->isMeasurementProduct());
+        $this->assertSame('m2', $aanhelen->defaultShopUnit()->value);
+    }
+
     public function test_replace_legacy_pvc_renames_existing_activity_and_work_item(): void
     {
         $banen = WorkActivity::query()->where('slug', 'pvc-banen')->firstOrFail();

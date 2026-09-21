@@ -287,6 +287,21 @@ class ProjectController extends Controller
                 ->pluck('id')
                 ->map(fn (mixed $id): int => (int) $id)
                 ->all();
+            [$selectedIds, $activityQuantities, $activityNotes] = WorkActivityCategory::kleinFormSelection(
+                old('work_activity_ids', $keepIds),
+                old(
+                    'activity_quantities',
+                    $project->workActivities->mapWithKeys(
+                        fn ($activity) => [$activity->id => $activity->pivot->quantity]
+                    )->all()
+                ),
+                old(
+                    'activity_notes',
+                    $project->workActivities->mapWithKeys(
+                        fn ($activity) => [$activity->id => $activity->pivot->notes]
+                    )->all()
+                )
+            );
 
             return view('projects.small', [
                 'project' => $project,
@@ -294,7 +309,10 @@ class ProjectController extends Controller
                 'hourOptions' => [2, 4, 6, 8],
                 'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
                 'contactRoles' => Project::contactRoleChoices(),
-                'floorActivities' => WorkActivityCategory::floorFormActivities($keepIds),
+                'floorActivities' => WorkActivityCategory::kleinFormActivities($keepIds),
+                'selectedIds' => $selectedIds,
+                'activityQuantities' => $activityQuantities,
+                'activityNotes' => $activityNotes,
             ]);
         }
 

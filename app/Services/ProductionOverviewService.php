@@ -158,6 +158,7 @@ class ProductionOverviewService
 
                 return [
                     'label' => $item?->cardLabel() ?? $item?->name ?? 'Werk',
+                    'note' => trim((string) ($item?->notes ?? '')),
                     'quantity' => (float) $group->sum('completed_quantity'),
                     'unit' => $unit,
                     'display_color' => $item?->displayColor() ?? MaterialColor::resolve(null, $item?->name),
@@ -308,6 +309,7 @@ class ProductionOverviewService
             ->filter(fn (AreaTask $task): bool => in_array((int) $task->work_item_id, $itemIds, true))
             ->map(fn (AreaTask $task): array => [
                 'label' => $task->workItem?->cardLabel() ?? $task->workItem?->name ?? 'Werk',
+                'note' => trim((string) ($task->workItem?->notes ?? '')),
                 'quantity' => (float) $task->ordered_quantity,
                 'unit' => $task->unit,
                 'display_color' => $task->workItem?->displayColor() ?? MaterialColor::resolve(null, $task->workItem?->name),
@@ -345,6 +347,7 @@ class ProductionOverviewService
             'materials' => $ticket->lines
                 ->map(fn ($line): array => [
                     'label' => $line->workItem?->cardLabel() ?? $line->workItem?->name ?? 'Werk',
+                    'note' => trim((string) ($line->workItem?->notes ?? '')),
                     'quantity' => (float) $line->quantity,
                     'unit' => $line->unit,
                     'display_color' => $line->workItem?->displayColor() ?? MaterialColor::resolve(null, $line->workItem?->name),

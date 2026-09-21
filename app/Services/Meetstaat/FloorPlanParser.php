@@ -52,6 +52,7 @@ class FloorPlanParser
             $parsed['areas'] ?? [],
             $parsed['legend'] ?? [],
         );
+        $parsed['header'] = $this->headerFromText($extracted['text'], $parsed['header'] ?? []);
 
         return $parsed;
     }
@@ -139,13 +140,7 @@ class FloorPlanParser
 
         return [
             'format' => 'floor_plan',
-            'header' => [
-                'customer_name' => null,
-                'reference' => null,
-                'project_name' => null,
-                'project_number' => null,
-                'date' => null,
-            ],
+            'header' => $this->headerFromText($text),
             'works' => [],
             'areas' => $areaList,
             'floors' => array_keys($floors),
@@ -180,6 +175,22 @@ class FloorPlanParser
             'needs_ocr' => false,
             'debug_rooms' => [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $header
+     * @return array<string, mixed>
+     */
+    private function headerFromText(string $text, array $header = []): array
+    {
+        $parsed = ProjectDocumentHeader::parseFromText($text);
+        foreach ($parsed as $key => $value) {
+            if (blank($header[$key] ?? null) && filled($value)) {
+                $header[$key] = $value;
+            }
+        }
+
+        return $header === [] ? $parsed : $header;
     }
 
     public function normalizeNumber(string $value): string
