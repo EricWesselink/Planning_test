@@ -1339,35 +1339,6 @@ if (board) {
         }
     });
 
-    let focusTimer = null;
-    function clearFocusBars() {
-        board.querySelectorAll('.person-bar.is-focus').forEach((bar) => bar.classList.remove('is-focus'));
-    }
-
-    function focusConflictBars(workerId) {
-        clearFocusBars();
-        if (focusTimer) {
-            window.clearTimeout(focusTimer);
-        }
-        const selector = `.person-bar.double[data-worker-id="${workerId}"]`;
-        let bars = [...board.querySelectorAll(selector)];
-        if (bars.length === 0) {
-            bars = [...board.querySelectorAll(`.person-bar[data-worker-id="${workerId}"]`)];
-        }
-        if (bars.length === 0) {
-            return;
-        }
-        bars.forEach((bar) => bar.classList.add('is-focus'));
-        bars[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-        focusTimer = window.setTimeout(clearFocusBars, 2800);
-    }
-
-    document.querySelectorAll('[data-focus-worker]').forEach((button) => {
-        button.addEventListener('click', () => {
-            focusConflictBars(button.dataset.focusWorker);
-        });
-    });
-
     const availabilityRoot = document.querySelector('[data-plan-avail]');
     if (availabilityRoot && ! readonly) {
         availabilityRoot.addEventListener('click', (event) => {

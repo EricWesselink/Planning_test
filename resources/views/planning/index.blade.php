@@ -190,17 +190,59 @@
                 </ul>
             @endif
 
+            @php
+                $planningWithoutDoubles = array_diff_key($query, array_flip(['doubles', 'double_crew', 'double_worker']));
+                $doubleFilter = $doubleFilter ?? ['active' => false, 'count' => 0, 'label' => null];
+                $doubleCountLabel = (int) $doubleFilter['count'] === 1
+                    ? '1 inzet'
+                    : $doubleFilter['count'].' inzetten';
+                $doubleHeading = 'Dubbele planning';
+                if (! empty($doubleFilter['label'])) {
+                    $doubleHeading .= ' · '.$doubleFilter['label'];
+                }
+                $doubleHeading .= ' ('.$doubleCountLabel.')';
+            @endphp
+            @if (! empty($doubleFilter['active']))
+                <div class="planning-doubles-banner" role="status">
+                    <span>⚠ {{ $doubleHeading }}</span>
+                    <a
+                        class="planning-doubles-clear"
+                        href="{{ route('planning', $planningWithoutDoubles) }}"
+                        title="Filter wissen"
+                    >Alles tonen</a>
+                </div>
+            @endif
+
             @if (count($warnings))
                 <div class="planning-warnings" role="alert">
-                    <div class="planning-warnings-title">Dubbele planning</div>
+                    <a
+                        href="{{ route('planning', array_merge($planningWithoutDoubles, ['doubles' => '1'])) }}"
+                        class="planning-warnings-title"
+                    >
+                        <span>Dubbele planning</span>
+                        <span class="planning-warnings-action">Bekijk dubbele planning</span>
+                    </a>
                     @foreach ($warnings as $warning)
-                        <button
-                            type="button"
-                            class="planning-warnings-item"
-                            data-focus-worker="{{ $warning['worker_id'] }}"
-                            data-focus-date="{{ $warning['date'] ?? '' }}"
-                            title="Ga naar deze planning om aan te passen"
-                        >{{ $warning['message'] }}</button>
+                        <div class="planning-warnings-item">
+                            @if (($warning['people'] ?? []) !== [])
+                                @foreach ($warning['people'] as $person)
+                                    @if (! $loop->first), @endif
+                                    <a
+                                        href="{{ route('planning', array_merge($planningWithoutDoubles, ['doubles' => '1', 'double_crew' => $person['id']])) }}"
+                                        class="planning-warnings-name"
+                                    >{{ $person['name'] }}</a>
+                                @endforeach
+                                <a
+                                    href="{{ route('planning', array_merge($planningWithoutDoubles, ['doubles' => '1'])) }}"
+                                    class="planning-warnings-rest"
+                                > van {{ $warning['team'] }} staat op meerdere werken.</a>
+                            @else
+                                <a
+                                    href="{{ route('planning', array_merge($planningWithoutDoubles, ['doubles' => '1', 'double_worker' => $warning['worker_id']])) }}"
+                                    class="planning-warnings-rest"
+                                >{{ $warning['message'] }}</a>
+                            @endif
+                        </div>
                     @endforeach
                 </div>
             @endif
@@ -504,7 +546,7 @@
                                         @if (! empty($projectRow['subtitle']))
                                             <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['subtitle'] }}</div>
                                         @endif
-                                        @if (! $isCompact && ($projectRow['naw_line'] ?? $projectRow['city']))
+                                        @if ($projectRow['naw_line'] ?? $projectRow['city'])
                                             <div class="text-xs font-normal text-nicon-muted">
                                                 {{ $projectRow['naw_line'] ?? $projectRow['city'] }}
                                                 @if (! empty($projectRow['maps_url']))

@@ -107,6 +107,9 @@ class SmallWorkTest extends TestCase
             ->assertSee('plan-line--small', false)
             ->assertSee('>SERVICE</span>', false)
             ->assertSee('Gemeente Deventer · Deventer – plint herstellen')
+            ->assertSee('Keizerstraat 12, 7411 HD Deventer')
+            ->assertSee('Navigeren')
+            ->assertSee($project->googleMapsUrl())
             ->assertSee('| 2u')
             ->assertSee('period-marker--start', false)
             ->assertSee('▶ Start', false)
@@ -573,6 +576,9 @@ class SmallWorkTest extends TestCase
             ->assertOk()
             ->assertSee('>KLEIN</span>', false)
             ->assertSee('Deventer – 25 m² PVC')
+            ->assertSee('Keizerstraat 12, 7411 HD Deventer')
+            ->assertSee('Navigeren')
+            ->assertSee($project->googleMapsUrl())
             ->getContent();
         $this->assertStringNotContainsString(
             '/projecten/'.$project->id.'/extra-werk/'.$item->id,

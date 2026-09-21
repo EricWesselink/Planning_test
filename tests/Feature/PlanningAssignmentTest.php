@@ -460,7 +460,8 @@ class PlanningAssignmentTest extends TestCase
             ->assertSee('ZZP Jansen Vloeren heeft meer personen ingepland dan het team.')
             ->assertSee('person-bar double', false)
             ->assertSee('planning-warnings', false)
-            ->assertSee('data-focus-worker="'.$assignment->worker_id.'"', false);
+            ->assertSee('Bekijk dubbele planning')
+            ->assertSee('double_worker='.$assignment->worker_id, false);
     }
 
     public function test_stores_voorman_and_werkbon_holder_from_the_selected_crew(): void

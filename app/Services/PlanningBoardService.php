@@ -156,7 +156,6 @@ class PlanningBoardService
         }
 
         $doubleBooked = $this->conflicts->doubleBookedMap($assignments, $days);
-        $warnings = [];
         $rows = [];
 
         foreach ($projects as $project) {
@@ -385,26 +384,13 @@ class PlanningBoardService
             $rows = $this->filterTodoRunningRows($rows);
         }
 
-        $rows = $this->groupRowsByKind($rows, $kindFilter);
-
-        foreach ($doubleBooked as $workerId => $dates) {
-            $name = $assignments->firstWhere('worker_id', $workerId)?->worker?->displayName();
-            if (! $name) {
-                continue;
-            }
-            $personNames = collect($dates)
-                ->flatMap(fn (array $row): array => $row['person_names'] ?? [])
-                ->unique()
-                ->values();
-            $message = $personNames->isNotEmpty()
-                ? $personNames->implode(', ').' van '.$name.' staat op meerdere werken.'
-                : $name.' heeft meer personen ingepland dan het team.';
-            $warnings[] = [
-                'worker_id' => (int) $workerId,
-                'message' => $message,
-                'date' => (string) array_key_first($dates),
-            ];
+        $doubleFilter = $this->doubleBookingPresentation($request, $doubleBooked, $assignments);
+        if ($doubleFilter['active']) {
+            $rows = $this->filterRowsToAssignments($rows, $doubleFilter['assignment_ids']);
         }
+
+        $rows = $this->groupRowsByKind($rows, $kindFilter);
+        $warnings = $doubleFilter['warnings'];
 
         $availabilityOverview = $scheduledWorkerId
             ? ['days' => [], 'teams' => []]
@@ -425,7 +411,12 @@ class PlanningBoardService
             'rows' => $rows,
             'projects' => $this->filterProjects($request, $kindFilter, $staffingFilter, $todoRunning, $scheduledWorkerId, $windowStart, $windowEnd),
             'todoRunningCount' => $todoRunningCount,
-            'warnings' => array_values($warnings),
+            'warnings' => $warnings,
+            'doubleFilter' => [
+                'active' => $doubleFilter['active'],
+                'count' => $doubleFilter['count'],
+                'label' => $doubleFilter['label'],
+            ],
             'period' => $printPeriod,
             'periodFallback' => $request->input('period') === 'work' && $printPeriod !== 'work',
             'filters' => [
@@ -440,6 +431,9 @@ class PlanningBoardService
                 'staffing' => $scheduledWorkerId === null ? ($staffingFilter ?? '') : '',
                 'todo_running' => $todoRunning ? '1' : '',
                 'hours_view' => $hoursView,
+                'doubles' => $doubleFilter['active'] ? '1' : '',
+                'double_crew' => $doubleFilter['crew_id'] ?? '',
+                'double_worker' => $doubleFilter['worker_id'] ?? '',
             ],
             'hoursView' => $hoursView,
             'weekOptions' => self::WEEK_OPTIONS,
@@ -704,6 +698,235 @@ class PlanningBoardService
             $rows,
             fn (array $row): bool => $this->rowIsTodoRunning($row),
         ));
+    }
+
+    /**
+     * @param  array<int, array<string, array<string, mixed>>>  $doubleBooked
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @return array{active: bool, count: int, label: ?string, crew_id: ?int, worker_id: ?int, assignment_ids: list<int>, warnings: list<array<string, mixed>>}
+     */
+    private function doubleBookingPresentation(Request $request, array $doubleBooked, Collection $assignments): array
+    {
+        $warnings = $this->doubleBookingWarnings($doubleBooked, $assignments);
+        $active = $request->boolean('doubles');
+        $crewMemberId = $request->filled('double_crew') ? $request->integer('double_crew') : 0;
+        $workerOnlyId = $request->filled('double_worker') ? $request->integer('double_worker') : 0;
+        if ($crewMemberId > 0) {
+            $workerOnlyId = 0;
+        }
+
+        $assignmentIds = $active
+            ? $this->conflictingAssignmentIds(
+                $doubleBooked,
+                $crewMemberId > 0 ? $crewMemberId : null,
+                $workerOnlyId > 0 ? $workerOnlyId : null,
+            )
+            : [];
+
+        return [
+            'active' => $active,
+            'count' => count($assignmentIds),
+            'label' => $this->doubleBookingFilterLabel($warnings, $crewMemberId, $workerOnlyId, $active),
+            'crew_id' => $active && $crewMemberId > 0 ? $crewMemberId : null,
+            'worker_id' => $active && $workerOnlyId > 0 ? $workerOnlyId : null,
+            'assignment_ids' => $assignmentIds,
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $warnings
+     */
+    private function doubleBookingFilterLabel(array $warnings, int $crewMemberId, int $workerOnlyId, bool $active): ?string
+    {
+        if (! $active) {
+            return null;
+        }
+
+        if ($crewMemberId > 0) {
+            foreach ($warnings as $warning) {
+                foreach ($warning['people'] as $person) {
+                    if ((int) $person['id'] === $crewMemberId) {
+                        return (string) $person['name'];
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        if ($workerOnlyId > 0) {
+            foreach ($warnings as $warning) {
+                if ((int) $warning['worker_id'] === $workerOnlyId) {
+                    return (string) $warning['team'];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, array<string, array<string, mixed>>>  $doubleBooked
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @return list<array{worker_id: int, team: string, people: list<array{id: int, name: string}>, message: string, date: string}>
+     */
+    private function doubleBookingWarnings(array $doubleBooked, Collection $assignments): array
+    {
+        $warnings = [];
+
+        foreach ($doubleBooked as $workerId => $dates) {
+            $name = $assignments->firstWhere('worker_id', $workerId)?->worker?->displayName();
+            if (! $name) {
+                continue;
+            }
+
+            $people = [];
+            foreach ($dates as $row) {
+                foreach ($row['people'] ?? [] as $person) {
+                    $personId = (int) ($person['id'] ?? 0);
+                    if ($personId < 1 || trim((string) ($person['name'] ?? '')) === '') {
+                        continue;
+                    }
+                    $people[$personId] = [
+                        'id' => $personId,
+                        'name' => (string) $person['name'],
+                    ];
+                }
+            }
+
+            $people = array_values($people);
+            $message = $people !== []
+                ? collect($people)->pluck('name')->implode(', ').' van '.$name.' staat op meerdere werken.'
+                : $name.' heeft meer personen ingepland dan het team.';
+
+            $warnings[] = [
+                'worker_id' => (int) $workerId,
+                'team' => $name,
+                'people' => $people,
+                'message' => $message,
+                'date' => (string) array_key_first($dates),
+            ];
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * @param  array<int, array<string, array<string, mixed>>>  $doubleBooked
+     * @return list<int>
+     */
+    private function conflictingAssignmentIds(array $doubleBooked, ?int $crewMemberId, ?int $workerId): array
+    {
+        $ids = [];
+
+        foreach ($doubleBooked as $bookedWorkerId => $dates) {
+            if ($workerId !== null && (int) $bookedWorkerId !== $workerId) {
+                continue;
+            }
+
+            foreach ($dates as $row) {
+                if ($crewMemberId !== null) {
+                    foreach ($row['people'] ?? [] as $person) {
+                        if ((int) ($person['id'] ?? 0) !== $crewMemberId) {
+                            continue;
+                        }
+                        foreach ($person['assignment_ids'] ?? [] as $assignmentId) {
+                            $ids[(int) $assignmentId] = true;
+                        }
+                    }
+
+                    continue;
+                }
+
+                foreach ($row['assignment_ids'] ?? [] as $assignmentId) {
+                    $ids[(int) $assignmentId] = true;
+                }
+            }
+        }
+
+        return array_map('intval', array_keys($ids));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<int>  $assignmentIds
+     * @return list<array<string, mixed>>
+     */
+    private function filterRowsToAssignments(array $rows, array $assignmentIds): array
+    {
+        $allowed = array_fill_keys($assignmentIds, true);
+        $kept = [];
+
+        foreach ($rows as $row) {
+            if (($row['type'] ?? '') === 'section') {
+                continue;
+            }
+
+            $limited = $this->rowLimitedToAssignments($row, $allowed);
+            if ($limited !== null) {
+                $kept[] = $limited;
+            }
+        }
+
+        return $kept;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<int, true>  $allowed
+     * @return array<string, mixed>|null
+     */
+    private function rowLimitedToAssignments(array $row, array $allowed): ?array
+    {
+        $row['person_bars'] = $this->barsLimitedToAssignments($row['person_bars'] ?? [], $allowed);
+        $row['bar_count'] = $this->stackedBarCount($row['person_bars']);
+
+        if (isset($row['children']) && is_array($row['children'])) {
+            $children = [];
+            foreach ($row['children'] as $child) {
+                if (! is_array($child)) {
+                    continue;
+                }
+                $limited = $this->rowLimitedToAssignments($child, $allowed);
+                if ($limited !== null) {
+                    $children[] = $limited;
+                }
+            }
+            $row['children'] = $children;
+        }
+
+        $hasBars = ($row['person_bars'] ?? []) !== [];
+        $hasChildren = ($row['children'] ?? []) !== [];
+        if (! $hasBars && ! $hasChildren) {
+            return null;
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $personBars
+     * @param  array<int, true>  $allowed
+     * @return list<array<string, mixed>>
+     */
+    private function barsLimitedToAssignments(array $personBars, array $allowed): array
+    {
+        $bars = array_values(array_filter(
+            $personBars,
+            fn (array $bar): bool => isset($allowed[(int) ($bar['assignment_id'] ?? 0)]),
+        ));
+
+        $stacks = [];
+        foreach ($bars as $index => $bar) {
+            $stack = (int) ($bar['stack'] ?? 0);
+            if (! array_key_exists($stack, $stacks)) {
+                $stacks[$stack] = count($stacks);
+            }
+            $bars[$index]['stack'] = $stacks[$stack];
+        }
+
+        return $bars;
     }
 
     /**

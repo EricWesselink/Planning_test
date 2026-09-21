@@ -17,7 +17,7 @@ class ConflictService
     }
 
     /**
-     * @return array<int, array<string, array{used: int, person_names: list<string>}>>
+     * @return array<int, array<string, array{used: int, person_names: list<string>, people: list<array{id: int, name: string, assignment_ids: list<int>}>, assignment_ids: list<int>}>>
      */
     public function doubleBookedMap(Collection $assignments, Collection $days): array
     {
@@ -31,16 +31,33 @@ class ConflictService
 
             foreach ($byWorker as $workerId => $rows) {
                 $capacity = $rows->first()?->worker?->peopleCount() ?? 1;
-                $doubled = $this->overlappingPersonNames($rows, $day);
+                $people = $this->overlappingPeople($rows, $day);
                 $used = $this->peakPeople($rows, $day);
 
-                if ($doubled === [] && $used <= $capacity) {
+                if ($people === [] && $used <= $capacity) {
                     continue;
+                }
+
+                $assignmentIds = [];
+                foreach ($people as $person) {
+                    foreach ($person['assignment_ids'] as $assignmentId) {
+                        $assignmentIds[$assignmentId] = true;
+                    }
+                }
+                if ($used > $capacity) {
+                    foreach ($this->overCapacityAssignmentIds($rows, $day, $capacity) as $assignmentId) {
+                        $assignmentIds[$assignmentId] = true;
+                    }
                 }
 
                 $map[(int) $workerId][$key] = [
                     'used' => $used,
-                    'person_names' => $doubled,
+                    'person_names' => array_values(array_unique(array_map(
+                        fn (array $person): string => $person['name'],
+                        $people,
+                    ))),
+                    'people' => $people,
+                    'assignment_ids' => array_map('intval', array_keys($assignmentIds)),
                 ];
             }
         }
@@ -179,9 +196,9 @@ class ConflictService
 
     /**
      * @param  Collection<int, WorkerAssignment>  $assignments
-     * @return list<string>
+     * @return list<array{id: int, name: string, assignment_ids: list<int>}>
      */
-    private function overlappingPersonNames(Collection $assignments, CarbonInterface $day): array
+    private function overlappingPeople(Collection $assignments, CarbonInterface $day): array
     {
         $byPerson = [];
         foreach ($assignments as $assignment) {
@@ -190,27 +207,42 @@ class ConflictService
                 if ($interval === null) {
                     continue;
                 }
-                $byPerson[(int) $member->id][] = [
-                    'label' => $member->label(),
+                $personId = (int) $member->id;
+                $byPerson[$personId]['id'] = $personId;
+                $byPerson[$personId]['name'] = $member->label();
+                $byPerson[$personId]['slots'][] = [
+                    'assignment_id' => (int) $assignment->id,
                     'start' => $interval[0],
                     'end' => $interval[1],
                 ];
             }
         }
 
-        $names = [];
-        foreach ($byPerson as $slots) {
+        $people = [];
+        foreach ($byPerson as $person) {
+            $ids = [];
+            $slots = $person['slots'];
             $count = count($slots);
             for ($i = 0; $i < $count; $i++) {
                 for ($j = $i + 1; $j < $count; $j++) {
-                    if (PlanningHours::intervalsOverlap($slots[$i]['start'], $slots[$i]['end'], $slots[$j]['start'], $slots[$j]['end'])) {
-                        $names[] = $slots[$i]['label'];
+                    if (! PlanningHours::intervalsOverlap($slots[$i]['start'], $slots[$i]['end'], $slots[$j]['start'], $slots[$j]['end'])) {
+                        continue;
                     }
+                    $ids[$slots[$i]['assignment_id']] = true;
+                    $ids[$slots[$j]['assignment_id']] = true;
                 }
             }
+            if ($ids === []) {
+                continue;
+            }
+            $people[] = [
+                'id' => $person['id'],
+                'name' => $person['name'],
+                'assignment_ids' => array_map('intval', array_keys($ids)),
+            ];
         }
 
-        return array_values(array_unique($names));
+        return $people;
     }
 
     /**
@@ -224,42 +256,12 @@ class ConflictService
         ?CarbonInterface $windowEnd = null,
         array $excludeCrewIds = [],
     ): int {
-        $events = [];
-        foreach ($assignments as $assignment) {
-            $crew = $assignment->relationLoaded('crewMembers') ? $assignment->crewMembers : collect();
-            if ($crew->isNotEmpty()) {
-                foreach ($crew as $member) {
-                    if (in_array((int) $member->id, $excludeCrewIds, true)) {
-                        continue;
-                    }
-                    $interval = $assignment->intervalOnDateForMember($day, $member);
-                    if ($interval === null) {
-                        continue;
-                    }
-                    $this->pushClippedEvent($events, $interval[0], $interval[1], 1, $windowStart, $windowEnd);
-                }
-
-                continue;
-            }
-
-            $interval = $assignment->intervalOnDate($day);
-            if ($interval === null) {
-                continue;
-            }
-            $this->pushClippedEvent($events, $interval[0], $interval[1], $assignment->peopleCount(), $windowStart, $windowEnd);
-        }
-
+        $events = $this->assignmentEvents($assignments, $day, $excludeCrewIds, $windowStart, $windowEnd);
         if ($events === []) {
             return 0;
         }
 
-        usort($events, function (array $left, array $right): int {
-            if ($left[0] === $right[0]) {
-                return $left[1] <=> $right[1];
-            }
-
-            return $left[0] <=> $right[0];
-        });
+        $this->sortEvents($events);
 
         $current = 0;
         $peak = 0;
@@ -272,7 +274,100 @@ class ConflictService
     }
 
     /**
+     * Assignments that are on the clock while the team is over capacity.
+     *
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @return list<int>
+     */
+    private function overCapacityAssignmentIds(Collection $assignments, CarbonInterface $day, int $capacity): array
+    {
+        $events = $this->assignmentEvents($assignments, $day);
+        if ($events === []) {
+            return [];
+        }
+
+        $this->sortEvents($events);
+
+        $active = [];
+        $current = 0;
+        $over = [];
+        foreach ($events as $event) {
+            $assignmentId = $event[2];
+            $current += $event[1];
+            $active[$assignmentId] = ($active[$assignmentId] ?? 0) + $event[1];
+            if ($active[$assignmentId] === 0) {
+                unset($active[$assignmentId]);
+            }
+            if ($current <= $capacity) {
+                continue;
+            }
+            foreach (array_keys($active) as $id) {
+                $over[(int) $id] = true;
+            }
+        }
+
+        return array_map('intval', array_keys($over));
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  list<int>  $excludeCrewIds
+     * @return list<array{0: int, 1: int, 2: int}>
+     */
+    private function assignmentEvents(
+        Collection $assignments,
+        CarbonInterface $day,
+        array $excludeCrewIds = [],
+        ?CarbonInterface $windowStart = null,
+        ?CarbonInterface $windowEnd = null,
+    ): array {
+        $events = [];
+        foreach ($assignments as $assignment) {
+            $crew = $assignment->relationLoaded('crewMembers') ? $assignment->crewMembers : collect();
+            if ($crew->isNotEmpty()) {
+                foreach ($crew as $member) {
+                    if (in_array((int) $member->id, $excludeCrewIds, true)) {
+                        continue;
+                    }
+                    $interval = $assignment->intervalOnDateForMember($day, $member);
+                    if ($interval === null) {
+                        continue;
+                    }
+                    $this->pushClippedEvent($events, $interval[0], $interval[1], 1, $windowStart, $windowEnd, (int) $assignment->id);
+                }
+
+                continue;
+            }
+
+            $interval = $assignment->intervalOnDate($day);
+            if ($interval === null) {
+                continue;
+            }
+            $this->pushClippedEvent($events, $interval[0], $interval[1], $assignment->peopleCount(), $windowStart, $windowEnd, (int) $assignment->id);
+        }
+
+        return $events;
+    }
+
+    /**
+     * @param  list<array{0: int, 1: int, 2?: int}>  $events
+     */
+    private function sortEvents(array &$events): void
+    {
+        usort($events, function (array $left, array $right): int {
+            if ($left[0] === $right[0]) {
+                return $left[1] <=> $right[1];
+            }
+
+            return $left[0] <=> $right[0];
+        });
+    }
+
+    /**
      * @param  list<array{0: int, 1: int}>  $events
+     */
+    /**
+     * @param  list<array{0: int, 1: int, 2: int}>  $events
      */
     private function pushClippedEvent(
         array &$events,
@@ -281,6 +376,7 @@ class ConflictService
         int $people,
         ?CarbonInterface $windowStart,
         ?CarbonInterface $windowEnd,
+        int $assignmentId = 0,
     ): void {
         $from = $windowStart ? $start->max($windowStart) : $start;
         $to = $windowEnd ? $end->min($windowEnd) : $end;
@@ -288,8 +384,8 @@ class ConflictService
             return;
         }
 
-        $events[] = [$from->timestamp, $people];
-        $events[] = [$to->timestamp, -$people];
+        $events[] = [$from->timestamp, $people, $assignmentId];
+        $events[] = [$to->timestamp, -$people, $assignmentId];
     }
 
     /**
