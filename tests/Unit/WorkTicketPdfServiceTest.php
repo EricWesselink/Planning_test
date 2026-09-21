@@ -342,6 +342,34 @@ class WorkTicketPdfServiceTest extends TestCase
         $this->assertNotNull($data['drawingUrl']);
     }
 
+    public function test_build_puts_the_project_plattegrond_on_the_werkbon_when_none_is_attached(): void
+    {
+        $ticket = $this->makeTicket();
+        $project = $ticket->project;
+        $relative = 'projects/'.$project->id.'/plattegrond/plan.png';
+        Storage::disk('local')->put(
+            $relative,
+            (string) file_get_contents(public_path('images/nicon-vloeren.png')),
+        );
+        ProjectDocument::query()->create([
+            'project_id' => $project->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => 'plattegrond.png',
+            'file_path' => $relative,
+            'mime_type' => 'image/png',
+            'file_size' => 800,
+            'parse_status' => 'done',
+        ]);
+
+        $data = app(WorkTicketPdfService::class)->build($ticket->fresh(['project.documents']), false);
+
+        $this->assertSame(['plattegrond.png'], $data['drawings']);
+        $this->assertTrue($data['drawingItems'][0]['is_image']);
+        $this->assertSame('plattegrond.png', $data['drawingItems'][0]['name']);
+        $this->assertNotNull($data['drawingItems'][0]['url']);
+        $this->assertStringStartsWith('data:image/png;base64,', $data['drawingItems'][0]['path']);
+    }
+
     private function makeTicket(): WorkTicket
     {
         $worker = Worker::query()->create([

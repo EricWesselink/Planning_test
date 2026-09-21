@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ContactRole;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
 use App\Enums\UserRole;
@@ -216,7 +217,96 @@ class SmallWorkTest extends TestCase
             ->assertSee('Materiaal')
             ->assertSee('Regel toevoegen')
             ->assertSee('Tekening')
-            ->assertSee('Foto, PDF of tekening');
+            ->assertSee('Foto, PDF of tekening')
+            ->assertSee('Contactpersoon')
+            ->assertSee('Wie is het')
+            ->assertSee('Uitvoerder')
+            ->assertSee('Aannemer')
+            ->assertSee('Opdrachtgever');
+    }
+
+    #[DataProvider('standaloneTypes')]
+    public function test_planner_saves_a_contact_person_on_standalone_small_work(SmallWorkType $type, ProjectKind $kind): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => $type->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'contact_name' => 'Jan Pietersen',
+            'contact_phone' => '06 12345678',
+            'contact_role' => ContactRole::Uitvoerder->value,
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', $kind)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('Jan Pietersen', $project->contact_name);
+        $this->assertSame('06 12345678', $project->contact_phone);
+        $this->assertSame(ContactRole::Uitvoerder, $project->contact_role);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Jan Pietersen')
+            ->assertSee('06 12345678')
+            ->assertSee('name="contact_role"', false)
+            ->assertSee('>Uitvoerder</option>', false);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('Uitvoerder Jan Pietersen')
+            ->assertSee('Tel. 06 12345678');
+    }
+
+    public function test_planner_updates_the_contact_person_on_service_work(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeService();
+
+        $this->actingAs($user)
+            ->patch(route('projects.small.update', $project), [
+                'customer_name' => 'hegemanbouwgroep',
+                'description' => 'hestel schoon maken',
+                'location' => 'Deventer',
+                'date' => '2026-09-11',
+                'hours' => 4,
+                'contact_name' => 'Kees de Vries',
+                'contact_phone' => '0570 123456',
+                'contact_role' => ContactRole::Aannemer->value,
+            ])
+            ->assertRedirect(route('projects.show', $project));
+
+        $project->refresh();
+        $this->assertSame('Kees de Vries', $project->contact_name);
+        $this->assertSame('0570 123456', $project->contact_phone);
+        $this->assertSame(ContactRole::Aannemer, $project->contact_role);
+    }
+
+    public function test_rejects_an_unknown_contact_role_on_small_work(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('projects.small.create'))
+            ->post(route('projects.small.store'), [
+                'type' => SmallWorkType::Service->value,
+                'customer_name' => 'Gemeente Deventer',
+                'description' => 'plint herstellen',
+                'location' => 'Deventer',
+                'date' => '2026-09-08',
+                'hours' => 4,
+                'contact_name' => 'Jan Pietersen',
+                'contact_role' => 'voorman',
+            ])
+            ->assertRedirect(route('projects.small.create'))
+            ->assertSessionHasErrors(['contact_role' => 'Kies of de contactpersoon uitvoerder, aannemer of opdrachtgever is.']);
+
+        $this->assertSame(0, Project::query()->count());
     }
 
     #[DataProvider('standaloneTypes')]
@@ -250,7 +340,10 @@ class SmallWorkTest extends TestCase
         $this->actingAs($user)
             ->get(route('projects.small.werkbon', $project))
             ->assertOk()
-            ->assertSee('plattegrond.png');
+            ->assertSee('Tekeningen')
+            ->assertSee('plattegrond.png')
+            ->assertSee('class="drawing"', false)
+            ->assertSee('<img src="', false);
     }
 
     public function test_rejects_an_unsupported_small_work_drawing(): void

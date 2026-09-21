@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ContactRole;
 use App\Enums\ProjectStatus;
 use App\Enums\SmallWorkType;
 use App\Enums\WorkUnit;
@@ -43,7 +44,10 @@ class SmallWorkService
      *     hours: float|int|string,
      *     worker_id?: ?int,
      *     team_id?: ?int,
-     *     work_number?: ?string
+     *     work_number?: ?string,
+     *     contact_name?: ?string,
+     *     contact_phone?: ?string,
+     *     contact_role?: ?string
      * }  $data
      * @param  list<UploadedFile>  $files
      */
@@ -92,6 +96,7 @@ class SmallWorkService
             'status' => ProjectStatus::Gepland,
             'kind' => $type->projectKind(),
             'basis_uurtarief' => SmallWorkType::HOURLY_RATE,
+            ...$this->contactAttributes($data),
         ]);
 
         $item = $project->workItems()->create([
@@ -121,7 +126,10 @@ class SmallWorkService
      *     location?: ?string,
      *     date: string,
      *     hours: float|int|string,
-     *     work_number?: ?string
+     *     work_number?: ?string,
+     *     contact_name?: ?string,
+     *     contact_phone?: ?string,
+     *     contact_role?: ?string
      * }  $data
      * @param  list<UploadedFile>  $files
      */
@@ -152,6 +160,7 @@ class SmallWorkService
                 'planned_end_date' => $date,
                 'project_number' => $workNumber !== '' ? $workNumber : $project->project_number,
                 'basis_uurtarief' => SmallWorkType::HOURLY_RATE,
+                ...$this->contactAttributes($data),
             ]);
 
             $item = $project->workItems()->first();
@@ -392,5 +401,31 @@ class SmallWorkService
             'quantity' => $quantity,
             'completed' => $completed,
         ]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{contact_name?: ?string, contact_phone?: ?string, contact_role?: ?string}
+     */
+    private function contactAttributes(array $data): array
+    {
+        if (! array_key_exists('contact_name', $data)
+            && ! array_key_exists('contact_phone', $data)
+            && ! array_key_exists('contact_role', $data)) {
+            return [];
+        }
+
+        return [
+            'contact_name' => $this->nullableString($data['contact_name'] ?? null),
+            'contact_phone' => $this->nullableString($data['contact_phone'] ?? null),
+            'contact_role' => ContactRole::tryFrom((string) ($data['contact_role'] ?? ''))?->value,
+        ];
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $text = trim((string) $value);
+
+        return $text !== '' ? $text : null;
     }
 }

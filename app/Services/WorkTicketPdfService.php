@@ -14,6 +14,7 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use App\Support\Format;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 
 class WorkTicketPdfService
@@ -90,17 +91,10 @@ class WorkTicketPdfService
         $project = $ticket->project;
         $logoRelative = $project?->issuerLogo() ?? (string) config('company.logo');
         $drawing = $this->drawingFor($ticket);
-        $drawingItems = $ticket->documents
-            ->map(fn (ProjectDocument $document): array => [
-                'name' => (string) $document->original_filename,
-                'url' => $project !== null
-                    ? route('projects.documents.show', [$project, $document])
-                    : null,
-                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
-                'is_image' => $document->isImage(),
-            ])
-            ->values()
-            ->all();
+        $documents = $ticket->documents->isNotEmpty()
+            ? $ticket->documents
+            : $this->projectDrawings($project);
+        $drawingItems = $this->drawingItems($documents, $project, $embedDrawings);
 
         return [
             'ticket' => $ticket,
@@ -131,8 +125,8 @@ class WorkTicketPdfService
             'period' => $ticket->dateRangeLabel(),
             'floors' => $ticket->floorsLabel(),
             'rooms' => $ticket->roomsLabel(),
-            'drawings' => $ticket->documents
-                ->map(fn (ProjectDocument $document): string => (string) $document->original_filename)
+            'drawings' => collect($drawingItems)
+                ->pluck('name')
                 ->filter()
                 ->values()
                 ->all(),
@@ -179,15 +173,7 @@ class WorkTicketPdfService
         $documents = $project->documents
             ->where('document_type', ShopWorkService::ATTACHMENT_TYPE)
             ->values();
-        $drawingItems = $documents
-            ->map(fn (ProjectDocument $document): array => [
-                'name' => (string) $document->original_filename,
-                'url' => route('projects.documents.show', [$project, $document]),
-                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
-                'is_image' => $document->isImage(),
-            ])
-            ->values()
-            ->all();
+        $drawingItems = $this->drawingItems($documents, $project, $embedDrawings);
         $includeMeasurement = $includeMeasurementForm && $this->measurements->isFilled($project->measurementForm);
 
         return [
@@ -276,18 +262,8 @@ class WorkTicketPdfService
 
         $kindLabel = $project->printedBonLabel();
         $logoRelative = $project->issuerLogo();
-        $documents = $project->documents
-            ->filter(fn (ProjectDocument $document): bool => in_array($document->document_type, [ShopWorkService::ATTACHMENT_TYPE, 'plattegrond'], true))
-            ->values();
-        $drawingItems = $documents
-            ->map(fn (ProjectDocument $document): array => [
-                'name' => (string) $document->original_filename,
-                'url' => route('projects.documents.show', [$project, $document]),
-                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
-                'is_image' => $document->isImage(),
-            ])
-            ->values()
-            ->all();
+        $documents = $this->projectDrawings($project);
+        $drawingItems = $this->drawingItems($documents, $project, $embedDrawings);
 
         return [
             'ticket' => null,
@@ -316,6 +292,8 @@ class WorkTicketPdfService
             'projectNumber' => $project->workCode(),
             'workNumber' => $project->workNumber(),
             'address' => $project->nawLine(),
+            'contactName' => $project->contact_name,
+            'contactRole' => $project->contact_role?->label(),
             'contactPhone' => $project->contact_phone ?: $project->customer?->phone,
             'period' => $this->shopPeriod($project),
             'floors' => '',
@@ -621,6 +599,41 @@ class WorkTicketPdfService
         }
 
         return $ticket->project?->plattegrond();
+    }
+
+    /**
+     * @return Collection<int, ProjectDocument>
+     */
+    private function projectDrawings(?Project $project): Collection
+    {
+        if ($project === null) {
+            return collect();
+        }
+
+        return $project->documents
+            ->filter(fn (ProjectDocument $document): bool => in_array($document->document_type, [ShopWorkService::ATTACHMENT_TYPE, 'plattegrond'], true)
+                || $document->isPdf()
+                || $document->isImage())
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, ProjectDocument>  $documents
+     * @return list<array{name: string, url: ?string, path: ?string, is_image: bool}>
+     */
+    private function drawingItems(Collection $documents, ?Project $project, bool $embedDrawings): array
+    {
+        return $documents
+            ->map(fn (ProjectDocument $document): array => [
+                'name' => (string) $document->original_filename,
+                'url' => $project !== null
+                    ? route('projects.documents.show', [$project, $document])
+                    : null,
+                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
+                'is_image' => $document->isImage(),
+            ])
+            ->values()
+            ->all();
     }
 
     private function recipientName(WorkTicket $ticket): string

@@ -28,7 +28,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
-use Smalot\PdfParser\Parser;
 use Tests\Support\SimplePdf;
 use Tests\TestCase;
 
@@ -1063,7 +1062,7 @@ class WorkTicketTest extends TestCase
             ->assertSee('snag-pdf', false);
     }
 
-    public function test_pdf_puts_the_drawing_on_a_following_page(): void
+    public function test_pdf_shows_the_drawing_on_the_werkbon(): void
     {
         $user = User::factory()->create();
         $seed = $this->seedJob();
@@ -1090,34 +1089,24 @@ class WorkTicketTest extends TestCase
         $this->assertNotNull($ticket);
 
         $html = view('work-tickets.pdf', app(WorkTicketPdfService::class)->build($ticket, false))->render();
-        $ticketPos = strpos($html, 'class="ticket-page"');
-        $drawingPos = strpos($html, 'class="drawing-page"');
-
-        $this->assertNotFalse($ticketPos);
-        $this->assertNotFalse($drawingPos);
-        $this->assertGreaterThan($ticketPos, $drawingPos);
-        $this->assertStringContainsString('page-break-before: always', $html);
-        $ticketHtml = substr($html, $ticketPos, $drawingPos - $ticketPos);
-        $this->assertStringContainsString('Werkopdracht', $ticketHtml);
-        $this->assertStringNotContainsString('class="map"', $ticketHtml);
-        $this->assertStringContainsString('class="map"', substr($html, $drawingPos));
-        $this->assertStringContainsString('data:image/png;base64,', substr($html, $drawingPos));
+        $this->assertStringContainsString('class="ticket-page"', $html);
+        $this->assertStringContainsString('Tekeningen', $html);
+        $this->assertStringContainsString('plattegrond.png', $html);
+        $this->assertStringContainsString('data:image/png;base64,', $html);
+        $this->assertStringNotContainsString('class="drawing-page"', $html);
         $this->assertStringNotContainsString('niconPrintTicket', $html);
-        $this->assertStringNotContainsString('@page { margin: 0', $html);
 
         $this->actingAs($user)
             ->get(route('work-tickets.show', $ticket))
             ->assertOk()
-            ->assertSee('class="map"', false)
+            ->assertSee('class="map-drawing"', false)
+            ->assertSee('plattegrond.png')
             ->assertDontSee('class="drawing-page"', false)
-            ->assertSee('niconPrintTicket', false)
-            ->assertSee('@page { margin: 0', false);
+            ->assertSee('niconPrintTicket', false);
 
         $response = $this->actingAs($user)->get(route('work-tickets.pdf', $ticket));
         $response->assertOk();
         $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
-        $pages = (new Parser)->parseContent($response->getContent())->getPages();
-        $this->assertGreaterThanOrEqual(2, count($pages));
     }
 
     public function test_pdf_print_view_keeps_a_pdf_plattegrond_on_a_following_page(): void

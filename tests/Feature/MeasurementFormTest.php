@@ -399,7 +399,10 @@ class MeasurementFormTest extends TestCase
 
         $html = view('work-tickets.pdf', app(WorkTicketPdfService::class)->build($ticket, false))->render();
         $this->assertStringContainsString('class="ticket-page"', $html);
-        $this->assertStringContainsString('class="drawing-page"', $html);
+        $this->assertStringContainsString('Tekeningen', $html);
+        $this->assertStringContainsString('plattegrond.png', $html);
+        $this->assertStringContainsString('data:image/png;base64,', $html);
+        $this->assertStringNotContainsString('class="drawing-page"', $html);
         $this->assertStringNotContainsString('class="measurement-page"', $html);
         $this->assertStringNotContainsString('INMEETFORMULIER', $html);
 
@@ -465,24 +468,23 @@ class MeasurementFormTest extends TestCase
             app(WorkTicketPdfService::class)->build($ticket, false, includeMeasurementForm: true)
         )->render();
         $ticketPos = strpos($html, 'class="ticket-page"');
-        $drawingPos = strpos($html, 'class="drawing-page"');
         $measurementPos = strpos($html, 'class="measurement-page"');
         $this->assertNotFalse($ticketPos);
-        $this->assertNotFalse($drawingPos);
         $this->assertNotFalse($measurementPos);
-        $this->assertGreaterThan($ticketPos, $drawingPos);
-        $this->assertGreaterThan($drawingPos, $measurementPos);
+        $this->assertGreaterThan($ticketPos, $measurementPos);
+        $this->assertStringContainsString('Tekeningen', substr($html, $ticketPos, $measurementPos - $ticketPos));
+        $this->assertStringContainsString('data:image/png;base64,', substr($html, $ticketPos, $measurementPos - $ticketPos));
         $this->assertStringContainsString('Slaapkamer', $html);
         $this->assertStringContainsString('INMEETFORMULIER', $html);
         $this->assertStringContainsString('doc-title--compact', $html);
-        $this->assertStringContainsString('data:image/png;base64,', substr($html, $drawingPos, $measurementPos - $drawingPos));
 
         $without = view(
             'work-tickets.pdf',
             app(WorkTicketPdfService::class)->build($ticket, false, includeMeasurementForm: false)
         )->render();
         $this->assertStringNotContainsString('class="measurement-page"', $without);
-        $this->assertStringContainsString('class="drawing-page"', $without);
+        $this->assertStringContainsString('Tekeningen', $without);
+        $this->assertStringContainsString('data:image/png;base64,', $without);
 
         $this->actingAs($user)
             ->get(route('work-tickets.pdf', ['workTicket' => $ticket, 'inmeetformulier' => 0]))

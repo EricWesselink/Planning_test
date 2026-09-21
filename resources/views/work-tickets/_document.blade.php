@@ -25,19 +25,32 @@
     $recipientCompact = $recipientCompact ?? false;
     $pdfDrawingLayers = [];
     if ($isPdf) {
+        $inlineImage = false;
+        foreach ($drawingItems as $item) {
+            if (is_array($item) && ! empty($item['is_image']) && filled($item['path'] ?? null)) {
+                $inlineImage = true;
+                break;
+            }
+        }
         foreach ($floorLayers as $layer) {
             $layerPage = (int) ($layer['page'] ?? 0);
             $layerImage = $layer['image'] ?? null;
-            if ($layerPage > 0 && ($drawingRender === 'browser' || filled($layerImage))) {
+            $hasPins = ($layer['pins'] ?? []) !== [];
+            if ($layerPage <= 0 || ($drawingRender !== 'browser' && blank($layerImage))) {
+                continue;
+            }
+            if ($hasPins || $drawingRender === 'browser' || ! $inlineImage) {
                 $pdfDrawingLayers[] = $layer;
             }
         }
     }
-    $pdfDrawingItems = [];
-    if ($isPdf && $pdfDrawingLayers === []) {
+    $galleryItems = $drawingItems;
+    if (! $isPdf && $floorLayers !== [] && $drawingIsImage && filled($drawingName)) {
+        $galleryItems = [];
         foreach ($drawingItems as $item) {
-            if (is_array($item) && filled($item['path'] ?? null)) {
-                $pdfDrawingItems[] = $item;
+            $name = is_array($item) ? (string) ($item['name'] ?? '') : '';
+            if ($name !== $drawingName) {
+                $galleryItems[] = $item;
             }
         }
     }
@@ -86,6 +99,15 @@
                 @endif
                 @if ($address)
                     <p>Werkadres {{ $address }}</p>
+                @endif
+                @if (filled($contactName ?? null))
+                    <p>
+                        @if (filled($contactRole ?? null))
+                            {{ $contactRole }} {{ $contactName }}
+                        @else
+                            Contactpersoon {{ $contactName }}
+                        @endif
+                    </p>
                 @endif
                 @if (filled($contactPhone ?? null))
                     <p>Tel. {{ $contactPhone }}</p>
@@ -227,13 +249,14 @@
         </div>
     @endif
 
-    @if (! $isPdf && $floorLayers === [] && $drawingItems !== [])
+    @if ($galleryItems !== [])
         <div class="section drawings">
             <div class="section-title">Tekeningen</div>
-            @foreach ($drawingItems as $drawing)
+            @foreach ($galleryItems as $drawing)
                 @php
                     $name = is_array($drawing) ? ($drawing['name'] ?? 'Tekening') : ($drawing->original_filename ?: 'Tekening');
                     $url = is_array($drawing) ? ($drawing['url'] ?? null) : null;
+                    $embed = is_array($drawing) ? ($drawing['path'] ?? null) : null;
                     $isImage = is_array($drawing) ? (bool) ($drawing['is_image'] ?? false) : false;
                     if (! is_array($drawing) && isset($project)) {
                         $url = route('projects.documents.show', [$project, $drawing]);
@@ -241,7 +264,10 @@
                     }
                 @endphp
                 <div class="drawing">
-                    @if ($url)
+                    @if ($isPdf && filled($embed))
+                        <img src="{{ $embed }}" alt="{{ $name }}">
+                        <div class="drawing-name">{{ $name }}</div>
+                    @elseif ($url)
                         <a href="{{ $url }}">
                             @if ($isImage)
                                 <img src="{{ $url }}" alt="{{ $name }}">
@@ -265,7 +291,7 @@
 
     <div class="foot">{{ $companyName }} · {{ $kindLabel }} {{ $number }}</div>
 </div>
-@if ($isPdf && ($pdfDrawingLayers !== [] || $pdfDrawingItems !== []))
+@if ($isPdf && $pdfDrawingLayers !== [])
     @foreach ($pdfDrawingLayers as $layer)
         <div class="drawing-page">
             <div class="section-title">Tekening</div>
@@ -283,19 +309,6 @@
             @if (filled($drawingName))
                 <div class="drawing-name">{{ $drawingName }}</div>
             @endif
-        </div>
-    @endforeach
-    @foreach ($pdfDrawingItems as $drawing)
-        @php
-            $name = is_array($drawing) ? ($drawing['name'] ?? 'Tekening') : ($drawing->original_filename ?: 'Tekening');
-            $embed = is_array($drawing) ? ($drawing['path'] ?? null) : null;
-        @endphp
-        <div class="drawing-page">
-            <div class="section-title">Tekening</div>
-            @if ($embed)
-                <img src="{{ $embed }}" alt="{{ $name }}">
-            @endif
-            <div class="drawing-name">{{ $name }}</div>
         </div>
     @endforeach
 @endif
