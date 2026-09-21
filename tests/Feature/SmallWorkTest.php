@@ -122,6 +122,58 @@ class SmallWorkTest extends TestCase
             ->assertSee('Navigeren in Google Maps');
     }
 
+    public function test_planning_board_shows_craftsmen_on_klein_and_service_activity_lines(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-stroken');
+        $egaliseren = $this->floorActivity('egaliseren');
+
+        foreach ([SmallWorkType::Klein, SmallWorkType::Service] as $type) {
+            $this->actingAs($user)->post(route('projects.small.store'), [
+                'type' => $type->value,
+                'customer_name' => 'Het Vloerenhuis',
+                'description' => $type->value.' vloer',
+                'location' => 'Almere',
+                'date' => '2026-09-22',
+                'hours' => 8,
+                'worker_id' => $worker->id,
+                'work_activity_ids' => [$egaliseren->id, $pvc->id],
+            ])->assertRedirect();
+        }
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('PVC stroken')
+            ->assertDontSee('Primen & Egaliseren · Albert')
+            ->getContent();
+
+        preg_match_all(
+            '/<div class="plan-line plan-line--project plan-line--small[\s\S]*?(?=<div class="plan-line )/',
+            $html,
+            $parents,
+        );
+        $this->assertCount(2, $parents[0]);
+        foreach ($parents[0] as $parent) {
+            $this->assertStringNotContainsString('bar-label', $parent);
+        }
+
+        preg_match_all(
+            '/<div class="plan-line plan-line--work[\s\S]*?(?=<div class="plan-line |$)/',
+            $html,
+            $works,
+        );
+        $barsOnWorkLines = 0;
+        foreach ($works[0] as $workLine) {
+            if (str_contains($workLine, 'class="bar-label">Albert')) {
+                $barsOnWorkLines++;
+            }
+        }
+        $this->assertSame(4, $barsOnWorkLines);
+    }
+
     public function test_planner_creates_service_without_a_craftsman(): void
     {
         $user = User::factory()->create();

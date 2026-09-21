@@ -1337,6 +1337,16 @@ class PlanningBoardService
             $days,
         );
         $row['children'] = $this->smallWorkChildren($project);
+        if ($row['children'] !== []) {
+            $row['children'] = array_map(function (array $child) use ($personBars): array {
+                $child['person_bars'] = $personBars;
+                $child['bar_count'] = $this->stackedBarCount($personBars);
+
+                return $child;
+            }, $row['children']);
+            $row['person_bars'] = [];
+            $row['bar_count'] = 0;
+        }
 
         return $row;
     }

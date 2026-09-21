@@ -20,10 +20,11 @@
         ], true),
     ));
 @endphp
-<div class="mt-4 space-y-3" @if ($labor['detail'] ?? null) title="{{ $labor['detail'] }}" @endif>
+<div class="board-labor mt-4 space-y-3" @if ($labor['detail'] ?? null) title="{{ $labor['detail'] }}" @endif>
+    <div class="board-labor-head">
     @if (is_array($orderFinance))
         <p class="text-sm text-nicon-steel">{{ $orderFinance['compact'] }}</p>
-        <div class="grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+        <div class="board-labor-kpis grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
             <div>
                 <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Order</div>
                 <div class="text-lg font-semibold tabular-nums text-nicon-ink">{{ $orderFinance['order_label'] }}</div>
@@ -58,7 +59,7 @@
             <p class="text-sm font-medium text-nicon-warn">Prognose {{ \App\Support\PlanningHours::hoursLabel($vsBudget) }} / {{ $hoursOverPercent }}% boven urenbudget</p>
         @endif
     @elseif ($hasHours)
-        <div class="grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+        <div class="board-labor-kpis grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
             <div>
                 <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Begroot</div>
                 <div class="text-lg font-semibold tabular-nums text-nicon-ink">{{ \App\Support\PlanningHours::hoursLabel($budgetHours) }}</div>
@@ -109,9 +110,10 @@
             Werkelijk €/{{ $unit }} {{ ($labor['actual_cost_per_m2'] ?? $labor['actual_unit_price'] ?? null) === null ? '—' : \App\Support\Format::euro($labor['actual_cost_per_m2'] ?? $labor['actual_unit_price'], 2) }}
         </p>
     @endif
+    </div>
 
     @if (! empty($labor['items']))
-        <div class="space-y-2">
+        <div class="board-labor-items space-y-2">
             @foreach ($labor['items'] as $itemLabor)
                 @if (($itemLabor['budget_hours'] ?? 0) <= 0 && ($itemLabor['used_hours'] ?? 0) <= 0)
                     @continue
@@ -123,14 +125,14 @@
                     $itemUnit = $itemLabor['unit'] ?? $unit;
                     $itemBudgetPrice = $itemLabor['budget_cost_per_m2'] ?? $itemLabor['budget_unit_price'] ?? null;
                 @endphp
-                <div>
+                <div class="board-labor-item">
                     <div class="text-sm font-medium text-nicon-ink">{{ $itemLabor['title'] }}</div>
                     <div class="text-xs text-nicon-muted">Begroot {{ \App\Support\PlanningHours::hoursLabel($itemBudget) }} · Ingepland <span @class(['font-medium text-nicon-danger' => $itemOver])>{{ \App\Support\PlanningHours::hoursLabel($itemPlanned) }}</span> · Gemaakt {{ \App\Support\PlanningHours::hoursLabel($itemLabor['actual_hours'] ?? 0) }}</div>
                     @foreach ($itemLabor['people'] ?? [] as $person)
                         <div class="text-xs text-nicon-steel">{{ $person['name'] }} – {{ $itemLabor['title'] }} – {{ $person['hours_label'] }}</div>
                     @endforeach
                     @if (($itemLabor['bar_label'] ?? null) !== null && ($itemLabor['bar_percent'] ?? null) !== null)
-                        <div class="plan-hour-bar plan-hour-bar--{{ $itemLabor['tone'] ?? 'none' }}" style="max-width: 16rem">
+                        <div class="plan-hour-bar board-labor-bar plan-hour-bar--{{ $itemLabor['tone'] ?? 'none' }}">
                             <span class="plan-hour-bar-track" aria-hidden="true">
                                 <span class="plan-hour-bar-fill" style="width: {{ $itemLabor['bar_percent'] }}%"></span>
                             </span>

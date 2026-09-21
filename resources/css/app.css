@@ -1789,7 +1789,7 @@ button.plan-labor-toggle:hover {
 .project-board {
     display: grid;
     grid-template-columns: 300px minmax(0, 1fr) 320px;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
@@ -1832,8 +1832,192 @@ button.plan-labor-toggle:hover {
     overflow: auto;
 }
 
+#project-board {
+    height: 100%;
+    max-height: 100%;
+}
+
+.board-labor-bar {
+    max-width: 16rem;
+}
+
+@media (min-width: 769px) {
+    #project-board {
+        overflow: hidden;
+    }
+
+    #project-board .board-top {
+        flex-wrap: nowrap;
+        align-items: flex-start;
+        gap: 0.35rem 0.75rem;
+        min-height: 0;
+        padding: 0.15rem 0.65rem 0.2rem;
+    }
+
+    #project-board .board-top-title {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.05rem 0.55rem;
+        min-width: 0;
+    }
+
+    #project-board .board-top-title h1 {
+        margin: 0;
+        min-width: 0;
+        overflow: hidden;
+        font-size: 0.875rem;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #project-board .board-tabs {
+        flex-shrink: 0;
+        flex-wrap: nowrap;
+        align-self: center;
+    }
+
+    #project-board .board-tabs a {
+        padding: 0.2rem 0.55rem;
+    }
+
+    #project-board:not(.is-ticket-mode) .board-project-info {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        column-gap: 0.75rem;
+        row-gap: 0.05rem;
+        max-height: none;
+        overflow: visible;
+        font-size: 12px;
+        line-height: 1.2;
+    }
+
+    #project-board:not(.is-ticket-mode) .board-project-info > .board-labor {
+        flex: 1 1 100%;
+        min-width: 0;
+        margin-top: 0;
+    }
+
+    #project-board:not(.is-ticket-mode) .board-project-info > * {
+        margin-top: 0;
+    }
+
+    #project-board:not(.is-ticket-mode) .board-project-info > details[open],
+    #project-board:not(.is-ticket-mode) .board-project-info > .mt-1,
+    #project-board:not(.is-ticket-mode) .board-project-info > .mt-0\.5 {
+        flex: 1 1 100%;
+    }
+
+    #project-board .board-labor {
+        display: flex;
+        flex-direction: column;
+        gap: 0.05rem;
+    }
+
+    #project-board .board-labor > * + * {
+        margin-top: 0;
+    }
+
+    #project-board .board-labor-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.05rem 0.75rem;
+    }
+
+    #project-board .board-labor-head > * {
+        margin: 0;
+    }
+
+    #project-board .board-labor-kpis {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.05rem 0.8rem;
+        width: auto;
+        max-width: none;
+    }
+
+    #project-board .board-labor-kpis > div {
+        display: flex;
+        align-items: baseline;
+        gap: 0.28rem;
+    }
+
+    #project-board .board-labor-kpis .text-lg {
+        font-size: 0.8125rem;
+        line-height: 1.1;
+    }
+
+    #project-board .board-labor-items {
+        display: flex;
+        flex-direction: column;
+        gap: 0.05rem;
+        max-height: 4.25rem;
+        overflow: auto;
+    }
+
+    #project-board .board-labor-items > * {
+        margin-top: 0;
+    }
+
+    #project-board .board-labor-item {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.05rem 0.65rem;
+        min-height: 0;
+        line-height: 1.15;
+    }
+
+    #project-board .board-labor-item .text-sm {
+        font-size: 12px;
+        line-height: 1.15;
+    }
+
+    #project-board .board-labor-bar {
+        width: 7.5rem;
+        max-width: 7.5rem;
+        margin-top: 0;
+        flex: 0 0 auto;
+    }
+
+    #project-board .draw-toolbar,
+    #project-board .draw-legend {
+        flex: 0 0 auto;
+    }
+
+    #project-board .board-mid {
+        height: 100%;
+        min-height: 0;
+    }
+
+    #project-board .draw-stage {
+        flex: 1 1 0%;
+        width: 100%;
+        height: auto;
+        min-height: 0;
+    }
+}
+
+@media (min-width: 1101px) {
+    #project-board .board-left {
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    #project-board .board-right {
+        height: 100%;
+        min-height: 0;
+        overflow: auto;
+    }
+}
+
 .project-board.is-ticket-mode {
-    grid-template-rows: auto minmax(14rem, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
 }
 
 .project-board.is-ticket-mode .board-top {
@@ -4163,7 +4347,7 @@ button.plan-labor-toggle:hover {
 @media (max-width: 1100px) {
     .project-board {
         grid-template-columns: 1fr;
-        grid-template-rows: auto 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
         position: relative;
     }
 

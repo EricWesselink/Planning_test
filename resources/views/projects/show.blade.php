@@ -34,9 +34,9 @@
                     <div class="board-top-title min-w-0">
                 <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-xs text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
                 @if ($project->labeledNumbersLine() !== '')
-                    <div class="mt-1 text-xs text-nicon-muted whitespace-nowrap">{{ $project->labeledNumbersLine() }}</div>
+                    <div class="text-xs text-nicon-muted whitespace-nowrap">{{ $project->labeledNumbersLine() }}</div>
                 @endif
-                <h1 class="text-lg font-semibold leading-tight">{{ $project->displayTitle() }} <span class="text-nicon-muted font-normal">· {{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span></h1>
+                <h1 class="text-sm font-semibold leading-tight">{{ $project->displayTitle() }} <span class="text-nicon-muted font-normal">· {{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span></h1>
                 @if (session('status'))
                     <p class="mt-1 text-xs text-nicon-ok">{{ session('status') }}</p>
                 @endif
@@ -47,7 +47,7 @@
                     <button type="button" id="board-project-info-toggle" class="board-project-info-toggle" aria-expanded="{{ $errors->any() && ! $ticketMode ? 'true' : 'false' }}" aria-controls="board-project-info">Projectinfo</button>
                 </div>
                 <div id="board-project-info" class="board-project-info">
-                <div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-nicon-muted">
+                <div class="flex flex-wrap gap-x-3 gap-y-0 text-xs text-nicon-muted">
                     @if ($project->customer?->name)
                         <span>Opdrachtgever: {{ $project->customer->name }}</span>
                     @endif
@@ -189,7 +189,7 @@
                     <button type="button" data-filter="done" class="room-filter">Gereed ({{ $counts['done'] }})</button>
                 </div>
             </div>
-            <div class="overflow-auto flex-1">
+            <div class="min-h-0 flex-1 overflow-auto">
                 @foreach ($floors as $floorName => $floorAreas)
                     <div class="floor-head sticky top-0">
                         <span>{{ $floorName }}</span>

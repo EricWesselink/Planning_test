@@ -1443,6 +1443,13 @@ class DrawingBoardTest extends TestCase
         $this->assertNotNull(
             $xpath->query('.//header[contains(concat(" ", normalize-space(@class), " "), " board-top ")]//nav[contains(concat(" ", normalize-space(@class), " "), " board-tabs ")]', $board)->item(0)
         );
+
+        $css = file_get_contents(resource_path('css/app.css'));
+        $this->assertStringContainsString('grid-template-rows: auto minmax(0, 1fr);', $css);
+        $this->assertStringContainsString('#project-board .board-labor-item', $css);
+        $this->assertStringContainsString('#project-board .draw-stage', $css);
+        $this->assertStringContainsString('flex: 1 1 0%;', $css);
+        $this->assertStringContainsString('max-height: 4.25rem;', $css);
     }
 
     public function test_board_renders_compact_mobile_handover_controls(): void
