@@ -22,6 +22,7 @@ use App\Services\ProjectLaborCalculator;
 use App\Services\ProjectOverviewPdfService;
 use App\Services\RoomWorkSetup;
 use App\Services\ShopOrderFinance;
+use App\Services\SmallWorkService;
 use App\Services\SourceDocumentService;
 use App\Services\SourceUpdateService;
 use App\Services\WorkTicketService;
@@ -245,8 +246,6 @@ class ProjectController extends Controller
     {
         Gate::authorize('view', $project);
 
-        $ticketModeRequested = $request->integer('bon') > 0;
-
         if ($project->isWinkel()) {
             $ticketMode = $this->ticketModePayload($request, $project, $tickets);
             $project->load(['customer', 'workActivities.category', 'workItems', 'documents', 'assignments.worker', 'assignments.workTickets', 'measurementForm.rows', 'measurementForm.meter']);
@@ -282,7 +281,7 @@ class ProjectController extends Controller
             ]);
         }
 
-        if ($project->isSmallWork() && ! $ticketModeRequested) {
+        if ($project->isSmallWork()) {
             $project->load(['customer', 'workItems', 'assignments.worker', 'documents']);
 
             return view('projects.small', [
@@ -462,6 +461,13 @@ class ProjectController extends Controller
         ]);
 
         $file = $request->file('plattegrond');
+        if ($project->isSmallWork()) {
+            $intake->storeDocument($project, $file, SmallWorkService::ATTACHMENT_TYPE, $request->user());
+
+            return redirect()
+                ->route('projects.show', $project)
+                ->with('status', 'Tekening opgeslagen.');
+        }
         if ($updates->hasExistingVersions($project, ['plattegrond'])) {
             return $sources->startFromUploads($request, $project, [
                 ['file' => $file, 'type' => 'plattegrond'],

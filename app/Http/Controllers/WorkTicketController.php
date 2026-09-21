@@ -26,6 +26,10 @@ class WorkTicketController extends Controller
         $assignment->load(['worker', 'project']);
         Gate::authorize('create', [WorkTicket::class, $assignment]);
 
+        if ($assignment->project?->isSmallWork()) {
+            return redirect()->route('projects.small.werkbon', $assignment->project);
+        }
+
         return redirect()->route('projects.show', [
             'project' => $assignment->project_id,
             'bon' => $assignment->id,

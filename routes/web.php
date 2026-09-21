@@ -167,6 +167,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/projecten/klein/nieuw', [SmallWorkController::class, 'create'])->name('projects.small.create');
     Route::post('/projecten/klein', [SmallWorkController::class, 'store'])->name('projects.small.store');
     Route::patch('/projecten/klein/{project}', [SmallWorkController::class, 'update'])->name('projects.small.update');
+    Route::post('/projecten/{project}/klein/bijlagen', [SmallWorkController::class, 'storeAttachments'])->name('projects.small.attachments.store');
     Route::delete('/projecten/{project}/klein/bijlagen/{document}', [SmallWorkController::class, 'destroyAttachment'])->name('projects.small.attachments.destroy')->scopeBindings();
     Route::get('/projecten/{project}/klein/werkbon', [SmallWorkController::class, 'werkbon'])->name('projects.small.werkbon');
     Route::get('/projecten/{project}/klein/werkbon.pdf', [SmallWorkController::class, 'werkbonPdf'])->name('projects.small.werkbon.pdf');

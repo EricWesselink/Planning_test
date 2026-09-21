@@ -7,7 +7,9 @@
         $item = $project->workItems->first();
         $hours = $item?->begrote_uren !== null ? (float) $item->begrote_uren : 4;
         $canUpdate = auth()->user()?->can('update', $project) ?? false;
-        $tekeningen = $project->documents->where('document_type', \App\Services\SmallWorkService::ATTACHMENT_TYPE)->values();
+        $tekeningen = $project->documents
+            ->filter(fn ($document) => in_array($document->document_type, [\App\Services\SmallWorkService::ATTACHMENT_TYPE, 'plattegrond'], true))
+            ->values();
     @endphp
     <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-sm text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
     <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -31,7 +33,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('projects.small.update', $project) }}" enctype="multipart/form-data" class="mt-8 max-w-xl space-y-4 border border-nicon-line bg-white p-5">
+    <form method="POST" action="{{ route('projects.small.update', $project) }}" class="mt-8 max-w-xl space-y-4 border border-nicon-line bg-white p-5">
         @csrf
         @method('PATCH')
         <div>
@@ -83,13 +85,6 @@
                 {{ $project->assignments->map(fn ($assignment) => $assignment->worker?->displayName())->filter()->unique()->join(', ') ?: 'Nog niet ingepland' }}
             </div>
         </div>
-        @if ($canUpdate)
-            <div>
-                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Tekening</label>
-                <input id="attachments" type="file" name="attachments[]" multiple accept="image/*,.pdf,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp" class="mt-1 w-full text-sm">
-                <p class="mt-1 text-xs text-nicon-muted">Foto, PDF of tekening. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
-            </div>
-        @endif
         <div class="flex flex-wrap gap-2">
             @if ($canUpdate)
                 <button type="submit" class="bg-nicon-orange px-4 py-2 text-white">Opslaan</button>
@@ -123,5 +118,16 @@
                 <li class="text-nicon-muted">Nog geen tekening.</li>
             @endforelse
         </ul>
+        @if ($canUpdate)
+            <form method="POST" action="{{ route('projects.small.attachments.store', $project) }}" enctype="multipart/form-data" class="mt-4 space-y-2">
+                @csrf
+                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Tekening toevoegen</label>
+                <div class="flex flex-wrap items-center gap-2">
+                    <input id="attachments" type="file" name="attachments[]" multiple accept="image/*,.pdf,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp" required class="text-sm">
+                    <button class="bg-nicon-orange px-4 py-2 text-white">Uploaden</button>
+                </div>
+                <p class="text-xs text-nicon-muted">Foto, PDF of tekening. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
+            </form>
+        @endif
     </section>
 @endsection

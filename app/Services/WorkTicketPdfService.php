@@ -277,7 +277,7 @@ class WorkTicketPdfService
         $kindLabel = $project->printedBonLabel();
         $logoRelative = $project->issuerLogo();
         $documents = $project->documents
-            ->where('document_type', ShopWorkService::ATTACHMENT_TYPE)
+            ->filter(fn (ProjectDocument $document): bool => in_array($document->document_type, [ShopWorkService::ATTACHMENT_TYPE, 'plattegrond'], true))
             ->values();
         $drawingItems = $documents
             ->map(fn (ProjectDocument $document): array => [

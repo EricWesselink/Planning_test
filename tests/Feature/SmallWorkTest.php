@@ -31,6 +31,7 @@ class SmallWorkTest extends TestCase
         $this->patch(route('projects.small.update', $this->makeService()), [])->assertRedirect(route('login'));
         $this->get(route('projects.small.werkbon', 1))->assertRedirect(route('login'));
         $this->get(route('projects.small.werkbon.pdf', 1))->assertRedirect(route('login'));
+        $this->post(route('projects.small.attachments.store', 1))->assertRedirect(route('login'));
         $this->delete(route('projects.small.attachments.destroy', [1, 1]))->assertRedirect(route('login'));
     }
 
@@ -40,13 +41,15 @@ class SmallWorkTest extends TestCase
 
         $this->actingAs($user)->get(route('projects.small.create'))->assertForbidden();
         $this->actingAs($user)->post(route('projects.small.store'), $this->payload())->assertForbidden();
-        $this->actingAs($user)->patch(route('projects.small.update', $this->makeService()), [
+        $project = $this->makeService();
+        $this->actingAs($user)->patch(route('projects.small.update', $project), [
             'customer_name' => 'Gemeente Deventer',
             'description' => 'plint herstellen',
             'location' => 'Deventer',
             'date' => '2026-09-11',
             'hours' => 4,
         ])->assertForbidden();
+        $this->actingAs($user)->post(route('projects.small.attachments.store', $project))->assertForbidden();
     }
 
     public function test_planner_creates_a_compact_service_row_on_the_planning_board(): void
@@ -279,15 +282,12 @@ class SmallWorkTest extends TestCase
         $project = $this->makeService();
 
         $this->actingAs($user)
-            ->patch(route('projects.small.update', $project), [
-                'customer_name' => 'hegemanbouwgroep',
-                'description' => 'hestel schoon maken',
-                'location' => 'Deventer',
-                'date' => '2026-09-11',
-                'hours' => 4,
+            ->from(route('projects.show', $project))
+            ->post(route('projects.small.attachments.store', $project), [
                 'attachments' => [UploadedFile::fake()->image('tekening.jpg', 40, 30)],
             ])
-            ->assertRedirect(route('projects.show', $project));
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHas('status', 'Tekening opgeslagen.');
 
         $document = $project->documents()->where('document_type', SmallWorkService::ATTACHMENT_TYPE)->first();
         $this->assertNotNull($document);
@@ -318,6 +318,129 @@ class SmallWorkTest extends TestCase
             ->assertForbidden();
 
         $this->assertModelExists($document);
+    }
+
+    public function test_drawing_upload_on_small_work_requires_a_file(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeService();
+
+        $this->actingAs($user)
+            ->from(route('projects.show', $project))
+            ->post(route('projects.small.attachments.store', $project))
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHasErrors(['attachments' => 'Kies minstens één bestand.']);
+    }
+
+    public function test_rejects_an_unsupported_drawing_on_existing_small_work(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $project = $this->makeService();
+
+        $this->actingAs($user)
+            ->from(route('projects.show', $project))
+            ->post(route('projects.small.attachments.store', $project), [
+                'attachments' => [UploadedFile::fake()->create('virus.exe', 20)],
+            ])
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHasErrors(['attachments.0' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.']);
+
+        $this->assertSame(0, $project->documents()->count());
+    }
+
+    public function test_small_work_page_stays_compact_and_shows_drawings_in_ticket_mode(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeService();
+        $project->documents()->create([
+            'document_type' => 'plattegrond',
+            'original_filename' => 'plattegrond.jpg',
+            'file_path' => 'projects/'.$project->id.'/plattegrond/plattegrond.jpg',
+            'mime_type' => 'image/jpeg',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', ['project' => $project, 'bon' => 99]))
+            ->assertOk()
+            ->assertSee('Korte omschrijving')
+            ->assertSee('Tekeningen')
+            ->assertSee('plattegrond.jpg')
+            ->assertSee('Uploaden')
+            ->assertDontSee('Excel raambekleding / zonwering')
+            ->assertDontSee('Bonselectie');
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('plattegrond.jpg');
+    }
+
+    public function test_werkbon_maken_for_small_work_opens_the_servicebon(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'hegemanbouwgroep',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-11',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $assignment = WorkerAssignment::query()->where('project_id', $project->id)->first();
+        $this->assertNotNull($assignment);
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.create', $assignment))
+            ->assertRedirect(route('projects.small.werkbon', $project));
+    }
+
+    public function test_plattegrond_upload_on_small_work_stores_as_a_drawing_on_the_compact_page(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $project = $this->makeService();
+
+        $this->actingAs($user)
+            ->from(route('projects.show', ['project' => $project, 'bon' => 1]))
+            ->post(route('projects.plattegrond.store', $project), [
+                'plattegrond' => UploadedFile::fake()->image('foto.jpg', 40, 30),
+            ])
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHas('status', 'Tekening opgeslagen.');
+
+        $this->assertSame(1, $project->documents()->where('document_type', SmallWorkService::ATTACHMENT_TYPE)->count());
+        $this->assertSame(0, $project->documents()->where('document_type', 'plattegrond')->count());
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('foto.jpg')
+            ->assertDontSee('Excel raambekleding / zonwering');
+    }
+
+    public function test_planner_removes_a_plattegrond_drawing_from_small_work(): void
+    {
+        $project = $this->makeService();
+        $document = $project->documents()->create([
+            'document_type' => 'plattegrond',
+            'original_filename' => 'plattegrond.jpg',
+            'file_path' => 'projects/'.$project->id.'/plattegrond/plattegrond.jpg',
+            'mime_type' => 'image/jpeg',
+        ]);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('projects.show', $project))
+            ->delete(route('projects.small.attachments.destroy', [$project, $document]))
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHas('status', 'Tekening verwijderd.');
+
+        $this->assertSame(0, $project->documents()->count());
     }
 
     public function test_extra_work_requires_an_existing_project(): void
@@ -785,6 +908,10 @@ class SmallWorkTest extends TestCase
                 'date' => '2026-09-11',
                 'hours' => 4,
             ])
+            ->assertNotFound();
+
+        $this->actingAs($user)
+            ->post(route('projects.small.attachments.store', $project))
             ->assertNotFound();
     }
 

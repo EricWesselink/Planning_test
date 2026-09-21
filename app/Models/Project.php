@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ContactRole;
 use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
 use App\Enums\WorkUnit;
@@ -20,7 +21,7 @@ use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
     'project_number', 'customer_id', 'name', 'address', 'postal_code', 'city',
-    'contact_name', 'contact_phone', 'contact_email', 'supervisor_user_id',
+    'contact_name', 'contact_phone', 'contact_role', 'contact_email', 'supervisor_user_id',
     'planned_start_date', 'planned_end_date', 'actual_start_date', 'actual_end_date',
     'status', 'kind', 'notes', 'work_description', 'basis_uurtarief', 'order_amount',
     'archived_at', 'import_warnings',
@@ -39,6 +40,7 @@ class Project extends Model
         return [
             'status' => ProjectStatus::class,
             'kind' => ProjectKind::class,
+            'contact_role' => ContactRole::class,
             'planned_start_date' => 'date',
             'planned_end_date' => 'date',
             'actual_start_date' => 'date',
@@ -319,10 +321,24 @@ class Project extends Model
 
     public function plattegrond(): ?ProjectDocument
     {
+        $this->loadMissing('documents');
         $drawings = $this->documents->where('document_type', 'plattegrond');
 
-        return $drawings->firstWhere('is_current', true)
+        $current = $drawings->firstWhere('is_current', true)
             ?? $drawings->sortByDesc('revision')->sortByDesc('id')->first();
+        if ($current instanceof ProjectDocument) {
+            return $current;
+        }
+
+        if (! $this->isSmallWork()) {
+            return null;
+        }
+
+        return $this->documents
+            ->where('document_type', 'bijlage')
+            ->filter(fn (ProjectDocument $document): bool => $document->isPdf() || $document->isImage())
+            ->sortBy('id')
+            ->first();
     }
 
     public function productionByWorker(): Collection

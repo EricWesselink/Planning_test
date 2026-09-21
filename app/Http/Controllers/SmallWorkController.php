@@ -64,12 +64,23 @@ class SmallWorkController extends Controller
             ->with('status', 'Klein werk opgeslagen.');
     }
 
+    public function storeAttachments(Request $request, Project $project, SmallWorkService $smallWork): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+        abort_unless($project->isSmallWork(), 404);
+        $request->validate($this->attachmentRules(required: true), $this->messages());
+
+        $smallWork->storeFiles($project, $request->file('attachments', []) ?: [], $request->user());
+
+        return back()->with('status', 'Tekening opgeslagen.');
+    }
+
     public function destroyAttachment(Project $project, ProjectDocument $document, SmallWorkService $smallWork): RedirectResponse
     {
         Gate::authorize('update', $project);
         abort_unless($project->isSmallWork(), 404);
         abort_unless((int) $document->project_id === (int) $project->id, 404);
-        abort_unless($document->document_type === SmallWorkService::ATTACHMENT_TYPE, 404);
+        abort_unless(in_array($document->document_type, [SmallWorkService::ATTACHMENT_TYPE, 'plattegrond'], true), 404);
 
         $path = $document->file_path;
         $smallWork->deleteAttachment($project, $document);
@@ -264,6 +275,7 @@ class SmallWorkController extends Controller
             'hours.required' => 'Kies de geplande uren.',
             'hours.in' => 'Kies 2, 4, 6 of 8 uur.',
             'work_number.unique' => 'Dit werknummer bestaat al.',
+            'attachments.required' => 'Kies minstens één bestand.',
             'attachments.*.mimes' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
         ];
@@ -272,12 +284,12 @@ class SmallWorkController extends Controller
     /**
      * @return array<string, list<string>>
      */
-    private function attachmentRules(): array
+    private function attachmentRules(bool $required = false): array
     {
         $maxKb = (int) config('filesystems.project_file_max_kilobytes');
 
         return [
-            'attachments' => ['nullable', 'array', 'max:20'],
+            'attachments' => [$required ? 'required' : 'nullable', 'array', 'max:20'],
             'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,bmp,pdf', 'extensions:jpg,jpeg,png,webp,gif,bmp,pdf'],
         ];
     }

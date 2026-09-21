@@ -190,7 +190,7 @@ class SmallWorkService
     public function deleteAttachment(Project $project, ProjectDocument $document): void
     {
         abort_unless((int) $document->project_id === (int) $project->id, 404);
-        abort_unless($document->document_type === self::ATTACHMENT_TYPE, 404);
+        abort_unless(in_array($document->document_type, [self::ATTACHMENT_TYPE, 'plattegrond'], true), 404);
 
         $document->delete();
     }
