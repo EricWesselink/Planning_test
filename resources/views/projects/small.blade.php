@@ -4,7 +4,8 @@
 
 @section('content')
     @php
-        $item = $project->workItems->first();
+        $item = $project->workItems->first(fn ($workItem) => $workItem->work_activity_id === null)
+            ?? $project->workItems->first();
         $hours = $item?->begrote_uren !== null ? (float) $item->begrote_uren : 4;
         $canUpdate = auth()->user()?->can('update', $project) ?? false;
         $tekeningen = $project->documents
@@ -50,6 +51,14 @@
         @include('projects.partials.small-work-activities', [
             'floorActivities' => $floorActivities,
             'selectedIds' => old('work_activity_ids', $project->workActivities->pluck('id')),
+            'activityQuantities' => old(
+                'activity_quantities',
+                $project->workActivities->mapWithKeys(fn ($activity) => [$activity->id => $activity->pivot->quantity])->all()
+            ),
+            'activityUnits' => old(
+                'activity_units',
+                $project->workActivities->mapWithKeys(fn ($activity) => [$activity->id => $activity->pivot->unit?->value])->all()
+            ),
             'canUpdate' => $canUpdate,
         ])
         <div>

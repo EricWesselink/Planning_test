@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\ContactRole;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
+use App\Enums\WorkUnit;
 use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\WorkActivityCategory;
@@ -12,6 +13,7 @@ use App\Models\Worker;
 use App\Models\WorkItem;
 use App\Services\SmallWorkService;
 use App\Services\WorkTicketPdfService;
+use App\Support\Format;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -197,6 +199,8 @@ class SmallWorkController extends Controller
                 collect(old('work_activity_ids', []))->map(fn (mixed $id): int => (int) $id)->all()
             ),
             'selectedIds' => old('work_activity_ids', []),
+            'activityQuantities' => old('activity_quantities', []),
+            'activityUnits' => old('activity_units', []),
         ];
     }
 
@@ -205,6 +209,7 @@ class SmallWorkController extends Controller
      */
     private function validated(Request $request): array
     {
+        $this->normalizeDecimalMaps($request, ['activity_quantities']);
         $type = SmallWorkType::tryFrom((string) $request->input('type'));
         $standalone = $type?->isStandalone() ?? true;
 
@@ -249,6 +254,8 @@ class SmallWorkController extends Controller
      */
     private function validatedUpdate(Request $request, Project $project): array
     {
+        $this->normalizeDecimalMaps($request, ['activity_quantities']);
+
         return $request->validate([
             'customer_name' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:255'],
@@ -291,6 +298,8 @@ class SmallWorkController extends Controller
             'attachments.*.mimes' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
             'work_activity_ids.*.exists' => 'Deze werkzaamheid is niet beschikbaar.',
+            'activity_quantities.*.numeric' => 'Vul een geldig aantal in.',
+            'activity_units.*.in' => 'Kies m², m¹ of stuks.',
         ];
     }
 
@@ -350,13 +359,38 @@ class SmallWorkController extends Controller
             $allowed = [0];
         }
 
+        $shopUnits = array_map(fn (WorkUnit $unit): string => $unit->value, WorkUnit::shopCases());
+
         return [
             'work_activity_ids' => ['nullable', 'array'],
             'work_activity_ids.*' => [
                 'integer',
                 Rule::exists('work_activities', 'id')->where(fn ($query) => $query->whereIn('id', $allowed)),
             ],
+            'activity_quantities' => ['nullable', 'array'],
+            'activity_quantities.*' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'activity_units' => ['nullable', 'array'],
+            'activity_units.*' => ['nullable', Rule::in($shopUnits)],
         ];
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    private function normalizeDecimalMaps(Request $request, array $keys): void
+    {
+        foreach ($keys as $key) {
+            $values = $request->input($key);
+            if (! is_array($values)) {
+                continue;
+            }
+
+            $request->merge([
+                $key => collect($values)
+                    ->map(fn (mixed $value): mixed => Format::decimalInput($value))
+                    ->all(),
+            ]);
+        }
     }
 
     /**

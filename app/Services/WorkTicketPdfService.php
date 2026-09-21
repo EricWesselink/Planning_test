@@ -662,6 +662,7 @@ class WorkTicketPdfService
     private function smallWorkRows(Project $project): array
     {
         $rows = $project->workItems
+            ->filter(fn (WorkItem $item): bool => $item->work_activity_id === null)
             ->sortBy(fn (WorkItem $item): array => [
                 (int) ($item->sort_order ?? 0),
                 (int) $item->id,
@@ -688,9 +689,19 @@ class WorkTicketPdfService
                 continue;
             }
 
+            $quantity = $activity->pivot?->quantity;
+            $unit = $activity->pivot?->unit;
+            $hasQuantity = $quantity !== null && (float) $quantity > 0.0001;
+            $qtyLabel = '';
+            if ($hasQuantity) {
+                $qty = Format::qty($quantity, fmod((float) $quantity, 1.0) === 0.0 ? 0 : 2);
+                $label = $unit instanceof WorkUnit ? $unit->label() : '';
+                $qtyLabel = trim($qty.' '.$label);
+            }
+
             $rows->push([
                 'title' => $title,
-                'quantity' => '',
+                'quantity' => $qtyLabel,
                 'unit' => '',
             ]);
             $seen[] = mb_strtolower($title);

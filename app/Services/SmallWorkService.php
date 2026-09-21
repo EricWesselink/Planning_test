@@ -47,6 +47,8 @@ class SmallWorkService
      *     team_id?: ?int,
      *     work_number?: ?string,
      *     work_activity_ids?: array<int, mixed>,
+     *     activity_quantities?: array<int|string, mixed>,
+     *     activity_units?: array<int|string, mixed>,
      *     contact_name?: ?string,
      *     contact_phone?: ?string,
      *     contact_role?: ?string
@@ -131,6 +133,8 @@ class SmallWorkService
      *     hours: float|int|string,
      *     work_number?: ?string,
      *     work_activity_ids?: array<int, mixed>,
+     *     activity_quantities?: array<int|string, mixed>,
+     *     activity_units?: array<int|string, mixed>,
      *     contact_name?: ?string,
      *     contact_phone?: ?string,
      *     contact_role?: ?string
@@ -167,7 +171,7 @@ class SmallWorkService
                 ...$this->contactAttributes($data),
             ]);
 
-            $item = $project->workItems()->first();
+            $item = $this->hoursWorkItem($project);
             if ($item instanceof WorkItem) {
                 $item->update([
                     'name' => $description,
@@ -405,14 +409,100 @@ class SmallWorkService
             ])
             ->values();
 
+        $quantities = is_array($data['activity_quantities'] ?? null) ? $data['activity_quantities'] : [];
+        $units = is_array($data['activity_units'] ?? null) ? $data['activity_units'] : [];
+
         $sync = [];
         foreach ($activities as $index => $activity) {
+            $quantity = $this->parseQuantity($quantities[$activity->id] ?? null);
+            $unit = $this->shopUnit($units[$activity->id] ?? null, $activity);
             $sync[$activity->id] = [
+                'quantity' => $quantity,
+                'unit' => $unit,
                 'sort_order' => $index + 1,
             ];
         }
 
         $project->workActivities()->sync($sync);
+        $this->syncActivityWorkItems($project, $activities, $quantities, $units);
+    }
+
+    /**
+     * @param  Collection<int, WorkActivity>  $activities
+     * @param  array<int|string, mixed>  $quantities
+     * @param  array<int|string, mixed>  $units
+     */
+    private function syncActivityWorkItems(Project $project, Collection $activities, array $quantities, array $units): void
+    {
+        $keep = [];
+
+        foreach ($activities as $index => $activity) {
+            $quantity = $this->parseQuantity($quantities[$activity->id] ?? null);
+            $unit = $this->shopUnit($units[$activity->id] ?? null, $activity);
+            $item = $project->workItems()
+                ->where('work_activity_id', $activity->id)
+                ->first();
+
+            $payload = [
+                'name' => $activity->name,
+                'unit' => $unit,
+                'ordered_quantity' => $quantity ?? 0,
+                'uurtarief' => $project->basis_uurtarief,
+                'status' => $item?->status ?? 'gepland',
+                'sort_order' => $index + 2,
+                'work_activity_id' => $activity->id,
+                'planned_start_date' => $item?->planned_start_date ?? $project->planned_start_date,
+                'planned_end_date' => $item?->planned_end_date ?? $project->planned_end_date,
+            ];
+
+            if ($item) {
+                $item->update($payload);
+            } else {
+                $item = $project->workItems()->create($payload);
+            }
+
+            $keep[] = (int) $item->id;
+        }
+
+        $project->workItems()
+            ->whereNotNull('work_activity_id')
+            ->whereNotIn('id', $keep === [] ? [0] : $keep)
+            ->get()
+            ->each(function (WorkItem $item): void {
+                $item->assignments()->update(['work_item_id' => null]);
+                $item->delete();
+            });
+    }
+
+    private function hoursWorkItem(Project $project): ?WorkItem
+    {
+        return $project->workItems()
+            ->whereNull('work_activity_id')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first();
+    }
+
+    private function parseQuantity(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $quantity = round((float) $value, 2);
+
+        return $quantity > 0 ? $quantity : null;
+    }
+
+    private function shopUnit(mixed $value, WorkActivity $activity): WorkUnit
+    {
+        $unit = WorkUnit::tryFrom((string) $value);
+
+        if (in_array($unit, WorkUnit::shopCases(), true)) {
+            return $unit;
+        }
+
+        return $activity->defaultShopUnit();
     }
 
     /**

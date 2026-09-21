@@ -1296,7 +1296,9 @@ class PlanningBoardService
         array $labor,
         bool $canViewLabor,
     ): array {
-        $item = $project->workItems->first();
+        $item = $project->workItems->first(
+            fn (WorkItem $workItem): bool => $workItem->work_activity_id === null
+        ) ?? $project->workItems->first();
         $personBars = [];
         $usedIds = [];
         foreach ($projectAssignments as $assignment) {
@@ -1322,7 +1324,7 @@ class PlanningBoardService
             ? $budgetHours
             : round((float) $projectAssignments->sum(fn (WorkerAssignment $assignment): float => $assignment->plannedPersonHours()), 2);
 
-        return $this->compactBoardRow(
+        $row = $this->compactBoardRow(
             $project,
             $item,
             $project->kind?->badge() ?? 'KLEIN',
@@ -1334,6 +1336,9 @@ class PlanningBoardService
             $project->planned_start_date?->toDateString() ?? '',
             $days,
         );
+        $row['children'] = $this->smallWorkChildren($project);
+
+        return $row;
     }
 
     /**
@@ -1500,6 +1505,74 @@ class PlanningBoardService
             'unit' => $showMaterial ? ($item->unit?->label() ?? '') : '',
             'labor' => $labor,
             'children' => [],
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function smallWorkChildren(Project $project): array
+    {
+        $items = $project->workItems
+            ->filter(fn (WorkItem $item): bool => $item->work_activity_id !== null)
+            ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
+            ->sortBy([
+                ['sort_order', 'asc'],
+                ['id', 'asc'],
+            ]);
+
+        if ($items->isEmpty()) {
+            return [];
+        }
+
+        $ondergrond = $items
+            ->filter(fn (WorkItem $item): bool => $item->packageKey() === 'ondergrond')
+            ->values();
+        $rest = $items
+            ->reject(fn (WorkItem $item): bool => $item->packageKey() === 'ondergrond')
+            ->values();
+
+        $rows = [];
+        if ($ondergrond->isNotEmpty()) {
+            $rows[] = $this->smallWorkChildRow($project, $ondergrond, true);
+        }
+        foreach ($rest as $item) {
+            $rows[] = $this->smallWorkChildRow($project, collect([$item]), false);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     * @return array<string, mixed>
+     */
+    private function smallWorkChildRow(Project $project, Collection $items, bool $grouped): array
+    {
+        $primary = $grouped ? $this->primaryWorkItem($items) : $items->first();
+        $ordered = $grouped
+            ? (float) $items->max(fn (WorkItem $item): float => (float) $item->ordered_quantity)
+            : (float) $primary->ordered_quantity;
+        $hasQuantity = $ordered > 0.0001;
+
+        return [
+            'type' => 'work',
+            'id' => $primary->id,
+            'project_id' => $project->id,
+            'title' => $grouped ? $primary->packageLabel() : $primary->name,
+            'steps' => [],
+            'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
+            'ordered' => $hasQuantity ? $ordered : null,
+            'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
+            'completed' => null,
+            'remaining' => null,
+            'percent' => null,
+            'who' => collect(),
+            'bar' => null,
+            'person_bars' => [],
+            'bar_count' => 0,
+            'warnings' => [],
+            'status' => $primary->status,
         ];
     }
 
