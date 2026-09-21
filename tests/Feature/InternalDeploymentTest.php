@@ -190,10 +190,8 @@ class InternalDeploymentTest extends TestCase
             ->get(route('planning.weekplanning', ['week' => '2026-09-07']));
 
         $response->assertOk();
-        $text = (new Parser)->parseContent($response->getContent())->getText();
-        $this->assertStringContainsString('Interne inzet', $text);
-        $this->assertStringContainsString('Nico Dekvloeren', $text);
-        $this->assertStringContainsString('Werk voor Nico Dekvloeren', $text);
+        $text = preg_replace('/\s+/u', ' ', (new Parser)->parseContent($response->getContent())->getText()) ?? '';
+        $this->assertStringContainsString('Interne inzet – Nico Dekvloeren – Werk voor Nico Dekvloeren', $text);
     }
 
     /**
