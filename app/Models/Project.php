@@ -509,6 +509,18 @@ class Project extends Model
         return $parts === [] ? trim((string) $this->name) : implode(' - ', $parts);
     }
 
+    public function smallWorkContextLine(): string
+    {
+        $city = trim((string) $this->city);
+        $customer = trim((string) ($this->customer?->name ?? ''));
+
+        if ($customer !== '' && $city !== '' && mb_strtolower($customer) !== mb_strtolower($city)) {
+            return $customer.' · '.$city;
+        }
+
+        return $customer !== '' ? $customer : $city;
+    }
+
     public function smallWorkHeadline(): string
     {
         $description = trim((string) $this->name);

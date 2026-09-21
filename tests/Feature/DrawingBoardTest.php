@@ -1465,6 +1465,8 @@ class DrawingBoardTest extends TestCase
         $this->assertStringContainsString('height: 1.75rem;', $css);
         $this->assertStringContainsString('#project-board .board-progress-panel[hidden]', $css);
         $this->assertStringContainsString('display: none !important;', $css);
+        $this->assertStringContainsString('#project-board .board-top {', $css);
+        $this->assertStringContainsString('z-index: 50;', $css);
         $this->assertStringContainsString('function setProgressOpen', $js);
         $this->assertStringContainsString("getElementById('board-progress-toggle')", $js);
     }

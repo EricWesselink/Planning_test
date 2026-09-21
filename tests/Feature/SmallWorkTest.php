@@ -119,7 +119,9 @@ class SmallWorkTest extends TestCase
             ->assertSee('€96')
             ->assertSee('Keizerstraat 12')
             ->assertSee('7411 HD')
-            ->assertSee('Navigeren in Google Maps');
+            ->assertSee('Navigeren in Google Maps')
+            ->assertSee('whitespace-nowrap">Gemeente Deventer · Deventer</span>', false)
+            ->assertSee('<h1 class="max-w-3xl text-sm font-semibold leading-tight text-nicon-orange-dark">plint herstellen', false);
     }
 
     public function test_planning_board_shows_craftsmen_on_klein_and_service_activity_lines(): void
@@ -312,6 +314,110 @@ class SmallWorkTest extends TestCase
         $this->assertCount(1, $linesWithBar);
         $this->assertStringContainsString('PVC stroken', $linesWithBar[0]);
         $this->assertStringNotContainsString('Primen', $linesWithBar[0]);
+    }
+
+    public function test_checking_two_activities_shows_the_person_on_both_rows(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-stroken');
+        $tapijt = $this->floorActivity('tapijt');
+        $plinten = $this->floorActivity('plinten');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Hegeman Bouwgroep',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 8,
+            'work_activity_ids' => [$pvc->id, $tapijt->id, $plinten->id],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->firstOrFail();
+        $shell = $project->workItems()->whereNull('work_activity_id')->firstOrFail();
+        $pvcItem = $project->workItems()->where('name', 'PVC stroken')->firstOrFail();
+        $tapijtItem = $project->workItems()->where('name', 'Tapijt')->firstOrFail();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $pvcItem->id,
+                'work_item_ids' => [$pvcItem->id, $tapijtItem->id],
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-08',
+                'people_count' => 1,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment = $project->assignments()->firstOrFail();
+        $this->assertSame(1, $project->assignments()->count());
+        $this->assertSame(8.0, $assignment->plannedHoursValue());
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->getContent();
+        $choices = $this->planningWorkItemIds($html, $project->id);
+        $this->assertNotContains($shell->id, $choices);
+        $this->assertContains($pvcItem->id, $choices);
+        $this->assertContains($tapijtItem->id, $choices);
+
+        preg_match_all(
+            '/<div class="plan-line plan-line--project plan-line--small[\s\S]*?(?=<div class="plan-line )/',
+            $html,
+            $parents,
+        );
+        $this->assertCount(1, $parents[0]);
+        $this->assertStringNotContainsString('bar-label', $parents[0][0]);
+
+        preg_match_all(
+            '/<div class="plan-line plan-line--work[\s\S]*?(?=<div class="plan-line |$)/',
+            $html,
+            $works,
+        );
+        $linesWithBar = array_values(array_filter(
+            $works[0],
+            fn (string $line): bool => str_contains($line, 'class="bar-label">Albert'),
+        ));
+        $this->assertCount(2, $linesWithBar);
+        $titles = array_map(
+            fn (string $line): string => str_contains($line, 'PVC stroken') ? 'PVC stroken' : (str_contains($line, 'Tapijt') ? 'Tapijt' : ''),
+            $linesWithBar,
+        );
+        sort($titles);
+        $this->assertSame(['PVC stroken', 'Tapijt'], $titles);
+        foreach ($works[0] as $line) {
+            if (str_contains($line, 'Plinten')) {
+                $this->assertStringNotContainsString('class="bar-label"', $line);
+            }
+        }
+    }
+
+    public function test_planning_dialog_keeps_the_description_when_the_job_has_no_activities(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Hegeman Bouwgroep',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->firstOrFail();
+        $shell = $project->workItems()->whereNull('work_activity_id')->firstOrFail();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertContains($shell->id, $this->planningWorkItemIds($html, $project->id));
     }
 
     public function test_planner_creates_service_without_a_craftsman(): void
@@ -2023,6 +2129,20 @@ class SmallWorkTest extends TestCase
                 'active' => true,
             ])->id,
         ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function planningWorkItemIds(string $html, int $projectId): array
+    {
+        $this->assertSame(1, preg_match("/data-work-items='([^']*)'/", $html, $matches));
+        $decoded = json_decode(html_entity_decode($matches[1], ENT_QUOTES), true);
+        $this->assertIsArray($decoded);
+        $items = $decoded[$projectId] ?? $decoded[(string) $projectId] ?? null;
+        $this->assertIsArray($items);
+
+        return array_map(static fn (mixed $id): int => (int) $id, array_column($items, 'id'));
     }
 
     private function floorActivity(string $slug): WorkActivity

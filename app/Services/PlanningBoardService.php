@@ -1521,9 +1521,10 @@ class PlanningBoardService
     }
 
     /**
-     * Each activity line shows its own assignment. A visit that still belongs to the whole job
-     * is drawn on every line, but the bar points at that line so a move or another craftsman
-     * splits only that line.
+     * Each activity line shows an assignment that names that line, including a visit
+     * checked on several activities. A visit that still belongs only to the whole job
+     * is drawn on every line, but the bar points at that line so a move or another
+     * craftsman splits only that line.
      *
      * @param  list<array<string, mixed>>  $children
      * @param  Collection<int, WorkerAssignment>  $projectAssignments
@@ -1549,11 +1550,12 @@ class PlanningBoardService
             $ids = array_map(static fn (mixed $id): int => (int) $id, $child['work_item_ids'] ?? [(int) $child['id']]);
             $dedicated = $projectAssignments
                 ->filter(function (WorkerAssignment $assignment) use ($ids, $hoursItemId): bool {
-                    $workItemId = (int) ($assignment->work_item_id ?? 0);
+                    $specific = array_values(array_filter(
+                        $assignment->linkedWorkItemIds(),
+                        static fn (int $id): bool => $id > 0 && $id !== $hoursItemId,
+                    ));
 
-                    return $workItemId > 0
-                        && $workItemId !== $hoursItemId
-                        && in_array($workItemId, $ids, true);
+                    return array_intersect($specific, $ids) !== [];
                 })
                 ->values();
             if ($dedicated->isNotEmpty()) {

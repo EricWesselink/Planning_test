@@ -214,11 +214,16 @@
             @php
                 $workItemsByProject = $projects->mapWithKeys(function ($project) {
                     $items = $project->workItems
-                        ->filter(fn ($item) => (float) $item->ordered_quantity > 0.0001 || $item->work_activity_id !== null)
+                        ->filter(fn ($item) => (float) $item->ordered_quantity > 0.0001 || $item->work_activity_id !== null);
+                    if ($project->isSmallWork() && $items->contains(fn ($item) => $item->work_activity_id !== null)) {
+                        $items = $items->reject(fn ($item) => $item->work_activity_id === null && ! $item->isExtraWork());
+                    }
+                    $items = $items
                         ->map(fn ($item) => [
                             'id' => $item->id,
                             'name' => $item->productLabel() ?: (\App\Support\WorkType::looksLikeRoom($item->name) ? $item->typeLabel() : $item->name),
                             'group' => $item->planningTitle(),
+                            'notes' => trim((string) $item->notes),
                             'type_key' => $item->typeKey(),
                             'project_id' => $project->id,
                             'project' => $project->displayTitle(),
@@ -645,7 +650,7 @@
             </div>
             <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Wat gaan ze doen</label>
             <input type="hidden" name="work_item_id" id="plan-work" value="">
-            <div id="plan-work-list" class="max-h-48 space-y-0.5 overflow-y-auto rounded border border-nicon-line bg-nicon-sand/40 px-2 py-1.5"></div>
+            <div id="plan-work-list" class="space-y-0.5 rounded border border-nicon-line bg-nicon-sand/40 px-2 py-1.5"></div>
             <div id="plan-men-wrap">
                 <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Aantal personen</label>
                 <input type="number" name="people_count" id="plan-men" min="1" max="50" value="1" required class="mt-0 w-full border border-nicon-line px-2 py-1.5">

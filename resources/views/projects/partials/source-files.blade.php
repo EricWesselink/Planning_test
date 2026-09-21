@@ -3,8 +3,8 @@
 @endphp
 @can('update', $project)
     <details class="relative mt-2 max-w-xl text-xs">
-        <summary class="cursor-pointer text-nicon-muted hover:text-nicon-ink">Bronbestanden</summary>
-        <div class="absolute z-30 mt-1 w-[28rem] max-h-[70vh] overflow-auto border border-nicon-line bg-white p-3 shadow-sm space-y-3">
+        <summary class="cursor-pointer font-medium text-nicon-orange-dark hover:text-nicon-ink">Bronbestanden</summary>
+        <div class="absolute z-50 mt-1 w-[28rem] max-h-[70vh] overflow-auto border border-nicon-ink bg-white p-3 shadow-lg space-y-3">
             <ul class="space-y-1 text-nicon-ink">
                 @foreach ($catalog as $row)
                     <li>

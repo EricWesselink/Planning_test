@@ -34,9 +34,9 @@
                     <div class="board-top-title min-w-0">
                 <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-xs text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
                 @if ($project->labeledNumbersLine() !== '')
-                    <div class="text-xs text-nicon-muted whitespace-nowrap">{{ $project->labeledNumbersLine() }}</div>
+                    <div class="text-xs text-nicon-orange-dark whitespace-nowrap">{{ $project->labeledNumbersLine() }}</div>
                 @endif
-                <h1 class="text-sm font-semibold leading-tight">{{ $project->displayTitle() }} <span class="text-nicon-muted font-normal">· {{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span></h1>
+                <h1 class="text-sm font-semibold leading-tight text-nicon-orange-dark">{{ $project->displayTitle() }} <span class="font-normal">· {{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span></h1>
                 @if (session('status'))
                     <p class="mt-1 text-xs text-nicon-ok">{{ session('status') }}</p>
                 @endif

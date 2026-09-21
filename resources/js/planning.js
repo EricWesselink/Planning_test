@@ -17,6 +17,7 @@ import { bindLaborFold } from './planning-labor-fold';
 import { bindPlanningScrollRestore, reloadPlanningBoard } from './planning-scroll';
 import { bindPlanningDatePickers, workdaysForIsoWeek } from './planning-datepicker.js';
 import { isoWeekFromDate } from './planning-weeks.js';
+import { planningWorkChoices } from './planning-work-choices.js';
 import {
     candidatesFetchInit,
     datesForExactMode,
@@ -173,27 +174,6 @@ if (board) {
             .filter((id) => id > 0);
     }
 
-    function workGroups(items) {
-        const grouped = [];
-        const index = {};
-        items.forEach((item) => {
-            const key = item.type_key || item.group || String(item.id);
-            if (!index[key]) {
-                index[key] = {
-                    key,
-                    label: item.group || item.name || 'Werk',
-                    project_id: item.project_id,
-                    project: item.project,
-                    ids: [],
-                };
-                grouped.push(index[key]);
-            }
-            index[key].ids.push(Number(item.id));
-        });
-
-        return grouped;
-    }
-
     function fillWorkItems(projectId, selectedId) {
         const selected = new Set(
             (Array.isArray(selectedId) ? selectedId : [selectedId])
@@ -212,22 +192,21 @@ if (board) {
             if (rows.length === 0 || !workList) {
                 return;
             }
-            const groups = workGroups(rows);
-            if (edit && groups.length > 0) {
+            const choices = planningWorkChoices(rows);
+            if (edit && choices.length > 0) {
                 const heading = document.createElement('div');
                 heading.className = 'pt-1 text-[10px] uppercase tracking-wide text-nicon-muted';
-                heading.textContent = groups[0].project || `Project ${pid}`;
+                heading.textContent = choices[0].project || `Project ${pid}`;
                 workList.append(heading);
             }
-            groups.forEach((group) => {
-                const checkedId = group.ids.find((id) => selected.has(id)) || group.ids[0];
+            choices.forEach((choice) => {
                 const row = document.createElement('label');
                 row.className = 'flex items-center gap-2 text-sm leading-tight';
                 const input = document.createElement('input');
                 input.type = 'checkbox';
-                input.value = String(checkedId);
-                input.dataset.projectId = String(group.project_id || pid);
-                input.checked = group.ids.some((id) => selected.has(id));
+                input.value = String(choice.id);
+                input.dataset.projectId = choice.projectId || String(pid);
+                input.checked = selected.has(choice.id);
                 input.addEventListener('change', () => {
                     if (input.checked) {
                         const projectKey = input.dataset.projectId;
@@ -244,7 +223,7 @@ if (board) {
                 });
                 const text = document.createElement('span');
                 text.className = 'min-w-0 truncate';
-                text.textContent = group.label;
+                text.textContent = choice.label;
                 row.append(input, text);
                 workList.append(row);
             });

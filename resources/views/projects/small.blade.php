@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', $project->displayTitle().' · Nicon Planning')
+@section('title', ($project->smallWorkContextLine() ?: $project->name).' · Nicon Planning')
 
 @section('content')
     @php
@@ -11,14 +11,27 @@
         $tekeningen = $project->documents
             ->filter(fn ($document) => in_array($document->document_type, [\App\Services\SmallWorkService::ATTACHMENT_TYPE, 'plattegrond'], true))
             ->values();
+        $context = $project->smallWorkContextLine();
+        $description = trim((string) $project->name);
     @endphp
-    <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-sm text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
-    <div class="mt-2 flex flex-wrap items-center gap-2">
-        <span class="bg-nicon-ink px-2 py-0.5 text-[11px] font-semibold tracking-[0.14em] text-white">{{ $project->kind?->badge() }}</span>
-        <h1 class="text-2xl font-semibold">{{ $project->displayTitle() }}</h1>
-        <span class="text-nicon-muted">{{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span>
-        <a href="{{ route('projects.small.werkbon', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">{{ $project->printedBonLabel() }}</a>
-        <a href="{{ route('projects.small.werkbon.pdf', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">Download PDF</a>
+    <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-xs text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
+    <div class="mt-1 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-nicon-orange-dark">
+                <span class="bg-nicon-ink px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.14em] text-white">{{ $project->kind?->badge() }}</span>
+                @if ($project->labeledNumbersLine() !== '')
+                    <span class="whitespace-nowrap">{{ $project->labeledNumbersLine() }}</span>
+                @endif
+                @if ($context !== '' && $description !== '')
+                    <span class="whitespace-nowrap">{{ $context }}</span>
+                @endif
+            </div>
+            <h1 class="max-w-3xl text-sm font-semibold leading-tight text-nicon-orange-dark">{{ $description !== '' ? $description : $context }} <span class="font-normal">· {{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span></h1>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="{{ route('projects.small.werkbon', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">{{ $project->printedBonLabel() }}</a>
+            <a href="{{ route('projects.small.werkbon.pdf', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">Download PDF</a>
+        </div>
     </div>
     @if (auth()->user()?->canViewLaborCosts())
         @include('projects.partials.labor-summary', ['labor' => $labor])
