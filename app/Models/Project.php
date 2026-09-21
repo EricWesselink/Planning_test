@@ -200,6 +200,23 @@ class Project extends Model
         return $this->hasMany(WorkItem::class)->orderBy('sort_order');
     }
 
+    public function extraWorkItems(): HasMany
+    {
+        return $this->hasMany(WorkItem::class)->where('is_extra_work', true)->orderBy('sort_order');
+    }
+
+    /**
+     * @param  string  $childType
+     */
+    protected function childRouteBindingRelationshipName($childType)
+    {
+        if (in_array($childType, ['extraWerk', 'workItem'], true)) {
+            return 'extraWorkItems';
+        }
+
+        return parent::childRouteBindingRelationshipName($childType);
+    }
+
     public function workActivities(): BelongsToMany
     {
         return $this->belongsToMany(WorkActivity::class, 'project_work_activities')

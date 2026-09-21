@@ -467,11 +467,11 @@
                         @php
                             $isCompact = ! empty($projectRow['compact']);
                             $projectHasPeriod = $projectRow['bar'] || $projectRow['start_marker'] || $projectRow['end_marker'];
-                            $isAttachedSmall = $isCompact
+                            $isAttachedExtra = $isCompact
                                 && ! empty($projectRow['work_item_id'])
-                                && in_array($projectRow['kind'] ?? '', ['extra', 'klein'], true);
-                            $projectHref = $isAttachedSmall
-                                ? route('projects.extra.edit', [$projectRow['id'], $projectRow['work_item_id']])
+                                && ($projectRow['kind'] ?? '') === 'extra';
+                            $projectHref = $isAttachedExtra
+                                ? route('projects.extra.edit', ['project' => $projectRow['id'], 'extraWerk' => $projectRow['work_item_id']])
                                 : route('projects.show', $projectRow['id']);
                             $pairedPeriod = is_array($projectRow['start_marker'] ?? null)
                                 && is_array($projectRow['end_marker'] ?? null)

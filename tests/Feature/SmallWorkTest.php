@@ -173,11 +173,16 @@ class SmallWorkTest extends TestCase
         $item = $project->workItems()->first();
         $this->assertFalse((bool) $item?->is_extra_work);
 
-        $this->actingAs($user)
+        $html = $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
             ->assertSee('>KLEIN</span>', false)
-            ->assertSee('Deventer – 25 m² PVC');
+            ->assertSee('Deventer – 25 m² PVC')
+            ->getContent();
+        $this->assertStringNotContainsString(
+            '/projecten/'.$project->id.'/extra-werk/'.$item->id,
+            $html
+        );
     }
 
     public function test_new_small_work_form_lists_existing_assignment_numbers(): void
@@ -352,6 +357,11 @@ class SmallWorkTest extends TestCase
             ->assertSee('Egaliseren')
             ->assertSee('Materiaal')
             ->assertSee('Regel toevoegen')
+            ->assertSee('vloer herstel');
+
+        $this->actingAs($user)
+            ->get('/projecten/'.$parent->id.'/extra-werk/'.$extra->id)
+            ->assertOk()
             ->assertSee('vloer herstel');
 
         $this->actingAs($user)

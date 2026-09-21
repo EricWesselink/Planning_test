@@ -165,7 +165,7 @@
                     <div class="mt-1 space-y-0.5 text-xs">
                         @foreach ($extraItems as $extra)
                             <div>
-                                <a href="{{ route('projects.extra.edit', [$project, $extra]) }}" class="text-nicon-orange-dark">{{ $extra->small_work_type?->badge() ?? 'EXTRA' }} {{ $extra->name }} — klaar, uren en materiaal</a>
+                                <a href="{{ route('projects.extra.edit', ['project' => $project, 'extraWerk' => $extra]) }}" class="text-nicon-orange-dark">{{ $extra->small_work_type?->badge() ?? 'EXTRA' }} {{ $extra->name }} — klaar, uren en materiaal</a>
                             </div>
                         @endforeach
                     </div>

@@ -24,7 +24,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('projects.extra.update', [$project, $item]) }}" class="mt-6 max-w-2xl space-y-4 border border-nicon-line bg-white p-5">
+    <form method="POST" action="{{ route('projects.extra.update', ['project' => $project, 'extraWerk' => $item]) }}" class="mt-6 max-w-2xl space-y-4 border border-nicon-line bg-white p-5">
         @csrf
         @method('PATCH')
         <div>

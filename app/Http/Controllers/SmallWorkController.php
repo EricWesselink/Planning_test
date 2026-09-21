@@ -87,28 +87,28 @@ class SmallWorkController extends Controller
         return $pdf->download($data['filename']);
     }
 
-    public function editExtra(Project $project, WorkItem $workItem): View
+    public function editExtra(Project $project, WorkItem $extraWerk): View
     {
         Gate::authorize('view', $project);
-        abort_unless($workItem->isExtraWork(), 404);
+        abort_unless($extraWerk->isExtraWork(), 404);
 
-        $workItem->load(['assignments.worker', 'progressEntries']);
-        $actualHours = (float) $workItem->progressEntries->sum('worked_hours');
+        $extraWerk->load(['assignments.worker', 'progressEntries']);
+        $actualHours = (float) $extraWerk->progressEntries->sum('worked_hours');
 
         return view('projects.extra-edit', [
             'project' => $project,
-            'item' => $workItem,
+            'item' => $extraWerk,
             'hourOptions' => [2, 4, 6, 8],
-            'lines' => old('lines', $workItem->extraLinesForForm()),
+            'lines' => old('lines', $extraWerk->extraLinesForForm()),
             'actualHours' => $actualHours > 0.0001 ? $actualHours : null,
             'canUpdate' => (auth()->user()?->can('update', $project) || auth()->user()?->canEnterProgress()) ?? false,
         ]);
     }
 
-    public function updateExtra(Request $request, Project $project, WorkItem $workItem, SmallWorkService $smallWork): RedirectResponse
+    public function updateExtra(Request $request, Project $project, WorkItem $extraWerk, SmallWorkService $smallWork): RedirectResponse
     {
         Gate::authorize('view', $project);
-        abort_unless($workItem->isExtraWork(), 404);
+        abort_unless($extraWerk->isExtraWork(), 404);
         abort_unless(
             $request->user()?->can('update', $project) || $request->user()?->canEnterProgress(),
             403
@@ -125,7 +125,7 @@ class SmallWorkController extends Controller
             ...$this->lineRules(),
         ], $this->messages());
 
-        $smallWork->updateAttached($workItem, $data, $request->user());
+        $smallWork->updateAttached($extraWerk, $data, $request->user());
 
         return redirect()
             ->route('planning', [
