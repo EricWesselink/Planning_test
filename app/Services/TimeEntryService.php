@@ -80,6 +80,7 @@ class TimeEntryService
                 'date' => $date,
                 'planned_hours' => $plannedHours,
                 'hours' => $hours,
+                'approved_hours' => null,
                 'note' => $note,
                 'status' => TimeEntryStatus::Submitted,
                 'is_unplanned' => $isUnplanned,
@@ -112,6 +113,7 @@ class TimeEntryService
 
             $locked->fill([
                 'hours' => round((float) $data['hours'], 2),
+                'approved_hours' => null,
                 'note' => array_key_exists('note', $data) ? $this->nullableNote($data['note'] ?? null) : $locked->note,
                 'status' => TimeEntryStatus::Submitted,
                 'submitted_at' => now(),
@@ -125,29 +127,25 @@ class TimeEntryService
         });
     }
 
-    /**
-     * @param  array{hours: float|int|string, note?: string|null, review_note?: string|null}  $data
-     */
-    public function adjust(TimeEntry $entry, User $reviewer, array $data): TimeEntry
+    public function approveAdjusted(TimeEntry $entry, User $reviewer, float $approvedHours, ?string $reason = null): TimeEntry
     {
-        return DB::transaction(function () use ($entry, $reviewer, $data): TimeEntry {
+        return DB::transaction(function () use ($entry, $reviewer, $approvedHours, $reason): TimeEntry {
             $locked = $this->lock($entry);
-            $locked->fill([
-                'hours' => round((float) $data['hours'], 2),
-                'note' => array_key_exists('note', $data) ? $this->nullableNote($data['note'] ?? null) : $locked->note,
-                'review_note' => array_key_exists('review_note', $data)
-                    ? $this->nullableNote($data['review_note'] ?? null)
-                    : $locked->review_note,
-            ])->save();
+            $this->assertSubmitted($locked);
 
-            if ($locked->isApproved()) {
-                $this->applyApproved($locked, $reviewer);
-            } else {
-                $locked->status = TimeEntryStatus::Submitted;
-                $locked->save();
+            $approvedHours = round($approvedHours, 2);
+            $note = $this->nullableNote($reason);
+            if (abs($approvedHours - $locked->submittedHoursValue()) > 0.01 && $note === null) {
+                throw ValidationException::withMessages([
+                    'review_note' => 'Vul een reden in als je de uren aanpast.',
+                ]);
             }
 
-            return $locked->fresh(['project', 'workItem', 'worker', 'crewMember', 'assignment']) ?? $locked;
+            $locked->approved_hours = $approvedHours;
+            $locked->review_note = $note;
+            $this->applyApproved($locked, $reviewer);
+
+            return $locked->fresh(['project', 'workItem', 'worker', 'crewMember', 'assignment', 'reviewer']) ?? $locked;
         });
     }
 
@@ -184,11 +182,19 @@ class TimeEntryService
                 ]);
             }
 
+            $note = $this->nullableNote($reason);
+            if ($note === null) {
+                throw ValidationException::withMessages([
+                    'review_note' => 'Vul een reden in om af te wijzen.',
+                ]);
+            }
+
             $locked->update([
                 'status' => TimeEntryStatus::Rejected,
+                'approved_hours' => null,
                 'reviewed_by' => $reviewer->id,
                 'reviewed_at' => now(),
-                'review_note' => $this->nullableNote($reason),
+                'review_note' => $note,
             ]);
 
             return $locked->fresh() ?? $locked;
@@ -229,6 +235,10 @@ class TimeEntryService
 
     private function applyApproved(TimeEntry $entry, User $reviewer): void
     {
+        if ($entry->approved_hours === null) {
+            $entry->approved_hours = $entry->hours;
+        }
+
         $entry->status = TimeEntryStatus::Approved;
         $entry->reviewed_by = $reviewer->id;
         $entry->reviewed_at = now();
@@ -259,7 +269,7 @@ class TimeEntryService
             'date' => $entry->date->toDateString(),
             'completed_quantity' => $progress?->completed_quantity ?? 0,
             'unit' => $workItem->unit,
-            'worked_hours' => $entry->hoursValue(),
+            'worked_hours' => $entry->accountedHoursValue(),
             'note' => $entry->note,
             'created_by' => $progress?->created_by ?? $reviewer->id,
         ];
@@ -297,12 +307,12 @@ class TimeEntryService
         }
 
         $day = $entry->date->copy()->startOfDay();
-        $minutes = (int) round($entry->hoursValue() * 60);
+        $minutes = (int) round($entry->accountedHoursValue() * 60);
         $start = PlanningHours::DAY_START.':00';
         $end = Carbon::parse('2000-01-01 '.$start)->addMinutes(max(15, $minutes))->format('H:i:s');
         $assignment->applySchedule($day, $day, $start, $end, false, false, false);
         $assignment->origin = 'hours';
-        $assignment->hours_per_day = $entry->hoursValue();
+        $assignment->hours_per_day = $entry->accountedHoursValue();
         $assignment->planned_hours = 0;
         $assignment->save();
 
@@ -475,6 +485,19 @@ class TimeEntryService
                 'hours' => 'Goedgekeurde uren kun je niet meer zelf wijzigen.',
             ]);
         }
+    }
+
+    private function assertSubmitted(TimeEntry $entry): void
+    {
+        if ($entry->isSubmitted()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'status' => $entry->isRejected()
+                ? 'Wijs afgewezen uren eerst opnieuw in.'
+                : 'Deze uren zijn al beoordeeld.',
+        ]);
     }
 
     private function nullableNote(mixed $note): ?string

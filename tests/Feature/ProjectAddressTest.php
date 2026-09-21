@@ -99,13 +99,11 @@ class ProjectAddressTest extends TestCase
             ->assertOk()
             ->assertSee('Werkadres')
             ->assertSee('Opdrachtgever')
-            ->assertSee('name="address"', false)
-            ->assertSee('name="postal_code"', false)
-            ->assertSee('name="city"', false)
+            ->assertSee('name="work_address"', false)
+            ->assertDontSee('name="postal_code"', false)
+            ->assertDontSee('name="city"', false)
             ->assertSee('name="customer_name"', false)
-            ->assertSee('value="Schoolstraat 1"', false)
-            ->assertSee('value="3811 AA"', false)
-            ->assertSee('value="Amersfoort"', false)
+            ->assertSee('value="Schoolstraat 1, 3811 AA Amersfoort"', false)
             ->assertSee('value="Hegeman"', false)
             ->assertSee('data-autosave', false)
             ->assertSee('data-autosave-status', false)
@@ -159,7 +157,7 @@ class ProjectAddressTest extends TestCase
             ->get(route('projects.index'))
             ->assertOk()
             ->assertSee('value="Stichting Griftland"', false)
-            ->assertSee('value="Schoolstraat 1"', false)
+            ->assertSee('value="Schoolstraat 1, 3811 AA Amersfoort"', false)
             ->assertSee('value="2026-09-21"', false)
             ->assertSee('value="2026-10-17"', false);
     }
@@ -191,9 +189,7 @@ class ProjectAddressTest extends TestCase
         $this->actingAs($user)
             ->get(route('projects.index'))
             ->assertOk()
-            ->assertSee('value="Praamgracht 8"', false)
-            ->assertSee('value="3815 AA"', false)
-            ->assertSee('value="Amersfoort"', false);
+            ->assertSee('value="Praamgracht 8, 3815 AA Amersfoort"', false);
     }
 
     public function test_project_list_saves_an_opdrachtgever(): void

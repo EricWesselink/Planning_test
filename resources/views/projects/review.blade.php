@@ -303,24 +303,16 @@
                     <label class="text-xs uppercase tracking-wide text-nicon-muted">Datum</label>
                     <input type="date" name="date" value="{{ old('date', $header['date']) }}" class="mt-1 w-full border border-nicon-line px-3 py-2">
                 </div>
-                <div class="sm:col-span-2" data-work-address>
-                    <label class="text-xs uppercase tracking-wide text-nicon-muted">Werkadres</label>
-                    <input name="address" value="{{ old('address', $header['address'] ?? '') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Straat 12" data-address-street>
-                    <p class="mt-1 text-xs text-nicon-muted">Optioneel. Later bij het project aan te vullen.</p>
-                </div>
-                <div>
-                    <label class="text-xs uppercase tracking-wide text-nicon-muted">Postcode</label>
-                    <input name="postal_code" value="{{ old('postal_code', $header['postal_code'] ?? '') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="3811 AA" data-address-postal>
-                </div>
-                <div>
-                    <label class="text-xs uppercase tracking-wide text-nicon-muted">Plaats</label>
-                    <input name="city" value="{{ old('city', $header['city'] ?? '') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Amersfoort" data-address-city>
+                <div class="sm:col-span-2">
+                    <x-work-address
+                        class="mt-1"
+                        :value="\App\Support\WorkAddress::compose($header['address'] ?? null, $header['postal_code'] ?? null, $header['city'] ?? null)"
+                        hint="Optioneel. Later bij het project aan te vullen."
+                        show-maps
+                    />
                 </div>
                 <div class="sm:col-span-2">
                     @include('projects.partials.planning-weeks', ['idPrefix' => 'import-'])
-                </div>
-                <div class="sm:col-span-2">
-                    <a href="#" target="_blank" rel="noopener noreferrer" data-address-maps class="hidden text-sm text-nicon-orange-dark">Navigeren in Google Maps</a>
                 </div>
             </div>
         </x-review-fold>
@@ -910,31 +902,6 @@
 
     <script>
         (() => {
-            const root = document.querySelector('[data-work-address]');
-            const form = root?.closest('form');
-            const link = document.querySelector('[data-address-maps]');
-            if (form && link) {
-                const street = form.querySelector('[data-address-street]');
-                const postal = form.querySelector('[data-address-postal]');
-                const city = form.querySelector('[data-address-city]');
-                const line = () => {
-                    const place = [postal?.value, city?.value].map((value) => (value || '').trim()).filter(Boolean).join(' ');
-                    return [street?.value, place].map((value) => (value || '').trim()).filter(Boolean).join(', ');
-                };
-                const sync = () => {
-                    const destination = line();
-                    if (! destination) {
-                        link.classList.add('hidden');
-                        link.removeAttribute('href');
-                        return;
-                    }
-                    link.href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(destination) + '&travelmode=driving';
-                    link.classList.remove('hidden');
-                };
-                [street, postal, city].forEach((input) => input?.addEventListener('input', sync));
-                sync();
-            }
-
             const template = document.querySelector('[data-area-template]');
             const addButton = document.querySelector('[data-add-area]');
             const renameFields = (rootEl, index) => {

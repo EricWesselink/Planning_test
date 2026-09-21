@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'worker_id', 'crew_member_id', 'user_id', 'project_id', 'work_item_id',
-    'worker_assignment_id', 'date', 'planned_hours', 'hours', 'note', 'status',
+    'worker_assignment_id', 'date', 'planned_hours', 'hours', 'approved_hours', 'note', 'status',
     'is_unplanned', 'identity_key', 'submitted_at', 'submitted_by',
     'reviewed_at', 'reviewed_by', 'review_note', 'processed_at',
     'work_progress_entry_id', 'actual_assignment_id',
@@ -34,6 +34,7 @@ class TimeEntry extends Model
             'date' => 'date',
             'planned_hours' => 'decimal:2',
             'hours' => 'decimal:2',
+            'approved_hours' => 'decimal:2',
             'status' => TimeEntryStatus::class,
             'is_unplanned' => 'boolean',
             'submitted_at' => 'datetime',
@@ -94,7 +95,30 @@ class TimeEntry extends Model
 
     public function hoursValue(): float
     {
+        return $this->submittedHoursValue();
+    }
+
+    public function submittedHoursValue(): float
+    {
         return round((float) $this->hours, 2);
+    }
+
+    public function approvedHoursValue(): ?float
+    {
+        if ($this->approved_hours === null) {
+            return null;
+        }
+
+        return round((float) $this->approved_hours, 2);
+    }
+
+    public function accountedHoursValue(): float
+    {
+        if ($this->isApproved()) {
+            return $this->approvedHoursValue() ?? $this->submittedHoursValue();
+        }
+
+        return $this->submittedHoursValue();
     }
 
     public function plannedHoursValue(): float
@@ -109,7 +133,32 @@ class TimeEntry extends Model
 
     public function hoursLabel(): string
     {
-        return PlanningHours::hoursLabel($this->hoursValue());
+        return PlanningHours::hoursLabel($this->submittedHoursValue());
+    }
+
+    public function approvedHoursLabel(): string
+    {
+        $approved = $this->approvedHoursValue();
+
+        return $approved === null ? '—' : PlanningHours::hoursLabel($approved);
+    }
+
+    public function isAdjusted(): bool
+    {
+        $approved = $this->approvedHoursValue();
+
+        return $this->isApproved()
+            && $approved !== null
+            && abs($approved - $this->submittedHoursValue()) > 0.01;
+    }
+
+    public function reviewStatusLabel(): string
+    {
+        if ($this->isAdjusted()) {
+            return 'Aangepast & goedgekeurd';
+        }
+
+        return $this->status->weekLabel();
     }
 
     public function personName(): string

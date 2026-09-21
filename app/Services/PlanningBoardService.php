@@ -1768,7 +1768,7 @@ class PlanningBoardService
 
         foreach ($assignments as $assignment) {
             $hours = (float) ($byAssignment->get($assignment->id)?->sum(
-                fn (TimeEntry $entry): float => $entry->hoursValue()
+                fn (TimeEntry $entry): float => $entry->accountedHoursValue()
             ) ?? 0);
             $assignment->setAttribute('approved_hours', round($hours, 2));
         }

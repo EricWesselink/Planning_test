@@ -24,7 +24,7 @@
                     <input id="customer_name" name="customer_name" value="{{ old('customer_name') }}" required class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="Jansen">
                 </div>
                 <div class="sm:col-span-2">
-                    <x-work-address id="address" class="mt-1 px-2 py-1.5" />
+                    <x-work-address id="address" class="mt-1" />
                 </div>
                 <div>
                     <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>

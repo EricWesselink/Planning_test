@@ -935,6 +935,7 @@ class VakmanPlanningService
         }
 
         return TimeEntry::query()
+            ->with('reviewer')
             ->where('worker_id', $workerId)
             ->where(function ($query) use ($user): void {
                 $crewId = $this->hours->resolvedCrewMemberId($user, $user->worker);

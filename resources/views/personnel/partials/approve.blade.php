@@ -38,23 +38,24 @@
                     <td class="px-2 py-1.5 font-medium">{{ $entry->hoursLabel() }}</td>
                     <td @class(['px-2 py-1.5', 'font-medium text-nicon-warn' => abs($diff) > 0.01])>{{ ($diff > 0.0001 ? '+' : '').\App\Support\PlanningHours::hoursLabel($diff) }}</td>
                     <td class="px-2 py-1.5 text-nicon-muted">{{ $entry->note }}</td>
-                    <td class="px-2 py-1.5">{{ $entry->status->weekLabel() }}</td>
+                    <td class="px-2 py-1.5">{{ $entry->reviewStatusLabel() }}</td>
                     <td class="px-2 py-1.5">
-                        @if ($canReviewHours)
+                        @if ($canReviewHours && $entry->isSubmitted())
                             <div class="flex flex-wrap items-center gap-1">
                                 <form method="POST" action="{{ route('personnel.hours.approve', $entry) }}">
                                     @csrf
                                     <button class="border border-nicon-ok bg-white px-2 py-0.5 text-nicon-ok">Goedkeuren</button>
                                 </form>
-                                <form method="POST" action="{{ route('personnel.hours.update', $entry) }}" class="flex items-center gap-1">
+                                <form method="POST" action="{{ route('personnel.hours.update', $entry) }}" class="flex flex-wrap items-center gap-1">
                                     @csrf
                                     @method('PATCH')
-                                    <input type="number" name="hours" value="{{ $entry->hoursValue() }}" min="0.25" max="24" step="0.25" class="w-16 border border-nicon-line px-1 py-0.5" aria-label="Uren aanpassen">
-                                    <button class="border border-nicon-line bg-white px-2 py-0.5">Aanpassen</button>
+                                    <input type="number" name="approved_hours" value="{{ $entry->submittedHoursValue() }}" min="0.25" max="24" step="0.1" class="w-16 border border-nicon-line px-1 py-0.5" aria-label="Goedgekeurde uren">
+                                    <input type="text" name="review_note" placeholder="Reden bij aanpassing" class="w-36 border border-nicon-line px-1 py-0.5" aria-label="Reden">
+                                    <button class="border border-nicon-line bg-white px-2 py-0.5">Aanpassen &amp; goedkeuren</button>
                                 </form>
                                 <form method="POST" action="{{ route('personnel.hours.reject', $entry) }}" class="flex items-center gap-1">
                                     @csrf
-                                    <input type="text" name="review_note" placeholder="Reden" class="w-28 border border-nicon-line px-1 py-0.5">
+                                    <input type="text" name="review_note" placeholder="Reden" required class="w-28 border border-nicon-line px-1 py-0.5" aria-label="Reden afwijzen">
                                     <button class="border border-nicon-danger bg-white px-2 py-0.5 text-nicon-danger">Afwijzen</button>
                                 </form>
                             </div>

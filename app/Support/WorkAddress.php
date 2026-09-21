@@ -81,6 +81,17 @@ class WorkAddress
 
         $kept = self::normalize($project->work_address);
         if ($fullDirty && $kept !== null) {
+            $previous = self::compose(
+                $project->getOriginal('address'),
+                $project->getOriginal('postal_code'),
+                $project->getOriginal('city'),
+            );
+            if ($previous !== null && $previous === $kept) {
+                $project->work_address = $kept;
+
+                return;
+            }
+
             $parsed = self::parse($kept);
             $project->work_address = self::clip($parsed['work_address'], 1000);
             $project->address = self::clip($parsed['address'], 255);

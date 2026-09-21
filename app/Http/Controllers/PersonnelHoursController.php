@@ -26,26 +26,35 @@ class PersonnelHoursController extends Controller
     {
         Gate::authorize('review', $timeEntry);
         $data = $request->validate([
-            'review_note' => ['nullable', 'string', 'max:2000'],
+            'review_note' => ['required', 'string', 'max:2000'],
+        ], [
+            'review_note.required' => 'Vul een reden in om af te wijzen.',
         ]);
-        $hours->reject($timeEntry, $request->user(), $data['review_note'] ?? null);
+        $hours->reject($timeEntry, $request->user(), $data['review_note']);
 
         return back()->with('status', 'Uren afgewezen.');
     }
 
     public function update(Request $request, TimeEntry $timeEntry, TimeEntryService $hours): RedirectResponse
     {
-        Gate::authorize('update', $timeEntry);
+        Gate::authorize('approve', $timeEntry);
         $data = $request->validate([
-            'hours' => ['required', 'numeric', 'min:0.25', 'max:24'],
-            'note' => ['nullable', 'string', 'max:2000'],
+            'approved_hours' => ['required', 'numeric', 'min:0.25', 'max:24'],
             'review_note' => ['nullable', 'string', 'max:2000'],
         ], [
-            'hours.required' => 'Vul de uren in.',
+            'approved_hours.required' => 'Vul de goedgekeurde uren in.',
+            'approved_hours.min' => 'Uren moeten minimaal 0,25 zijn.',
         ]);
-        $hours->adjust($timeEntry, $request->user(), $data);
+        $entry = $hours->approveAdjusted(
+            $timeEntry,
+            $request->user(),
+            (float) $data['approved_hours'],
+            $data['review_note'] ?? null,
+        );
 
-        return back()->with('status', 'Uren aangepast.');
+        return back()->with('status', $entry->isAdjusted()
+            ? $entry->approvedHoursLabel().' aangepast en goedgekeurd.'
+            : $entry->approvedHoursLabel().' goedgekeurd.');
     }
 
     public function approveWeek(Request $request, TimeEntryService $hours): RedirectResponse

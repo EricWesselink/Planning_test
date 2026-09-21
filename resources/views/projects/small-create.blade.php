@@ -141,7 +141,7 @@
                 form?.querySelectorAll('[data-small-work-standalone]').forEach((el) => el.classList.toggle('hidden', linked));
                 form?.querySelectorAll('[data-small-work-linked]').forEach((el) => el.classList.toggle('hidden', !linked));
                 const customer = form?.querySelector('#customer_name');
-                const location = form?.querySelector('#location');
+                const location = form?.querySelector('#address');
                 const project = form?.querySelector('#project_id');
                 if (customer) customer.required = !linked;
                 if (location) location.required = !linked;

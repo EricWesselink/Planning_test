@@ -31,9 +31,11 @@
         @disabled($disabled)
         {{ $attributes->merge(['class' => 'w-full border border-nicon-line px-3 py-2']) }}
     >
-    @error('work_address')
-        <p class="mt-1 text-xs text-nicon-danger">{{ $message }}</p>
-    @enderror
+    @if ($useOld)
+        @error('work_address')
+            <p class="mt-1 text-xs text-nicon-danger">{{ $message }}</p>
+        @enderror
+    @endif
     @if (filled($hint))
         <p class="mt-1 text-xs text-nicon-muted">{{ $hint }}</p>
     @endif

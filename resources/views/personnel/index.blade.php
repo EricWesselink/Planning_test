@@ -83,9 +83,14 @@
                                         'day' => $cell['date'],
                                     ]);
                                 @endphp
-                                <a href="{{ $cellUrl }}" class="block hover:underline">
+                                <a href="{{ $cellUrl }}" class="block font-medium hover:underline" @if (! empty($cell['has_entries'])) title="Uren bekijken" @endif>
                                 @if (! empty($cell['has_entries']))
-                                    <span @class(['text-nicon-warn' => ($cell['entry_status']?->value ?? '') === 'ingediend', 'text-nicon-ok' => ($cell['entry_status']?->value ?? '') === 'goedgekeurd'])>{{ $cell['entry_status_label'] }}</span>
+                                    <span @class([
+                                        'text-nicon-warn' => ($cell['entry_tone'] ?? null) === 'pending',
+                                        'text-nicon-ok' => ($cell['entry_tone'] ?? null) === 'approved',
+                                        'text-nicon-orange' => ($cell['entry_tone'] ?? null) === 'adjusted',
+                                        'text-nicon-danger' => ($cell['entry_tone'] ?? null) === 'rejected',
+                                    ])>{{ $cell['entry_status_label'] }}</span>
                                 @elseif ($cell['status_label'])
                                     <span @class([
                                         'text-nicon-muted' => $cell['status'] === 'vrij',
@@ -101,7 +106,31 @@
                             </td>
                         @endforeach
                         <td class="px-2 py-1 whitespace-nowrap text-nicon-muted">{{ ($row['submitted_hours'] ?? 0) > 0.01 ? $row['submitted_label'] : $row['week_summary'] }}</td>
-                        <td class="px-2 py-1 whitespace-nowrap">{{ $row['hours_status_label'] ?? '—' }}</td>
+                        <td class="px-2 py-1 whitespace-nowrap">
+                            @php
+                                $statusClass = match ($row['hours_tone'] ?? null) {
+                                    'pending' => 'text-nicon-warn',
+                                    'approved' => 'text-nicon-ok',
+                                    'adjusted' => 'text-nicon-orange',
+                                    'rejected' => 'text-nicon-danger',
+                                    default => '',
+                                };
+                                $statusUrl = ($row['review_date'] ?? null)
+                                    ? route('personnel.index', [
+                                        'week' => $weekStart->toDateString(),
+                                        'tab' => 'weekstaat',
+                                        'worker_id' => $worker->id,
+                                        'crew_member_id' => $member->exists ? $member->id : null,
+                                        'day' => $row['review_date'],
+                                    ])
+                                    : null;
+                            @endphp
+                            @if ($statusUrl)
+                                <a href="{{ $statusUrl }}" class="font-medium hover:underline {{ $statusClass }}">{{ $row['hours_status_label'] }}</a>
+                            @else
+                                <span class="{{ $statusClass }}">{{ $row['hours_status_label'] ?? '—' }}</span>
+                            @endif
+                        </td>
                     </tr>
                 @empty
                     <tr>
@@ -112,31 +141,7 @@
         </table>
     </div>
     @if (($dayDetails ?? []) !== [])
-        @php
-            $detailDay = \Carbon\Carbon::parse($detailDate);
-        @endphp
-        <div class="mt-4 border border-nicon-line bg-white p-4 text-sm">
-            <h2 class="text-base font-semibold">{{ $detailDay->translatedFormat('l j F') }}</h2>
-            @foreach ($dayDetails as $detail)
-                <div class="mt-3 border-t border-nicon-line pt-3">
-                    @if ($detail['is_unplanned'])
-                        <p class="text-xs font-medium text-nicon-warn">Niet gepland</p>
-                    @endif
-                    <p class="font-semibold">{{ $detail['project'] }}</p>
-                    @if ($detail['work_number'] !== '')
-                        <p>Werknummer: {{ $detail['work_number'] }}</p>
-                    @endif
-                    <p>Werkzaamheid: {{ $detail['work'] }}</p>
-                    <p>Gepland: {{ $detail['planned_label'] }}</p>
-                    <p>Ingediend: {{ $detail['submitted_label'] }}</p>
-                    <p @class(['text-nicon-warn' => abs($detail['difference']) > 0.01])>Verschil: {{ $detail['difference_label'] }}</p>
-                    @if ($detail['note'])
-                        <p class="text-nicon-muted">{{ $detail['note'] }}</p>
-                    @endif
-                    <p>{{ $detail['status']->label() }}</p>
-                </div>
-            @endforeach
-        </div>
+        @include('personnel.partials.review')
     @endif
     @endif
 

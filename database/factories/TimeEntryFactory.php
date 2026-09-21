@@ -34,6 +34,7 @@ class TimeEntryFactory extends Factory
     {
         return $this->state(fn (array $attributes): array => [
             'status' => TimeEntryStatus::Approved,
+            'approved_hours' => $attributes['hours'] ?? 8,
             'reviewed_at' => now(),
             'processed_at' => now(),
         ]);

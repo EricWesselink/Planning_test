@@ -157,7 +157,7 @@
                         @can('update', $project)
                             <x-work-address
                                 :id="'index-'.$project->id.'-address'"
-                                :label="null"
+                                label=""
                                 :form="$formId"
                                 :use-old="$editing"
                                 :value="$project->nawLine()"

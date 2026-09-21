@@ -64,6 +64,7 @@ class WorkerPersonnelController extends Controller
 
         if ($tab === 'overzicht') {
             $payload['overview'] = $this->hours->overview($request);
+            $payload['approvedHoursTotal'] = $this->hours->approvedHoursTotal($request);
             $payload['filters'] = $this->hours->filterOptions();
         }
 

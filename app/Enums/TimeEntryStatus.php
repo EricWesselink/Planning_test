@@ -13,7 +13,7 @@ enum TimeEntryStatus: string
         return match ($this) {
             self::Submitted => 'Ingediend',
             self::Approved => 'Goedgekeurd',
-            self::Rejected => 'Afgewezen',
+            self::Rejected => 'Afgewezen / Ter correctie',
         };
     }
 
@@ -22,7 +22,7 @@ enum TimeEntryStatus: string
         return match ($this) {
             self::Submitted => 'Te beoordelen',
             self::Approved => 'Goedgekeurd',
-            self::Rejected => 'Afgewezen',
+            self::Rejected => 'Afgewezen / Ter correctie',
         };
     }
 

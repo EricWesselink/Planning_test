@@ -5003,6 +5003,24 @@ button.plan-labor-toggle:hover {
     color: var(--color-nicon-ok);
 }
 
+.vakman-hours-status.is-adjusted {
+    color: var(--color-nicon-orange-dark);
+}
+
+.vakman-hours-status.is-rejected {
+    color: var(--color-nicon-danger);
+}
+
+.vakman-hours-history {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.75rem;
+}
+
+.vakman-hours-history span {
+    color: var(--color-nicon-muted);
+}
+
 .vakman-hours-form {
     display: grid;
     gap: 0.4rem;

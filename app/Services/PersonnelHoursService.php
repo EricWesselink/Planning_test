@@ -13,6 +13,7 @@ use App\Support\PlanningHours;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
@@ -71,6 +72,16 @@ class PersonnelHoursService
      */
     public function overview(Request $request): LengthAwarePaginator
     {
+        $query = $this->overviewQuery($request);
+
+        return $query->paginate(50)->withQueryString();
+    }
+
+    /**
+     * @return Builder<TimeEntry>
+     */
+    private function overviewQuery(Request $request): Builder
+    {
         $query = TimeEntry::query()
             ->with(['worker', 'crewMember', 'project', 'workItem', 'assignment', 'submitter', 'reviewer'])
             ->orderByDesc('date')
@@ -110,7 +121,14 @@ class PersonnelHoursService
             }
         }
 
-        return $query->paginate(50)->withQueryString();
+        return $query;
+    }
+
+    public function approvedHoursTotal(Request $request): float
+    {
+        return round((float) $this->overviewQuery($request)
+            ->where('status', TimeEntryStatus::Approved)
+            ->sum('approved_hours'), 2);
     }
 
     /**
@@ -163,7 +181,7 @@ class PersonnelHoursService
         }
 
         return TimeEntry::query()
-            ->with(['project', 'workItem', 'assignment'])
+            ->with(['project', 'workItem', 'assignment', 'reviewer', 'worker', 'crewMember'])
             ->whereIn('worker_id', $workerIds)
             ->whereDate('date', '>=', $from)
             ->whereDate('date', '<=', $to)
@@ -194,17 +212,17 @@ class PersonnelHoursService
         });
 
         $dayDetails = [];
-        $submittedHours = 0.0;
+        $countedHours = 0.0;
         $statuses = [];
         $cells = [];
 
-        foreach ($row['cells'] as $index => $cell) {
+        foreach ($row['cells'] as $cell) {
             $date = $cell['date'];
             $dayEntries = $mine->filter(
                 fn (TimeEntry $entry): bool => $entry->date->toDateString() === $date
             )->values();
-            $dayHours = round((float) $dayEntries->sum(fn (TimeEntry $entry): float => $entry->hoursValue()), 2);
-            $submittedHours += $dayHours;
+            $dayHours = round((float) $dayEntries->sum(fn (TimeEntry $entry): float => $entry->accountedHoursValue()), 2);
+            $countedHours += $dayHours;
             $dayStatus = $this->dayStatus($dayEntries);
             if ($dayStatus !== null) {
                 $statuses[] = $dayStatus;
@@ -212,6 +230,7 @@ class PersonnelHoursService
 
             $details = $dayEntries->map(fn (TimeEntry $entry): array => $this->detail($entry))->all();
             $dayDetails[$date] = $details;
+            $tone = $this->entryTone($dayEntries);
 
             if ($dayEntries->isNotEmpty()) {
                 $unplanned = $dayEntries->contains(fn (TimeEntry $entry): bool => $entry->is_unplanned);
@@ -221,6 +240,7 @@ class PersonnelHoursService
                     'hours_label' => $dayHours > 0.01 ? PlanningHours::hoursLabel($dayHours) : '',
                     'entry_status' => $dayStatus,
                     'entry_status_label' => $this->cellStatusLabel($dayEntries, $dayHours, $unplanned),
+                    'entry_tone' => $tone,
                     'has_entries' => true,
                     'is_unplanned' => $unplanned,
                 ];
@@ -232,20 +252,24 @@ class PersonnelHoursService
                 ...$cell,
                 'entry_status' => null,
                 'entry_status_label' => null,
+                'entry_tone' => null,
                 'has_entries' => false,
                 'is_unplanned' => false,
             ];
         }
 
-        $weekStatus = $this->weekStatus($statuses, $submittedHours);
+        $weekStatus = $this->weekStatus($statuses, $countedHours);
+        $weekReview = $this->weekReview($mine);
 
         return [
             ...$row,
             'cells' => $cells,
-            'submitted_hours' => round($submittedHours, 2),
-            'submitted_label' => PlanningHours::hoursLabel($submittedHours),
+            'submitted_hours' => round($countedHours, 2),
+            'submitted_label' => PlanningHours::hoursLabel($countedHours),
             'hours_status' => $weekStatus,
-            'hours_status_label' => $weekStatus?->weekLabel() ?? ($submittedHours > 0.01 ? 'Ingediend' : '—'),
+            'hours_status_label' => $weekReview['label'],
+            'hours_tone' => $weekReview['tone'],
+            'review_date' => $weekReview['date'],
             'day_details' => $dayDetails,
         ];
     }
@@ -280,7 +304,9 @@ class PersonnelHoursService
         $status = $this->dayStatus($entries);
         $prefix = $unplanned ? 'Niet gepland – ' : '';
         if ($status === TimeEntryStatus::Approved) {
-            return $prefix.'✓ '.$hoursLabel.' goedgekeurd';
+            $adjusted = $entries->contains(fn (TimeEntry $entry): bool => $entry->isAdjusted());
+
+            return $prefix.$hoursLabel.($adjusted ? ' aangepast' : ' goedgekeurd');
         }
         if ($status === TimeEntryStatus::Rejected) {
             return $prefix.$hoursLabel.' afgewezen';
@@ -308,6 +334,53 @@ class PersonnelHoursService
         }
 
         return TimeEntryStatus::Submitted;
+    }
+
+    /**
+     * @param  Collection<int, TimeEntry>  $entries
+     */
+    private function entryTone(Collection $entries): ?string
+    {
+        $status = $this->dayStatus($entries);
+        if ($status === null) {
+            return null;
+        }
+        if ($status === TimeEntryStatus::Approved && $entries->contains(fn (TimeEntry $entry): bool => $entry->isAdjusted())) {
+            return 'adjusted';
+        }
+
+        return match ($status) {
+            TimeEntryStatus::Approved => 'approved',
+            TimeEntryStatus::Rejected => 'rejected',
+            TimeEntryStatus::Submitted => 'pending',
+        };
+    }
+
+    /**
+     * @param  Collection<int, TimeEntry>  $entries
+     * @return array{label: string, tone: ?string, date: ?string}
+     */
+    private function weekReview(Collection $entries): array
+    {
+        if ($entries->isEmpty()) {
+            return ['label' => '—', 'tone' => null, 'date' => null];
+        }
+
+        $date = ($entries->first(fn (TimeEntry $entry): bool => $entry->isSubmitted())
+            ?? $entries->first(fn (TimeEntry $entry): bool => $entry->isRejected())
+            ?? $entries->first())?->date->toDateString();
+
+        if ($entries->contains(fn (TimeEntry $entry): bool => $entry->isSubmitted())) {
+            return ['label' => 'Te beoordelen', 'tone' => 'pending', 'date' => $date];
+        }
+        if ($entries->contains(fn (TimeEntry $entry): bool => $entry->isRejected())) {
+            return ['label' => 'Afgewezen / Ter correctie', 'tone' => 'rejected', 'date' => $date];
+        }
+        if ($entries->contains(fn (TimeEntry $entry): bool => $entry->isAdjusted())) {
+            return ['label' => 'Aangepast & goedgekeurd', 'tone' => 'adjusted', 'date' => $date];
+        }
+
+        return ['label' => 'Goedgekeurd', 'tone' => 'approved', 'date' => $date];
     }
 
     /**

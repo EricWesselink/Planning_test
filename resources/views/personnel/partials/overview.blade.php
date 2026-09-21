@@ -60,6 +60,7 @@
         <button class="border border-nicon-ink bg-nicon-ink px-3 py-1.5 text-white">Filter</button>
     </div>
 </form>
+<p class="mt-3 text-sm">Totaal goedgekeurd: {{ \App\Support\PlanningHours::hoursLabel($approvedHoursTotal ?? 0) }}</p>
 <div class="mt-4 overflow-x-auto border border-nicon-line bg-white">
     <table class="min-w-full text-xs">
         <thead class="border-b border-nicon-line bg-nicon-paper text-left uppercase tracking-wide text-nicon-muted">
@@ -88,8 +89,13 @@
                     <td class="px-2 py-1.5">{{ $entry->project?->workNumber() }}</td>
                     <td class="px-2 py-1.5">{{ $entry->workName() }}</td>
                     <td class="px-2 py-1.5">{{ \App\Support\PlanningHours::hoursLabel($entry->plannedHoursValue()) }}</td>
-                    <td class="px-2 py-1.5">{{ $entry->hoursLabel() }}</td>
-                    <td class="px-2 py-1.5">{{ $entry->status->label() }}</td>
+                    <td class="px-2 py-1.5">
+                        {{ \App\Support\PlanningHours::hoursLabel($entry->accountedHoursValue()) }}
+                        @if ($entry->isAdjusted())
+                            <div class="text-nicon-muted">ingediend {{ $entry->hoursLabel() }}</div>
+                        @endif
+                    </td>
+                    <td class="px-2 py-1.5">{{ $entry->reviewStatusLabel() }}</td>
                 </tr>
             @empty
                 <tr>

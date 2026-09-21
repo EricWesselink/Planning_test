@@ -48,20 +48,7 @@
                 <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="name">Projectnaam</label>
                 <input id="name" name="name" value="{{ old('name') }}" required class="mt-1 w-full border border-nicon-line px-3 py-2">
             </div>
-            <div>
-                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="address">Werkadres</label>
-                <input id="address" name="address" value="{{ old('address') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Straat 12">
-                <div class="mt-2 grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
-                        <input id="postal_code" name="postal_code" value="{{ old('postal_code') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="3811 AA">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="city">Plaats</label>
-                        <input id="city" name="city" value="{{ old('city') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Amersfoort">
-                    </div>
-                </div>
-            </div>
+            <x-work-address id="address" class="mt-1" />
             @include('projects.partials.planning-weeks', ['idPrefix' => 'screens-'])
         </div>
 
