@@ -61,6 +61,11 @@
                                 Actief
                             </label>
                         @endif
+                            <label class="flex items-center gap-2 text-sm">
+                                <input type="hidden" name="crew_members[{{ $index }}][registers_hours]" value="0">
+                                <input type="checkbox" name="crew_members[{{ $index }}][registers_hours]" value="1" data-crew-hours class="size-4 accent-nicon-ok" @checked($member['registers_hours'] ?? true)>
+                                Uren registreren
+                            </label>
                     </div>
                 </div>
                 <div>
@@ -87,6 +92,11 @@
                     <input type="hidden" name="crew_members[__INDEX__][active]" value="0">
                     <input type="checkbox" name="crew_members[__INDEX__][active]" value="1" data-crew-active class="size-4 accent-nicon-ok" checked>
                     Actief
+                </label>
+                <label class="mt-2 flex items-center gap-2 text-sm">
+                    <input type="hidden" name="crew_members[__INDEX__][registers_hours]" value="0">
+                    <input type="checkbox" name="crew_members[__INDEX__][registers_hours]" value="1" data-crew-hours class="size-4 accent-nicon-ok" checked>
+                    Uren registreren
                 </label>
             </div>
             <div>
@@ -124,6 +134,7 @@
                         name: row.querySelector('[data-crew-name]')?.value ?? '',
                         phone: row.querySelector('[data-crew-phone]')?.value ?? '',
                         active: row.querySelector('[data-crew-active]')?.checked ?? true,
+                        hours: row.querySelector('[data-crew-hours]')?.checked ?? true,
                     }));
 
                     rows.replaceChildren();
@@ -141,6 +152,7 @@
                         const phoneInput = row.querySelector('[data-crew-phone]');
                         const idInput = row.querySelector('[data-crew-id]');
                         const activeInput = row.querySelector('[data-crew-active]');
+                        const hoursInput = row.querySelector('[data-crew-hours]');
                         if (nameInput) {
                             nameInput.value = existing[index]?.name ?? '';
                         }
@@ -152,6 +164,9 @@
                         }
                         if (activeInput) {
                             activeInput.checked = existing[index]?.active ?? true;
+                        }
+                        if (hoursInput) {
+                            hoursInput.checked = existing[index]?.hours ?? true;
                         }
                         const inviteButton = row.querySelector('button');
                         const savedId = existing[index]?.id ?? '';

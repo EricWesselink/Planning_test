@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['worker_id', 'name', 'phone', 'sort_order', 'specialty', 'friday_off', 'unavailable', 'active', 'work_days'])]
+#[Fillable(['worker_id', 'name', 'phone', 'sort_order', 'specialty', 'friday_off', 'unavailable', 'active', 'work_days', 'registers_hours'])]
 class CrewMember extends Model
 {
     public const WEEKDAY_LABELS = [
@@ -26,6 +26,7 @@ class CrewMember extends Model
         'friday_off' => false,
         'unavailable' => false,
         'active' => true,
+        'registers_hours' => true,
     ];
 
     protected function casts(): array
@@ -36,6 +37,7 @@ class CrewMember extends Model
             'unavailable' => 'boolean',
             'active' => 'boolean',
             'work_days' => 'array',
+            'registers_hours' => 'boolean',
         ];
     }
 
@@ -79,6 +81,11 @@ class CrewMember extends Model
     public function isActive(): bool
     {
         return (bool) $this->active;
+    }
+
+    public function registersHours(): bool
+    {
+        return (bool) $this->registers_hours;
     }
 
     /**

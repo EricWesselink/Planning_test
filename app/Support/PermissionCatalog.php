@@ -36,6 +36,8 @@ class PermissionCatalog
                 [Permission::PlanningAbsence, 'Afwezigheid aanpassen', 'extra'],
                 [Permission::PlanningWeekPdf, 'Weekplanning PDF downloaden', 'extra'],
                 [Permission::PersonnelWeekView, 'Weekplanning personeel', 'view'],
+                [Permission::HoursView, 'Urenoverzicht', 'view'],
+                [Permission::HoursApprove, 'Uren goedkeuren', 'extra'],
                 [Permission::LaborCostsView, 'Uren en kosten zien', 'view'],
             ]),
             self::group('calculations', 'Calculaties', [

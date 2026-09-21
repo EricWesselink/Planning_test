@@ -377,7 +377,7 @@ class User extends Authenticatable
 
     public function canViewPersonnelWeek(): bool
     {
-        return $this->allows(Permission::PersonnelWeekView, fn (): bool => true);
+        return $this->allows(Permission::PersonnelWeekView, fn (): bool => ! $this->isVakman());
     }
 
     public function canViewLaborCosts(): bool
@@ -537,6 +537,30 @@ class User extends Authenticatable
     public function canApproveProgress(): bool
     {
         return $this->allows(Permission::ProgressApprove, fn (): bool => $this->role?->canApproveProgress() ?? false);
+    }
+
+    public function canReviewHours(): bool
+    {
+        return $this->allows(Permission::HoursApprove, fn (): bool => $this->role?->canReviewHours() ?? false);
+    }
+
+    public function canViewHours(): bool
+    {
+        return $this->allows(Permission::HoursView, fn (): bool => $this->canViewPersonnelWeek());
+    }
+
+    public function canRegisterHours(): bool
+    {
+        if (! $this->isVakman()) {
+            return false;
+        }
+
+        $this->loadMissing(['worker', 'crewMember']);
+        if ($this->crewMember !== null) {
+            return $this->crewMember->registersHours();
+        }
+
+        return $this->worker?->registersHours() ?? false;
     }
 
     public function progressNeedsApproval(): bool

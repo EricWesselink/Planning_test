@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
     'name', 'employment_type', 'company', 'contact_name', 'phone', 'email',
     'color', 'address', 'postal_code', 'city',
     'specialty', 'people_count', 'crew_names', 'crew_members', 'default_hours_per_day', 'active', 'friday_off', 'unavailable',
+    'registers_hours',
 ])]
 class Worker extends Model
 {
@@ -39,6 +40,9 @@ class Worker extends Model
             $worker->color = ($current !== null && ! Format::colorIsUsed($current, $taken))
                 ? $current
                 : Format::nextDistinctColor($taken);
+            if (! array_key_exists('registers_hours', $worker->getAttributes())) {
+                $worker->registers_hours = self::defaultRegistersHours($worker->employment_type);
+            }
         });
 
         static::saved(function (Worker $worker): void {
@@ -74,6 +78,7 @@ class Worker extends Model
             'active' => 'boolean',
             'friday_off' => 'boolean',
             'unavailable' => 'boolean',
+            'registers_hours' => 'boolean',
         ];
     }
 
@@ -171,6 +176,7 @@ class Worker extends Model
                         'name' => (string) $member->name,
                         'phone' => (string) $member->phone,
                         'active' => $member->isActive(),
+                        'registers_hours' => $member->registersHours(),
                     ])
                     ->values()
                     ->all(),
@@ -224,6 +230,9 @@ class Worker extends Model
             ];
             if (array_key_exists('active', $member)) {
                 $row['active'] = filter_var($member['active'], FILTER_VALIDATE_BOOLEAN);
+            }
+            if (array_key_exists('registers_hours', $member)) {
+                $row['registers_hours'] = filter_var($member['registers_hours'], FILTER_VALIDATE_BOOLEAN);
             }
             $id = (int) ($member['id'] ?? 0);
             if ($id > 0) {
@@ -618,6 +627,11 @@ class Worker extends Model
             if (array_key_exists('active', $member)) {
                 $values['active'] = (bool) $member['active'];
             }
+            if (array_key_exists('registers_hours', $member)) {
+                $values['registers_hours'] = (bool) $member['registers_hours'];
+            } elseif ($row === null) {
+                $values['registers_hours'] = $this->registersHours();
+            }
 
             if ($row && (int) $row->worker_id === (int) $this->id) {
                 $row->fill($values)->save();
@@ -777,6 +791,25 @@ class Worker extends Model
     public function progressEntries(): HasMany
     {
         return $this->hasMany(WorkProgressEntry::class);
+    }
+
+    public function timeEntries(): HasMany
+    {
+        return $this->hasMany(TimeEntry::class);
+    }
+
+    public function registersHours(): bool
+    {
+        return (bool) $this->registers_hours;
+    }
+
+    public static function defaultRegistersHours(?EmploymentType $type, bool $hourly = false): bool
+    {
+        if ($type === null || $type === EmploymentType::Eigen) {
+            return true;
+        }
+
+        return $hourly;
     }
 
     public function teams(): BelongsToMany

@@ -71,6 +71,11 @@
     </label>
 @endunless
 <label class="flex items-center gap-2 text-sm">
+    <input type="hidden" name="registers_hours" value="0">
+    <input type="checkbox" name="registers_hours" value="1" @checked((int) old('registers_hours', $worker->registers_hours ?? 1) === 1)>
+    Uren registreren
+</label>
+<label class="flex items-center gap-2 text-sm">
     <input type="hidden" name="active" value="0">
     <input type="checkbox" name="active" value="1" @checked((int) old('active', $worker->active ?? 1) === 1)>
     Actief

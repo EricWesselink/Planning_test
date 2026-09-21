@@ -93,6 +93,11 @@ enum UserRole: string
         return $this->is(self::Admin, self::Projectleider);
     }
 
+    public function canReviewHours(): bool
+    {
+        return $this->is(self::Admin, self::Projectleider, self::Planner, self::Uitvoerder);
+    }
+
     public function canCreateSnags(): bool
     {
         return $this->is(self::Admin, self::Projectleider, self::Uitvoerder);

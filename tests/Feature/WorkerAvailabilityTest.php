@@ -99,7 +99,7 @@ class WorkerAvailabilityTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get(route('personnel.index'))
+            ->get(route('personnel.index', ['tab' => 'afwezigheid']))
             ->assertOk()
             ->assertSee('Eric Wesselink')
             ->assertSee('Harm Wesselink')

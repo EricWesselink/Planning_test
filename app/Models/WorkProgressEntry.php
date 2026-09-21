@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'project_id', 'work_item_id', 'project_area_id', 'worker_id', 'date',
+    'project_id', 'work_item_id', 'project_area_id', 'worker_id', 'crew_member_id', 'date',
     'completed_quantity', 'unit', 'worked_hours', 'note', 'created_by',
 ])]
 class WorkProgressEntry extends Model
@@ -41,6 +41,11 @@ class WorkProgressEntry extends Model
     public function worker(): BelongsTo
     {
         return $this->belongsTo(Worker::class);
+    }
+
+    public function crewMember(): BelongsTo
+    {
+        return $this->belongsTo(CrewMember::class);
     }
 
     public function creator(): BelongsTo

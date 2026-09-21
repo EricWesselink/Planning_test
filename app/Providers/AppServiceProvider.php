@@ -85,6 +85,12 @@ class AppServiceProvider extends ServiceProvider
                 ? Response::allow()
                 : Response::deny('Je mag dit werk niet definitief maken.');
         });
+        Gate::define('review-hours', function (User $user) {
+            return $user->canReviewHours()
+                ? Response::allow()
+                : Response::deny('Je mag uren niet beoordelen.');
+        });
+        Gate::define('view-hours', fn (User $user) => $user->canViewHours());
         Gate::define('manage-workers', fn (User $user) => $user->canManageWorkers());
 
         View::composer('layouts.app', function ($view): void {

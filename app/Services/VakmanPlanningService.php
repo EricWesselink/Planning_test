@@ -8,6 +8,7 @@ use App\Enums\WorkUnit;
 use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\ProjectDocument;
+use App\Models\TimeEntry;
 use App\Models\User;
 use App\Models\Voucher;
 use App\Models\WorkerAssignment;
@@ -25,6 +26,7 @@ class VakmanPlanningService
     public function __construct(
         private VoucherPriceResolver $prices,
         private WorkerAvailabilityService $availability,
+        private TimeEntryService $hours,
     ) {}
 
     /**
@@ -67,7 +69,8 @@ class VakmanPlanningService
 
         $assignments = $this->assignments($user, $from, $to);
         $colleagues = $this->colleagueAssignmentsForWindow($user, $assignments, $from, $to);
-        $days = $this->calendarDays($from, $to, $monthStart, $user, $assignments, $colleagues);
+        $entries = $this->hourEntries($user, $from, $to);
+        $days = $this->calendarDays($from, $to, $monthStart, $user, $assignments, $colleagues, $entries);
 
         return [
             'view' => $view,
@@ -96,12 +99,17 @@ class VakmanPlanningService
         $day = $date->copy()->startOfDay();
         $assignments = $this->assignments($user, $day, $day);
         $colleagues = $this->colleagueAssignmentsForWindow($user, $assignments, $day, $day);
-        $jobs = $this->jobsOnDate($user, $assignments, $colleagues, $day, detailed: true);
+        $entries = $this->hourEntries($user, $day, $day);
+        $jobs = $this->jobsOnDate($user, $assignments, $colleagues, $day, true, $entries);
 
         return [
             'date' => $day,
             'heading' => $this->dayHeading($day),
             'jobs' => $jobs,
+            'can_register_hours' => $user->canRegisterHours(),
+            'unplanned_url' => $user->canRegisterHours()
+                ? route('vakman.hours.create', $day->toDateString())
+                : null,
             'isExternal' => $user->worker?->employment_type?->isExternal() ?? false,
         ];
     }
@@ -155,6 +163,9 @@ class VakmanPlanningService
             ->where('worker_id', $workerId)
             ->whereDate('end_date', '>=', $from)
             ->whereDate('start_date', '<=', $to)
+            ->where(function ($query): void {
+                $query->whereNull('origin')->orWhere('origin', '!=', 'hours');
+            })
             ->orderBy('start_date')
             ->orderBy('id')
             ->get();
@@ -172,13 +183,14 @@ class VakmanPlanningService
         User $user,
         Collection $assignments,
         Collection $colleagues,
+        Collection $entries,
     ): Collection {
         $days = collect();
         $cursor = $from->copy()->startOfDay();
         $last = $to->copy()->startOfDay();
 
         while ($cursor->lte($last)) {
-            $jobs = $this->jobsOnDate($user, $assignments, $colleagues, $cursor, detailed: false);
+            $jobs = $this->jobsOnDate($user, $assignments, $colleagues, $cursor, false, $entries);
             $days->push([
                 'date' => $cursor->copy(),
                 'key' => $cursor->toDateString(),
@@ -204,18 +216,20 @@ class VakmanPlanningService
      * @param  Collection<int, WorkerAssignment>  $colleagues
      * @return list<array<string, mixed>>
      */
-    private function jobsOnDate(User $user, Collection $assignments, Collection $colleagues, CarbonInterface $date, bool $detailed): array
+    private function jobsOnDate(User $user, Collection $assignments, Collection $colleagues, CarbonInterface $date, bool $detailed, ?Collection $entries = null): array
     {
+        $entries ??= collect();
         $isExternal = $user->worker?->employment_type?->isExternal() ?? false;
         $own = $assignments
             ->filter(fn (WorkerAssignment $assignment): bool => $assignment->project !== null
+                && ! $assignment->isHoursOrigin()
                 && $assignment->coversDate($date)
                 && ($isExternal || $assignment->includesVakman($user)))
             ->values();
 
         $others = $colleagues;
 
-        return $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed, $isExternal): array {
+        return $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed, $isExternal, $entries): array {
             $project = $assignment->project;
             $tickets = $this->ticketsOnDate($assignment, $date);
             $holder = $isExternal ? null : $assignment->workTicketHolder;
@@ -223,6 +237,7 @@ class VakmanPlanningService
                 'assignment' => $assignment,
                 'project' => $project,
                 'card_id' => 'vakman-job-'.$date->toDateString().'-'.$assignment->id,
+                'date' => $date->toDateString(),
                 'project_name' => $project->displayTitle(),
                 'city' => trim((string) $project->city),
                 'numbers' => $project->labeledNumbersLine(),
@@ -247,6 +262,8 @@ class VakmanPlanningService
                 'opdrachtbon_url' => $isExternal
                     ? route('vakman.planning.opdrachtbon', [$date->toDateString(), $project])
                     : null,
+                'hour_slots' => $this->hourSlots($user, $assignment, $date, $entries),
+                'can_register_hours' => $user->canRegisterHours(),
             ];
 
             if (! $detailed) {
@@ -885,6 +902,74 @@ class VakmanPlanningService
         }
 
         return $start.' – '.$end;
+    }
+
+    /**
+     * @return Collection<int, TimeEntry>
+     */
+    private function hourEntries(User $user, CarbonInterface $from, CarbonInterface $to): Collection
+    {
+        $workerId = $user->scheduledWorkerId();
+        if ($workerId === null) {
+            return collect();
+        }
+
+        return TimeEntry::query()
+            ->where('worker_id', $workerId)
+            ->where(function ($query) use ($user): void {
+                $crewId = $this->hours->resolvedCrewMemberId($user, $user->worker);
+                if ($crewId === null) {
+                    $query->whereNull('crew_member_id');
+
+                    return;
+                }
+
+                $query->where('crew_member_id', $crewId)
+                    ->orWhereNull('crew_member_id');
+            })
+            ->whereDate('date', '>=', $from->toDateString())
+            ->whereDate('date', '<=', $to->toDateString())
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * @return list<array{assignment_id: int, project_id: int, work_item_id: ?int, work_title: string, planned_hours: float, entry: ?TimeEntry}>
+     */
+    private function hourSlots(User $user, WorkerAssignment $assignment, CarbonInterface $date, Collection $entries): array
+    {
+        $items = $this->workItems($assignment, $this->ticketsOnDate($assignment, $date));
+        if ($items->isEmpty() && $assignment->workItem) {
+            $items = collect([$assignment->workItem]);
+        }
+        if ($items->isEmpty()) {
+            $items = collect([null]);
+        }
+
+        $crewId = $this->hours->resolvedCrewMemberId($user, $user->worker);
+        $planned = $assignment->hoursOnDate($date);
+        $share = $items->count() > 1 ? round($planned / $items->count(), 2) : $planned;
+
+        return $items->map(function (?WorkItem $item) use ($assignment, $date, $entries, $crewId, $share): array {
+            $key = TimeEntry::identityKey(
+                (int) $assignment->worker_id,
+                $crewId,
+                $date->toDateString(),
+                (int) $assignment->id,
+                $item?->id,
+            );
+
+            return [
+                'assignment_id' => (int) $assignment->id,
+                'project_id' => (int) $assignment->project_id,
+                'work_item_id' => $item?->id,
+                'work_title' => $item?->planningTitle() ?? 'Werkzaamheid',
+                'planned_hours' => $share,
+                'entry' => $entries->first(
+                    fn (TimeEntry $entry): bool => $entry->identity_key === $key
+                ),
+            ];
+        })->values()->all();
     }
 
     private function dayHeading(CarbonInterface $date): string

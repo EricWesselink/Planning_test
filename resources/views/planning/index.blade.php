@@ -19,6 +19,11 @@
                     <div class="planning-eyebrow">Planbord</div>
                     <h1 class="planning-heading">Planning</h1>
                     <p class="planning-week-label">{{ $weekRangeLabel }} · {{ $weekStart->translatedFormat('d M') }} – {{ $days->last()->translatedFormat('d M Y') }}</p>
+                    @php $hoursView = $hoursView ?? ($filters['hours_view'] ?? 'planned'); @endphp
+                    <div class="mt-2 flex gap-1 text-xs">
+                        <a href="{{ route('planning', array_merge($query, ['hours_view' => 'planned'])) }}" class="planning-filter{{ $hoursView === 'planned' ? ' is-active' : '' }}">Gepland</a>
+                        <a href="{{ route('planning', array_merge($query, ['hours_view' => 'actual'])) }}" class="planning-filter{{ $hoursView === 'actual' ? ' is-active' : '' }}">Werkelijk</a>
+                    </div>
                 </div>
                 <div class="planning-toolbar">
                     <a class="planning-btn planning-btn--icon" href="{{ route('planning', array_merge($query, ['week' => $prevWeek])) }}" title="Vorige week" aria-label="Vorige week">
@@ -110,11 +115,20 @@
                     @endforeach
                 </select>
                 @if ($canManagePlanning)
-                    <select name="worker_id" class="planning-filter" onchange="this.form.submit()" aria-label="Vakman">
+                    <select name="who" class="planning-filter" onchange="this.form.submit()" aria-label="Vakman of naam">
                         <option value="">Iedereen</option>
-                        @foreach ($workers as $worker)
-                            <option value="{{ $worker->id }}" @selected(($filters['worker_id'] ?? '') == $worker->id)>{{ $worker->planName() }}</option>
-                        @endforeach
+                        <optgroup label="Teams">
+                            @foreach ($workers as $worker)
+                                <option value="worker:{{ $worker->id }}" @selected(($filters['who'] ?? '') === 'worker:'.$worker->id)>{{ $worker->planName() }}</option>
+                            @endforeach
+                        </optgroup>
+                        @if (($filterPeople ?? collect())->isNotEmpty())
+                            <optgroup label="Personen">
+                                @foreach ($filterPeople as $person)
+                                    <option value="member:{{ $person['id'] }}" @selected(($filters['who'] ?? '') === 'member:'.$person['id'])>{{ $person['label'] }} · {{ $person['team'] }}</option>
+                                @endforeach
+                            </optgroup>
+                        @endif
                     </select>
                 @endif
                 <select name="status" class="planning-filter" onchange="this.form.submit()" aria-label="Status">
@@ -138,6 +152,7 @@
                             $weekStaffedQuery['todo_running'] = '1';
                         }
                         $weekStaffedActive = ($filters['staffing'] ?? '') === 'planned'
+                            && empty($filters['who'])
                             && empty($filters['worker_id'])
                             && empty($filters['project_id'])
                             && empty($filters['status'])

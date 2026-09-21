@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\Worker;
 use App\Services\InternalPlanningExcelService;
@@ -24,14 +25,27 @@ class PlanningController extends Controller
         $this->authorizeRequestedProject($request);
         $data = $board->build($request);
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
+        $workers = Worker::query()
+            ->where('active', true)
+            ->when($scheduledWorkerId, fn ($q) => $q->whereKey($scheduledWorkerId))
+            ->with('crewPeople')
+            ->orderBy('name')
+            ->get();
 
         return view('planning.index', array_merge($data, [
-            'workers' => Worker::query()
-                ->where('active', true)
-                ->when($scheduledWorkerId, fn ($q) => $q->whereKey($scheduledWorkerId))
-                ->with('crewPeople')
-                ->orderBy('name')
-                ->get(),
+            'workers' => $workers,
+            'filterPeople' => $workers
+                ->flatMap(function (Worker $worker) {
+                    return $worker->crewPeople
+                        ->filter(fn (CrewMember $member): bool => $member->isActive() && trim((string) $member->name) !== '')
+                        ->map(fn (CrewMember $member): array => [
+                            'id' => $member->id,
+                            'label' => $member->label(),
+                            'team' => $worker->planName(),
+                        ]);
+                })
+                ->sortBy(fn (array $row): string => mb_strtolower($row['label'].' '.$row['team']), SORT_NATURAL)
+                ->values(),
             'canManagePlanning' => $request->user()?->canManagePlanning() ?? false,
             'canDragPlanning' => $request->user()?->canDragPlanning() ?? false,
             'canAssignPlanning' => $request->user()?->canAssignPlanning() ?? false,

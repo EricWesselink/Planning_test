@@ -5,10 +5,13 @@ namespace App\Services;
 use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
 use App\Enums\SmallWorkType;
+use App\Enums\TimeEntryStatus;
 use App\Enums\WorkPhase;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
+use App\Models\CrewMember;
 use App\Models\Project;
+use App\Models\TimeEntry;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\Format;
@@ -81,7 +84,9 @@ class PlanningBoardService
         $staffingFilter = $this->staffingFilter($request);
         $todoRunning = $this->todoRunningFilter($request);
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
-        $workerId = $scheduledWorkerId ?? ($request->filled('worker_id') ? $request->integer('worker_id') : null);
+        [$filterWorkerId, $filterCrewMemberId, $whoValue] = $this->whoFilter($request);
+        $workerId = $scheduledWorkerId ?? $filterWorkerId;
+        $crewMemberId = $scheduledWorkerId ? null : $filterCrewMemberId;
         $canViewLabor = $request->user()?->canViewLaborCosts() ?? false;
         $windowStart = $days->first();
         $windowEnd = $days->last();
@@ -89,7 +94,8 @@ class PlanningBoardService
         $relations = [
             'customer',
             'workActivities.category',
-            'workItems.progressEntries',
+            'workItems.progressEntries.crewMember',
+            'workItems.progressEntries.worker',
             'workItems.workOrders.worker',
             'workOrders.worker',
             'workOrders.workItem',
@@ -122,6 +128,7 @@ class PlanningBoardService
             ])
             ->values();
 
+        $hoursView = $this->hoursView($request, $windowEnd);
         $assignments = WorkerAssignment::query()
             ->with(['worker', 'workItem', 'workItems', 'team', 'crewMembers', 'workTickets', 'foreman', 'workTicketHolder'])
             ->whereHas('project', function ($q) use ($request, $kindFilter): void {
@@ -131,9 +138,20 @@ class PlanningBoardService
             ->where('end_date', '>=', $windowStart->toDateString())
             ->where('start_date', '<=', $windowEnd->toDateString())
             ->when($workerId, fn ($q) => $q->where('worker_id', $workerId))
+            ->when($crewMemberId, fn ($q) => $this->constrainCrewMember($q, $crewMemberId))
+            ->when(
+                $hoursView !== 'actual',
+                fn ($q) => $q->where(function ($query): void {
+                    $query->whereNull('origin')->orWhere('origin', '!=', 'hours');
+                }),
+            )
             ->get();
 
-        if ($workerId) {
+        if ($hoursView === 'actual') {
+            $this->applyApprovedHours($assignments);
+        }
+
+        if ($workerId || $crewMemberId) {
             $projects = $projects->whereIn('id', $assignments->pluck('project_id'))->values();
         }
 
@@ -416,11 +434,14 @@ class PlanningBoardService
                 'period' => $printPeriod,
                 'kind' => $kindFilter instanceof ProjectKind ? $kindFilter->value : (string) ($kindFilter ?? ''),
                 'project_id' => $request->input('project_id'),
-                'worker_id' => $workerId,
+                'who' => $scheduledWorkerId ? '' : $whoValue,
+                'worker_id' => $scheduledWorkerId ?? ($whoValue !== '' ? null : $filterWorkerId),
                 'status' => $request->input('status'),
                 'staffing' => $scheduledWorkerId === null ? ($staffingFilter ?? '') : '',
                 'todo_running' => $todoRunning ? '1' : '',
+                'hours_view' => $hoursView,
             ],
+            'hoursView' => $hoursView,
             'weekOptions' => self::WEEK_OPTIONS,
             'teamManDays' => $teamManDays,
             'availabilityDays' => $availabilityOverview['days'],
@@ -587,6 +608,38 @@ class PlanningBoardService
             $assignments
                 ->where('end_date', '>=', $windowStart->toDateString())
                 ->where('start_date', '<=', $windowEnd->toDateString());
+        });
+    }
+
+    /**
+     * @return array{0: ?int, 1: ?int, 2: string}
+     */
+    private function whoFilter(Request $request): array
+    {
+        $who = trim((string) $request->input('who', ''));
+        if (preg_match('/^worker:([0-9]+)$/', $who, $match) === 1) {
+            return [(int) $match[1], null, $who];
+        }
+        if (preg_match('/^member:([0-9]+)$/', $who, $match) === 1) {
+            return [null, (int) $match[1], $who];
+        }
+
+        $workerId = $request->filled('worker_id') ? $request->integer('worker_id') : null;
+        $memberId = $request->filled('crew_member_id') ? $request->integer('crew_member_id') : null;
+        $value = $memberId ? 'member:'.$memberId : ($workerId ? 'worker:'.$workerId : '');
+
+        return [$workerId, $memberId, $value];
+    }
+
+    private function constrainCrewMember(Builder $query, int $crewMemberId): Builder
+    {
+        return $query->where(function (Builder $inner) use ($crewMemberId): void {
+            $inner->whereHas('crewMembers', function (Builder $members) use ($crewMemberId): void {
+                $members->where('crew_members.id', $crewMemberId);
+            })->orWhere(function (Builder $team) use ($crewMemberId): void {
+                $team->whereDoesntHave('crewMembers')
+                    ->whereIn('worker_id', CrewMember::query()->whereKey($crewMemberId)->select('worker_id'));
+            });
         });
     }
 
@@ -879,6 +932,15 @@ class PlanningBoardService
     private function personBar(WorkerAssignment $assignment, array $bar, array $doubleBooked, Collection $days, string $workName, string $projectName = ''): array
     {
         $label = $assignment->planningLabel();
+        $approvedHours = (float) ($assignment->getAttribute('approved_hours') ?? 0);
+        if ($approvedHours > 0.01) {
+            $planned = $assignment->plannedHoursValue();
+            $label .= ' · werkelijk '.PlanningHours::hoursLabel($approvedHours);
+            if ($planned > 0.01) {
+                $delta = round($approvedHours - $planned, 2);
+                $label .= ' · verschil '.($delta > 0.0001 ? '+' : '').PlanningHours::hoursLabel($delta);
+            }
+        }
         $ticketLabel = $assignment->planningTicketLabel();
         $ticket = $assignment->workTickets->first();
         $double = $days->contains(
@@ -914,6 +976,7 @@ class PlanningBoardService
             'include_saturday' => $assignment->includesSaturday(),
             'include_sunday' => $assignment->includesSunday(),
             'is_provisional' => $assignment->isProvisional(),
+            'locked' => $assignment->isHoursOrigin(),
             'hours_per_day' => (float) $assignment->hours_per_day,
             'planned_hours' => $assignment->plannedHoursValue(),
             'color' => $assignment->worker?->planColor() ?? Format::planColor((int) $assignment->worker_id),
@@ -1585,5 +1648,45 @@ class PlanningBoardService
         }
 
         return [$row, $usedIds];
+    }
+
+    private function hoursView(Request $request, CarbonInterface $windowEnd): string
+    {
+        $value = $request->string('hours_view')->toString();
+        if (in_array($value, ['planned', 'actual'], true)) {
+            return $value;
+        }
+
+        return $windowEnd->lt(now()->startOfDay()) ? 'actual' : 'planned';
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     */
+    private function applyApprovedHours(Collection $assignments): void
+    {
+        $ids = $assignments->modelKeys();
+        if ($ids === []) {
+            return;
+        }
+
+        $entries = TimeEntry::query()
+            ->where('status', TimeEntryStatus::Approved)
+            ->where(function ($query) use ($ids): void {
+                $query->whereIn('worker_assignment_id', $ids)
+                    ->orWhereIn('actual_assignment_id', $ids);
+            })
+            ->get();
+
+        $byAssignment = $entries->groupBy(function (TimeEntry $entry): int {
+            return (int) ($entry->worker_assignment_id ?: $entry->actual_assignment_id);
+        });
+
+        foreach ($assignments as $assignment) {
+            $hours = (float) ($byAssignment->get($assignment->id)?->sum(
+                fn (TimeEntry $entry): float => $entry->hoursValue()
+            ) ?? 0);
+            $assignment->setAttribute('approved_hours', round($hours, 2));
+        }
     }
 }

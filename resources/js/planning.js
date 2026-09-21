@@ -1064,6 +1064,9 @@ if (board) {
     if (! readonly) {
     board.querySelectorAll('.person-bar').forEach((bar) => {
         bar.addEventListener('pointerdown', (event) => {
+            if (bar.dataset.locked === '1') {
+                return;
+            }
             const handle = event.target.closest('.bar-handle');
             const originStack = bar.closest('.person-stack');
             const originStart = Number(bar.dataset.start);

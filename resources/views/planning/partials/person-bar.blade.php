@@ -16,6 +16,7 @@
      data-include-saturday="{{ ! empty($personBar['include_saturday']) ? '1' : '0' }}"
      data-include-sunday="{{ ! empty($personBar['include_sunday']) ? '1' : '0' }}"
      data-provisional="{{ ! empty($personBar['is_provisional']) ? '1' : '0' }}"
+     data-locked="{{ ! empty($personBar['locked']) ? '1' : '0' }}"
      data-people-count="{{ $personBar['people_count'] }}"
      data-planned-hours="{{ $personBar['planned_hours'] ?? 8 }}"
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"

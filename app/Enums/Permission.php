@@ -25,6 +25,8 @@ enum Permission: string
     case PlanningAbsence = 'planning.absence';
     case PlanningWeekPdf = 'planning.week_pdf';
     case PersonnelWeekView = 'personnel_week.view';
+    case HoursView = 'hours.view';
+    case HoursApprove = 'hours.approve';
 
     case CalculationsView = 'calculations.view';
     case CalculationsCreate = 'calculations.create';
@@ -104,6 +106,7 @@ enum Permission: string
             self::FilesUpload, self::RevisionsProcess => self::FilesView,
             self::PlanningUpdate, self::PlanningAssign, self::PlanningDrag,
             self::PlanningHours, self::PlanningAbsence, self::PlanningWeekPdf => self::PlanningView,
+            self::HoursApprove => self::HoursView,
             self::CalculationsPrint => self::CalculationsView,
             self::MaterialsUpdate => self::MaterialsView,
             self::WorkTicketsPdf => self::WorkTicketsView,

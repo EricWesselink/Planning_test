@@ -49,8 +49,11 @@ class WorkerPersonnelTest extends TestCase
             ->assertSee('Harm Wesselink')
             ->assertSee('>Ma 7</th>', false)
             ->assertSee('>Za 12</th>', false)
-            ->assertSee('Vaste werkdagen')
             ->assertSee('Afwezigheid')
+            ->assertSee('Vaste werkdagen')
+            ->assertSee('Weekstaat')
+            ->assertSee('Uren goedkeuren')
+            ->assertSee('Urenoverzicht')
             ->assertDontSee('Nick Seine')
             ->assertDontSee('Vrij op vrijdag');
     }
@@ -253,7 +256,7 @@ class WorkerPersonnelTest extends TestCase
         $this->makeWorker('Eric Wesselink', 'eigen');
 
         $html = $this->actingAs($user)
-            ->get(route('personnel.index'))
+            ->get(route('personnel.index', ['tab' => 'afwezigheid']))
             ->assertOk()
             ->assertSee('Eric Wesselink')
             ->assertSee('Hele dag')

@@ -57,6 +57,9 @@
                 </div>
                 @if (auth()->user()?->canViewLaborCosts())
                     @include('projects.partials.calculation-lines', ['project' => $project])
+                    @if (! empty($labor))
+                        @include('projects.partials.labor-summary', ['labor' => $labor])
+                    @endif
                 @endif
                 @if (! empty($project->import_warnings))
                     <details class="mt-2 max-w-xl text-xs">

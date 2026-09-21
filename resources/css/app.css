@@ -4943,6 +4943,38 @@ button.plan-labor-toggle:hover {
     padding: 0 0.85rem 0.85rem;
 }
 
+.vakman-hours {
+    display: grid;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.vakman-hours-status {
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.vakman-hours-status.is-approved {
+    color: var(--color-nicon-ok);
+}
+
+.vakman-hours-form {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.vakman-hours-field {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.75rem;
+}
+
+.vakman-hours-field input {
+    border: 1px solid var(--color-nicon-line);
+    padding: 0.4rem 0.55rem;
+    background: white;
+}
+
 .vakman-job-btn {
     display: inline-flex;
     align-items: center;

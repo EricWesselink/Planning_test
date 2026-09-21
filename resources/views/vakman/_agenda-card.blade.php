@@ -92,6 +92,23 @@
             @if ($job['maps_url'] ?? null)
                 <a href="{{ $job['maps_url'] }}" class="vakman-job-btn vakman-job-btn-ghost" target="_blank" rel="noopener noreferrer">Route</a>
             @endif
+            @if (! empty($job['can_register_hours']))
+                @foreach ($job['hour_slots'] ?? [] as $slot)
+                    <div class="w-full border-t border-nicon-line pt-3">
+                        @if (count($job['hour_slots']) > 1)
+                            <p class="mb-2 text-xs text-nicon-muted">{{ $slot['work_title'] }} · gepland {{ \App\Support\PlanningHours::hoursLabel($slot['planned_hours']) }}</p>
+                        @endif
+                        @include('vakman.partials.hours-form', [
+                            'date' => $job['date'] ?? now()->toDateString(),
+                            'assignmentId' => $slot['assignment_id'],
+                            'projectId' => $slot['project_id'],
+                            'workItemId' => $slot['work_item_id'],
+                            'plannedHours' => $slot['planned_hours'],
+                            'entry' => $slot['entry'],
+                        ])
+                    </div>
+                @endforeach
+            @endif
         </div>
     @endif
 </div>

@@ -249,6 +249,8 @@ class WorkerController extends Controller
             'crew_members.*.name' => ['nullable', 'string', 'max:255'],
             'crew_members.*.phone' => ['nullable', 'string', 'max:64'],
             'crew_members.*.active' => ['sometimes', 'boolean'],
+            'crew_members.*.registers_hours' => ['sometimes', 'boolean'],
+            'registers_hours' => ['sometimes', 'boolean'],
             'active' => ['sometimes', 'boolean'],
             'friday_off' => ['sometimes', 'boolean'],
             'unavailable' => ['sometimes', 'boolean'],
@@ -271,6 +273,11 @@ class WorkerController extends Controller
         ]);
 
         $data['active'] = $request->boolean('active', true);
+        $hourly = filled($request->input('rates.hourly.unit_price'));
+        $typeForHours = EmploymentType::tryFrom((string) $request->input('employment_type'));
+        $data['registers_hours'] = $request->exists('registers_hours')
+            ? $request->boolean('registers_hours')
+            : Worker::defaultRegistersHours($typeForHours, $hourly);
         $type = $data['employment_type'] instanceof EmploymentType
             ? $data['employment_type']
             : EmploymentType::tryFrom((string) $data['employment_type']);
@@ -299,6 +306,11 @@ class WorkerController extends Controller
             );
         if (Worker::firstCrewPhone($members) === null && filled($data['phone'] ?? null)) {
             $members[0]['phone'] = trim((string) $data['phone']);
+        }
+        foreach ($members as $index => $member) {
+            if (! array_key_exists('registers_hours', $member)) {
+                $members[$index]['registers_hours'] = (bool) $data['registers_hours'];
+            }
         }
         $data['crew_members'] = $members;
         $data['people_count'] = max(1, count($members));

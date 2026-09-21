@@ -7,16 +7,17 @@
         <div>
             <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Eigen personeel</div>
             <h1 class="text-2xl font-semibold">Personeel</h1>
-            <p class="text-sm text-nicon-muted">Uren en afwezigheid van eigen medewerkers. ZZP blijft bij Vakmensen / ZZP.</p>
+            <p class="text-sm text-nicon-muted">Uren van eigen medewerkers en vakmannen op urenbasis. Afwezigheid blijft bij eigen personeel.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2 text-sm">
-            <a class="border border-nicon-line bg-white px-3 py-1.5" href="{{ route('personnel.index', ['week' => $prevWeek]) }}" aria-label="Vorige week">←</a>
-            <a class="border border-nicon-line bg-white px-3 py-1.5" href="{{ route('personnel.index', ['week' => $thisWeek]) }}">Deze week</a>
-            <a class="border border-nicon-line bg-white px-3 py-1.5" href="{{ route('personnel.index', ['week' => $nextWeek]) }}" aria-label="Volgende week">→</a>
+            <a class="border border-nicon-line bg-white px-3 py-1.5" href="{{ route('personnel.index', ['week' => $prevWeek, 'tab' => $tab]) }}" aria-label="Vorige week">←</a>
+            <a class="border border-nicon-line bg-white px-3 py-1.5" href="{{ route('personnel.index', ['week' => $thisWeek, 'tab' => $tab]) }}">Deze week</a>
+            <a class="border border-nicon-line bg-white px-3 py-1.5" href="{{ route('personnel.index', ['week' => $nextWeek, 'tab' => $tab]) }}" aria-label="Volgende week">→</a>
             <form method="GET" action="{{ route('personnel.index') }}" class="flex items-center gap-2">
                 <label for="personnel-week-nr" class="text-nicon-muted">Week</label>
                 <input id="personnel-week-nr" type="number" name="week_nr" min="1" max="53" required value="{{ $weekStart->isoWeek() }}" class="w-16 border border-nicon-line bg-white px-2 py-1.5">
                 <input type="hidden" name="year" value="{{ $weekStart->isoWeekYear }}">
+                <input type="hidden" name="tab" value="{{ $tab }}">
                 <button class="border border-nicon-line bg-white px-3 py-1.5">Toon</button>
             </form>
         </div>
@@ -34,6 +35,23 @@
         </ul>
     @endif
 
+    @php
+        $tabs = [
+            'weekstaat' => 'Weekstaat',
+            'goedkeuren' => 'Uren goedkeuren',
+            'overzicht' => 'Urenoverzicht',
+            'afwezigheid' => 'Afwezigheid',
+            'werkdagen' => 'Vaste werkdagen',
+        ];
+        $staffRows = $staff ?? $people;
+    @endphp
+    <nav class="board-tabs mt-4">
+        @foreach ($tabs as $key => $label)
+            <a class="{{ $tab === $key ? 'is-on' : '' }}" href="{{ route('personnel.index', ['week' => $weekStart->toDateString(), 'tab' => $key]) }}">{{ $label }}</a>
+        @endforeach
+    </nav>
+
+    @if ($tab === 'weekstaat')
     <div class="mt-4 overflow-x-auto border border-nicon-line bg-white">
         <table class="min-w-full text-xs">
             <thead class="border-b border-nicon-line bg-nicon-paper text-left uppercase tracking-wide text-nicon-muted">
@@ -42,7 +60,8 @@
                     @foreach ($days as $day)
                         <th class="px-1.5 py-1.5 text-center font-medium">{{ \App\Models\CrewMember::WEEKDAY_LABELS[(int) $day->dayOfWeekIso] }} {{ $day->format('j') }}</th>
                     @endforeach
-                    <th class="px-2 py-1.5 font-medium">Week</th>
+                    <th class="px-2 py-1.5 font-medium">Totaal</th>
+                    <th class="px-2 py-1.5 font-medium">Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -55,7 +74,19 @@
                         <td class="px-2 py-1 whitespace-nowrap font-semibold text-nicon-ink">{{ $member->displayName() }}</td>
                         @foreach ($row['cells'] as $cell)
                             <td class="px-1.5 py-1 text-center">
-                                @if ($cell['status_label'])
+                                @php
+                                    $cellUrl = route('personnel.index', [
+                                        'week' => $weekStart->toDateString(),
+                                        'tab' => 'weekstaat',
+                                        'worker_id' => $worker->id,
+                                        'crew_member_id' => $member->exists ? $member->id : null,
+                                        'day' => $cell['date'],
+                                    ]);
+                                @endphp
+                                <a href="{{ $cellUrl }}" class="block hover:underline">
+                                @if (! empty($cell['has_entries']))
+                                    <span @class(['text-nicon-warn' => ($cell['entry_status']?->value ?? '') === 'ingediend', 'text-nicon-ok' => ($cell['entry_status']?->value ?? '') === 'goedgekeurd'])>{{ $cell['entry_status_label'] }}</span>
+                                @elseif ($cell['status_label'])
                                     <span @class([
                                         'text-nicon-muted' => $cell['status'] === 'vrij',
                                         'text-nicon-danger' => in_array($cell['status'], ['ziek', 'overig'], true),
@@ -66,19 +97,58 @@
                                 @else
                                     <span class="text-nicon-muted">—</span>
                                 @endif
+                                </a>
                             </td>
                         @endforeach
-                        <td class="px-2 py-1 whitespace-nowrap text-nicon-muted">{{ $row['week_summary'] }}</td>
+                        <td class="px-2 py-1 whitespace-nowrap text-nicon-muted">{{ ($row['submitted_hours'] ?? 0) > 0.01 ? $row['submitted_label'] : $row['week_summary'] }}</td>
+                        <td class="px-2 py-1 whitespace-nowrap">{{ $row['hours_status_label'] ?? '—' }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="8" class="px-2 py-4 text-nicon-muted">Nog geen eigen medewerkers.</td>
+                        <td colspan="9" class="px-2 py-4 text-nicon-muted">Nog geen eigen medewerkers.</td>
                     </tr>
                 @endforelse
             </tbody>
         </table>
     </div>
+    @if (($dayDetails ?? []) !== [])
+        @php
+            $detailDay = \Carbon\Carbon::parse($detailDate);
+        @endphp
+        <div class="mt-4 border border-nicon-line bg-white p-4 text-sm">
+            <h2 class="text-base font-semibold">{{ $detailDay->translatedFormat('l j F') }}</h2>
+            @foreach ($dayDetails as $detail)
+                <div class="mt-3 border-t border-nicon-line pt-3">
+                    @if ($detail['is_unplanned'])
+                        <p class="text-xs font-medium text-nicon-warn">Niet gepland</p>
+                    @endif
+                    <p class="font-semibold">{{ $detail['project'] }}</p>
+                    @if ($detail['work_number'] !== '')
+                        <p>Werknummer: {{ $detail['work_number'] }}</p>
+                    @endif
+                    <p>Werkzaamheid: {{ $detail['work'] }}</p>
+                    <p>Gepland: {{ $detail['planned_label'] }}</p>
+                    <p>Ingediend: {{ $detail['submitted_label'] }}</p>
+                    <p @class(['text-nicon-warn' => abs($detail['difference']) > 0.01])>Verschil: {{ $detail['difference_label'] }}</p>
+                    @if ($detail['note'])
+                        <p class="text-nicon-muted">{{ $detail['note'] }}</p>
+                    @endif
+                    <p>{{ $detail['status']->label() }}</p>
+                </div>
+            @endforeach
+        </div>
+    @endif
+    @endif
 
+    @if ($tab === 'goedkeuren')
+        @include('personnel.partials.approve')
+    @endif
+
+    @if ($tab === 'overzicht')
+        @include('personnel.partials.overview')
+    @endif
+
+    @if ($tab === 'werkdagen')
     <h2 class="mt-6 text-base font-semibold">Vaste werkdagen</h2>
     <div class="mt-2 overflow-x-auto border border-nicon-line bg-white">
         <table class="min-w-full text-xs">
@@ -91,7 +161,7 @@
                 </tr>
             </thead>
             <tbody>
-                @forelse ($people as $row)
+                @forelse ($staffRows as $row)
                     @php
                         $worker = $row['worker'];
                         $member = $row['member'];
@@ -133,7 +203,9 @@
             </tbody>
         </table>
     </div>
+    @endif
 
+    @if ($tab === 'afwezigheid')
     <h2 class="mt-6 text-base font-semibold">Afwezigheid</h2>
     <div class="mt-2 overflow-x-auto border border-nicon-line bg-white">
         <table class="min-w-full text-xs">
@@ -149,7 +221,7 @@
                 </tr>
             </thead>
             <tbody>
-                @forelse ($people as $row)
+                @forelse ($staffRows as $row)
                     @php
                         $worker = $row['worker'];
                         $member = $row['member'];
@@ -232,6 +304,7 @@
             </tbody>
         </table>
     </div>
+    @endif
 @endsection
 
 @pushOnce('scripts')

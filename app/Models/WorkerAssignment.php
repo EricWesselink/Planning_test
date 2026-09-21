@@ -18,7 +18,7 @@ use Illuminate\Support\Collection;
     'worker_id', 'project_id', 'work_item_id', 'team_id',
     'start_date', 'end_date', 'start_time', 'end_time',
     'include_saturday', 'include_sunday',
-    'people_count', 'hours_per_day', 'planned_hours', 'is_provisional', 'notes',
+    'people_count', 'hours_per_day', 'planned_hours', 'is_provisional', 'origin', 'notes',
     'foreman_crew_member_id', 'work_ticket_crew_member_id',
 ])]
 class WorkerAssignment extends Model
@@ -32,6 +32,7 @@ class WorkerAssignment extends Model
         'include_saturday' => false,
         'include_sunday' => false,
         'is_provisional' => false,
+        'origin' => 'planned',
     ];
 
     protected function casts(): array
@@ -269,6 +270,11 @@ class WorkerAssignment extends Model
         return (bool) $this->is_provisional;
     }
 
+    public function isHoursOrigin(): bool
+    {
+        return $this->origin === 'hours';
+    }
+
     public function coversDate(CarbonInterface $date): bool
     {
         return $date->betweenIncluded($this->start_date, $this->end_date)
@@ -287,7 +293,7 @@ class WorkerAssignment extends Model
 
     public function plannedHoursValue(): float
     {
-        if ($this->isProvisional()) {
+        if ($this->isProvisional() || $this->isHoursOrigin()) {
             return 0.0;
         }
 
@@ -506,6 +512,10 @@ class WorkerAssignment extends Model
 
     public function hoursLabel(): string
     {
+        if ($this->isHoursOrigin()) {
+            return PlanningHours::hoursLabel((float) $this->hours_per_day);
+        }
+
         return PlanningHours::hoursLabel($this->plannedHoursValue());
     }
 

@@ -44,7 +44,7 @@ class ProjectLaborCalculator
      */
     public function for(Project $project): array
     {
-        $project->loadMissing(['assignments.crewMembers', 'workItems.progressEntries', 'workOrders']);
+        $project->loadMissing(['assignments.crewMembers', 'workItems.progressEntries.crewMember', 'workItems.progressEntries.worker', 'workOrders']);
 
         $hoursByItem = $project->assignments->groupBy(
             fn (WorkerAssignment $assignment): int => $assignment->resolvedWorkItemId($project->workOrders) ?? 0
@@ -199,6 +199,29 @@ class ProjectLaborCalculator
             2,
         );
         $actualHours = round((float) $item->progressEntries->sum('worked_hours'), 2);
+        $peopleHours = $item->progressEntries
+            ->groupBy(function ($entry): string {
+                $memberId = (int) ($entry->crew_member_id ?? 0);
+                $workerId = (int) ($entry->worker_id ?? 0);
+
+                return $memberId.':'.$workerId;
+            })
+            ->map(function (Collection $rows) {
+                $first = $rows->first();
+                $name = $first?->crewMember?->displayName()
+                    ?? $first?->worker?->planName()
+                    ?? 'Onbekend';
+
+                return [
+                    'name' => $name,
+                    'hours' => round((float) $rows->sum('worked_hours'), 2),
+                    'hours_label' => PlanningHours::hoursLabel((float) $rows->sum('worked_hours')),
+                ];
+            })
+            ->filter(fn (array $row): bool => $row['hours'] > 0.01)
+            ->sortBy('name')
+            ->values()
+            ->all();
         $usedHours = round(max($plannedHours, $actualHours), 2);
         $budgetHours = $item->begrote_uren === null ? 0.0 : round((float) $item->begrote_uren, 2);
         $budgetQty = $item->begrote_hoeveelheid === null
@@ -254,6 +277,7 @@ class ProjectLaborCalculator
                 : $this->rate($item->uurtarief),
             'planned_hours' => $plannedHours,
             'actual_hours' => $actualHours,
+            'people' => $peopleHours,
             ...$delta,
             ...$this->budgetRemaining($budgetHours, $actualHours),
             'used_hours' => $usedHours,

@@ -383,6 +383,7 @@ class ProjectController extends Controller
             'openSnagId' => $openSnagId,
             'todayPresence' => $todayPresence,
             'sourceCatalog' => $sourceDocuments->catalog($project),
+            'labor' => $request->user()?->canViewLaborCosts() ? $labor->for($project) : null,
         ]);
     }
 

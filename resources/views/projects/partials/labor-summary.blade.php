@@ -126,6 +126,9 @@
                 <div>
                     <div class="text-sm font-medium text-nicon-ink">{{ $itemLabor['title'] }}</div>
                     <div class="text-xs text-nicon-muted">Begroot {{ \App\Support\PlanningHours::hoursLabel($itemBudget) }} · Ingepland <span @class(['font-medium text-nicon-danger' => $itemOver])>{{ \App\Support\PlanningHours::hoursLabel($itemPlanned) }}</span> · Gemaakt {{ \App\Support\PlanningHours::hoursLabel($itemLabor['actual_hours'] ?? 0) }}</div>
+                    @foreach ($itemLabor['people'] ?? [] as $person)
+                        <div class="text-xs text-nicon-steel">{{ $person['name'] }} – {{ $itemLabor['title'] }} – {{ $person['hours_label'] }}</div>
+                    @endforeach
                     @if (($itemLabor['bar_label'] ?? null) !== null && ($itemLabor['bar_percent'] ?? null) !== null)
                         <div class="plan-hour-bar plan-hour-bar--{{ $itemLabor['tone'] ?? 'none' }}" style="max-width: 16rem">
                             <span class="plan-hour-bar-track" aria-hidden="true">
