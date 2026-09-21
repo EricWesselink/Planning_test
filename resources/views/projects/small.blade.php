@@ -48,6 +48,9 @@
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="description">Korte omschrijving</label>
             <input id="description" name="description" value="{{ old('description', $project->name) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! $canUpdate)>
         </div>
+        <div>
+            <x-work-address id="address" class="mt-1" :value="$project->nawLine()" :required="$canUpdate" :disabled="! $canUpdate" show-maps />
+        </div>
         @include('projects.partials.small-work-activities', [
             'floorActivities' => $floorActivities,
             'selectedIds' => $selectedIds,
@@ -55,9 +58,6 @@
             'activityNotes' => $activityNotes ?? [],
             'canUpdate' => $canUpdate,
         ])
-        <div>
-            <x-work-address id="address" class="mt-1" :value="$project->nawLine()" :required="$canUpdate" :disabled="! $canUpdate" show-maps />
-        </div>
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="work_number">Werknummer</label>
             <input id="work_number" name="work_number" value="{{ old('work_number', $project->project_number) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! $canUpdate)>

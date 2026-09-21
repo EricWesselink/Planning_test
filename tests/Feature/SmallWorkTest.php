@@ -213,7 +213,7 @@ class SmallWorkTest extends TestCase
             ->assertSee('11P241267')
             ->assertSee('250100010')
             ->assertSee('Gezondheidscentrum Laren')
-            ->assertSee('Werkadres')
+            ->assertSeeInOrder(['Korte omschrijving', 'Werkadres', 'Werkzaamheden'])
             ->assertSee('name="work_address"', false)
             ->assertSee('Willem Schuylenburglaan 40-9, 3571 SJ Utrecht', false)
             ->assertDontSee('name="postal_code"', false)

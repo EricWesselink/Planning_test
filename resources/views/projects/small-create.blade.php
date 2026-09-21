@@ -71,6 +71,10 @@
         </div>
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>
+            <x-work-address id="address" class="mt-1" :required="! $linked" />
+        </div>
+
+        <div @class(['hidden' => $linked]) data-small-work-standalone>
             @include('projects.partials.small-work-activities', [
                 'floorActivities' => $floorActivities,
                 'selectedIds' => $selectedIds,
@@ -85,10 +89,6 @@
                 'showCompleted' => false,
                 'canUpdate' => true,
             ])
-        </div>
-
-        <div @class(['hidden' => $linked]) data-small-work-standalone>
-            <x-work-address id="address" class="mt-1" :required="! $linked" />
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
