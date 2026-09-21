@@ -27,14 +27,26 @@
         $showProgressTools = $canEnterProgress && ! $ticketMode;
     @endphp
 
-    <div id="project-board" class="project-board{{ $ticketMode ? ' is-ticket-mode' : '' }}" data-selected="{{ $selectedAreaId }}" data-open-snag="{{ $openSnagId ?? '' }}">
+    <div id="project-board" class="project-board{{ $ticketMode ? ' is-ticket-mode' : '' }}{{ $errors->any() ? ' is-project-info-open' : '' }}" data-selected="{{ $selectedAreaId }}" data-open-snag="{{ $openSnagId ?? '' }}">
         <header class="board-top">
-            <div>
+            <div class="board-top-main">
+                <div class="board-top-bar">
+                    <div class="board-top-title min-w-0">
                 <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-xs text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
                 @if ($project->labeledNumbersLine() !== '')
                     <div class="mt-1 text-xs text-nicon-muted whitespace-nowrap">{{ $project->labeledNumbersLine() }}</div>
                 @endif
                 <h1 class="text-lg font-semibold leading-tight">{{ $project->displayTitle() }} <span class="text-nicon-muted font-normal">· {{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span></h1>
+                @if (session('status'))
+                    <p class="mt-1 text-xs text-nicon-ok">{{ session('status') }}</p>
+                @endif
+                @foreach ((array) session('warnings', []) as $warning)
+                    <p class="mt-0.5 text-xs text-nicon-danger">{{ $warning }}</p>
+                @endforeach
+                    </div>
+                    <button type="button" id="board-project-info-toggle" class="board-project-info-toggle" aria-expanded="{{ $errors->any() ? 'true' : 'false' }}" aria-controls="board-project-info">Projectinfo</button>
+                </div>
+                <div id="board-project-info" class="board-project-info">
                 <div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-nicon-muted">
                     @if ($project->customer?->name)
                         <span>Opdrachtgever: {{ $project->customer->name }}</span>
@@ -46,9 +58,6 @@
                 @if (auth()->user()?->canViewLaborCosts())
                     @include('projects.partials.calculation-lines', ['project' => $project])
                 @endif
-                @if (session('status'))
-                    <p class="mt-1 text-xs text-nicon-ok">{{ session('status') }}</p>
-                @endif
                 @if (! empty($project->import_warnings))
                     <details class="mt-2 max-w-xl text-xs">
                         <summary class="cursor-pointer text-nicon-warn">{{ count($project->import_warnings) }} importwaarschuwingen (Meetstaat blijft leidend)</summary>
@@ -59,9 +68,6 @@
                         </ul>
                     </details>
                 @endif
-                @foreach ((array) session('warnings', []) as $warning)
-                    <p class="mt-0.5 text-xs text-nicon-danger">{{ $warning }}</p>
-                @endforeach
                 <div class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-nicon-muted">
                     @if ($project->nawLine())
                         <span>{{ $project->nawLine() }}</span>
@@ -161,6 +167,7 @@
                         @endforeach
                     </div>
                 @endif
+                </div>
             </div>
             <nav class="board-tabs">
                 <a class="is-on" href="{{ route('projects.show', $project) }}">Tekening</a>
@@ -219,6 +226,7 @@
                         <span>{{ $ticketMode['worker_name'] }}</span>
                     </div>
                 @endif
+                <div id="draw-toolbar-extra" class="draw-toolbar-extra">
                 <div class="flex items-center gap-1 min-w-0 overflow-visible">
                     <select id="draw-page" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-40">
                         <option value="1">Pagina 1</option>
@@ -278,19 +286,25 @@
                         </div>
                     @endif
                 </div>
-                <div class="flex items-center gap-1">
+                </div>
+                <div class="flex items-center gap-1 draw-view-tools">
+                    <span class="draw-pan-tools">
                     <button type="button" id="draw-hand" class="tool-btn is-on" title="Verschuiven">✋</button>
                     <button type="button" id="draw-select" class="tool-btn" title="Selecteren">➤</button>
+                    </span>
+                    <span class="draw-zoom-group">
                     <button type="button" id="draw-zoom-out" class="tool-btn">−</button>
                     <span id="draw-zoom-label" class="text-xs w-10 text-center">100%</span>
                     <button type="button" id="draw-zoom-in" class="tool-btn">+</button>
+                    </span>
                 </div>
-                <div class="flex items-center gap-1 text-xs">
+                <div class="flex items-center gap-1 text-xs draw-layers">
                     <button type="button" data-layer="rooms" class="layer-btn is-on">Voortgang</button>
                     <button type="button" data-layer="snags" class="layer-btn">Opleverpunten</button>
                     <button type="button" data-layer="both" class="layer-btn">Beide</button>
                 </div>
-                <div class="ml-auto flex items-center gap-2">
+                <button type="button" id="draw-more-toggle" class="draw-more-toggle" aria-expanded="false" aria-controls="draw-toolbar-extra">Meer</button>
+                <div class="ml-auto flex items-center gap-2 draw-dock">
                     <button type="button" id="toggle-rooms" class="board-panel-toggle">Ruimtes</button>
                     <button type="button" id="toggle-tasks" class="board-panel-toggle">{{ $ticketMode ? 'Bon' : 'Taken' }}</button>
                     <button type="button" id="draw-snag" class="bg-nicon-ink text-white px-2 py-1 text-xs{{ auth()->user()?->canCreateSnags() && ! $ticketMode ? '' : ' hidden' }}">+ Opleverpunt</button>
@@ -402,6 +416,8 @@
                 <img id="snag-photo-preview-img" alt="">
             </div>
             <div class="draw-legend">
+                <button type="button" id="draw-legend-toggle" class="draw-legend-toggle" aria-expanded="false">Legenda</button>
+                <div class="draw-legend-items">
                 <span><i class="lg-none"></i> Niets gedaan = niets extra</span>
                 <span>E✓ V✓ P✓ = gereed onderdeel onder de kamernaam</span>
                 <span><i class="lg-pending"></i> Open kring = voorlopig, wacht op akkoord</span>
@@ -412,6 +428,7 @@
                 <span class="snag-legend"><i class="lg-snag-progress"></i> In behandeling</span>
                 <span class="snag-legend"><i class="lg-snag-wait"></i> Gereed gemeld</span>
                 <span class="snag-legend"><i class="lg-snag-done"></i> Afgehandeld</span>
+                </div>
             </div>
         </section>
 

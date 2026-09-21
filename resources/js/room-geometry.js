@@ -506,6 +506,50 @@ export function focusViewport(box, stageWidth, stageHeight, worldWidth, worldHei
     };
 }
 
+/**
+ * Scale the whole drawing to fit the stage, centered, with a small inner padding.
+ */
+export function fitDrawingViewport(stageWidth, stageHeight, worldWidth, worldHeight, options = {}) {
+    const padding = options.padding ?? 12;
+    const minScale = options.minScale ?? 0.12;
+    const maxScale = options.maxScale ?? 4;
+    const sw = Math.max(1, Number(stageWidth) || 1);
+    const sh = Math.max(1, Number(stageHeight) || 1);
+    const ww = Math.max(1, Number(worldWidth) || 1);
+    const wh = Math.max(1, Number(worldHeight) || 1);
+    const innerW = Math.max(1, sw - padding * 2);
+    const innerH = Math.max(1, sh - padding * 2);
+    const scale = Math.max(minScale, Math.min(maxScale, Math.min(innerW / ww, innerH / wh)));
+
+    return {
+        scale,
+        panX: (sw - ww * scale) / 2,
+        panY: (sh - wh * scale) / 2,
+    };
+}
+
+/**
+ * Keep the world point under the pinch midpoint stable while scaling.
+ */
+export function pinchTransform(start, now, options = {}) {
+    const minScale = options.minScale ?? 0.12;
+    const maxScale = options.maxScale ?? 4;
+    const startDist = Math.max(1, Number(start?.dist) || 1);
+    const nowDist = Math.max(1, Number(now?.dist) || 1);
+    const startScale = Math.max(0.01, Number(start?.scale) || 1);
+    const nextScale = Math.max(minScale, Math.min(maxScale, startScale * (nowDist / startDist)));
+    const startMid = start?.mid || { x: 0, y: 0 };
+    const nowMid = now?.mid || startMid;
+    const worldX = (startMid.x - Number(start?.panX || 0)) / startScale;
+    const worldY = (startMid.y - Number(start?.panY || 0)) / startScale;
+
+    return {
+        scale: nextScale,
+        panX: nowMid.x - worldX * nextScale,
+        panY: nowMid.y - worldY * nextScale,
+    };
+}
+
 export function pointInLabel(point, box) {
     return Boolean(point && box
         && point.x >= box.x

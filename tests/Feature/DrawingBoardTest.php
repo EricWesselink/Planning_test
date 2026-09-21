@@ -1445,6 +1445,44 @@ class DrawingBoardTest extends TestCase
         );
     }
 
+    public function test_board_renders_compact_mobile_handover_controls(): void
+    {
+        Storage::fake('local');
+        [$user, $project] = $this->makeProject();
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('id="board-project-info-toggle"', false)
+            ->assertSee('>Projectinfo</button>', false)
+            ->assertSee('id="board-project-info"', false)
+            ->assertSee('id="draw-more-toggle"', false)
+            ->assertSee('>Meer</button>', false)
+            ->assertSee('id="draw-toolbar-extra"', false)
+            ->assertSee('draw-dock', false)
+            ->assertSee('id="draw-legend-toggle"', false)
+            ->assertSee('>Legenda</button>', false)
+            ->assertSee('draw-zoom-group', false)
+            ->assertSee('draw-layers', false)
+            ->assertSee('id="toggle-rooms"', false)
+            ->assertSee('id="toggle-tasks"', false)
+            ->assertSee('id="draw-snag"', false);
+
+        $css = file_get_contents(resource_path('css/app.css'));
+        $js = file_get_contents(resource_path('js/drawing-board.js'));
+
+        $this->assertStringContainsString('@media (max-width: 768px)', $css);
+        $this->assertStringContainsString('#project-board .draw-stage', $css);
+        $this->assertStringContainsString('min-height: 70vh', $css);
+        $this->assertStringContainsString('#project-board .draw-dock', $css);
+        $this->assertStringContainsString('#project-board.is-snag-open .board-right.is-open', $css);
+        $this->assertStringContainsString('function fitDrawingToScreen', $js);
+        $this->assertStringContainsString('fitDrawingViewport', $js);
+        $this->assertStringContainsString('pinchTransform', $js);
+        $this->assertStringContainsString("matchMedia('(max-width: 768px)')", $js);
+        $this->assertStringContainsString("scrollIntoView({ block: 'nearest', inline: 'nearest' })", $js);
+    }
+
     public function test_area_from_another_project_is_not_returned(): void
     {
         Storage::fake('local');

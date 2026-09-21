@@ -22,6 +22,8 @@ import {
     hasReliableRoomPosition,
     storedJumpTarget,
     focusViewport,
+    fitDrawingViewport,
+    pinchTransform,
     exactRoomHitForArea,
     roomContour,
     roomVisualContour,
@@ -307,6 +309,26 @@ test('room focus uses stored polygon bbox and keeps a margin', () => {
     assert.ok(view.scale <= 3.2);
     assert.ok(Number.isFinite(view.panX));
     assert.ok(Number.isFinite(view.panY));
+});
+
+test('fits the drawing to the stage with padding and keeps it centered', () => {
+    const view = fitDrawingViewport(390, 700, 1190, 842, { padding: 12, minScale: 0.12, maxScale: 4 });
+    const innerW = 390 - 24;
+    const innerH = 700 - 24;
+    const expected = Math.min(innerW / 1190, innerH / 842);
+    assert.ok(Math.abs(view.scale - expected) < 0.0001);
+    assert.ok(view.scale < 0.4);
+    assert.ok(Math.abs(view.panX - (390 - 1190 * view.scale) / 2) < 0.0001);
+    assert.ok(Math.abs(view.panY - (700 - 842 * view.scale) / 2) < 0.0001);
+});
+
+test('pinch zoom keeps the midpoint world point stable', () => {
+    const start = { scale: 1, panX: 10, panY: 20, dist: 100, mid: { x: 120, y: 180 } };
+    const now = { dist: 200, mid: { x: 120, y: 180 } };
+    const view = pinchTransform(start, now, { minScale: 0.12, maxScale: 4 });
+    assert.equal(view.scale, 2);
+    assert.equal(view.panX, 120 - ((120 - 10) / 1) * 2);
+    assert.equal(view.panY, 180 - ((180 - 20) / 1) * 2);
 });
 
 test('missing room position is not treated as reliable', () => {

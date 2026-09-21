@@ -19,6 +19,8 @@ import {
     hasReliableRoomPosition,
     storedJumpTarget,
     focusViewport,
+    fitDrawingViewport,
+    pinchTransform,
     exactRoomHitForArea,
     hitTestContours,
     roomContour,
@@ -174,8 +176,11 @@ function boot() {
     let workFilterKeys = [];
     let draftWorkKeys = [];
     let scale = 1;
-    const MIN_ZOOM = 0.4;
+    const MIN_ZOOM = 0.12;
     const MAX_ZOOM = 4;
+    let userAdjustedView = false;
+    const activePointers = new Map();
+    let pinch = null;
     let renderInfo = {
         scale: VIEW_RENDER_SCALE,
         dpi: PDF_DPI * VIEW_RENDER_SCALE,
@@ -268,6 +273,10 @@ function boot() {
         return areas.find((area) => Number(area.id) === Number(id));
     }
 
+    function isCompactBoard() {
+        return window.matchMedia('(max-width: 768px)').matches;
+    }
+
     function syncBoardOverlayTop() {
         const toolbar = document.querySelector('.draw-toolbar');
         if (!toolbar) {
@@ -275,11 +284,70 @@ function boot() {
         }
         if (!window.matchMedia('(max-width: 1100px)').matches) {
             root.style.removeProperty('--board-overlay-top');
+            root.style.removeProperty('--board-overlay-bottom');
 
             return;
         }
         const offset = Math.max(0, Math.round(toolbar.getBoundingClientRect().bottom - root.getBoundingClientRect().top));
         root.style.setProperty('--board-overlay-top', `${offset}px`);
+        const dock = document.querySelector('.draw-dock');
+        if (isCompactBoard() && dock) {
+            root.style.setProperty('--board-overlay-bottom', `${Math.max(0, Math.round(dock.getBoundingClientRect().height))}px`);
+        } else {
+            root.style.removeProperty('--board-overlay-bottom');
+        }
+    }
+
+    function syncCompactBoard() {
+        root.classList.toggle('is-compact-board', isCompactBoard());
+        root.classList.toggle('is-handover-layer', layer !== 'rooms');
+        syncBoardOverlayTop();
+    }
+
+    function collapseCompactChrome() {
+        if (!isCompactBoard()) {
+            return;
+        }
+        root.classList.remove('is-more-open', 'is-project-info-open', 'is-legend-open');
+        document.getElementById('draw-more-toggle')?.setAttribute('aria-expanded', 'false');
+        document.getElementById('board-project-info-toggle')?.setAttribute('aria-expanded', 'false');
+        document.getElementById('draw-legend-toggle')?.setAttribute('aria-expanded', 'false');
+        syncBoardOverlayTop();
+    }
+
+    function fitDrawingToScreen() {
+        const size = worldSize();
+        const rect = stage.getBoundingClientRect();
+        if (rect.width < 8 || rect.height < 8 || size.width < 8 || size.height < 8) {
+            return false;
+        }
+        const view = fitDrawingViewport(rect.width, rect.height, size.width, size.height, {
+            minScale: MIN_ZOOM,
+            maxScale: MAX_ZOOM,
+        });
+        scale = view.scale;
+        panX = view.panX;
+        panY = view.panY;
+        userAdjustedView = false;
+        applyTransform();
+
+        return true;
+    }
+
+    function scheduleFitToScreen() {
+        requestAnimationFrame(() => {
+            fitDrawingToScreen();
+        });
+    }
+
+    function pointerStagePoint(event) {
+        const rect = stage.getBoundingClientRect();
+
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+
+    function pinchPoints() {
+        return [...activePointers.values()].slice(0, 2);
     }
 
     function applyTransform() {
@@ -1174,6 +1242,7 @@ function boot() {
         scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.scale));
         panX = view.panX;
         panY = view.panY;
+        userAdjustedView = true;
         applyTransform();
         logRoomJump(area, target);
 
@@ -1285,6 +1354,7 @@ function boot() {
         }
         renderDebugPanel();
         renderMarkers();
+        scheduleFitToScreen();
     }
 
     function knownRoomNumbers() {
@@ -1555,6 +1625,7 @@ function boot() {
                 world.style.width = `${image.naturalWidth}px`;
                 world.style.height = `${image.naturalHeight}px`;
                 renderMarkers();
+                scheduleFitToScreen();
             };
         }
     }
@@ -1758,6 +1829,9 @@ function boot() {
         paintPanelFromSummary(area);
 
         const jumped = await jumpToStoredRoom(area, options);
+        if (isCompactBoard() && !roomMeasureMode && !options.fromPin && pickedIds.size <= 1) {
+            document.querySelector('.board-left')?.classList.remove('is-open');
+        }
         if (token !== selectToken) {
             return;
         }
@@ -1797,7 +1871,11 @@ function boot() {
     function scrollListToSelected() {
         const row = document.querySelector(`.room-row[data-area-id="${selectedId}"]`);
         row?.classList.add('is-on');
-        row?.scrollIntoView({ block: 'nearest' });
+        const list = document.querySelector('.board-left');
+        if (!list?.classList.contains('is-open')) {
+            return;
+        }
+        row?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
     function paintPanelFromSummary(area) {
@@ -2528,10 +2606,12 @@ function boot() {
     document.getElementById('draw-select').addEventListener('click', () => setTool('select'));
     document.getElementById('draw-zoom-in').addEventListener('click', () => {
         scale = Math.min(MAX_ZOOM, scale + 0.15);
+        userAdjustedView = true;
         applyTransform();
     });
     document.getElementById('draw-zoom-out').addEventListener('click', () => {
         scale = Math.max(MIN_ZOOM, scale - 0.15);
+        userAdjustedView = true;
         applyTransform();
     });
     pageSelect.addEventListener('change', async () => {
@@ -3233,6 +3313,10 @@ function boot() {
             if (!layerShowsSnags(layer)) {
                 closeSnagPopup();
             }
+            if (layer !== 'rooms') {
+                collapseCompactChrome();
+            }
+            syncCompactBoard();
             renderMarkers();
         });
     });
@@ -3250,19 +3334,62 @@ function boot() {
         }
     });
     document.getElementById('toggle-rooms')?.addEventListener('click', () => {
-        document.querySelector('.board-left')?.classList.toggle('is-open');
         document.querySelector('.board-right')?.classList.remove('is-open');
+        root.classList.remove('is-snag-open');
+        if (isSnagPanelOpen()) {
+            closeSnagPanel({ keepRoom: true });
+        }
+        document.querySelector('.board-left')?.classList.toggle('is-open');
     });
     document.getElementById('toggle-tasks')?.addEventListener('click', () => {
-        document.querySelector('.board-right')?.classList.toggle('is-open');
         document.querySelector('.board-left')?.classList.remove('is-open');
+        if (isSnagPanelOpen()) {
+            closeSnagPanel({ keepRoom: true });
+            document.querySelector('.board-right')?.classList.add('is-open');
+            return;
+        }
+        document.querySelector('.board-right')?.classList.toggle('is-open');
+        root.classList.remove('is-snag-open');
+    });
+    document.getElementById('board-project-info-toggle')?.addEventListener('click', () => {
+        const open = !root.classList.contains('is-project-info-open');
+        root.classList.toggle('is-project-info-open', open);
+        document.getElementById('board-project-info-toggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        syncBoardOverlayTop();
+    });
+    document.getElementById('draw-more-toggle')?.addEventListener('click', () => {
+        const open = !root.classList.contains('is-more-open');
+        root.classList.toggle('is-more-open', open);
+        document.getElementById('draw-more-toggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        syncBoardOverlayTop();
+    });
+    document.getElementById('draw-legend-toggle')?.addEventListener('click', () => {
+        const open = !root.classList.contains('is-legend-open');
+        root.classList.toggle('is-legend-open', open);
+        document.getElementById('draw-legend-toggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
 
     stage.addEventListener('pointerdown', (event) => {
         if (event.button !== 0) {
             return;
         }
-        if (event.target.closest('.snag-pin, .snag-popup, .snag-photo-preview, button, select, a, input, textarea, label, .status-badge')) {
+        if (event.target.closest('.snag-pin, .snag-popup, .snag-photo-preview, button, select, a, input, textarea, label')) {
+            return;
+        }
+        activePointers.set(event.pointerId, pointerStagePoint(event));
+        stage.setPointerCapture(event.pointerId);
+        if (activePointers.size >= 2) {
+            dragging = false;
+            dragMoved = true;
+            const pts = pinchPoints();
+            pinch = {
+                dist: Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)),
+                scale,
+                panX,
+                panY,
+                mid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
+            };
+            stage.classList.remove('is-grabbing');
             return;
         }
         if (event.target.closest('.room-label') && !roomMeasureMode) {
@@ -3281,9 +3408,24 @@ function boot() {
             threshold: event.pointerType === 'touch' || event.pointerType === 'pen' ? 12 : 4,
         };
         stage.classList.add('is-grabbing');
-        stage.setPointerCapture(event.pointerId);
     }, true);
     stage.addEventListener('pointermove', (event) => {
+        if (activePointers.has(event.pointerId)) {
+            activePointers.set(event.pointerId, pointerStagePoint(event));
+        }
+        if (pinch && activePointers.size >= 2) {
+            const pts = pinchPoints();
+            const view = pinchTransform(pinch, {
+                dist: Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)),
+                mid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
+            }, { minScale: MIN_ZOOM, maxScale: MAX_ZOOM });
+            scale = view.scale;
+            panX = view.panX;
+            panY = view.panY;
+            userAdjustedView = true;
+            applyTransform();
+            return;
+        }
         if (draggingSnag) {
             const point = toNorm(event);
             const pin = markersEl.querySelector(`.snag-pin[data-snag-id="${draggingSnag.id}"]`);
@@ -3305,9 +3447,15 @@ function boot() {
         dragMoved = true;
         panX = event.clientX - dragStart.x;
         panY = event.clientY - dragStart.y;
+        userAdjustedView = true;
         applyTransform();
     });
     stage.addEventListener('pointerup', async (event) => {
+        activePointers.delete(event.pointerId);
+        const wasPinch = Boolean(pinch);
+        if (activePointers.size < 2) {
+            pinch = null;
+        }
         if (draggingSnag) {
             const point = draggingSnag.x != null ? { x: draggingSnag.x, y: draggingSnag.y } : toNorm(event);
             draggingSnag = null;
@@ -3318,7 +3466,7 @@ function boot() {
         dragging = false;
         dragMoved = false;
         stage.classList.remove('is-grabbing');
-        if (wasDrag || event.button !== 0) {
+        if (wasPinch || wasDrag || event.button !== 0) {
             return;
         }
         if (event.target.closest('.snag-pin, .snag-popup, .snag-photo-preview, button, select, a, input, textarea, label') && !event.target.closest('.room-label')) {
@@ -3326,7 +3474,11 @@ function boot() {
         }
         await handleDrawingTap(event);
     });
-    stage.addEventListener('pointercancel', () => {
+    stage.addEventListener('pointercancel', (event) => {
+        activePointers.delete(event.pointerId);
+        if (activePointers.size < 2) {
+            pinch = null;
+        }
         draggingSnag = null;
         dragging = false;
         dragMoved = false;
@@ -3336,6 +3488,7 @@ function boot() {
         event.preventDefault();
         const next = event.deltaY > 0 ? scale - 0.08 : scale + 0.08;
         scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next));
+        userAdjustedView = true;
         applyTransform();
     }, { passive: false });
 
@@ -3747,6 +3900,10 @@ function boot() {
         snagPanel?.classList.remove('hidden');
         document.querySelector('.board-right')?.classList.add('is-open');
         document.querySelector('.board-left')?.classList.remove('is-open');
+        root.classList.add('is-snag-open');
+        if (isCompactBoard()) {
+            collapseCompactChrome();
+        }
     }
 
     function closeSnagPanel({ keepRoom = false } = {}) {
@@ -3757,6 +3914,10 @@ function boot() {
         currentSnag = null;
         snagPhotoFiles = [];
         draggingSnag = null;
+        root.classList.remove('is-snag-open');
+        if (isCompactBoard()) {
+            document.querySelector('.board-right')?.classList.remove('is-open');
+        }
         setModes({});
         renderPhotoThumbs();
         if (!popupSnagId) {
@@ -4028,7 +4189,9 @@ function boot() {
                     ? `Punt ${payload.snag?.number || ''} verstuurd naar ${payload.snag?.worker || 'de vakman'}.`
                     : `Opleverpunt ${payload.snag?.number || ''} opgeslagen.`);
             }
-            if (!editingSnagId && payload.snag) {
+            if (isCompactBoard()) {
+                closeSnagPanel({ keepRoom: true });
+            } else if (!editingSnagId && payload.snag) {
                 fillSnagForm(payload.snag);
             }
         } finally {
@@ -4605,7 +4768,7 @@ function boot() {
         fillSnagForm(snag);
         showSnagPanel();
         renderMarkers();
-        if (!options.skipZoom) {
+        if (!options.skipZoom && !isCompactBoard()) {
             centerOnPoint(snag.x, snag.y);
         }
     }
@@ -4620,6 +4783,7 @@ function boot() {
         const height = world.offsetHeight * scale;
         panX = rect.width / 2 - Number(x) * width;
         panY = rect.height / 2 - Number(y) * height;
+        userAdjustedView = true;
         applyTransform();
     }
 
@@ -4769,6 +4933,16 @@ function boot() {
     if (overlayToolbar) {
         overlayObserver?.observe(overlayToolbar);
     }
+    const overlayDock = document.querySelector('.draw-dock');
+    if (overlayDock) {
+        overlayObserver?.observe(overlayDock);
+    }
+    window.addEventListener('resize', () => {
+        syncCompactBoard();
+        if (!userAdjustedView) {
+            fitDrawingToScreen();
+        }
+    });
 
     function ticketError(message) {
         const el = document.getElementById('ticket-error');
@@ -4996,6 +5170,7 @@ function boot() {
     }
 
     setTool('hand');
+    syncCompactBoard();
     if (layer === 'both') {
         document.querySelectorAll('.layer-btn').forEach((item) => {
             item.classList.toggle('is-on', item.dataset.layer === 'both');
@@ -5009,6 +5184,9 @@ function boot() {
     loadDrawing().catch(() => {
         setHint('Tekening kon niet worden geladen.');
     }).finally(() => {
+        if (!userAdjustedView) {
+            scheduleFitToScreen();
+        }
         if (ticketMode) {
             setRoomMeasureMode(true);
             setHint('Kies materialen of klik Hele werk. Daarna Selectie toevoegen. Algemeen werk kun je rechts aanvinken.');
@@ -5019,7 +5197,7 @@ function boot() {
         }
         const openId = Number(root.dataset.openSnag || 0);
         if (openId) {
-            openExistingSnag(openId);
+            openExistingSnag(openId, { skipZoom: isCompactBoard() });
         }
     });
     bindTicketPanel();
