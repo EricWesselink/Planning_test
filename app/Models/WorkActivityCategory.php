@@ -66,6 +66,18 @@ class WorkActivityCategory extends Model
             ->values();
     }
 
+    /**
+     * @param  list<int>  $keepIds
+     * @return Collection<int, WorkActivity>
+     */
+    public static function floorFormActivities(array $keepIds = []): Collection
+    {
+        $category = static::formCatalog($keepIds)
+            ->first(fn (self $category): bool => $category->slug === 'vloeren');
+
+        return $category?->activities ?? collect();
+    }
+
     public function isMisc(): bool
     {
         return $this->slug === 'overig';

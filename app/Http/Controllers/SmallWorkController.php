@@ -7,6 +7,7 @@ use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
 use App\Models\Project;
 use App\Models\ProjectDocument;
+use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Models\WorkItem;
 use App\Services\SmallWorkService;
@@ -190,7 +191,12 @@ class SmallWorkController extends Controller
                 ->get(),
             'hourOptions' => [2, 4, 6, 8],
             'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
+            'contactRoles' => Project::contactRoleChoices(),
             'lines' => old('lines', $this->defaultExtraLines()),
+            'floorActivities' => WorkActivityCategory::floorFormActivities(
+                collect(old('work_activity_ids', []))->map(fn (mixed $id): int => (int) $id)->all()
+            ),
+            'selectedIds' => old('work_activity_ids', []),
         ];
     }
 
@@ -233,6 +239,7 @@ class SmallWorkController extends Controller
             'work_number' => ['nullable', 'string', 'max:64', Rule::unique('projects', 'project_number')],
             ...$this->contactRules(),
             ...$this->lineRules(),
+            ...$this->activityRules(),
             ...$this->attachmentRules(),
         ], $this->messages());
     }
@@ -257,6 +264,7 @@ class SmallWorkController extends Controller
                 Rule::unique('projects', 'project_number')->ignore($project->id),
             ],
             ...$this->contactRules(),
+            ...$this->activityRules($project),
             ...$this->attachmentRules(),
         ], $this->messages());
     }
@@ -278,10 +286,11 @@ class SmallWorkController extends Controller
             'hours.required' => 'Kies de geplande uren.',
             'hours.in' => 'Kies 2, 4, 6 of 8 uur.',
             'work_number.unique' => 'Dit werknummer bestaat al.',
-            'contact_role.enum' => 'Kies of de contactpersoon uitvoerder, aannemer of opdrachtgever is.',
+            'contact_role_custom.required_if' => 'Vul de nieuwe rol in.',
             'attachments.required' => 'Kies minstens één bestand.',
             'attachments.*.mimes' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
             'attachments.*.extensions' => 'Alleen foto’s of PDF (JPG, PNG, WebP, GIF, BMP, PDF) zijn toegestaan.',
+            'work_activity_ids.*.exists' => 'Deze werkzaamheid is niet beschikbaar.',
         ];
     }
 
@@ -293,7 +302,8 @@ class SmallWorkController extends Controller
         return [
             'contact_name' => ['nullable', 'string', 'max:255'],
             'contact_phone' => ['nullable', 'string', 'max:64'],
-            'contact_role' => ['nullable', Rule::enum(ContactRole::class)],
+            'contact_role' => ['nullable', 'string', 'max:32'],
+            'contact_role_custom' => ['nullable', 'required_if:contact_role,'.ContactRole::CUSTOM, 'string', 'max:32'],
         ];
     }
 
@@ -320,6 +330,32 @@ class SmallWorkController extends Controller
             'lines.*.name' => ['nullable', 'string', 'max:255'],
             'lines.*.quantity' => ['nullable', 'numeric', 'min:0'],
             'lines.*.completed' => ['nullable', 'numeric', 'min:0'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function activityRules(?Project $project = null): array
+    {
+        $keep = $project?->workActivities()
+            ->pluck('work_activities.id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all() ?? [];
+        $allowed = WorkActivityCategory::floorFormActivities($keep)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        if ($allowed === []) {
+            $allowed = [0];
+        }
+
+        return [
+            'work_activity_ids' => ['nullable', 'array'],
+            'work_activity_ids.*' => [
+                'integer',
+                Rule::exists('work_activities', 'id')->where(fn ($query) => $query->whereIn('id', $allowed)),
+            ],
         ];
     }
 

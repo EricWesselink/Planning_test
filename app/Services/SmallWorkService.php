@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\ProjectDocument;
 use App\Models\Team;
 use App\Models\User;
+use App\Models\WorkActivity;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
@@ -45,6 +46,7 @@ class SmallWorkService
      *     worker_id?: ?int,
      *     team_id?: ?int,
      *     work_number?: ?string,
+     *     work_activity_ids?: array<int, mixed>,
      *     contact_name?: ?string,
      *     contact_phone?: ?string,
      *     contact_role?: ?string
@@ -112,9 +114,10 @@ class SmallWorkService
         ]);
 
         $this->schedule($project, $item, $data, $date, $hours);
+        $this->syncWorkActivities($project, $data);
         $this->storeFiles($project, $files, $user);
 
-        return $project->fresh(['customer', 'workItems', 'assignments', 'documents']) ?? $project;
+        return $project->fresh(['customer', 'workItems', 'assignments', 'documents', 'workActivities']) ?? $project;
     }
 
     /**
@@ -127,6 +130,7 @@ class SmallWorkService
      *     date: string,
      *     hours: float|int|string,
      *     work_number?: ?string,
+     *     work_activity_ids?: array<int, mixed>,
      *     contact_name?: ?string,
      *     contact_phone?: ?string,
      *     contact_role?: ?string
@@ -176,9 +180,10 @@ class SmallWorkService
                 $this->reschedule($item, $date, $hours);
             }
 
+            $this->syncWorkActivities($project, $data);
             $this->storeFiles($project, $files, $user);
 
-            return $project->fresh(['customer', 'workItems', 'assignments', 'documents']) ?? $project;
+            return $project->fresh(['customer', 'workItems', 'assignments', 'documents', 'workActivities']) ?? $project;
         });
     }
 
@@ -380,6 +385,38 @@ class SmallWorkService
 
     /**
      * @param  array<string, mixed>  $data
+     */
+    private function syncWorkActivities(Project $project, array $data): void
+    {
+        $ids = collect($data['work_activity_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+
+        $activities = WorkActivity::query()
+            ->with('category')
+            ->whereIn('id', $ids)
+            ->get()
+            ->sortBy(fn (WorkActivity $activity): array => [
+                $activity->category?->sort_order ?? 0,
+                $activity->sort_order,
+                $activity->id,
+            ])
+            ->values();
+
+        $sync = [];
+        foreach ($activities as $index => $activity) {
+            $sync[$activity->id] = [
+                'sort_order' => $index + 1,
+            ];
+        }
+
+        $project->workActivities()->sync($sync);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
      * @return list<array{name: string, quantity: float, completed: float}>
      */
     private function extraLinesFrom(array $data): array
@@ -411,14 +448,23 @@ class SmallWorkService
     {
         if (! array_key_exists('contact_name', $data)
             && ! array_key_exists('contact_phone', $data)
-            && ! array_key_exists('contact_role', $data)) {
+            && ! array_key_exists('contact_role', $data)
+            && ! array_key_exists('contact_role_custom', $data)) {
             return [];
+        }
+
+        $role = trim((string) ($data['contact_role'] ?? ''));
+        if ($role === ContactRole::CUSTOM) {
+            $role = trim((string) ($data['contact_role_custom'] ?? ''));
+        }
+        if ($role === ContactRole::CUSTOM) {
+            $role = '';
         }
 
         return [
             'contact_name' => $this->nullableString($data['contact_name'] ?? null),
             'contact_phone' => $this->nullableString($data['contact_phone'] ?? null),
-            'contact_role' => ContactRole::tryFrom((string) ($data['contact_role'] ?? ''))?->value,
+            'contact_role' => $this->nullableString($role),
         ];
     }
 

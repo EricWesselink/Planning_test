@@ -10,6 +10,7 @@ use App\Enums\WorkUnit;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\WorkActivity;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
@@ -221,8 +222,109 @@ class SmallWorkTest extends TestCase
             ->assertSee('Contactpersoon')
             ->assertSee('Wie is het')
             ->assertSee('Uitvoerder')
-            ->assertSee('Aannemer')
-            ->assertSee('Opdrachtgever');
+            ->assertSee('Opdrachtgever')
+            ->assertSee('Klant')
+            ->assertSee('Nieuwe rol…');
+    }
+
+    public function test_small_work_form_offers_floor_work_checkboxes_next_to_the_description(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('projects.small.create'))
+            ->assertOk()
+            ->assertSee('Korte omschrijving')
+            ->assertSee('Werkzaamheden')
+            ->assertSee('Vink aan wat er gedaan moet worden.')
+            ->assertSee('PVC banen')
+            ->assertSee('PVC stroken')
+            ->assertSee('Marmoleum')
+            ->assertSee('Tapijt')
+            ->assertSee('Tapijttegels')
+            ->assertSee('Primen')
+            ->assertSee('Plinten')
+            ->assertSee('Reparatie / herstel')
+            ->assertSee('Overig vloerwerk');
+    }
+
+    #[DataProvider('standaloneTypes')]
+    public function test_planner_saves_checked_floor_work_on_standalone_small_work(SmallWorkType $type, ProjectKind $kind): void
+    {
+        $user = User::factory()->create();
+        $plinten = $this->floorActivity('plinten');
+        $herstel = $this->floorActivity('reparatie-herstel');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => $type->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'work_activity_ids' => [$plinten->id, $herstel->id],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', $kind)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('plint herstellen', $project->name);
+        $this->assertSame(1, $project->workItems()->count());
+        $this->assertSame(['Plinten', 'Reparatie / herstel'], $project->workActivities()->pluck('name')->all());
+    }
+
+    public function test_planner_updates_checked_floor_work_on_service(): void
+    {
+        $user = User::factory()->create();
+        $project = $this->makeService();
+        $project->workActivities()->sync([
+            $this->floorActivity('plinten')->id => ['sort_order' => 1],
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('projects.small.update', $project), [
+                'customer_name' => 'hegemanbouwgroep',
+                'description' => 'hestel schoon maken',
+                'location' => 'Deventer',
+                'date' => '2026-09-11',
+                'hours' => 4,
+                'work_activity_ids' => [$this->floorActivity('tapijt')->id],
+            ])
+            ->assertRedirect(route('projects.show', $project));
+
+        $this->assertSame(['Tapijt'], $project->fresh()->workActivities()->pluck('name')->all());
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Werkzaamheden')
+            ->assertSee('Tapijt')
+            ->assertSee('name="work_activity_ids[]"', false);
+    }
+
+    public function test_servicebon_lists_checked_floor_work_with_the_description(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Polinder',
+            'description' => 'vlekken in het tapijt',
+            'location' => 'Kampen',
+            'date' => '2026-09-21',
+            'hours' => 2,
+            'work_activity_ids' => [
+                $this->floorActivity('tapijt')->id,
+                $this->floorActivity('reparatie-herstel')->id,
+            ],
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('vlekken in het tapijt')
+            ->assertSee('Tapijt')
+            ->assertSee('Reparatie / herstel');
     }
 
     #[DataProvider('standaloneTypes')]
@@ -246,7 +348,7 @@ class SmallWorkTest extends TestCase
         $this->assertNotNull($project);
         $this->assertSame('Jan Pietersen', $project->contact_name);
         $this->assertSame('06 12345678', $project->contact_phone);
-        $this->assertSame(ContactRole::Uitvoerder, $project->contact_role);
+        $this->assertSame(ContactRole::Uitvoerder->value, $project->contact_role);
 
         $this->actingAs($user)
             ->get(route('projects.show', $project))
@@ -277,17 +379,17 @@ class SmallWorkTest extends TestCase
                 'hours' => 4,
                 'contact_name' => 'Kees de Vries',
                 'contact_phone' => '0570 123456',
-                'contact_role' => ContactRole::Aannemer->value,
+                'contact_role' => ContactRole::Opdrachtgever->value,
             ])
             ->assertRedirect(route('projects.show', $project));
 
         $project->refresh();
         $this->assertSame('Kees de Vries', $project->contact_name);
         $this->assertSame('0570 123456', $project->contact_phone);
-        $this->assertSame(ContactRole::Aannemer, $project->contact_role);
+        $this->assertSame(ContactRole::Opdrachtgever->value, $project->contact_role);
     }
 
-    public function test_rejects_an_unknown_contact_role_on_small_work(): void
+    public function test_new_contact_role_on_small_work_requires_a_name(): void
     {
         $user = User::factory()->create();
 
@@ -301,12 +403,44 @@ class SmallWorkTest extends TestCase
                 'date' => '2026-09-08',
                 'hours' => 4,
                 'contact_name' => 'Jan Pietersen',
-                'contact_role' => 'voorman',
+                'contact_role' => ContactRole::CUSTOM,
             ])
             ->assertRedirect(route('projects.small.create'))
-            ->assertSessionHasErrors(['contact_role' => 'Kies of de contactpersoon uitvoerder, aannemer of opdrachtgever is.']);
+            ->assertSessionHasErrors(['contact_role_custom' => 'Vul de nieuwe rol in.']);
 
         $this->assertSame(0, Project::query()->count());
+    }
+
+    public function test_planner_saves_a_custom_contact_role_for_later_small_work(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'contact_name' => 'Jan Pietersen',
+            'contact_phone' => '06 12345678',
+            'contact_role' => ContactRole::CUSTOM,
+            'contact_role_custom' => 'Voorman',
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('Voorman', $project->contact_role);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('Voorman Jan Pietersen');
+
+        $this->actingAs($user)
+            ->get(route('projects.small.create'))
+            ->assertOk()
+            ->assertSee('>Voorman</option>', false);
     }
 
     #[DataProvider('standaloneTypes')]
@@ -1264,6 +1398,11 @@ class SmallWorkTest extends TestCase
                 'active' => true,
             ])->id,
         ];
+    }
+
+    private function floorActivity(string $slug): WorkActivity
+    {
+        return WorkActivity::query()->where('slug', $slug)->firstOrFail();
     }
 
     private function makeWorker(): Worker

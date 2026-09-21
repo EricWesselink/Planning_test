@@ -41,31 +41,17 @@
             <input id="customer_name" name="customer_name" value="{{ old('customer_name', $project->customer?->name) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! $canUpdate)>
         </div>
         <div>
-            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_name">Contactpersoon</label>
-            <input id="contact_name" name="contact_name" value="{{ old('contact_name', $project->contact_name) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Naam" autocomplete="name" @disabled(! $canUpdate)>
-            <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                <div>
-                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>
-                    <input id="contact_phone" name="contact_phone" type="tel" value="{{ old('contact_phone', $project->contact_phone) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="06 12345678" autocomplete="tel" @disabled(! $canUpdate)>
-                </div>
-                <div>
-                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="contact_role">Wie is het</label>
-                    <select id="contact_role" name="contact_role" class="mt-1 w-full border border-nicon-line bg-white px-3 py-2" @disabled(! $canUpdate)>
-                        <option value="">Kies rol</option>
-                        @foreach (\App\Enums\ContactRole::cases() as $role)
-                            <option value="{{ $role->value }}" @selected((string) old('contact_role', $project->contact_role?->value) === $role->value)>{{ $role->label() }}</option>
-                        @endforeach
-                    </select>
-                </div>
-            </div>
-            @if ($project->contact_phone)
-                <a href="tel:{{ $project->contact_phone }}" class="mt-2 inline-block text-sm text-nicon-orange-dark">{{ $project->contact_phone }}</a>
-            @endif
+            @include('projects.partials.small-contact', ['project' => $project, 'canUpdate' => $canUpdate, 'contactRoles' => $contactRoles])
         </div>
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="description">Korte omschrijving</label>
             <input id="description" name="description" value="{{ old('description', $project->name) }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" @disabled(! $canUpdate)>
         </div>
+        @include('projects.partials.small-work-activities', [
+            'floorActivities' => $floorActivities,
+            'selectedIds' => old('work_activity_ids', $project->workActivities->pluck('id')),
+            'canUpdate' => $canUpdate,
+        ])
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="address">Adres</label>
             <input id="address" name="address" value="{{ old('address', $project->address) }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Straat 12" @disabled(! $canUpdate)>

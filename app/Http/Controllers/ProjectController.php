@@ -282,13 +282,19 @@ class ProjectController extends Controller
         }
 
         if ($project->isSmallWork()) {
-            $project->load(['customer', 'workItems', 'assignments.worker', 'documents']);
+            $project->load(['customer', 'workItems', 'assignments.worker', 'documents', 'workActivities']);
+            $keepIds = $project->workActivities
+                ->pluck('id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->all();
 
             return view('projects.small', [
                 'project' => $project,
                 'labor' => $labor->for($project),
                 'hourOptions' => [2, 4, 6, 8],
                 'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
+                'contactRoles' => Project::contactRoleChoices(),
+                'floorActivities' => WorkActivityCategory::floorFormActivities($keepIds),
             ]);
         }
 

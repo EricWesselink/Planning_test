@@ -40,7 +40,6 @@ class Project extends Model
         return [
             'status' => ProjectStatus::class,
             'kind' => ProjectKind::class,
-            'contact_role' => ContactRole::class,
             'planned_start_date' => 'date',
             'planned_end_date' => 'date',
             'actual_start_date' => 'date',
@@ -598,6 +597,36 @@ class Project extends Model
         $line = trim(implode(', ', array_filter([$street, $place])));
 
         return $line !== '' ? $line : null;
+    }
+
+    public function contactRoleLabel(): ?string
+    {
+        return ContactRole::labelFor($this->contact_role);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function contactRoleChoices(): array
+    {
+        $choices = ContactRole::labeled();
+        $saved = static::query()
+            ->whereNotNull('contact_role')
+            ->where('contact_role', '!=', '')
+            ->distinct()
+            ->orderBy('contact_role')
+            ->pluck('contact_role');
+
+        foreach ($saved as $value) {
+            $key = (string) $value;
+            if ($key === '' || $key === ContactRole::CUSTOM || isset($choices[$key])) {
+                continue;
+            }
+
+            $choices[$key] = ContactRole::labelFor($key) ?? $key;
+        }
+
+        return $choices;
     }
 
     public function googleMapsUrl(): ?string

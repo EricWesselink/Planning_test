@@ -35,23 +35,7 @@
         </div>
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>
-            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_name">Contactpersoon</label>
-            <input id="contact_name" name="contact_name" value="{{ old('contact_name') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Naam" autocomplete="name">
-            <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                <div>
-                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>
-                    <input id="contact_phone" name="contact_phone" type="tel" value="{{ old('contact_phone') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="06 12345678" autocomplete="tel">
-                </div>
-                <div>
-                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="contact_role">Wie is het</label>
-                    <select id="contact_role" name="contact_role" class="mt-1 w-full border border-nicon-line bg-white px-3 py-2">
-                        <option value="">Kies rol</option>
-                        @foreach (\App\Enums\ContactRole::cases() as $role)
-                            <option value="{{ $role->value }}" @selected((string) old('contact_role') === $role->value)>{{ $role->label() }}</option>
-                        @endforeach
-                    </select>
-                </div>
-            </div>
+            @include('projects.partials.small-contact', ['canUpdate' => true])
         </div>
 
         <div @class(['hidden' => ! $linked]) data-small-work-linked>
@@ -84,6 +68,13 @@
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="description">Korte omschrijving</label>
             <input id="description" name="description" value="{{ old('description') }}" required class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="plint herstellen">
+        </div>
+
+        <div @class(['hidden' => $linked]) data-small-work-standalone>
+            @include('projects.partials.small-work-activities', [
+                'floorActivities' => $floorActivities,
+                'selectedIds' => $selectedIds,
+            ])
         </div>
 
         <div @class(['hidden' => ! $linked]) data-small-work-linked>

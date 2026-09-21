@@ -253,6 +253,7 @@ class WorkTicketPdfService
         $project->loadMissing([
             'customer',
             'workItems',
+            'workActivities',
             'documents',
             'assignments.worker',
             'assignments.crewMembers',
@@ -293,7 +294,7 @@ class WorkTicketPdfService
             'workNumber' => $project->workNumber(),
             'address' => $project->nawLine(),
             'contactName' => $project->contact_name,
-            'contactRole' => $project->contact_role?->label(),
+            'contactRole' => $project->contactRoleLabel(),
             'contactPhone' => $project->contact_phone ?: $project->customer?->phone,
             'period' => $this->shopPeriod($project),
             'floors' => '',
@@ -675,11 +676,28 @@ class WorkTicketPdfService
                 ];
             })
             ->filter(fn (array $row): bool => $row['title'] !== '')
-            ->values()
+            ->values();
+
+        $seen = $rows
+            ->map(fn (array $row): string => mb_strtolower($row['title']))
             ->all();
 
-        if ($rows !== []) {
-            return $rows;
+        foreach ($project->workActivities as $activity) {
+            $title = trim((string) $activity->name);
+            if ($title === '' || in_array(mb_strtolower($title), $seen, true)) {
+                continue;
+            }
+
+            $rows->push([
+                'title' => $title,
+                'quantity' => '',
+                'unit' => '',
+            ]);
+            $seen[] = mb_strtolower($title);
+        }
+
+        if ($rows->isNotEmpty()) {
+            return $rows->all();
         }
 
         $title = trim((string) $project->name);
