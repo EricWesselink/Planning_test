@@ -23,6 +23,18 @@
                 </div>
                 <div class="space-y-3 px-4 py-4 text-sm">
                     <p class="text-base">{{ $job['time_label'] }}</p>
+                    @if (($job['contact_name'] ?? '') !== '')
+                        <div>
+                            <div class="text-[11px] uppercase tracking-wide text-nicon-muted">Contactpersoon</div>
+                            <p>{{ $job['contact_name'] }}</p>
+                        </div>
+                    @endif
+                    @if (($job['summary'] ?? '') !== '')
+                        <div>
+                            <div class="text-[11px] uppercase tracking-wide text-nicon-muted">Omschrijving</div>
+                            <p>{{ $job['summary'] }}</p>
+                        </div>
+                    @endif
                     @if ($job['address'])
                         <div>
                             <div class="text-[11px] uppercase tracking-wide text-nicon-muted">Adres</div>
@@ -99,7 +111,9 @@
                     @endif
                 </div>
                 <div class="flex flex-col gap-2 border-t border-nicon-line p-4">
-                    <a href="{{ $job['project_url'] }}" class="bg-nicon-ink px-4 py-3 text-center text-sm font-medium text-white">Projectinformatie</a>
+                    @if ($job['project_url'] ?? null)
+                        <a href="{{ $job['project_url'] }}" class="bg-nicon-ink px-4 py-3 text-center text-sm font-medium text-white">Projectinformatie</a>
+                    @endif
                     @if ($job['drawing_url'] ?? null)
                         <a href="{{ $job['drawing_url'] }}" class="border border-nicon-line px-4 py-3 text-center text-sm font-medium">Tekeningen</a>
                     @endif

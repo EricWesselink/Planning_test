@@ -1387,14 +1387,15 @@ if (board) {
         const dialog = document.getElementById('internal-dialog');
         const form = document.getElementById('internal-form');
         const openBtn = document.getElementById('internal-open');
-        if (! dialog || ! form) {
+        const unit = document.getElementById('internal-unit');
+        const contact = document.getElementById('internal-contact');
+        if (! dialog || ! form || ! openBtn || ! unit || ! contact) {
             return;
         }
 
         const who = document.getElementById('internal-who');
         const crewBox = document.getElementById('internal-crew');
         const crewList = document.getElementById('internal-crew-list');
-        const unit = document.getElementById('internal-unit');
         const description = document.getElementById('internal-description');
         const notes = document.getElementById('internal-notes');
         const start = document.getElementById('internal-start');
@@ -1403,7 +1404,10 @@ if (board) {
         const sunday = document.getElementById('internal-sunday');
         const deleteBtn = document.getElementById('internal-delete');
         const title = document.getElementById('internal-dialog-title');
-        bindPlanningDatePickers(start, end);
+        openBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            openCreate();
+        });
 
         const selectedCrew = () => [...crewList.querySelectorAll('input[name="crew_member_ids"]:checked')]
             .map((input) => Number(input.value));
@@ -1434,7 +1438,7 @@ if (board) {
             return value.startsWith('worker:') ? value.slice('worker:'.length) : '';
         };
 
-        who.addEventListener('change', () => {
+        who?.addEventListener('change', () => {
             const workerId = workerIdFromWho();
             const people = workerId ? workerCrew(workerId) : [];
             renderCrew(workerId, people.map((person) => person.id));
@@ -1446,6 +1450,7 @@ if (board) {
             deleteBtn.classList.add('hidden');
             who.value = '';
             unit.value = '';
+            contact.value = '';
             description.value = '';
             notes.value = '';
             start.value = dates[0] || '';
@@ -1462,6 +1467,7 @@ if (board) {
             deleteBtn.classList.remove('hidden');
             who.value = `worker:${bar.dataset.workerId}`;
             unit.value = bar.dataset.businessUnit || '';
+            contact.value = bar.dataset.contactName || '';
             description.value = bar.dataset.description || '';
             notes.value = bar.dataset.notes || '';
             start.value = bar.dataset.startDate || '';
@@ -1474,18 +1480,19 @@ if (board) {
             dialog.showModal();
         };
 
-        openBtn?.addEventListener('click', openCreate);
+        bindPlanningDatePickers(start, end);
         document.getElementById('internal-cancel')?.addEventListener('click', () => dialog.close());
 
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
             const workerId = workerIdFromWho();
-            if (! workerId || ! unit.value || ! description.value || ! start.value || ! end.value) {
+            if (! workerId || ! unit.value || ! contact.value.trim() || ! description.value || ! start.value || ! end.value) {
                 return;
             }
             const body = {
                 worker_id: Number(workerId),
                 business_unit: unit.value,
+                contact_name: contact.value.trim(),
                 description: description.value,
                 notes: notes.value,
                 start_date: start.value,

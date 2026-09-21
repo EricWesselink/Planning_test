@@ -221,7 +221,7 @@ class VakmanPlanningService
         $entries ??= collect();
         $isExternal = $user->worker?->employment_type?->isExternal() ?? false;
         $own = $assignments
-            ->filter(fn (WorkerAssignment $assignment): bool => $assignment->project !== null
+            ->filter(fn (WorkerAssignment $assignment): bool => ($assignment->project !== null || $assignment->isInternal())
                 && ! $assignment->isHoursOrigin()
                 && $assignment->coversDate($date)
                 && ($isExternal || $assignment->includesVakman($user)))
@@ -230,6 +230,10 @@ class VakmanPlanningService
         $others = $colleagues;
 
         return $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed, $isExternal, $entries): array {
+            if ($assignment->isInternal()) {
+                return $this->internalJobCard($user, $assignment, $date, $isExternal);
+            }
+
             $project = $assignment->project;
             $tickets = $this->ticketsOnDate($assignment, $date);
             $holder = $isExternal ? null : $assignment->workTicketHolder;
@@ -285,6 +289,52 @@ class VakmanPlanningService
                     : null,
             ];
         })->values()->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function internalJobCard(User $user, WorkerAssignment $assignment, CarbonInterface $date, bool $isExternal): array
+    {
+        $description = trim((string) $assignment->description);
+        $notes = trim((string) $assignment->notes);
+
+        return [
+            'assignment' => $assignment,
+            'project' => null,
+            'is_internal' => true,
+            'card_id' => 'vakman-job-'.$date->toDateString().'-'.$assignment->id,
+            'date' => $date->toDateString(),
+            'project_name' => $assignment->business_unit?->label() ?? 'Intern – inzet',
+            'city' => '',
+            'numbers' => '',
+            'address' => null,
+            'maps_url' => null,
+            'kind_label' => $isExternal ? null : 'Intern',
+            'time_label' => $this->timeLabel($assignment, $isExternal),
+            'headline' => '',
+            'summary' => $description,
+            'contact_name' => trim((string) $assignment->contact_name),
+            'people' => $isExternal ? [] : $this->peopleOnAssignment($user, $assignment),
+            'colleagues' => [],
+            'foreman' => null,
+            'work_ticket_holder' => null,
+            'is_work_ticket_holder' => false,
+            'url' => route('vakman.planning.day', $date->toDateString()),
+            'project_url' => null,
+            'drawing_url' => null,
+            'tickets' => collect(),
+            'werkbon_url' => null,
+            'opdrachtbon_url' => null,
+            'hour_slots' => [],
+            'can_register_hours' => false,
+            'floors' => [],
+            'rooms' => [],
+            'works' => [],
+            'notes' => $notes !== '' ? [$notes] : [],
+            'drawings' => [],
+            'opdracht' => null,
+        ];
     }
 
     /**

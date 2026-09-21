@@ -45,7 +45,8 @@ class InternalDeploymentTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors([
                 'worker_id' => 'Kies een vakman of team.',
-                'business_unit' => 'Kies een bedrijfsonderdeel.',
+                'business_unit' => 'Kies een onderdeel.',
+                'contact_name' => 'Vul de contactpersoon in.',
                 'description' => 'Vul een omschrijving in.',
                 'start_date' => 'Vul een van-datum in.',
                 'end_date' => 'Vul een t/m-datum in.',
@@ -63,7 +64,7 @@ class InternalDeploymentTest extends TestCase
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors([
-                'business_unit' => 'Kies een bedrijfsonderdeel.',
+                'business_unit' => 'Kies een onderdeel.',
             ]);
 
         $this->assertSame(0, WorkerAssignment::query()->count());
@@ -106,18 +107,34 @@ class InternalDeploymentTest extends TestCase
             'worker_id' => $worker->id,
             'project_id' => null,
             'kind' => AssignmentKind::Internal->value,
-            'business_unit' => InternalBusinessUnit::NicoDekvloeren->value,
-            'description' => 'Werk voor Nico Dekvloeren',
+            'business_unit' => InternalBusinessUnit::Vloeren->value,
+            'contact_name' => 'Jan Jansen',
+            'description' => 'Werk voor Vloeren',
             'notes' => 'Niet op een vloerproject',
         ]);
 
-        $this->actingAs($user)
-            ->get(route('planning', ['week' => '2026-09-07']))
+        $board = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'weeks' => 2]))
             ->assertOk()
-            ->assertSee('Interne inzet – Nico Dekvloeren')
-            ->assertSee('Werk voor Nico Dekvloeren')
-            ->assertSee('Niet op een vloerproject')
-            ->assertSee('data-internal="1"', false);
+            ->assertSee('>Intern – inzet<', false)
+            ->assertDontSee('Vloeren · Jan Jansen', false)
+            ->assertSee('data-contact-name="Jan Jansen"', false)
+            ->assertSee('Interne inzet – Vloeren – Jan Jansen – Werk voor Vloeren', false)
+            ->assertSee('data-internal="1"', false)
+            ->assertSee('Laakse Tuinen Amersfoort');
+
+        $html = $board->getContent();
+        $start = strpos($html, 'id="plan-board"');
+        $end = strpos($html, 'id="planning-print-dialog"');
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $boardHtml = substr($html, $start, $end - $start);
+        $firstProjectLine = strpos($boardHtml, 'plan-line plan-line--project');
+        $this->assertNotFalse($firstProjectLine);
+        $this->assertStringStartsWith(
+            'plan-line plan-line--project plan-line--internal',
+            substr($boardHtml, $firstProjectLine),
+        );
 
         $this->actingAs($user)
             ->postJson(route('planning.internal.store'), [
@@ -143,7 +160,7 @@ class InternalDeploymentTest extends TestCase
 
         $blocked->assertStatus(409);
         $this->assertStringContainsString('Interne inzet', (string) $blocked->json('message'));
-        $this->assertStringContainsString('Nico Dekvloeren', (string) $blocked->json('message'));
+        $this->assertStringContainsString('Vloeren', (string) $blocked->json('message'));
         $this->assertSame(1, WorkerAssignment::query()->where('project_id', $project->id)->count());
     }
 
@@ -159,16 +176,18 @@ class InternalDeploymentTest extends TestCase
         $this->actingAs($user)
             ->patchJson(route('planning.assignments.update', $assignment), [
                 'end_date' => '2026-09-08',
-                'description' => 'Werk voor Nico Dekvloeren, korter',
-                'business_unit' => InternalBusinessUnit::ScreensZonwering->value,
+                'description' => 'Werk voor Vloeren, korter',
+                'business_unit' => InternalBusinessUnit::Tegelwerken->value,
+                'contact_name' => 'Piet de Boer',
             ])
             ->assertOk();
 
         $assignment->refresh();
         $this->assertSame('2026-09-08', $assignment->start_date->toDateString());
         $this->assertSame('2026-09-08', $assignment->end_date->toDateString());
-        $this->assertSame('Werk voor Nico Dekvloeren, korter', $assignment->description);
-        $this->assertSame(InternalBusinessUnit::ScreensZonwering, $assignment->business_unit);
+        $this->assertSame('Werk voor Vloeren, korter', $assignment->description);
+        $this->assertSame(InternalBusinessUnit::Tegelwerken, $assignment->business_unit);
+        $this->assertSame('Piet de Boer', $assignment->contact_name);
         $this->assertNull($assignment->project_id);
 
         $this->actingAs($user)
@@ -176,6 +195,38 @@ class InternalDeploymentTest extends TestCase
             ->assertOk();
 
         $this->assertModelMissing($assignment);
+    }
+
+    public function test_vakman_sees_the_contact_when_opening_the_internal_day(): void
+    {
+        $this->travelTo('2026-09-08 08:00:00');
+        $worker = Worker::query()->create([
+            'name' => 'Kees Jansen',
+            'employment_type' => 'eigen',
+            'people_count' => 1,
+            'active' => true,
+        ]);
+        $planner = User::factory()->create();
+        $this->actingAs($planner)
+            ->postJson(route('planning.internal.store'), $this->payload($worker))
+            ->assertOk();
+
+        $vakman = User::factory()->vakman($worker->id)->create(['name' => 'Kees Jansen']);
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('vakman-week-job-title">Vloeren', false)
+            ->assertSee('Contactpersoon')
+            ->assertSee('Jan Jansen');
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-08'))
+            ->assertOk()
+            ->assertSee('Vloeren')
+            ->assertSee('Contactpersoon')
+            ->assertSee('Jan Jansen')
+            ->assertDontSee('Bekijk werk');
     }
 
     public function test_weekplanning_pdf_names_the_internal_deployment(): void
@@ -191,7 +242,7 @@ class InternalDeploymentTest extends TestCase
 
         $response->assertOk();
         $text = preg_replace('/\s+/u', ' ', (new Parser)->parseContent($response->getContent())->getText()) ?? '';
-        $this->assertStringContainsString('Interne inzet – Nico Dekvloeren – Werk voor Nico Dekvloeren', $text);
+        $this->assertStringContainsString('Interne inzet – Vloeren – Jan Jansen – Werk voor Vloeren', $text);
     }
 
     /**
@@ -204,8 +255,9 @@ class InternalDeploymentTest extends TestCase
         return [
             'worker_id' => $worker?->id ?? 0,
             'crew_member_ids' => $worker?->crewPeople->pluck('id')->all() ?? [],
-            'business_unit' => InternalBusinessUnit::NicoDekvloeren->value,
-            'description' => 'Werk voor Nico Dekvloeren',
+            'business_unit' => InternalBusinessUnit::Vloeren->value,
+            'contact_name' => 'Jan Jansen',
+            'description' => 'Werk voor Vloeren',
             'notes' => 'Niet op een vloerproject',
             'start_date' => '2026-09-08',
             'end_date' => '2026-09-09',

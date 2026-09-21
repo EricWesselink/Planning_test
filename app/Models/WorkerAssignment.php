@@ -18,7 +18,7 @@ use Illuminate\Support\Collection;
 
 #[Fillable([
     'worker_id', 'project_id', 'work_item_id', 'team_id',
-    'kind', 'business_unit', 'description',
+    'kind', 'business_unit', 'contact_name', 'description',
     'start_date', 'end_date', 'start_time', 'end_time',
     'include_saturday', 'include_sunday',
     'people_count', 'hours_per_day', 'planned_hours', 'is_provisional', 'origin', 'notes',
@@ -291,6 +291,10 @@ class WorkerAssignment extends Model
         $parts = ['Interne inzet'];
         if ($this->business_unit instanceof InternalBusinessUnit) {
             $parts[] = $this->business_unit->label();
+        }
+        $contact = trim((string) $this->contact_name);
+        if ($contact !== '') {
+            $parts[] = $contact;
         }
         $description = trim((string) $this->description);
         if ($description !== '') {
@@ -571,14 +575,14 @@ class WorkerAssignment extends Model
     public function planningLabel(): string
     {
         if ($this->isInternal()) {
+            $who = $this->presentNamesLabel()
+                ?? $this->worker?->planName()
+                ?? 'Intern – inzet';
             $unit = $this->business_unit instanceof InternalBusinessUnit
                 ? $this->business_unit->label()
-                : 'Ander bedrijfsonderdeel';
-            $names = $this->presentNamesLabel();
+                : null;
 
-            return $names !== null
-                ? 'Interne inzet · '.$unit.' · '.$names
-                : 'Interne inzet · '.$unit;
+            return implode(' · ', array_values(array_filter([$unit, $who])));
         }
 
         $this->loadMissing(['workItem.workActivity', 'project', 'worker']);

@@ -307,6 +307,7 @@ class PlanningActionController extends Controller
         $data = $request->validate([
             'worker_id' => ['required', 'integer', 'exists:workers,id'],
             'business_unit' => ['required', Rule::enum(InternalBusinessUnit::class)],
+            'contact_name' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'start_date' => ['required', 'date'],
@@ -318,8 +319,9 @@ class PlanningActionController extends Controller
             'confirm_conflict' => ['sometimes', 'boolean'],
         ], [
             'worker_id.required' => 'Kies een vakman of team.',
-            'business_unit.required' => 'Kies een bedrijfsonderdeel.',
-            'business_unit.enum' => 'Kies een bedrijfsonderdeel.',
+            'business_unit.required' => 'Kies een onderdeel.',
+            'business_unit.enum' => 'Kies een onderdeel.',
+            'contact_name.required' => 'Vul de contactpersoon in.',
             'description.required' => 'Vul een omschrijving in.',
             'start_date.required' => 'Vul een van-datum in.',
             'end_date.required' => 'Vul een t/m-datum in.',
@@ -381,6 +383,7 @@ class PlanningActionController extends Controller
         $assignment->team_id = null;
         $assignment->kind = AssignmentKind::Internal;
         $assignment->business_unit = InternalBusinessUnit::from($data['business_unit']);
+        $assignment->contact_name = trim($data['contact_name']);
         $assignment->description = trim($data['description']);
         $assignment->notes = $this->optionalNote($data['notes'] ?? null);
         $assignment->people_count = max(1, count($crewIds));
@@ -906,6 +909,7 @@ class PlanningActionController extends Controller
         $data = $request->validate([
             'worker_id' => ['sometimes', 'integer', 'exists:workers,id'],
             'business_unit' => ['sometimes', 'required', Rule::enum(InternalBusinessUnit::class)],
+            'contact_name' => ['sometimes', 'required', 'string', 'max:255'],
             'description' => ['sometimes', 'required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'start_date' => ['sometimes', 'date'],
@@ -918,8 +922,9 @@ class PlanningActionController extends Controller
             'include_sunday' => ['sometimes', 'boolean'],
             'confirm_conflict' => ['sometimes', 'boolean'],
         ], [
-            'business_unit.required' => 'Kies een bedrijfsonderdeel.',
-            'business_unit.enum' => 'Kies een bedrijfsonderdeel.',
+            'business_unit.required' => 'Kies een onderdeel.',
+            'business_unit.enum' => 'Kies een onderdeel.',
+            'contact_name.required' => 'Vul de contactpersoon in.',
             'description.required' => 'Vul een omschrijving in.',
         ]);
 
@@ -986,6 +991,9 @@ class PlanningActionController extends Controller
         $assignment->work_item_id = null;
         if (array_key_exists('business_unit', $data)) {
             $assignment->business_unit = InternalBusinessUnit::from($data['business_unit']);
+        }
+        if (array_key_exists('contact_name', $data)) {
+            $assignment->contact_name = trim($data['contact_name']);
         }
         if (array_key_exists('description', $data)) {
             $assignment->description = trim($data['description']);

@@ -43,6 +43,13 @@
             </p>
         @endif
 
+        @if (($job['contact_name'] ?? '') !== '')
+            <p class="vakman-job-card-row">
+                <span class="vakman-job-card-label">Contactpersoon</span>
+                {{ $job['contact_name'] }}
+            </p>
+        @endif
+
         @if ($showActions && $summary !== '')
             <p class="vakman-job-card-row">
                 <span class="vakman-job-card-label">Omschrijving</span>
@@ -80,7 +87,9 @@
 
     @if ($showActions)
         <div class="vakman-job-card-actions">
-            <a href="{{ $job['url'] }}" class="vakman-job-btn vakman-job-btn-ink">Bekijk werk</a>
+            @if ($job['project_url'] ?? null)
+                <a href="{{ $job['url'] }}" class="vakman-job-btn vakman-job-btn-ink">Bekijk werk</a>
+            @endif
             @if ($job['drawing_url'] ?? null)
                 <a href="{{ $job['drawing_url'] }}" class="vakman-job-btn vakman-job-btn-ghost">Tekeningen</a>
             @endif

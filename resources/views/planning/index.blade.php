@@ -490,12 +490,6 @@
                                         <div class="plan-project-meta">
                                             <span class="plan-small-badge plan-small-badge--internal">INTERN</span>
                                             <span class="plan-project-title">{{ $projectRow['title'] }}</span>
-                                            @if (! empty($projectRow['subtitle']))
-                                                <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['subtitle'] }}</div>
-                                            @endif
-                                            @if (! empty($projectRow['notes']))
-                                                <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['notes'] }}</div>
-                                            @endif
                                         </div>
                                     </div>
                                     @include('planning.partials.qty-cells', ['row' => $projectRow, 'showLabor' => $canViewLaborCosts])
@@ -833,7 +827,7 @@
         <dialog id="internal-dialog" class="plan-dialog">
             <form id="internal-form" class="space-y-2">
                 <h2 id="internal-dialog-title" class="text-base font-semibold">Interne inzet</h2>
-                <p class="text-xs text-nicon-muted">De vakman is dan bezet voor Nicon Vloeren, zonder project of werkbon.</p>
+                <p class="text-xs text-nicon-muted">De vakman is dan bezet voor dit onderdeel, zonder project of werkbon.</p>
                 <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Vakman of team</label>
                 <select name="who" id="internal-who" required class="w-full border border-nicon-line px-2 py-1.5 bg-white">
                     <option value="">Kies vakman of team</option>
@@ -846,17 +840,21 @@
                     <div id="internal-crew-list" class="space-y-0.5"></div>
                 </div>
                 <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
-                    Bedrijfsonderdeel
+                    Onderdeel
                     <select name="business_unit" id="internal-unit" required class="mt-0.5 w-full border border-nicon-line px-2 py-1.5 bg-white">
-                        <option value="">Kies bedrijfsonderdeel</option>
+                        <option value="">Kies onderdeel</option>
                         @foreach (\App\Enums\InternalBusinessUnit::choices() as $unit)
                             <option value="{{ $unit->value }}">{{ $unit->label() }}</option>
                         @endforeach
                     </select>
                 </label>
                 <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                    Contactpersoon
+                    <input type="text" name="contact_name" id="internal-contact" required maxlength="255" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
+                </label>
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
                     Omschrijving
-                    <input type="text" name="description" id="internal-description" required maxlength="255" placeholder="Werk voor Nico Dekvloeren" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
+                    <input type="text" name="description" id="internal-description" required maxlength="255" placeholder="Werk op locatie" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
                 </label>
                 <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
                     Opmerking

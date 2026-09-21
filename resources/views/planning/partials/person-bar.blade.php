@@ -18,6 +18,7 @@
      data-provisional="{{ ! empty($personBar['is_provisional']) ? '1' : '0' }}"
      data-internal="{{ ! empty($personBar['is_internal']) ? '1' : '0' }}"
      data-business-unit="{{ $personBar['business_unit'] ?? '' }}"
+     data-contact-name="{{ $personBar['contact_name'] ?? '' }}"
      data-description="{{ $personBar['description'] ?? '' }}"
      data-notes="{{ $personBar['notes'] ?? '' }}"
      data-locked="{{ ! empty($personBar['locked']) ? '1' : '0' }}"

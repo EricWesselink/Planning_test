@@ -390,9 +390,7 @@ class PlanningBoardService
             }
         }
 
-        foreach ($this->internalRows($internalAssignments, $days, $doubleBooked) as $internalRow) {
-            $rows[] = $internalRow;
-        }
+        $internalRows = $this->internalRows($internalAssignments, $days, $doubleBooked);
 
         $todoRunningCount = $this->todoRunningRowCount($rows);
         if ($todoRunning) {
@@ -405,6 +403,10 @@ class PlanningBoardService
         }
 
         $rows = $this->groupRowsByKind($rows, $kindFilter);
+        if ($doubleFilter['active']) {
+            $internalRows = $this->filterRowsToAssignments($internalRows, $doubleFilter['assignment_ids']);
+        }
+        $rows = [...$internalRows, ...$rows];
         $warnings = $doubleFilter['warnings'];
 
         $availabilityOverview = $scheduledWorkerId
@@ -1222,6 +1224,7 @@ class PlanningBoardService
                 : ($assignment->worker?->planColor() ?? Format::planColor((int) $assignment->worker_id)),
             'is_internal' => $assignment->isInternal(),
             'business_unit' => $assignment->business_unit?->value ?? '',
+            'contact_name' => (string) ($assignment->contact_name ?? ''),
             'description' => (string) ($assignment->description ?? ''),
             'notes' => (string) ($assignment->notes ?? ''),
             'ticket_label' => $assignment->worker
@@ -1392,48 +1395,44 @@ class PlanningBoardService
      */
     private function internalRows(Collection $assignments, Collection $days, array $doubleBooked): array
     {
-        $rows = [];
+        $bars = [];
+        $used = [];
         foreach ($assignments->sortBy([
             fn (WorkerAssignment $assignment): int => $assignment->start_date->timestamp,
             fn (WorkerAssignment $assignment): int => (int) $assignment->id,
         ]) as $assignment) {
             $unit = $assignment->business_unit?->label() ?? 'Ander bedrijfsonderdeel';
-            $description = trim((string) $assignment->description);
-            [$bars] = $this->appendAssignmentPersonBars(
-                [],
-                [],
+            [$bars, $used] = $this->appendAssignmentPersonBars(
+                $bars,
+                $used,
                 $assignment,
                 $days,
                 $doubleBooked,
-                $description,
+                trim((string) $assignment->description),
                 $unit,
             );
-            if ($bars === []) {
-                continue;
-            }
-
-            $rows[] = [
-                'type' => 'internal',
-                'id' => $assignment->id,
-                'kind' => AssignmentKind::Internal->value,
-                'badge' => 'INTERN',
-                'compact' => true,
-                'sort_bucket' => $this->sortBucket($assignment->start_date, $assignment->end_date, $days),
-                'sort_date' => $assignment->start_date->toDateString(),
-                'title' => 'Interne inzet – '.$unit,
-                'subtitle' => $description,
-                'notes' => trim((string) $assignment->notes),
-                'person_bars' => $bars,
-                'bar_count' => $this->stackedBarCount($bars),
-                'children' => [],
-                'bar' => null,
-                'start_marker' => null,
-                'end_marker' => null,
-                'missing_craftsman' => false,
-            ];
+        }
+        if ($bars === []) {
+            return [];
         }
 
-        return $rows;
+        return [[
+            'type' => 'internal',
+            'id' => 0,
+            'kind' => AssignmentKind::Internal->value,
+            'badge' => 'INTERN',
+            'compact' => true,
+            'sort_bucket' => 0,
+            'sort_date' => '',
+            'title' => 'Intern – inzet',
+            'person_bars' => $bars,
+            'bar_count' => $this->stackedBarCount($bars),
+            'children' => [],
+            'bar' => null,
+            'start_marker' => null,
+            'end_marker' => null,
+            'missing_craftsman' => false,
+        ]];
     }
 
     /**

@@ -70,7 +70,8 @@ class VakmanPlanningController extends Controller
 
         $detail = $planning->day($user, $this->parseDate($date));
         $job = collect($detail['jobs'])->first(
-            fn (array $row): bool => (int) $row['project']->id === (int) $project->id
+            fn (array $row): bool => ($row['project'] ?? null) !== null
+                && (int) $row['project']->id === (int) $project->id
         );
         abort_if($job === null, 404);
 
