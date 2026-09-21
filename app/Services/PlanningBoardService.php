@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AssignmentKind;
 use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
 use App\Enums\SmallWorkType;
@@ -147,6 +148,15 @@ class PlanningBoardService
             )
             ->get();
 
+        $internalAssignments = WorkerAssignment::query()
+            ->with(['worker', 'team', 'crewMembers'])
+            ->where('kind', AssignmentKind::Internal)
+            ->where('end_date', '>=', $windowStart->toDateString())
+            ->where('start_date', '<=', $windowEnd->toDateString())
+            ->when($workerId, fn ($q) => $q->where('worker_id', $workerId))
+            ->when($crewMemberId, fn ($q) => $this->constrainCrewMember($q, $crewMemberId))
+            ->get();
+
         if ($hoursView === 'actual') {
             $this->applyApprovedHours($assignments);
         }
@@ -155,7 +165,8 @@ class PlanningBoardService
             $projects = $projects->whereIn('id', $assignments->pluck('project_id'))->values();
         }
 
-        $doubleBooked = $this->conflicts->doubleBookedMap($assignments, $days);
+        $occupancy = $assignments->concat($internalAssignments);
+        $doubleBooked = $this->conflicts->doubleBookedMap($occupancy, $days);
         $rows = [];
 
         foreach ($projects as $project) {
@@ -379,12 +390,16 @@ class PlanningBoardService
             }
         }
 
+        foreach ($this->internalRows($internalAssignments, $days, $doubleBooked) as $internalRow) {
+            $rows[] = $internalRow;
+        }
+
         $todoRunningCount = $this->todoRunningRowCount($rows);
         if ($todoRunning) {
             $rows = $this->filterTodoRunningRows($rows);
         }
 
-        $doubleFilter = $this->doubleBookingPresentation($request, $doubleBooked, $assignments);
+        $doubleFilter = $this->doubleBookingPresentation($request, $doubleBooked, $occupancy);
         if ($doubleFilter['active']) {
             $rows = $this->filterRowsToAssignments($rows, $doubleFilter['assignment_ids']);
         }
@@ -1202,7 +1217,13 @@ class PlanningBoardService
             'locked' => $assignment->isHoursOrigin(),
             'hours_per_day' => (float) $assignment->hours_per_day,
             'planned_hours' => $assignment->plannedHoursValue(),
-            'color' => $assignment->worker?->planColor() ?? Format::planColor((int) $assignment->worker_id),
+            'color' => $assignment->isInternal()
+                ? '#1f4b63'
+                : ($assignment->worker?->planColor() ?? Format::planColor((int) $assignment->worker_id)),
+            'is_internal' => $assignment->isInternal(),
+            'business_unit' => $assignment->business_unit?->value ?? '',
+            'description' => (string) ($assignment->description ?? ''),
+            'notes' => (string) ($assignment->notes ?? ''),
             'ticket_label' => $assignment->worker
                 ? WorkTicketKind::forWorker($assignment->worker)->label().' maken'
                 : 'Werkbon maken',
@@ -1361,6 +1382,58 @@ class PlanningBoardService
             'index' => (int) $index,
             'date' => $date->format('d-m-Y'),
         ];
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<int, array<string, mixed>>  $doubleBooked
+     * @return list<array<string, mixed>>
+     */
+    private function internalRows(Collection $assignments, Collection $days, array $doubleBooked): array
+    {
+        $rows = [];
+        foreach ($assignments->sortBy([
+            fn (WorkerAssignment $assignment): int => $assignment->start_date->timestamp,
+            fn (WorkerAssignment $assignment): int => (int) $assignment->id,
+        ]) as $assignment) {
+            $unit = $assignment->business_unit?->label() ?? 'Ander bedrijfsonderdeel';
+            $description = trim((string) $assignment->description);
+            [$bars] = $this->appendAssignmentPersonBars(
+                [],
+                [],
+                $assignment,
+                $days,
+                $doubleBooked,
+                $description,
+                $unit,
+            );
+            if ($bars === []) {
+                continue;
+            }
+
+            $rows[] = [
+                'type' => 'internal',
+                'id' => $assignment->id,
+                'kind' => AssignmentKind::Internal->value,
+                'badge' => 'INTERN',
+                'compact' => true,
+                'sort_bucket' => $this->sortBucket($assignment->start_date, $assignment->end_date, $days),
+                'sort_date' => $assignment->start_date->toDateString(),
+                'title' => 'Interne inzet – '.$unit,
+                'subtitle' => $description,
+                'notes' => trim((string) $assignment->notes),
+                'person_bars' => $bars,
+                'bar_count' => $this->stackedBarCount($bars),
+                'children' => [],
+                'bar' => null,
+                'start_marker' => null,
+                'end_marker' => null,
+                'missing_craftsman' => false,
+            ];
+        }
+
+        return $rows;
     }
 
     /**

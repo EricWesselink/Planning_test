@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AssignmentKind;
 use App\Enums\AvailabilitySlot;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
@@ -120,8 +121,11 @@ class WeekplanningPdfService
                 'project.customer',
                 'crewMembers',
             ])
-            ->whereHas('project', function ($query) use ($request): void {
-                $query->active()->accessibleBy($request->user());
+            ->where(function ($query) use ($request): void {
+                $query->where('kind', AssignmentKind::Internal->value)
+                    ->orWhereHas('project', function ($query) use ($request): void {
+                        $query->active()->accessibleBy($request->user());
+                    });
             })
             ->whereDate('end_date', '>=', $monday)
             ->whereDate('start_date', '<=', $saturday)
@@ -177,8 +181,11 @@ class WeekplanningPdfService
         $days = $this->board->weekDays($weekStart, 1);
         $assignments = WorkerAssignment::query()
             ->with(['worker'])
-            ->whereHas('project', function ($query) use ($request): void {
-                $query->active()->accessibleBy($request->user());
+            ->where(function ($query) use ($request): void {
+                $query->where('kind', AssignmentKind::Internal->value)
+                    ->orWhereHas('project', function ($query) use ($request): void {
+                        $query->active()->accessibleBy($request->user());
+                    });
             })
             ->whereDate('end_date', '>=', $days->first())
             ->whereDate('start_date', '<=', $days->last())
@@ -230,7 +237,7 @@ class WeekplanningPdfService
         $rows = [];
 
         foreach ($assignments as $assignment) {
-            if ($assignment->worker === null || $assignment->project === null) {
+            if ($assignment->worker === null || ($assignment->project === null && ! $assignment->isInternal())) {
                 continue;
             }
 
@@ -671,6 +678,32 @@ class WeekplanningPdfService
      */
     private function block(WorkerAssignment $assignment, CarbonInterface $start, CarbonInterface $end, float $hours, string $personName): array
     {
+        if ($assignment->isInternal()) {
+            $hoursCaption = $this->hoursCaption($hours, $start, $end);
+            $note = trim((string) $assignment->notes);
+
+            return [
+                'title' => $assignment->internalTitle(),
+                'city' => null,
+                'numbers' => null,
+                'activity' => $note !== '' ? $note : null,
+                'badge' => null,
+                'source_label' => 'Intern',
+                'source_logo' => null,
+                'hours' => $hoursCaption,
+                'start' => $start->format('H:i'),
+                'color' => '#efe6d4',
+                'who' => [$personName],
+                'merge_key' => implode('|', [
+                    'internal',
+                    (string) $assignment->id,
+                    $start->format('H:i'),
+                    $end->format('H:i'),
+                    $hoursCaption,
+                ]),
+            ];
+        }
+
         $project = $assignment->project;
         $item = $assignment->workItem;
         $title = $project->displayTitle();

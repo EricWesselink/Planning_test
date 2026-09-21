@@ -94,6 +94,7 @@
                     </form>
                     <a class="planning-btn planning-btn--accent" href="{{ route('production.index') }}">Productie</a>
                     @if ($canManagePlanning)
+                        <button type="button" class="planning-btn" id="internal-open" title="Vakman inplannen voor een ander bedrijfsonderdeel">Interne inzet</button>
                         <a class="planning-btn" href="{{ route('projects.small.create') }}">Klein werk</a>
                     @endif
                 </div>
@@ -280,6 +281,7 @@
                  data-shift-url="{{ route('planning.shift') }}"
                  data-move-url="{{ route('planning.assignments.move') }}"
                  data-store-url="{{ route('planning.assignments.store') }}"
+                 data-internal-store-url="{{ route('planning.internal.store') }}"
                  data-candidates-url="{{ route('planning.candidates') }}"
                  data-assignment-url="{{ url('/planning/assignments') }}"
                  data-ticket-url="{{ url('/planning/assignments') }}"
@@ -478,6 +480,39 @@
                     </div>
                     </div>
                     @foreach ($rows as $projectRow)
+                        @if (($projectRow['type'] ?? '') === 'internal')
+                            @php
+                                $internalHeight = max(28, 8 + ($projectRow['bar_count'] * 24));
+                            @endphp
+                            <div class="plan-line plan-line--project plan-line--internal" style="min-height: {{ $internalHeight }}px">
+                                <div class="plan-frozen">
+                                    <div class="plan-cell plan-cell--werk">
+                                        <div class="plan-project-meta">
+                                            <span class="plan-small-badge plan-small-badge--internal">INTERN</span>
+                                            <span class="plan-project-title">{{ $projectRow['title'] }}</span>
+                                            @if (! empty($projectRow['subtitle']))
+                                                <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['subtitle'] }}</div>
+                                            @endif
+                                            @if (! empty($projectRow['notes']))
+                                                <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['notes'] }}</div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                    @include('planning.partials.qty-cells', ['row' => $projectRow, 'showLabor' => $canViewLaborCosts])
+                                </div>
+                                @include('planning.partials.plan-days', [
+                                    'projectId' => '',
+                                    'workItemId' => null,
+                                    'personBars' => $projectRow['person_bars'],
+                                    'showPeriod' => false,
+                                    'periodBar' => null,
+                                    'startMarker' => null,
+                                    'endMarker' => null,
+                                    'personBarOffset' => 4,
+                                ])
+                            </div>
+                            @continue
+                        @endif
                         @if (($projectRow['type'] ?? '') === 'section')
                             <div class="plan-line plan-line--section" role="separator" aria-label="{{ $projectRow['title'] }}">
                                 <div class="plan-frozen">
@@ -794,6 +829,87 @@
             </p>
         </form>
     </dialog>
+    @if ($canManagePlanning)
+        <dialog id="internal-dialog" class="plan-dialog">
+            <form id="internal-form" class="space-y-2">
+                <h2 id="internal-dialog-title" class="text-base font-semibold">Interne inzet</h2>
+                <p class="text-xs text-nicon-muted">De vakman is dan bezet voor Nicon Vloeren, zonder project of werkbon.</p>
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Vakman of team</label>
+                <select name="who" id="internal-who" required class="w-full border border-nicon-line px-2 py-1.5 bg-white">
+                    <option value="">Kies vakman of team</option>
+                    @foreach ($workers as $worker)
+                        <option value="worker:{{ $worker->id }}">{{ $worker->planName() }}</option>
+                    @endforeach
+                </select>
+                <div id="internal-crew" class="hidden space-y-1 rounded border border-nicon-line bg-nicon-sand/40 px-2 py-1.5">
+                    <div class="text-[10px] uppercase tracking-wide text-nicon-muted">Vakmannen</div>
+                    <div id="internal-crew-list" class="space-y-0.5"></div>
+                </div>
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                    Bedrijfsonderdeel
+                    <select name="business_unit" id="internal-unit" required class="mt-0.5 w-full border border-nicon-line px-2 py-1.5 bg-white">
+                        <option value="">Kies bedrijfsonderdeel</option>
+                        @foreach (\App\Enums\InternalBusinessUnit::choices() as $unit)
+                            <option value="{{ $unit->value }}">{{ $unit->label() }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                    Omschrijving
+                    <input type="text" name="description" id="internal-description" required maxlength="255" placeholder="Werk voor Nico Dekvloeren" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
+                </label>
+                <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">
+                    Opmerking
+                    <input type="text" name="notes" id="internal-notes" maxlength="2000" class="mt-0.5 w-full border border-nicon-line px-2 py-1.5">
+                </label>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Van</label>
+                        <div class="plan-date-wrap">
+                            <input type="text" name="start_date" id="internal-start" required inputmode="numeric" autocomplete="off" placeholder="jjjj-mm-dd" spellcheck="false" class="w-full border border-nicon-line px-2 py-1.5 pr-8">
+                            <button type="button" class="plan-date-icon" data-plan-calendar-for="internal-start" title="Kalender" aria-label="Kalender openen">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="5" width="18" height="16" rx="1"/>
+                                    <path d="M3 9h18"/>
+                                    <path d="M8 3v4"/>
+                                    <path d="M16 3v4"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-nicon-muted">Tot</label>
+                        <div class="plan-date-wrap">
+                            <input type="text" name="end_date" id="internal-end" required inputmode="numeric" autocomplete="off" placeholder="jjjj-mm-dd" spellcheck="false" class="w-full border border-nicon-line px-2 py-1.5 pr-8">
+                            <button type="button" class="plan-date-icon" data-plan-calendar-for="internal-end" title="Kalender" aria-label="Kalender openen">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="5" width="18" height="16" rx="1"/>
+                                    <path d="M3 9h18"/>
+                                    <path d="M8 3v4"/>
+                                    <path d="M16 3v4"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-x-4 gap-y-1 pt-0.5 text-sm">
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" name="include_saturday" id="internal-saturday" value="1">
+                        Zaterdag
+                    </label>
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" name="include_sunday" id="internal-sunday" value="1">
+                        Zondag
+                    </label>
+                </div>
+                <div class="flex flex-wrap gap-2 pt-1">
+                    <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">Opslaan</button>
+                    <button type="button" id="internal-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>
+                    <button type="button" id="internal-delete" class="text-nicon-danger px-4 py-1.5 hidden">Verwijderen</button>
+                </div>
+            </form>
+        </dialog>
+    @endif
     <dialog id="planning-print-dialog" class="plan-dialog">
         <form
             id="planning-print-form"

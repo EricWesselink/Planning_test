@@ -489,6 +489,77 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assertSame($fullName, $project->fresh()->name);
     }
 
+    public function test_personnel_week_pdf_separates_projects_without_splitting_their_works(): void
+    {
+        $this->travelTo('2026-09-21 08:00:00');
+        $user = User::factory()->create();
+        $team = $this->makeTeam('Team 4 Lukasz', [
+            ['name' => 'Lukasz Nowak', 'phone' => ''],
+            ['name' => 'Sietse', 'phone' => ''],
+        ]);
+        $people = $team->crewPeople()->orderBy('sort_order')->get();
+        [$floor, $primen] = $this->makeProject('Vloerherstel bij deur', [
+            'kind' => ProjectKind::Winkel,
+            'customer' => 'Best',
+            'city' => 'Drachten',
+            'project_number' => '2026-017',
+        ]);
+        $linoleum = WorkItem::query()->create([
+            'project_id' => $floor->id,
+            'name' => 'Linoleum',
+            'unit' => WorkUnit::SquareMeter,
+            'ordered_quantity' => 40,
+            'planned_start_date' => $floor->planned_start_date,
+            'planned_end_date' => $floor->planned_end_date,
+            'status' => 'in_uitvoering',
+        ]);
+        $this->assign($team, $floor, $primen, '2026-09-22', '2026-09-22', '08:00:00', '12:00:00')
+            ->syncPresentCrew([$people[0]->id]);
+        $this->assign($team, $floor, $linoleum, '2026-09-24', '2026-09-24', '08:00:00', '16:00:00')
+            ->syncPresentCrew([$people[0]->id]);
+        [$next, $nextItem] = $this->makeProject('Werkomschrijving navragen bij Richard', [
+            'kind' => ProjectKind::Winkel,
+            'customer' => 'Richard',
+            'city' => 'Nunspeet',
+            'project_number' => '2026-018',
+        ]);
+        $this->assign($team, $next, $nextItem, '2026-09-22', '2026-09-22', '12:00:00', '16:00:00')
+            ->syncPresentCrew([$people[0]->id]);
+        $team->availabilities()->create([
+            'crew_member_id' => $people[1]->id,
+            'start_date' => '2026-09-21',
+            'end_date' => '2026-09-26',
+            'kind' => AvailabilityKind::Vacation,
+            'hours' => 8,
+        ]);
+
+        $html = $this->personnelWeekPdfHtml($user);
+
+        $this->assertMatchesRegularExpression('/<tbody>\s*<tr class="keep">/u', $html);
+        $this->assertSame(2, substr_count($html, 'class="keep is-split"'));
+        $this->assertMatchesRegularExpression(
+            '/tr\.keep\.is-split > td\.wrap\s*\{[^}]*padding-top:\s*3\.5mm;[^}]*border-top:\s*1\.6pt solid #163a5f;/u',
+            $html,
+        );
+
+        $primenAt = strpos($html, 'class="work-name">Primen &amp; Egaliseren</div>');
+        $linoleumAt = strpos($html, 'class="work-name">Linoleum</div>');
+        $this->assertNotFalse($primenAt);
+        $this->assertNotFalse($linoleumAt);
+        $sameWork = substr($html, min($primenAt, $linoleumAt), abs($linoleumAt - $primenAt));
+        $this->assertStringNotContainsString('is-split', $sameWork);
+        $this->assertSame(1, substr_count(substr($html, 0, max($primenAt, $linoleumAt)), '<table class="project">'));
+
+        $floorAt = strpos($html, 'Vloerherstel bij deur');
+        $nextAt = strpos($html, 'Werkomschrijving navragen bij Richard');
+        $absenceAt = strpos($html, 'Afwezigheid');
+        $this->assertNotFalse($floorAt);
+        $this->assertNotFalse($nextAt);
+        $this->assertNotFalse($absenceAt);
+        $this->assertStringContainsString('is-split', substr($html, $floorAt, $nextAt - $floorAt));
+        $this->assertStringContainsString('is-split', substr($html, $nextAt, $absenceAt - $nextAt));
+    }
+
     public function test_personnel_week_pdf_repeats_the_brand_header_without_generated_on_line(): void
     {
         $user = User::factory()->create();

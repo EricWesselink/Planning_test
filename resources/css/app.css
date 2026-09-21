@@ -986,6 +986,14 @@ a.plan-missing-craftsman:hover {
     background: #57534e;
 }
 
+.plan-small-badge--internal {
+    background: #1f4b63;
+}
+
+.person-bar--internal {
+    box-shadow: inset 4px 0 0 #e8b931;
+}
+
 .plan-line--small .plan-project-title {
     -webkit-line-clamp: 1;
     line-clamp: 1;

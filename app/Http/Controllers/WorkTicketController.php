@@ -23,6 +23,10 @@ class WorkTicketController extends Controller
 {
     public function create(WorkerAssignment $assignment): RedirectResponse
     {
+        if ($assignment->isInternal()) {
+            abort(404);
+        }
+
         $assignment->load(['worker', 'project']);
         Gate::authorize('create', [WorkTicket::class, $assignment]);
 
@@ -38,6 +42,10 @@ class WorkTicketController extends Controller
 
     public function store(Request $request, WorkerAssignment $assignment, WorkTicketService $tickets): RedirectResponse
     {
+        if ($assignment->isInternal()) {
+            abort(404);
+        }
+
         $assignment->load(['worker', 'project']);
         Gate::authorize('create', [WorkTicket::class, $assignment]);
         $this->normalizeDecimals($request);

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\AssignmentKind;
+use App\Enums\InternalBusinessUnit;
 use App\Enums\WorkTicketKind;
 use App\Support\PlanningHours;
 use App\Support\PlanningWeek;
@@ -16,6 +18,7 @@ use Illuminate\Support\Collection;
 
 #[Fillable([
     'worker_id', 'project_id', 'work_item_id', 'team_id',
+    'kind', 'business_unit', 'description',
     'start_date', 'end_date', 'start_time', 'end_time',
     'include_saturday', 'include_sunday',
     'people_count', 'hours_per_day', 'planned_hours', 'is_provisional', 'origin', 'notes',
@@ -33,6 +36,7 @@ class WorkerAssignment extends Model
         'include_sunday' => false,
         'is_provisional' => false,
         'origin' => 'planned',
+        'kind' => 'project',
     ];
 
     protected function casts(): array
@@ -46,6 +50,8 @@ class WorkerAssignment extends Model
             'include_saturday' => 'boolean',
             'include_sunday' => 'boolean',
             'is_provisional' => 'boolean',
+            'kind' => AssignmentKind::class,
+            'business_unit' => InternalBusinessUnit::class,
         ];
     }
 
@@ -273,6 +279,25 @@ class WorkerAssignment extends Model
     public function isHoursOrigin(): bool
     {
         return $this->origin === 'hours';
+    }
+
+    public function isInternal(): bool
+    {
+        return $this->kind === AssignmentKind::Internal;
+    }
+
+    public function internalTitle(): string
+    {
+        $parts = ['Interne inzet'];
+        if ($this->business_unit instanceof InternalBusinessUnit) {
+            $parts[] = $this->business_unit->label();
+        }
+        $description = trim((string) $this->description);
+        if ($description !== '') {
+            $parts[] = $description;
+        }
+
+        return implode(' – ', $parts);
     }
 
     public function coversDate(CarbonInterface $date): bool
@@ -545,6 +570,17 @@ class WorkerAssignment extends Model
 
     public function planningLabel(): string
     {
+        if ($this->isInternal()) {
+            $unit = $this->business_unit instanceof InternalBusinessUnit
+                ? $this->business_unit->label()
+                : 'Ander bedrijfsonderdeel';
+            $names = $this->presentNamesLabel();
+
+            return $names !== null
+                ? 'Interne inzet · '.$unit.' · '.$names
+                : 'Interne inzet · '.$unit;
+        }
+
         $this->loadMissing(['workItem.workActivity', 'project', 'worker']);
         if ($this->workItem?->isIntakeTask() && ! $this->isProvisional()) {
             $time = PlanningHours::formatTime($this->startTimeValue());
@@ -590,6 +626,16 @@ class WorkerAssignment extends Model
 
     public function detailTitle(string $workName, string $projectName = ''): string
     {
+        if ($this->isInternal()) {
+            $note = trim((string) $this->notes);
+
+            return implode(' · ', array_values(array_filter([
+                $this->internalTitle(),
+                $this->dateRangeLabel(),
+                $note !== '' ? $note : null,
+            ])));
+        }
+
         if ($this->isProvisional()) {
             $lines = array_values(array_filter([
                 $this->planningLabel(),

@@ -161,6 +161,10 @@
             vertical-align: middle;
         }
         td.wrap { padding: 0; border: none; }
+        tr.keep.is-split > td.wrap {
+            padding-top: 3.5mm;
+            border-top: 1.6pt solid #163a5f;
+        }
         table.project {
             width: 100%;
             border-collapse: collapse;
@@ -222,8 +226,8 @@
             </tr>
         </thead>
         <tbody>
-            @forelse ($projects as $project)
-                <tr class="keep">
+            @forelse ($projects as $projectIndex => $project)
+                <tr class="keep{{ $projectIndex > 0 ? ' is-split' : '' }}">
                     <td class="wrap" colspan="{{ 1 + count($days) }}">
                         <table class="project">
                             <colgroup>

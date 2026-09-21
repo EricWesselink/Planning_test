@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AssignmentKind;
+use App\Enums\InternalBusinessUnit;
 use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\Team;
@@ -19,6 +21,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 class PlanningActionController extends Controller
 {
@@ -82,6 +85,11 @@ class PlanningActionController extends Controller
         ]);
 
         $assignment = WorkerAssignment::query()->with(['worker', 'project', 'crewMembers'])->findOrFail($data['assignment_id']);
+        if ($assignment->isInternal()) {
+            return response()->json([
+                'message' => 'Interne inzet blijft bij het bedrijfsonderdeel. Pas de periode aan via de balk of het formulier.',
+            ], 422);
+        }
         Gate::authorize('view', $assignment->project);
         $from = Carbon::parse($data['from_date']);
         $to = Carbon::parse($data['to_date']);
@@ -293,9 +301,112 @@ class PlanningActionController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function storeInternalAssignment(Request $request, ConflictService $conflicts, PlanningFitService $fit): JsonResponse
+    {
+        Gate::authorize('planning-assign');
+        $data = $request->validate([
+            'worker_id' => ['required', 'integer', 'exists:workers,id'],
+            'business_unit' => ['required', Rule::enum(InternalBusinessUnit::class)],
+            'description' => ['required', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'crew_member_ids' => ['nullable', 'array', 'max:50'],
+            'crew_member_ids.*' => ['integer', 'distinct', 'exists:crew_members,id'],
+            'include_saturday' => ['sometimes', 'boolean'],
+            'include_sunday' => ['sometimes', 'boolean'],
+            'confirm_conflict' => ['sometimes', 'boolean'],
+        ], [
+            'worker_id.required' => 'Kies een vakman of team.',
+            'business_unit.required' => 'Kies een bedrijfsonderdeel.',
+            'business_unit.enum' => 'Kies een bedrijfsonderdeel.',
+            'description.required' => 'Vul een omschrijving in.',
+            'start_date.required' => 'Vul een van-datum in.',
+            'end_date.required' => 'Vul een t/m-datum in.',
+            'end_date.after_or_equal' => 'Tot en met moet op of na de van-datum liggen.',
+        ]);
+
+        $worker = Worker::query()->with(['availabilities', 'crewPeople'])->findOrFail($data['worker_id']);
+        $crewIds = $this->crewIdsForWorker($worker, $data['crew_member_ids'] ?? []);
+        if ($crewIds === null) {
+            return response()->json(['message' => 'Deze personen horen niet bij dit team.'], 422);
+        }
+        if ($worker->crewPeople->where('active', true)->isNotEmpty() && $crewIds === []) {
+            return response()->json(['message' => 'Kies minstens één vakman.'], 422);
+        }
+
+        $start = Carbon::parse($data['start_date'])->startOfDay();
+        $end = Carbon::parse($data['end_date'])->startOfDay();
+        [$includeSaturday, $includeSunday] = $this->weekendInclusion($request);
+        $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
+        if ($emptyRange) {
+            return $emptyRange;
+        }
+
+        $away = $fit->awayRejection(
+            $worker,
+            $start,
+            $end,
+            $includeSaturday,
+            $includeSunday,
+            PlanningHours::DAY_START,
+            PlanningHours::DAY_END,
+            $crewIds,
+        );
+        if ($away) {
+            return response()->json(['message' => $away], 422);
+        }
+
+        $blocked = $this->firstConflict(
+            $conflicts,
+            collect([$worker]),
+            $start,
+            $end,
+            max(1, count($crewIds)),
+            $request->boolean('confirm_conflict'),
+            $crewIds,
+            PlanningHours::DAY_START,
+            PlanningHours::DAY_END,
+            $includeSaturday,
+            $includeSunday,
+        );
+        if ($blocked) {
+            return $blocked;
+        }
+
+        $assignment = new WorkerAssignment;
+        $assignment->worker_id = $worker->id;
+        $assignment->project_id = null;
+        $assignment->work_item_id = null;
+        $assignment->team_id = null;
+        $assignment->kind = AssignmentKind::Internal;
+        $assignment->business_unit = InternalBusinessUnit::from($data['business_unit']);
+        $assignment->description = trim($data['description']);
+        $assignment->notes = $this->optionalNote($data['notes'] ?? null);
+        $assignment->people_count = max(1, count($crewIds));
+        $assignment->origin = 'planned';
+        $assignment->applySchedule(
+            $start,
+            $end,
+            PlanningHours::DAY_START,
+            PlanningHours::DAY_END,
+            $includeSaturday,
+            $includeSunday,
+        );
+        $assignment->save();
+        if ($crewIds !== []) {
+            $assignment->syncPresentCrew($crewIds);
+        }
+
+        return response()->json(['ok' => true, 'id' => $assignment->id]);
+    }
+
     public function updateAssignment(Request $request, WorkerAssignment $assignment, ConflictService $conflicts, PlanningFitService $fit): JsonResponse
     {
         Gate::authorize('manage-planning');
+        if ($assignment->isInternal()) {
+            return $this->updateInternalAssignment($request, $assignment, $conflicts, $fit);
+        }
         Gate::authorize('view', $assignment->project);
         $data = $request->validate([
             'worker_id' => ['sometimes', 'integer', 'exists:workers,id'],
@@ -663,6 +774,11 @@ class PlanningActionController extends Controller
     public function destroyAssignment(WorkerAssignment $assignment): JsonResponse
     {
         Gate::authorize('planning-assign');
+        if ($assignment->isInternal()) {
+            $assignment->delete();
+
+            return response()->json(['ok' => true]);
+        }
         Gate::authorize('view', $assignment->project);
         $assignment->delete();
 
@@ -781,6 +897,117 @@ class PlanningActionController extends Controller
         return ['foreman' => $foreman, 'holder' => $holder];
     }
 
+    private function updateInternalAssignment(
+        Request $request,
+        WorkerAssignment $assignment,
+        ConflictService $conflicts,
+        PlanningFitService $fit,
+    ): JsonResponse {
+        $data = $request->validate([
+            'worker_id' => ['sometimes', 'integer', 'exists:workers,id'],
+            'business_unit' => ['sometimes', 'required', Rule::enum(InternalBusinessUnit::class)],
+            'description' => ['sometimes', 'required', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'start_date' => ['sometimes', 'date'],
+            'end_date' => ['sometimes', 'date'],
+            'crew_member_ids' => ['sometimes', 'array', 'max:50'],
+            'crew_member_ids.*' => ['integer', 'distinct', 'exists:crew_members,id'],
+            'start_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'end_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'include_saturday' => ['sometimes', 'boolean'],
+            'include_sunday' => ['sometimes', 'boolean'],
+            'confirm_conflict' => ['sometimes', 'boolean'],
+        ], [
+            'business_unit.required' => 'Kies een bedrijfsonderdeel.',
+            'business_unit.enum' => 'Kies een bedrijfsonderdeel.',
+            'description.required' => 'Vul een omschrijving in.',
+        ]);
+
+        $workerId = (int) ($data['worker_id'] ?? $assignment->worker_id);
+        $worker = Worker::query()->with(['availabilities', 'crewPeople'])->findOrFail($workerId);
+        $assignment->loadMissing('crewMembers');
+        $crewIds = array_key_exists('crew_member_ids', $data)
+            ? $this->crewIdsForWorker($worker, $data['crew_member_ids'] ?? [])
+            : $assignment->crewMembers->map(fn (CrewMember $member): int => (int) $member->id)->all();
+        if ($crewIds === null) {
+            return response()->json(['message' => 'Deze personen horen niet bij dit team.'], 422);
+        }
+        if ($worker->crewPeople->where('active', true)->isNotEmpty() && $crewIds === [] && array_key_exists('crew_member_ids', $data)) {
+            return response()->json(['message' => 'Kies minstens één vakman.'], 422);
+        }
+
+        $start = Carbon::parse($data['start_date'] ?? $assignment->start_date)->startOfDay();
+        $end = Carbon::parse($data['end_date'] ?? $assignment->end_date)->startOfDay();
+        if ($end->lt($start)) {
+            return response()->json(['message' => 'Tot en met moet op of na de van-datum liggen.'], 422);
+        }
+        [$includeSaturday, $includeSunday] = $this->weekendInclusion($request, $assignment);
+        $emptyRange = $this->emptyWorkdaysResponse($start, $end, $includeSaturday, $includeSunday);
+        if ($emptyRange) {
+            return $emptyRange;
+        }
+
+        $startTime = $data['start_time'] ?? $assignment->startTimeValue();
+        $endTime = $data['end_time'] ?? $assignment->endTimeValue();
+        $away = $fit->awayRejection(
+            $worker,
+            $start,
+            $end,
+            $includeSaturday,
+            $includeSunday,
+            $startTime,
+            $endTime,
+            $crewIds,
+        );
+        if ($away) {
+            return response()->json(['message' => $away], 422);
+        }
+
+        $blocked = $this->firstConflict(
+            $conflicts,
+            collect([$worker]),
+            $start,
+            $end,
+            max(1, count($crewIds)),
+            $request->boolean('confirm_conflict'),
+            $crewIds,
+            $startTime,
+            $endTime,
+            $includeSaturday,
+            $includeSunday,
+            $assignment->id,
+        );
+        if ($blocked) {
+            return $blocked;
+        }
+
+        $assignment->worker_id = $worker->id;
+        $assignment->project_id = null;
+        $assignment->work_item_id = null;
+        if (array_key_exists('business_unit', $data)) {
+            $assignment->business_unit = InternalBusinessUnit::from($data['business_unit']);
+        }
+        if (array_key_exists('description', $data)) {
+            $assignment->description = trim($data['description']);
+        }
+        if (array_key_exists('notes', $data)) {
+            $assignment->notes = $this->optionalNote($data['notes']);
+        }
+        $assignment->people_count = max(1, count($crewIds) ?: (int) $assignment->people_count);
+        $assignment->applySchedule($start, $end, $startTime, $endTime, $includeSaturday, $includeSunday);
+        $assignment->save();
+        $assignment->syncPresentCrew($crewIds);
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function optionalNote(mixed $notes): ?string
+    {
+        $note = trim((string) $notes);
+
+        return $note === '' ? null : $note;
+    }
+
     /**
      * @param  Collection<int, Worker>  $workers
      * @param  list<int>  $crewIds
@@ -797,6 +1024,7 @@ class PlanningActionController extends Controller
         ?string $endTime = null,
         bool $includeSaturday = false,
         bool $includeSunday = false,
+        ?int $ignoreAssignmentId = null,
     ): ?JsonResponse {
         if ($confirm) {
             return null;
@@ -809,7 +1037,7 @@ class PlanningActionController extends Controller
                 $start,
                 $end,
                 $peopleCount,
-                null,
+                $ignoreAssignmentId,
                 $ids,
                 $startTime,
                 $endTime,
@@ -990,7 +1218,15 @@ class PlanningActionController extends Controller
      */
     private function conflictJson(array $conflict): JsonResponse
     {
-        $names = $conflict['overlaps']->map(fn (WorkerAssignment $row) => $row->project?->name)->filter()->unique()->implode(', ');
+        $names = $conflict['overlaps']->map(function (WorkerAssignment $row): ?string {
+            if ($row->isInternal()) {
+                return $row->internalTitle();
+            }
+
+            $name = trim((string) ($row->project?->name ?? ''));
+
+            return $name !== '' ? $name : null;
+        })->filter()->unique()->implode(', ');
         if (! empty($conflict['person'])) {
             $message = $names !== ''
                 ? $conflict['person'].' staat die dag al op '.$names.'. Toch doorgaan?'

@@ -11,6 +11,7 @@ use App\Services\PlanningBoardService;
 use App\Services\WeekplanningPdfService;
 use App\Support\PlanningWeek;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
@@ -19,11 +20,20 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PlanningController extends Controller
 {
-    public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning): View
+    public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning): View|RedirectResponse
     {
         Gate::authorize('view-planning');
         $this->authorizeRequestedProject($request);
         $data = $board->build($request);
+        if ($request->boolean('doubles') && (int) ($data['doubleFilter']['count'] ?? 0) === 0) {
+            $query = array_filter(
+                $data['filters'] ?? [],
+                fn (mixed $value): bool => $value !== null && $value !== '',
+            );
+            unset($query['doubles'], $query['double_crew'], $query['double_worker']);
+
+            return redirect()->route('planning', $query);
+        }
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         $workers = Worker::query()
             ->where('active', true)

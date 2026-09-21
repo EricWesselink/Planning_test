@@ -772,7 +772,13 @@ if (board) {
         refreshCandidates();
     }
 
+    let openInternalFromBar = () => {};
+
     function openEdit(bar) {
+        if (bar.dataset.internal === '1') {
+            openInternalFromBar(bar);
+            return;
+        }
         invalidateWhoCandidates();
         form.dataset.assignmentId = bar.dataset.shiftId;
         titleEl.textContent = 'Inzet aanpassen';
@@ -1372,9 +1378,140 @@ if (board) {
         });
     }
 
+    bindInternalDeployment();
     bindLaborFold(board);
     bindPlanningPrint();
     bindWeekplanningExport();
+
+    function bindInternalDeployment() {
+        const dialog = document.getElementById('internal-dialog');
+        const form = document.getElementById('internal-form');
+        const openBtn = document.getElementById('internal-open');
+        if (! dialog || ! form) {
+            return;
+        }
+
+        const who = document.getElementById('internal-who');
+        const crewBox = document.getElementById('internal-crew');
+        const crewList = document.getElementById('internal-crew-list');
+        const unit = document.getElementById('internal-unit');
+        const description = document.getElementById('internal-description');
+        const notes = document.getElementById('internal-notes');
+        const start = document.getElementById('internal-start');
+        const end = document.getElementById('internal-end');
+        const saturday = document.getElementById('internal-saturday');
+        const sunday = document.getElementById('internal-sunday');
+        const deleteBtn = document.getElementById('internal-delete');
+        const title = document.getElementById('internal-dialog-title');
+        bindPlanningDatePickers(start, end);
+
+        const selectedCrew = () => [...crewList.querySelectorAll('input[name="crew_member_ids"]:checked')]
+            .map((input) => Number(input.value));
+
+        const renderCrew = (workerId, selectedIds) => {
+            const people = workerId ? workerCrew(workerId) : [];
+            crewList.innerHTML = '';
+            if (people.length < 1) {
+                crewBox.classList.add('hidden');
+                return;
+            }
+            crewBox.classList.remove('hidden');
+            people.forEach((person) => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center gap-2 text-sm';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.name = 'crew_member_ids';
+                input.value = String(person.id);
+                input.checked = selectedIds.includes(person.id);
+                label.append(input, document.createTextNode(` ${person.name}`));
+                crewList.append(label);
+            });
+        };
+
+        const workerIdFromWho = () => {
+            const value = who.value || '';
+            return value.startsWith('worker:') ? value.slice('worker:'.length) : '';
+        };
+
+        who.addEventListener('change', () => {
+            const workerId = workerIdFromWho();
+            const people = workerId ? workerCrew(workerId) : [];
+            renderCrew(workerId, people.map((person) => person.id));
+        });
+
+        const openCreate = () => {
+            form.dataset.assignmentId = '';
+            title.textContent = 'Interne inzet';
+            deleteBtn.classList.add('hidden');
+            who.value = '';
+            unit.value = '';
+            description.value = '';
+            notes.value = '';
+            start.value = dates[0] || '';
+            end.value = dates[0] || '';
+            saturday.checked = false;
+            sunday.checked = false;
+            renderCrew('', []);
+            dialog.showModal();
+        };
+
+        openInternalFromBar = (bar) => {
+            form.dataset.assignmentId = bar.dataset.shiftId || '';
+            title.textContent = 'Interne inzet aanpassen';
+            deleteBtn.classList.remove('hidden');
+            who.value = `worker:${bar.dataset.workerId}`;
+            unit.value = bar.dataset.businessUnit || '';
+            description.value = bar.dataset.description || '';
+            notes.value = bar.dataset.notes || '';
+            start.value = bar.dataset.startDate || '';
+            end.value = bar.dataset.endDate || '';
+            saturday.checked = bar.dataset.includeSaturday === '1';
+            sunday.checked = bar.dataset.includeSunday === '1';
+            const selected = (bar.dataset.crewIds || '').split(',').filter(Boolean).map(Number);
+            const people = workerCrew(bar.dataset.workerId);
+            renderCrew(bar.dataset.workerId, selected.length ? selected : people.map((person) => person.id));
+            dialog.showModal();
+        };
+
+        openBtn?.addEventListener('click', openCreate);
+        document.getElementById('internal-cancel')?.addEventListener('click', () => dialog.close());
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const workerId = workerIdFromWho();
+            if (! workerId || ! unit.value || ! description.value || ! start.value || ! end.value) {
+                return;
+            }
+            const body = {
+                worker_id: Number(workerId),
+                business_unit: unit.value,
+                description: description.value,
+                notes: notes.value,
+                start_date: start.value,
+                end_date: end.value,
+                include_saturday: saturday.checked,
+                include_sunday: sunday.checked,
+                crew_member_ids: selectedCrew(),
+            };
+            const assignmentId = form.dataset.assignmentId;
+            const url = assignmentId ? assignmentUrl(assignmentId) : board.dataset.internalStoreUrl;
+            const method = assignmentId ? 'PATCH' : 'POST';
+            if (await save(url, method, body)) {
+                reloadPlanningBoard(scroller);
+            }
+        });
+
+        deleteBtn.addEventListener('click', async () => {
+            const assignmentId = form.dataset.assignmentId;
+            if (! assignmentId || ! window.confirm('Deze interne inzet uit de planning halen?')) {
+                return;
+            }
+            if (await save(assignmentUrl(assignmentId), 'DELETE', {})) {
+                reloadPlanningBoard(scroller);
+            }
+        });
+    }
 }
 
 function bindPlanningPrint() {

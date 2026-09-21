@@ -181,6 +181,69 @@ class PlanningDoubleBookingFilterTest extends TestCase
         $this->assertSame($before, $this->assignmentSnapshot());
     }
 
+    public function test_returns_to_the_full_planning_when_the_overlap_is_resolved(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $crew] = $this->team('Wesselink', ['Eric Wesselink'], 'zzp', 'Wesselink Media');
+        $eric = $crew['Eric Wesselink'];
+        $alpha = $this->place($worker, $this->work('Werk Alpha'), '2026-09-08', [$eric->id]);
+        $beta = $this->place($worker, $this->work('Werk Beta'), '2026-09-08', [$eric->id]);
+        $beta->applySchedule(Carbon::parse('2026-09-10'), Carbon::parse('2026-09-10'), '08:00:00', '16:00:00');
+        $beta->save();
+
+        $response = $this->actingAs($user)->get(route('planning', [
+            'week' => '2026-09-07',
+            'doubles' => 1,
+        ]));
+
+        $response->assertRedirect();
+        $target = (string) $response->headers->get('Location');
+        $this->assertStringContainsString('week=2026-09-07', $target);
+        $this->assertStringNotContainsString('doubles=', $target);
+
+        $this->actingAs($user)
+            ->get($target)
+            ->assertOk()
+            ->assertDontSee('planning-doubles-banner', false)
+            ->assertDontSee('Dubbele planning', false)
+            ->assertSee('data-shift-id="'.$alpha->id.'"', false)
+            ->assertSee('data-shift-id="'.$beta->id.'"', false);
+    }
+
+    public function test_returns_to_the_full_planning_when_the_selected_person_is_no_longer_double_booked(): void
+    {
+        $user = User::factory()->create();
+        [$worker, $crew] = $this->team('Wesselink', ['Eric Wesselink', 'Harm Wesselink'], 'zzp', 'Wesselink Media');
+        $eric = $crew['Eric Wesselink'];
+        $harm = $crew['Harm Wesselink'];
+        $alpha = $this->place($worker, $this->work('Werk Alpha'), '2026-09-08', [$eric->id]);
+        $beta = $this->place($worker, $this->work('Werk Beta'), '2026-09-08', [$eric->id]);
+        $charlie = $this->place($worker, $this->work('Werk Charlie'), '2026-09-08', [$harm->id]);
+        $delta = $this->place($worker, $this->work('Werk Delta'), '2026-09-10', [$harm->id]);
+
+        $response = $this->actingAs($user)->get(route('planning', [
+            'week' => '2026-09-07',
+            'doubles' => 1,
+            'double_crew' => $harm->id,
+        ]));
+
+        $response->assertRedirect();
+        $target = (string) $response->headers->get('Location');
+        $this->assertStringContainsString('week=2026-09-07', $target);
+        $this->assertStringNotContainsString('double_crew=', $target);
+        $this->assertStringNotContainsString('doubles=', $target);
+
+        $this->actingAs($user)
+            ->get($target)
+            ->assertOk()
+            ->assertDontSee('planning-doubles-banner', false)
+            ->assertSee('Bekijk dubbele planning')
+            ->assertSee('data-shift-id="'.$alpha->id.'"', false)
+            ->assertSee('data-shift-id="'.$beta->id.'"', false)
+            ->assertSee('data-shift-id="'.$charlie->id.'"', false)
+            ->assertSee('data-shift-id="'.$delta->id.'"', false);
+    }
+
     /**
      * @param  list<string>  $names
      * @return array{0: Worker, 1: Collection<string, CrewMember>}
