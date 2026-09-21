@@ -283,12 +283,13 @@ class ProjectController extends Controller
         }
 
         if ($project->isSmallWork() && ! $ticketModeRequested) {
-            $project->load(['customer', 'workItems', 'assignments.worker']);
+            $project->load(['customer', 'workItems', 'assignments.worker', 'documents']);
 
             return view('projects.small', [
                 'project' => $project,
                 'labor' => $labor->for($project),
                 'hourOptions' => [2, 4, 6, 8],
+                'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
             ]);
         }
 

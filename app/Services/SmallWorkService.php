@@ -7,6 +7,7 @@ use App\Enums\SmallWorkType;
 use App\Enums\WorkUnit;
 use App\Models\Customer;
 use App\Models\Project;
+use App\Models\ProjectDocument;
 use App\Models\Team;
 use App\Models\User;
 use App\Models\Worker;
@@ -15,12 +16,15 @@ use App\Models\WorkItem;
 use App\Models\WorkProgressEntry;
 use App\Support\PlanningHours;
 use Carbon\Carbon;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class SmallWorkService
 {
+    public const ATTACHMENT_TYPE = ShopWorkService::ATTACHMENT_TYPE;
+
     public function __construct(private ProjectIntakeService $intake) {}
 
     /**
@@ -41,24 +45,26 @@ class SmallWorkService
      *     team_id?: ?int,
      *     work_number?: ?string
      * }  $data
+     * @param  list<UploadedFile>  $files
      */
-    public function create(array $data, User $user): Project
+    public function create(array $data, User $user, array $files = []): Project
     {
         $type = SmallWorkType::from($data['type']);
 
-        return DB::transaction(function () use ($data, $user, $type) {
+        return DB::transaction(function () use ($data, $user, $type, $files) {
             if ($type->attachesToExistingProject()) {
                 return $this->createAttached($type, $data);
             }
 
-            return $this->createStandalone($type, $data, $user);
+            return $this->createStandalone($type, $data, $user, $files);
         });
     }
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<UploadedFile>  $files
      */
-    private function createStandalone(SmallWorkType $type, array $data, User $user): Project
+    private function createStandalone(SmallWorkType $type, array $data, User $user, array $files = []): Project
     {
         $hours = PlanningHours::snapHours((float) $data['hours']);
         $date = Carbon::parse($data['date'])->toDateString();
@@ -101,8 +107,9 @@ class SmallWorkService
         ]);
 
         $this->schedule($project, $item, $data, $date, $hours);
+        $this->storeFiles($project, $files, $user);
 
-        return $project->fresh(['customer', 'workItems', 'assignments']) ?? $project;
+        return $project->fresh(['customer', 'workItems', 'assignments', 'documents']) ?? $project;
     }
 
     /**
@@ -116,12 +123,13 @@ class SmallWorkService
      *     hours: float|int|string,
      *     work_number?: ?string
      * }  $data
+     * @param  list<UploadedFile>  $files
      */
-    public function update(Project $project, array $data): Project
+    public function update(Project $project, array $data, User $user, array $files = []): Project
     {
         abort_unless($project->isSmallWork(), 404);
 
-        return DB::transaction(function () use ($project, $data) {
+        return DB::transaction(function () use ($project, $data, $user, $files) {
             $hours = PlanningHours::snapHours((float) $data['hours']);
             $date = Carbon::parse($data['date'])->toDateString();
             $location = trim((string) ($data['location'] ?? ''));
@@ -159,8 +167,32 @@ class SmallWorkService
                 $this->reschedule($item, $date, $hours);
             }
 
-            return $project->fresh(['customer', 'workItems', 'assignments']) ?? $project;
+            $this->storeFiles($project, $files, $user);
+
+            return $project->fresh(['customer', 'workItems', 'assignments', 'documents']) ?? $project;
         });
+    }
+
+    /**
+     * @param  list<UploadedFile>  $files
+     */
+    public function storeFiles(Project $project, array $files, User $user): void
+    {
+        foreach ($files as $file) {
+            if (! $file instanceof UploadedFile) {
+                continue;
+            }
+
+            $this->intake->storeDocument($project, $file, self::ATTACHMENT_TYPE, $user);
+        }
+    }
+
+    public function deleteAttachment(Project $project, ProjectDocument $document): void
+    {
+        abort_unless((int) $document->project_id === (int) $project->id, 404);
+        abort_unless($document->document_type === self::ATTACHMENT_TYPE, 404);
+
+        $document->delete();
     }
 
     /**

@@ -1816,6 +1816,51 @@ button.plan-labor-toggle:hover {
 
 .board-top-main {
     min-width: 0;
+    flex: 1 1 auto;
+}
+
+.board-top-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.board-project-info {
+    max-height: min(40vh, 22rem);
+    overflow: auto;
+}
+
+.project-board.is-ticket-mode {
+    grid-template-rows: auto minmax(14rem, 1fr);
+}
+
+.project-board.is-ticket-mode .board-top {
+    align-items: flex-start;
+}
+
+.project-board.is-ticket-mode .board-project-info-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-height: 32px;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    font-size: 12px;
+}
+
+.project-board.is-ticket-mode .board-project-info {
+    display: none;
+}
+
+.project-board.is-ticket-mode.is-project-info-open .board-project-info {
+    display: flex;
+    flex-direction: column;
+    max-height: min(32vh, 16rem);
+    overflow: auto;
 }
 
 .board-tabs {

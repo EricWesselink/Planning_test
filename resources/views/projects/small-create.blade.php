@@ -18,7 +18,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('projects.small.store') }}" class="mt-6 max-w-2xl space-y-4 border border-nicon-line bg-white p-5" data-small-work-form>
+    <form method="POST" action="{{ route('projects.small.store') }}" enctype="multipart/form-data" class="mt-6 max-w-2xl space-y-4 border border-nicon-line bg-white p-5" data-small-work-form>
         @csrf
         <div>
             <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="type">Type</label>
@@ -112,6 +112,12 @@
                     <option value="{{ $worker->id }}" @selected((string) old('worker_id') === (string) $worker->id)>{{ $worker->planName() }}</option>
                 @endforeach
             </select>
+        </div>
+
+        <div @class(['hidden' => $linked]) data-small-work-standalone>
+            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Tekening</label>
+            <input id="attachments" type="file" name="attachments[]" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf" class="mt-1 w-full text-sm">
+            <p class="mt-1 text-xs text-nicon-muted">Foto’s, PDF’s of tekeningen. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
         </div>
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>

@@ -13,7 +13,10 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkProgressEntry;
+use App\Services\SmallWorkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -28,6 +31,7 @@ class SmallWorkTest extends TestCase
         $this->patch(route('projects.small.update', $this->makeService()), [])->assertRedirect(route('login'));
         $this->get(route('projects.small.werkbon', 1))->assertRedirect(route('login'));
         $this->get(route('projects.small.werkbon.pdf', 1))->assertRedirect(route('login'));
+        $this->delete(route('projects.small.attachments.destroy', [1, 1]))->assertRedirect(route('login'));
     }
 
     public function test_uitvoerder_cannot_open_or_create_small_work(): void
@@ -207,7 +211,113 @@ class SmallWorkTest extends TestCase
             ->assertSee('Klaar')
             ->assertSee('Egaliseren')
             ->assertSee('Materiaal')
-            ->assertSee('Regel toevoegen');
+            ->assertSee('Regel toevoegen')
+            ->assertSee('Tekening')
+            ->assertSee('Foto’s, PDF’s of tekeningen');
+    }
+
+    #[DataProvider('standaloneTypes')]
+    public function test_planner_attaches_a_drawing_to_standalone_small_work(SmallWorkType $type, ProjectKind $kind): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $drawing = UploadedFile::fake()->image('plattegrond.png', 40, 30);
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => $type->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'attachments' => [$drawing],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', $kind)->first();
+        $this->assertNotNull($project);
+        $this->assertSame(1, $project->documents()->where('document_type', SmallWorkService::ATTACHMENT_TYPE)->count());
+        $this->assertSame('plattegrond.png', $project->documents()->first()?->original_filename);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('plattegrond.png')
+            ->assertSee('Tekeningen');
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('plattegrond.png');
+    }
+
+    public function test_rejects_an_unsupported_small_work_drawing(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from(route('projects.small.create'))
+            ->post(route('projects.small.store'), [
+                'type' => SmallWorkType::Klein->value,
+                'customer_name' => 'Gemeente Deventer',
+                'description' => '25 m² PVC',
+                'location' => 'Deventer',
+                'date' => '2026-09-08',
+                'hours' => 8,
+                'attachments' => [UploadedFile::fake()->create('virus.exe', 20)],
+            ])
+            ->assertRedirect(route('projects.small.create'))
+            ->assertSessionHasErrors(['attachments.0' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.']);
+
+        $this->assertSame(0, Project::query()->count());
+    }
+
+    public function test_planner_adds_and_removes_a_drawing_on_existing_small_work(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $project = $this->makeService();
+
+        $this->actingAs($user)
+            ->patch(route('projects.small.update', $project), [
+                'customer_name' => 'hegemanbouwgroep',
+                'description' => 'hestel schoon maken',
+                'location' => 'Deventer',
+                'date' => '2026-09-11',
+                'hours' => 4,
+                'attachments' => [UploadedFile::fake()->image('tekening.jpg', 40, 30)],
+            ])
+            ->assertRedirect(route('projects.show', $project));
+
+        $document = $project->documents()->where('document_type', SmallWorkService::ATTACHMENT_TYPE)->first();
+        $this->assertNotNull($document);
+        $this->assertSame('tekening.jpg', $document->original_filename);
+
+        $this->actingAs($user)
+            ->from(route('projects.show', $project))
+            ->delete(route('projects.small.attachments.destroy', [$project, $document]))
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHas('status', 'Tekening verwijderd.');
+
+        $this->assertSame(0, $project->documents()->count());
+    }
+
+    public function test_uitvoerder_cannot_delete_a_small_work_drawing(): void
+    {
+        $project = $this->makeService();
+        $document = $project->documents()->create([
+            'document_type' => SmallWorkService::ATTACHMENT_TYPE,
+            'original_filename' => 'tekening.png',
+            'file_path' => 'projects/'.$project->id.'/bijlage/tekening.png',
+            'mime_type' => 'image/png',
+        ]);
+        $user = User::factory()->uitvoerder()->create();
+
+        $this->actingAs($user)
+            ->delete(route('projects.small.attachments.destroy', [$project, $document]))
+            ->assertForbidden();
+
+        $this->assertModelExists($document);
     }
 
     public function test_extra_work_requires_an_existing_project(): void
@@ -904,6 +1014,15 @@ class SmallWorkTest extends TestCase
             'admin' => [UserRole::Admin],
             'planner' => [UserRole::Planner],
             'projectleider' => [UserRole::Projectleider],
+        ];
+    }
+
+    /** @return array<string, array{0: SmallWorkType, 1: ProjectKind}> */
+    public static function standaloneTypes(): array
+    {
+        return [
+            'service' => [SmallWorkType::Service, ProjectKind::Service],
+            'klein' => [SmallWorkType::Klein, ProjectKind::Klein],
         ];
     }
 

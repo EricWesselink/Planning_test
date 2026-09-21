@@ -7,6 +7,7 @@
         $item = $project->workItems->first();
         $hours = $item?->begrote_uren !== null ? (float) $item->begrote_uren : 4;
         $canUpdate = auth()->user()?->can('update', $project) ?? false;
+        $tekeningen = $project->documents->where('document_type', \App\Services\SmallWorkService::ATTACHMENT_TYPE)->values();
     @endphp
     <a href="{{ $project->isArchived() ? route('projects.archived') : route('projects.index') }}" class="text-sm text-nicon-muted">← {{ $project->isArchived() ? 'Archief' : 'Projecten' }}</a>
     <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -30,7 +31,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('projects.small.update', $project) }}" class="mt-8 max-w-xl space-y-4 border border-nicon-line bg-white p-5">
+    <form method="POST" action="{{ route('projects.small.update', $project) }}" enctype="multipart/form-data" class="mt-8 max-w-xl space-y-4 border border-nicon-line bg-white p-5">
         @csrf
         @method('PATCH')
         <div>
@@ -82,6 +83,13 @@
                 {{ $project->assignments->map(fn ($assignment) => $assignment->worker?->displayName())->filter()->unique()->join(', ') ?: 'Nog niet ingepland' }}
             </div>
         </div>
+        @if ($canUpdate)
+            <div>
+                <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="attachments">Tekening</label>
+                <input id="attachments" type="file" name="attachments[]" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf" class="mt-1 w-full text-sm">
+                <p class="mt-1 text-xs text-nicon-muted">Foto’s, PDF’s of tekeningen. Maximaal {{ $maxFileMegabytes }} MB per bestand.</p>
+            </div>
+        @endif
         <div class="flex flex-wrap gap-2">
             @if ($canUpdate)
                 <button type="submit" class="bg-nicon-orange px-4 py-2 text-white">Opslaan</button>
@@ -89,4 +97,24 @@
             <a href="{{ route('planning', ['week' => $project->planned_start_date?->startOfWeek(\Carbon\Carbon::MONDAY)?->toDateString(), 'project_id' => $project->id]) }}" class="{{ $canUpdate ? 'border border-nicon-line px-4 py-2' : 'inline-block bg-nicon-orange px-4 py-2 text-white' }}">Open planning</a>
         </div>
     </form>
+
+    <section class="mt-6 max-w-xl border border-nicon-line bg-white p-5">
+        <h2 class="text-xs uppercase tracking-wide text-nicon-muted">Tekeningen</h2>
+        <ul class="mt-3 space-y-2 text-sm">
+            @forelse ($tekeningen as $document)
+                <li class="flex items-center justify-between gap-2">
+                    <a href="{{ route('projects.documents.show', [$project, $document]) }}" class="text-nicon-orange-dark">{{ $document->original_filename }}</a>
+                    @can('update', $project)
+                        <form method="POST" action="{{ route('projects.small.attachments.destroy', [$project, $document]) }}" onsubmit="return confirm('Deze tekening verwijderen?')">
+                            @csrf
+                            @method('DELETE')
+                            <button class="text-nicon-danger">Verwijderen</button>
+                        </form>
+                    @endcan
+                </li>
+            @empty
+                <li class="text-nicon-muted">Nog geen tekening.</li>
+            @endforelse
+        </ul>
+    </section>
 @endsection

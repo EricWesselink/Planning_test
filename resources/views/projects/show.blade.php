@@ -27,7 +27,7 @@
         $showProgressTools = $canEnterProgress && ! $ticketMode;
     @endphp
 
-    <div id="project-board" class="project-board{{ $ticketMode ? ' is-ticket-mode' : '' }}{{ $errors->any() ? ' is-project-info-open' : '' }}" data-selected="{{ $selectedAreaId }}" data-open-snag="{{ $openSnagId ?? '' }}">
+    <div id="project-board" class="project-board{{ $ticketMode ? ' is-ticket-mode' : '' }}{{ $errors->any() && ! $ticketMode ? ' is-project-info-open' : '' }}" data-selected="{{ $selectedAreaId }}" data-open-snag="{{ $openSnagId ?? '' }}">
         <header class="board-top">
             <div class="board-top-main">
                 <div class="board-top-bar">
@@ -44,7 +44,7 @@
                     <p class="mt-0.5 text-xs text-nicon-danger">{{ $warning }}</p>
                 @endforeach
                     </div>
-                    <button type="button" id="board-project-info-toggle" class="board-project-info-toggle" aria-expanded="{{ $errors->any() ? 'true' : 'false' }}" aria-controls="board-project-info">Projectinfo</button>
+                    <button type="button" id="board-project-info-toggle" class="board-project-info-toggle" aria-expanded="{{ $errors->any() && ! $ticketMode ? 'true' : 'false' }}" aria-controls="board-project-info">Projectinfo</button>
                 </div>
                 <div id="board-project-info" class="board-project-info">
                 <div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-nicon-muted">

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\ProjectKind;
 use App\Enums\SmallWorkType;
 use App\Models\Project;
+use App\Models\ProjectDocument;
 use App\Models\Worker;
 use App\Models\WorkItem;
 use App\Services\SmallWorkService;
@@ -15,6 +16,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -37,7 +39,10 @@ class SmallWorkController extends Controller
             Gate::authorize('update', Project::query()->findOrFail($data['project_id']));
         }
 
-        $project = $smallWork->create($data, $request->user());
+        $files = $type->isStandalone()
+            ? ($request->file('attachments', []) ?: [])
+            : [];
+        $project = $smallWork->create($data, $request->user(), $files);
 
         return redirect()
             ->route('planning', [
@@ -52,11 +57,27 @@ class SmallWorkController extends Controller
         Gate::authorize('update', $project);
         abort_unless($project->isSmallWork(), 404);
         $data = $this->validatedUpdate($request, $project);
-        $smallWork->update($project, $data);
+        $smallWork->update($project, $data, $request->user(), $request->file('attachments', []) ?: []);
 
         return redirect()
             ->route('projects.show', $project)
             ->with('status', 'Klein werk opgeslagen.');
+    }
+
+    public function destroyAttachment(Project $project, ProjectDocument $document, SmallWorkService $smallWork): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+        abort_unless($project->isSmallWork(), 404);
+        abort_unless((int) $document->project_id === (int) $project->id, 404);
+        abort_unless($document->document_type === SmallWorkService::ATTACHMENT_TYPE, 404);
+
+        $path = $document->file_path;
+        $smallWork->deleteAttachment($project, $document);
+        if (is_string($path) && $path !== '') {
+            Storage::disk('local')->delete($path);
+        }
+
+        return back()->with('status', 'Tekening verwijderd.');
     }
 
     public function werkbon(Project $project, WorkTicketPdfService $pdfs): View
@@ -65,7 +86,7 @@ class SmallWorkController extends Controller
         abort_unless($project->isSmallWork(), 404);
 
         return view('work-tickets.small', [
-            ...$pdfs->buildForSmallWork($project),
+            ...$pdfs->buildForSmallWork($project, embedDrawings: false),
             'project' => $project,
         ]);
     }
@@ -156,6 +177,7 @@ class SmallWorkController extends Controller
                 ->orderBy('name')
                 ->get(),
             'hourOptions' => [2, 4, 6, 8],
+            'maxFileMegabytes' => (int) (config('filesystems.project_file_max_kilobytes') / 1024),
             'lines' => old('lines', $this->defaultExtraLines()),
         ];
     }
@@ -198,6 +220,7 @@ class SmallWorkController extends Controller
             'team_id' => ['nullable', 'integer', 'exists:teams,id'],
             'work_number' => ['nullable', 'string', 'max:64', Rule::unique('projects', 'project_number')],
             ...$this->lineRules(),
+            ...$this->attachmentRules(),
         ], $this->messages());
     }
 
@@ -220,6 +243,7 @@ class SmallWorkController extends Controller
                 'max:64',
                 Rule::unique('projects', 'project_number')->ignore($project->id),
             ],
+            ...$this->attachmentRules(),
         ], $this->messages());
     }
 
@@ -240,6 +264,21 @@ class SmallWorkController extends Controller
             'hours.required' => 'Kies de geplande uren.',
             'hours.in' => 'Kies 2, 4, 6 of 8 uur.',
             'work_number.unique' => 'Dit werknummer bestaat al.',
+            'attachments.*.mimes' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
+            'attachments.*.extensions' => 'Alleen foto’s, PDF of tekeningen (JPG, PNG, WebP, GIF, PDF) zijn toegestaan.',
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function attachmentRules(): array
+    {
+        $maxKb = (int) config('filesystems.project_file_max_kilobytes');
+
+        return [
+            'attachments' => ['nullable', 'array', 'max:20'],
+            'attachments.*' => ['file', 'max:'.$maxKb, 'mimes:jpg,jpeg,png,webp,gif,pdf', 'extensions:jpg,jpeg,png,webp,gif,pdf'],
         ];
     }
 

@@ -262,11 +262,12 @@ class WorkTicketPdfService
     /**
      * @return array<string, mixed>
      */
-    public function buildForSmallWork(Project $project): array
+    public function buildForSmallWork(Project $project, bool $embedDrawings = true): array
     {
         $project->loadMissing([
             'customer',
             'workItems',
+            'documents',
             'assignments.worker',
             'assignments.crewMembers',
             'assignments.foreman',
@@ -275,6 +276,18 @@ class WorkTicketPdfService
 
         $kindLabel = $project->printedBonLabel();
         $logoRelative = $project->issuerLogo();
+        $documents = $project->documents
+            ->where('document_type', ShopWorkService::ATTACHMENT_TYPE)
+            ->values();
+        $drawingItems = $documents
+            ->map(fn (ProjectDocument $document): array => [
+                'name' => (string) $document->original_filename,
+                'url' => route('projects.documents.show', [$project, $document]),
+                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
+                'is_image' => $document->isImage(),
+            ])
+            ->values()
+            ->all();
 
         return [
             'ticket' => null,
@@ -309,9 +322,13 @@ class WorkTicketPdfService
             'rooms' => '',
             'rows' => $this->smallWorkRows($project),
             'notesText' => '',
-            'drawings' => [],
-            'drawingItems' => [],
-            'drawingEmbeds' => [],
+            'drawings' => $documents
+                ->map(fn (ProjectDocument $document): string => (string) $document->original_filename)
+                ->filter()
+                ->values()
+                ->all(),
+            'drawingItems' => $drawingItems,
+            'drawingEmbeds' => $drawingItems,
             'drawingUrl' => null,
             'drawingIsPdf' => false,
             'drawingIsImage' => false,

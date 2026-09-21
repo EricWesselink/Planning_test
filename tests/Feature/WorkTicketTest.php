@@ -161,6 +161,28 @@ class WorkTicketTest extends TestCase
             ->assertDontSee('id="complete-form"', false);
     }
 
+    public function test_ticket_mode_collapses_project_info_so_the_bon_panel_stays_visible(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob();
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('is-ticket-mode', false)
+            ->assertSee('id="ticket-panel"', false)
+            ->assertSee('id="ticket-save"', false)
+            ->assertSee('Werkbon maken');
+
+        $css = (string) file_get_contents(resource_path('css/app.css'));
+        $this->assertStringContainsString('.project-board.is-ticket-mode .board-project-info', $css);
+        $this->assertStringContainsString('.project-board.is-ticket-mode.is-project-info-open .board-project-info', $css);
+        $this->assertStringContainsString('grid-template-rows: auto minmax(14rem, 1fr)', $css);
+    }
+
     public function test_projectleider_ticket_mode_keeps_the_drawing_and_omits_the_progress_form(): void
     {
         $user = User::factory()->projectleider()->create();
