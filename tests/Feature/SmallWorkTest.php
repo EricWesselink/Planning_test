@@ -106,7 +106,7 @@ class SmallWorkTest extends TestCase
             ->assertOk()
             ->assertSee('plan-line--small', false)
             ->assertSee('>SERVICE</span>', false)
-            ->assertSee('Deventer – plint herstellen')
+            ->assertSee('Gemeente Deventer · Deventer – plint herstellen')
             ->assertSee('| 2u')
             ->assertSee('period-marker--start', false)
             ->assertSee('▶ Start', false)
@@ -172,6 +172,146 @@ class SmallWorkTest extends TestCase
             }
         }
         $this->assertSame(4, $barsOnWorkLines);
+    }
+
+    public function test_small_work_activity_lines_move_and_change_craftsman_on_their_own(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $other = Worker::query()->create([
+            'name' => 'Bjorn',
+            'employment_type' => 'eigen',
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+        $pvc = $this->floorActivity('pvc-stroken');
+        $egaliseren = $this->floorActivity('egaliseren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Klein->value,
+            'customer_name' => 'Hegeman Bouwgroep',
+            'description' => 'vloer leggen',
+            'location' => 'Almere',
+            'date' => '2026-09-22',
+            'hours' => 8,
+            'worker_id' => $worker->id,
+            'work_activity_ids' => [$egaliseren->id, $pvc->id],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Klein)->firstOrFail();
+        $assignment = $project->assignments()->firstOrFail();
+        $hoursItemId = (int) $project->workItems()->whereNull('work_activity_id')->value('id');
+        $pvcItem = $project->workItems()->where('name', 'PVC stroken')->firstOrFail();
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->getContent();
+        $this->assertSame(2, substr_count($html, 'data-shift-id="'.$assignment->id.'"'));
+        $this->assertMatchesRegularExpression(
+            '/PVC stroken[\s\S]*?data-work-item-id="'.$pvcItem->id.'"[\s\S]*?data-shift-id="'.$assignment->id.'"[\s\S]*?data-work-item-id="'.$pvcItem->id.'"/',
+            $html,
+        );
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $worker->id,
+                'work_item_id' => $pvcItem->id,
+                'start_date' => '2026-09-22',
+                'end_date' => '2026-09-22',
+            ])
+            ->assertOk();
+        $this->assertSame(1, $project->assignments()->count());
+        $this->assertSame($hoursItemId, (int) $assignment->fresh()->work_item_id);
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $worker->id,
+                'work_item_id' => $pvcItem->id,
+                'start_date' => '2026-09-23',
+                'end_date' => '2026-09-23',
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertSame($hoursItemId, (int) $assignment->work_item_id);
+        $this->assertSame('2026-09-22', $assignment->start_date->toDateString());
+        $forked = $project->assignments()->where('work_item_id', $pvcItem->id)->first();
+        $this->assertNotNull($forked);
+        $this->assertSame('2026-09-23', $forked->start_date->toDateString());
+        $this->assertSame($worker->id, $forked->worker_id);
+
+        $primenItem = $project->workItems()
+            ->whereNotNull('work_activity_id')
+            ->whereKeyNot($pvcItem->id)
+            ->firstOrFail();
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $other->id,
+                'work_item_id' => $primenItem->id,
+                'start_date' => '2026-09-22',
+                'end_date' => '2026-09-22',
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertSame($primenItem->id, (int) $assignment->work_item_id);
+        $this->assertSame($other->id, $assignment->worker_id);
+        $this->assertSame($worker->id, $forked->fresh()->worker_id);
+        $this->assertSame('2026-09-23', $forked->fresh()->start_date->toDateString());
+    }
+
+    public function test_checking_one_activity_puts_the_planning_bar_on_that_line_only(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-stroken');
+        $egaliseren = $this->floorActivity('egaliseren');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Hegeman Bouwgroep',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-23',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+            'work_activity_ids' => [$egaliseren->id, $pvc->id],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->firstOrFail();
+        $assignment = $project->assignments()->firstOrFail();
+        $pvcItem = $project->workItems()->where('name', 'PVC stroken')->firstOrFail();
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $worker->id,
+                'work_item_id' => $pvcItem->id,
+                'work_item_ids' => [$pvcItem->id],
+                'start_date' => '2026-09-23',
+                'end_date' => '2026-09-23',
+            ])
+            ->assertOk();
+
+        $this->assertSame(1, $project->assignments()->count());
+        $this->assertSame($pvcItem->id, (int) $assignment->fresh()->work_item_id);
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->getContent();
+        preg_match_all(
+            '/<div class="plan-line plan-line--work[\s\S]*?(?=<div class="plan-line |$)/',
+            $html,
+            $works,
+        );
+        $linesWithBar = array_values(array_filter(
+            $works[0],
+            fn (string $line): bool => str_contains($line, 'class="bar-label"'),
+        ));
+        $this->assertCount(1, $linesWithBar);
+        $this->assertStringContainsString('PVC stroken', $linesWithBar[0]);
+        $this->assertStringNotContainsString('Primen', $linesWithBar[0]);
     }
 
     public function test_planner_creates_service_without_a_craftsman(): void

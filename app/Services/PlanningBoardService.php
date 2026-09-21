@@ -1336,14 +1336,16 @@ class PlanningBoardService
             $project->planned_start_date?->toDateString() ?? '',
             $days,
         );
-        $row['children'] = $this->smallWorkChildren($project);
+        $row['children'] = $this->activityLinesWithOwnBars(
+            $project,
+            $this->smallWorkChildren($project),
+            $projectAssignments,
+            $days,
+            $doubleBooked,
+            $personBars,
+            (int) ($item?->id ?? 0),
+        );
         if ($row['children'] !== []) {
-            $row['children'] = array_map(function (array $child) use ($personBars): array {
-                $child['person_bars'] = $personBars;
-                $child['bar_count'] = $this->stackedBarCount($personBars);
-
-                return $child;
-            }, $row['children']);
             $row['person_bars'] = [];
             $row['bar_count'] = 0;
         }
@@ -1519,6 +1521,77 @@ class PlanningBoardService
     }
 
     /**
+     * Each activity line shows its own assignment. A visit that still belongs to the whole job
+     * is drawn on every line, but the bar points at that line so a move or another craftsman
+     * splits only that line.
+     *
+     * @param  list<array<string, mixed>>  $children
+     * @param  Collection<int, WorkerAssignment>  $projectAssignments
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<int, array<string, mixed>>  $doubleBooked
+     * @param  list<array<string, mixed>>  $sharedBars
+     * @return list<array<string, mixed>>
+     */
+    private function activityLinesWithOwnBars(
+        Project $project,
+        array $children,
+        Collection $projectAssignments,
+        Collection $days,
+        array $doubleBooked,
+        array $sharedBars,
+        int $hoursItemId,
+    ): array {
+        if ($children === []) {
+            return [];
+        }
+
+        return array_map(function (array $child) use ($project, $projectAssignments, $days, $doubleBooked, $sharedBars, $hoursItemId): array {
+            $ids = array_map(static fn (mixed $id): int => (int) $id, $child['work_item_ids'] ?? [(int) $child['id']]);
+            $dedicated = $projectAssignments
+                ->filter(function (WorkerAssignment $assignment) use ($ids, $hoursItemId): bool {
+                    $workItemId = (int) ($assignment->work_item_id ?? 0);
+
+                    return $workItemId > 0
+                        && $workItemId !== $hoursItemId
+                        && in_array($workItemId, $ids, true);
+                })
+                ->values();
+            if ($dedicated->isNotEmpty()) {
+                $bars = [];
+                $usedIds = [];
+                foreach ($dedicated as $assignment) {
+                    [$bars, $usedIds] = $this->appendAssignmentPersonBars(
+                        $bars,
+                        $usedIds,
+                        $assignment,
+                        $days,
+                        $doubleBooked,
+                        (string) $child['title'],
+                        $project->displayTitle(),
+                    );
+                }
+                $child['person_bars'] = $bars;
+                $child['bar_count'] = $this->stackedBarCount($bars);
+
+                return $child;
+            }
+
+            $bars = array_values(array_filter(
+                $sharedBars,
+                fn (array $bar): bool => (int) ($bar['work_item_id'] ?? 0) === $hoursItemId,
+            ));
+            foreach ($bars as $index => $bar) {
+                $bars[$index]['work_item_id'] = (int) $child['id'];
+                $bars[$index]['work_item_ids'] = [(int) $child['id']];
+            }
+            $child['person_bars'] = $bars;
+            $child['bar_count'] = $this->stackedBarCount($bars);
+
+            return $child;
+        }, $children);
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     private function smallWorkChildren(Project $project): array
@@ -1588,6 +1661,7 @@ class PlanningBoardService
             'completed' => $completed,
             'remaining' => $remaining,
             'percent' => $hasQuantity ? $this->progressPercent($completed, $ordered) : null,
+            'work_item_ids' => $items->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(),
             'who' => collect(),
             'bar' => null,
             'person_bars' => [],

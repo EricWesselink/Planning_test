@@ -1444,12 +1444,29 @@ class DrawingBoardTest extends TestCase
             $xpath->query('.//header[contains(concat(" ", normalize-space(@class), " "), " board-top ")]//nav[contains(concat(" ", normalize-space(@class), " "), " board-tabs ")]', $board)->item(0)
         );
 
+        $toggle = $xpath->query('.//*[@id="board-progress-toggle"]', $board)->item(0);
+        $panel = $xpath->query('.//*[@id="board-progress-panel"]', $board)->item(0);
+        $this->assertNotNull($toggle);
+        $this->assertSame('false', $toggle->getAttribute('aria-expanded'));
+        $this->assertSame('board-progress-panel', $toggle->getAttribute('aria-controls'));
+        $this->assertNotNull($panel);
+        $this->assertTrue($panel->hasAttribute('hidden'));
+        $this->assertSame(0, $xpath->query('.//*[@id="draw-stage"]', $panel)->length);
+        $this->assertNotNull(
+            $xpath->query('.//header[contains(concat(" ", normalize-space(@class), " "), " board-top ")]//*[@id="board-progress-toggle"]', $board)->item(0)
+        );
+
         $css = file_get_contents(resource_path('css/app.css'));
+        $js = file_get_contents(resource_path('js/drawing-board.js'));
         $this->assertStringContainsString('grid-template-rows: auto minmax(0, 1fr);', $css);
         $this->assertStringContainsString('#project-board .board-labor-item', $css);
         $this->assertStringContainsString('#project-board .draw-stage', $css);
         $this->assertStringContainsString('flex: 1 1 0%;', $css);
-        $this->assertStringContainsString('max-height: 4.25rem;', $css);
+        $this->assertStringContainsString('height: 1.75rem;', $css);
+        $this->assertStringContainsString('#project-board .board-progress-panel[hidden]', $css);
+        $this->assertStringContainsString('display: none !important;', $css);
+        $this->assertStringContainsString('function setProgressOpen', $js);
+        $this->assertStringContainsString("getElementById('board-progress-toggle')", $js);
     }
 
     public function test_board_renders_compact_mobile_handover_controls(): void

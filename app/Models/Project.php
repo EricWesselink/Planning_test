@@ -513,11 +513,17 @@ class Project extends Model
     {
         $description = trim((string) $this->name);
         $city = trim((string) $this->city);
+        $customer = trim((string) ($this->customer?->name ?? ''));
+
         if ($city !== '' && $description !== '') {
-            return $city.' – '.$description;
+            $headline = $city.' – '.$description;
+            if ($customer !== '' && mb_strtolower($customer) !== mb_strtolower($city) && ! str_contains(mb_strtolower($headline), mb_strtolower($customer))) {
+                return $customer.' · '.$headline;
+            }
+
+            return $headline;
         }
 
-        $customer = trim((string) ($this->customer?->name ?? ''));
         if ($customer !== '' && $description !== '') {
             return $customer.' – '.$description;
         }

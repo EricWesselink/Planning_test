@@ -1841,17 +1841,52 @@ button.plan-labor-toggle:hover {
     max-width: 16rem;
 }
 
+#project-board .board-progress-panel[hidden] {
+    display: none !important;
+}
+
+#project-board .board-progress-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+#project-board .board-progress-caret::before {
+    content: "▶";
+    font-size: 9px;
+}
+
+#project-board .board-progress-toggle[aria-expanded="true"] .board-progress-caret::before {
+    content: "▼";
+}
+
 @media (min-width: 769px) {
     #project-board {
         overflow: hidden;
     }
 
     #project-board .board-top {
-        flex-wrap: nowrap;
-        align-items: flex-start;
-        gap: 0.35rem 0.75rem;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.1rem 0.75rem;
         min-height: 0;
-        padding: 0.15rem 0.65rem 0.2rem;
+        padding: 0.1rem 0.65rem 0.15rem;
+    }
+
+    #project-board:not(.is-ticket-mode) .board-top-main,
+    #project-board:not(.is-ticket-mode) .board-top-bar,
+    #project-board:not(.is-ticket-mode) .board-project-info,
+    #project-board:not(.is-ticket-mode) .board-progress {
+        display: contents;
     }
 
     #project-board .board-top-title {
@@ -1860,6 +1895,7 @@ button.plan-labor-toggle:hover {
         align-items: baseline;
         gap: 0.05rem 0.55rem;
         min-width: 0;
+        flex: 0 0 auto;
     }
 
     #project-board .board-top-title h1 {
@@ -1876,6 +1912,8 @@ button.plan-labor-toggle:hover {
         flex-shrink: 0;
         flex-wrap: nowrap;
         align-self: center;
+        order: 2;
+        margin-left: auto;
     }
 
     #project-board .board-tabs a {
@@ -1883,37 +1921,65 @@ button.plan-labor-toggle:hover {
     }
 
     #project-board:not(.is-ticket-mode) .board-project-info {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        column-gap: 0.75rem;
-        row-gap: 0.05rem;
         max-height: none;
         overflow: visible;
         font-size: 12px;
         line-height: 1.2;
     }
 
-    #project-board:not(.is-ticket-mode) .board-project-info > .board-labor {
-        flex: 1 1 100%;
-        min-width: 0;
+    #project-board:not(.is-ticket-mode) .board-project-info > *,
+    #project-board:not(.is-ticket-mode) .board-project-info details {
+        flex: 0 1 auto;
+        width: auto;
+        max-width: none;
         margin-top: 0;
     }
 
-    #project-board:not(.is-ticket-mode) .board-project-info > * {
-        margin-top: 0;
+    #project-board:not(.is-ticket-mode) .board-project-info > details[open] {
+        flex: 1 0 100%;
+        width: 100%;
     }
 
-    #project-board:not(.is-ticket-mode) .board-project-info > details[open],
-    #project-board:not(.is-ticket-mode) .board-project-info > .mt-1,
-    #project-board:not(.is-ticket-mode) .board-project-info > .mt-0\.5 {
-        flex: 1 1 100%;
+    #project-board .board-progress-summary {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        order: 1;
+        flex: 0 0 auto;
+        gap: 0.1rem 0.7rem;
+        min-height: 0;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1.2;
+        color: var(--color-nicon-ink);
+    }
+
+    #project-board:not(.is-ticket-mode) .board-progress-panel {
+        order: 3;
+        flex: 1 0 100%;
+        width: 100%;
+    }
+
+    #project-board .board-progress-summary > span::before {
+        content: "|";
+        margin-right: 0.7rem;
+        color: var(--color-nicon-muted);
+        font-weight: 400;
+    }
+
+    #project-board .board-progress-panel .board-labor-kpis {
+        display: none;
+    }
+
+    #project-board .board-progress-panel > details {
+        margin-top: 0;
     }
 
     #project-board .board-labor {
         display: flex;
         flex-direction: column;
         gap: 0.05rem;
+        margin-top: 0;
     }
 
     #project-board .board-labor > * + * {
@@ -1954,9 +2020,9 @@ button.plan-labor-toggle:hover {
     #project-board .board-labor-items {
         display: flex;
         flex-direction: column;
-        gap: 0.05rem;
-        max-height: 4.25rem;
-        overflow: auto;
+        gap: 0;
+        max-height: none;
+        overflow: visible;
     }
 
     #project-board .board-labor-items > * {
@@ -1965,11 +2031,33 @@ button.plan-labor-toggle:hover {
 
     #project-board .board-labor-item {
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         align-items: center;
-        gap: 0.05rem 0.65rem;
-        min-height: 0;
+        gap: 0.65rem;
+        height: 1.75rem;
+        min-height: 1.75rem;
+        max-height: 1.75rem;
+        padding: 0;
+        border-bottom: 1px solid var(--color-nicon-line);
         line-height: 1.15;
+        overflow: hidden;
+    }
+
+    #project-board .board-labor-item > * {
+        min-width: 0;
+        white-space: nowrap;
+    }
+
+    #project-board .board-labor-item > :first-child {
+        flex: 0 0 8rem;
+        width: 8rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #project-board .board-labor-item > :last-child {
+        flex: 0 0 auto;
+        overflow: visible;
     }
 
     #project-board .board-labor-item .text-sm {
@@ -1978,10 +2066,16 @@ button.plan-labor-toggle:hover {
     }
 
     #project-board .board-labor-bar {
-        width: 7.5rem;
-        max-width: 7.5rem;
+        width: 18rem;
+        max-width: 22rem;
+        min-width: 8rem;
         margin-top: 0;
-        flex: 0 0 auto;
+        margin-left: auto;
+        flex: 0 1 18rem;
+    }
+
+    #project-board .board-labor-bar .plan-hour-bar-track {
+        height: 6px;
     }
 
     #project-board .draw-toolbar,
@@ -2036,11 +2130,13 @@ button.plan-labor-toggle:hover {
     font-size: 12px;
 }
 
-.project-board.is-ticket-mode .board-project-info {
+.project-board.is-ticket-mode .board-project-info,
+.project-board.is-ticket-mode .board-progress {
     display: none;
 }
 
-.project-board.is-ticket-mode.is-project-info-open .board-project-info {
+.project-board.is-ticket-mode.is-project-info-open .board-project-info,
+.project-board.is-ticket-mode.is-project-info-open .board-progress {
     display: flex;
     flex-direction: column;
     max-height: min(32vh, 16rem);
@@ -4471,17 +4567,23 @@ button.plan-labor-toggle:hover {
     }
 
     #project-board .board-project-info,
-    #project-board .board-tabs {
+    #project-board .board-tabs,
+    #project-board .board-progress {
         display: none;
         min-width: 0;
         max-width: 100%;
     }
 
     #project-board.is-project-info-open .board-project-info,
-    #project-board.is-project-info-open .board-tabs {
+    #project-board.is-project-info-open .board-tabs,
+    #project-board.is-project-info-open .board-progress {
         display: flex;
         flex-wrap: wrap;
         gap: 0.35rem;
+    }
+
+    #project-board.is-project-info-open .board-progress-toggle {
+        min-height: 44px;
     }
 
     #project-board.is-project-info-open .board-project-info {

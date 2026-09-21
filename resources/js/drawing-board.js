@@ -312,7 +312,18 @@ function boot() {
         document.getElementById('draw-more-toggle')?.setAttribute('aria-expanded', 'false');
         document.getElementById('board-project-info-toggle')?.setAttribute('aria-expanded', 'false');
         document.getElementById('draw-legend-toggle')?.setAttribute('aria-expanded', 'false');
+        setProgressOpen(false);
         syncBoardOverlayTop();
+    }
+
+    function setProgressOpen(open) {
+        const panel = document.getElementById('board-progress-panel');
+        const button = document.getElementById('board-progress-toggle');
+        if (!panel || !button) {
+            return;
+        }
+        panel.toggleAttribute('hidden', !open);
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
     function fitDrawingToScreen() {
@@ -3356,6 +3367,15 @@ function boot() {
         root.classList.toggle('is-project-info-open', open);
         document.getElementById('board-project-info-toggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
         syncBoardOverlayTop();
+    });
+    document.getElementById('board-progress-toggle')?.addEventListener('click', () => {
+        const panel = document.getElementById('board-progress-panel');
+        const open = panel?.hasAttribute('hidden') ?? false;
+        setProgressOpen(open);
+        syncBoardOverlayTop();
+        if (!userAdjustedView) {
+            scheduleFitToScreen();
+        }
     });
     document.getElementById('draw-more-toggle')?.addEventListener('click', () => {
         const open = !root.classList.contains('is-more-open');

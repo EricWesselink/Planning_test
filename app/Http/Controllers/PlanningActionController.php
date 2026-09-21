@@ -512,6 +512,28 @@ class PlanningActionController extends Controller
             $targetWorkItemId = $linkedWorkItemIds[0];
         }
 
+        $sharedLine = $this->sharedSmallWorkLineAction($assignment, $targetItem, $data, $start, $end, $workerId, $crewIds);
+        if ($sharedLine === 'keep') {
+            return response()->json(['ok' => true]);
+        }
+        if ($sharedLine === 'fork') {
+            $this->forkSharedSmallWorkLine(
+                $assignment,
+                $targetItem,
+                $start,
+                $end,
+                $workerId,
+                $crewIds,
+                $data,
+                $includeSaturday,
+                $includeSunday,
+                $isProvisional,
+                $roles,
+            );
+
+            return response()->json(['ok' => true]);
+        }
+
         DB::transaction(function () use (
             $assignment,
             $data,
@@ -1123,6 +1145,156 @@ class PlanningActionController extends Controller
         $ids = $assignment->linkedWorkItemIds();
 
         return $ids !== [] ? $ids : array_values(array_filter([$targetWorkItemId]));
+    }
+
+    /**
+     * A klein/service visit planned on the job is drawn on every activity line.
+     * Changing one line forks that line; an unchanged drop stays on the shared visit.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  list<int>  $crewIds
+     * @return 'fork'|'keep'|null
+     */
+    private function sharedSmallWorkLineAction(
+        WorkerAssignment $assignment,
+        ?WorkItem $target,
+        array $data,
+        Carbon $start,
+        Carbon $end,
+        int $workerId,
+        array $crewIds,
+    ): ?string {
+        if ($target === null || $target->work_activity_id === null) {
+            return null;
+        }
+        $assignment->loadMissing(['project', 'workItem']);
+        $project = $assignment->project;
+        if ($project === null || ! $project->isSmallWork() || (int) $target->project_id !== (int) $project->id) {
+            return null;
+        }
+        if ($assignment->workItem?->work_activity_id !== null) {
+            return null;
+        }
+        if (array_key_exists('work_item_ids', $data)) {
+            return null;
+        }
+        if ((int) $target->id === (int) $assignment->work_item_id) {
+            return null;
+        }
+
+        $project->loadMissing(['workItems', 'assignments']);
+        $groups = [];
+        foreach ($project->workItems as $item) {
+            if ($item->work_activity_id === null || $item->isExtraWork()) {
+                continue;
+            }
+            $key = $item->packageKey() === 'ondergrond' ? 'ondergrond' : 'item-'.$item->id;
+            $groups[$key][] = (int) $item->id;
+        }
+        $dedicatedIds = $project->assignments
+            ->filter(fn (WorkerAssignment $row): bool => (int) $row->id !== (int) $assignment->id)
+            ->map(fn (WorkerAssignment $row): int => (int) $row->work_item_id)
+            ->all();
+        $sharing = 0;
+        $targetShares = false;
+        foreach ($groups as $ids) {
+            if (array_intersect($dedicatedIds, $ids) !== []) {
+                continue;
+            }
+            $sharing++;
+            if (in_array((int) $target->id, $ids, true)) {
+                $targetShares = true;
+            }
+        }
+        if ($sharing < 2 || ! $targetShares) {
+            return null;
+        }
+
+        return $this->assignmentScheduleChanged($assignment, $data, $start, $end, $workerId, $crewIds)
+            ? 'fork'
+            : 'keep';
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<int>  $crewIds
+     */
+    private function assignmentScheduleChanged(
+        WorkerAssignment $assignment,
+        array $data,
+        Carbon $start,
+        Carbon $end,
+        int $workerId,
+        array $crewIds,
+    ): bool {
+        if ((int) $assignment->worker_id !== $workerId) {
+            return true;
+        }
+        if ($assignment->start_date?->toDateString() !== $start->toDateString() || $assignment->end_date?->toDateString() !== $end->toDateString()) {
+            return true;
+        }
+        $startTime = PlanningHours::formatTime($data['start_time'] ?? $assignment->startTimeValue());
+        $endTime = PlanningHours::formatTime($data['end_time'] ?? $assignment->endTimeValue());
+        if ($startTime !== PlanningHours::formatTime($assignment->startTimeValue()) || $endTime !== PlanningHours::formatTime($assignment->endTimeValue())) {
+            return true;
+        }
+        if (! array_key_exists('crew_member_ids', $data)) {
+            return false;
+        }
+        $original = $assignment->crewMembers
+            ->map(fn (CrewMember $member): int => (int) $member->id)
+            ->sort()
+            ->values()
+            ->all();
+        $next = collect($crewIds)->map(fn (mixed $id): int => (int) $id)->sort()->values()->all();
+
+        return $original !== $next;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<int>  $crewIds
+     * @param  array{foreman: ?int, holder: ?int}  $roles
+     */
+    private function forkSharedSmallWorkLine(
+        WorkerAssignment $assignment,
+        WorkItem $target,
+        Carbon $start,
+        Carbon $end,
+        int $workerId,
+        array $crewIds,
+        array $data,
+        bool $includeSaturday,
+        bool $includeSunday,
+        bool $isProvisional,
+        array $roles,
+    ): void {
+        $startTime = PlanningHours::normalizeTime($data['start_time'] ?? $assignment->startTimeValue(), PlanningHours::DAY_START);
+        $endTime = PlanningHours::normalizeTime($data['end_time'] ?? $assignment->endTimeValue(), PlanningHours::DAY_END);
+        $created = $this->createScheduledAssignment(
+            $workerId,
+            (int) $assignment->project_id,
+            (int) $target->id,
+            $assignment->team_id ? (int) $assignment->team_id : null,
+            $start,
+            $end,
+            $startTime,
+            $endTime,
+            $crewIds !== [] ? count($crewIds) : $assignment->peopleCount(),
+            array_key_exists('crew_member_ids', $data) ? $crewIds : [],
+            $includeSaturday,
+            $includeSunday,
+            [(int) $target->id],
+            $isProvisional,
+        );
+        if (! array_key_exists('crew_member_ids', $data)) {
+            $created->copyPresentCrewFrom($assignment);
+        }
+        $crew = $created->crewMembers->map(fn (CrewMember $member): int => (int) $member->id)->all();
+        $created->applyRoles(
+            WorkerAssignment::roleIdInCrew($roles['foreman'], $crew),
+            WorkerAssignment::roleIdInCrew($roles['holder'], $crew),
+        );
     }
 
     /**

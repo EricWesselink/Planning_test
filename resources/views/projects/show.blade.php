@@ -55,12 +55,6 @@
                         <span>Start werk: {{ \App\Support\PlanningWeek::label($project->planned_start_date) }}</span>
                     @endif
                 </div>
-                @if (auth()->user()?->canViewLaborCosts())
-                    @include('projects.partials.calculation-lines', ['project' => $project])
-                    @if (! empty($labor))
-                        @include('projects.partials.labor-summary', ['labor' => $labor])
-                    @endif
-                @endif
                 @if (! empty($project->import_warnings))
                     <details class="mt-2 max-w-xl text-xs">
                         <summary class="cursor-pointer text-nicon-warn">{{ count($project->import_warnings) }} importwaarschuwingen (Meetstaat blijft leidend)</summary>
@@ -167,6 +161,37 @@
                 <a href="{{ route('planning', ['project_id' => $project->id]) }}">Planning</a>
                 <a href="{{ route('production.index', ['project_id' => $project->id]) }}">Productie</a>
             </nav>
+            @if (auth()->user()?->canViewLaborCosts())
+                @php
+                    $progressLabor = is_array($labor) ? $labor : [];
+                    $progressBudget = (float) ($progressLabor['budget_hours'] ?? 0);
+                    $progressPlanned = (float) ($progressLabor['planned_hours'] ?? 0);
+                    $progressActual = (float) ($progressLabor['actual_hours'] ?? 0);
+                    $progressDelta = round($progressPlanned - $progressBudget, 2);
+                    $progressOver = $progressBudget > 0.0001 && $progressPlanned > $progressBudget + 0.0001;
+                    $progressDeltaLabel = ($progressDelta > 0.0001 ? '+' : '').\App\Support\PlanningHours::hoursLabel($progressDelta);
+                @endphp
+                <div class="board-progress">
+                    <div class="board-progress-summary">
+                        <button type="button" id="board-progress-toggle" class="board-progress-toggle" aria-expanded="false" aria-controls="board-progress-panel">
+                            <span class="board-progress-caret" aria-hidden="true"></span>
+                            Voortgang
+                        </button>
+                        @if (! empty($labor))
+                            <span>Begroot {{ \App\Support\PlanningHours::hoursLabel($progressBudget) }}</span>
+                            <span>Ingepland <span @class(['font-medium text-nicon-danger' => $progressOver])>{{ \App\Support\PlanningHours::hoursLabel($progressPlanned) }}</span></span>
+                            <span>Gemaakt {{ \App\Support\PlanningHours::hoursLabel($progressActual) }}</span>
+                            <span>Verschil <span @class(['font-medium text-nicon-danger' => $progressOver])>{{ $progressDeltaLabel }}</span></span>
+                        @endif
+                    </div>
+                    <div id="board-progress-panel" class="board-progress-panel" hidden>
+                        @include('projects.partials.calculation-lines', ['project' => $project])
+                        @if (! empty($labor))
+                            @include('projects.partials.labor-summary', ['labor' => $labor])
+                        @endif
+                    </div>
+                </div>
+            @endif
         </header>
 
         <aside class="board-left">
