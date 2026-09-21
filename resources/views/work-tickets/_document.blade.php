@@ -262,22 +262,26 @@
                     $url = is_array($drawing) ? ($drawing['url'] ?? null) : null;
                     $embed = is_array($drawing) ? ($drawing['path'] ?? null) : null;
                     $isImage = is_array($drawing) ? (bool) ($drawing['is_image'] ?? false) : false;
+                    $isPdfDrawing = is_array($drawing) ? (bool) ($drawing['is_pdf'] ?? false) : false;
                     if (! is_array($drawing) && isset($project)) {
                         $url = route('projects.documents.show', [$project, $drawing]);
                         $isImage = $drawing->isImage();
+                        $isPdfDrawing = $drawing->isPdf();
                     }
                 @endphp
                 <div class="drawing">
                     @if ($isPdf && filled($embed))
                         <img src="{{ $embed }}" alt="{{ $name }}">
                         <div class="drawing-name">{{ $name }}</div>
-                    @elseif ($url)
-                        <a href="{{ $url }}">
-                            @if ($isImage)
+                    @elseif (! $isPdf && $url)
+                        @if ($isImage)
+                            <a href="{{ $url }}">
                                 <img src="{{ $url }}" alt="{{ $name }}">
-                            @endif
-                            <div class="drawing-name">{{ $name }}</div>
-                        </a>
+                            </a>
+                        @elseif ($isPdfDrawing)
+                            <iframe class="drawing-pdf" src="{{ $url }}" title="{{ $name }}"></iframe>
+                        @endif
+                        <div class="drawing-name"><a href="{{ $url }}">{{ $name }}</a></div>
                     @else
                         <div>{{ $name }}</div>
                     @endif

@@ -13,6 +13,7 @@ use App\Services\ProjectIntakeService;
 use App\Services\ScannedDimensions\ScannedDimensionsImportService;
 use App\Services\SourceUpdateService;
 use App\Support\PlanningWeek;
+use App\Support\WorkAddress;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -137,6 +138,7 @@ class MeetstaatImportController extends Controller
             'project_name' => ['required', 'string', 'max:255'],
             'project_number' => ['nullable', 'string', 'max:64'],
             'date' => ['nullable', 'date'],
+            'work_address' => ['nullable', 'string', 'max:1000'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'city' => ['nullable', 'string', 'max:255'],
@@ -187,9 +189,17 @@ class MeetstaatImportController extends Controller
         $preview['header']['reference'] = $data['project_name'];
         $preview['header']['project_number'] = ($data['project_number'] ?? null) ?: ($preview['header']['project_number'] ?? null);
         $preview['header']['date'] = $data['date'] ?? $preview['header']['date'];
-        $preview['header']['address'] = $data['address'] ?? $preview['header']['address'] ?? null;
-        $preview['header']['postal_code'] = $data['postal_code'] ?? $preview['header']['postal_code'] ?? null;
-        $preview['header']['city'] = $data['city'] ?? $preview['header']['city'] ?? null;
+        if (array_key_exists('work_address', $data)) {
+            $parsed = WorkAddress::overlay($data);
+            $preview['header']['address'] = $parsed['address'];
+            $preview['header']['postal_code'] = $parsed['postal_code'];
+            $preview['header']['city'] = $parsed['city'];
+            $preview['header']['work_address'] = $parsed['work_address'];
+        } else {
+            $preview['header']['address'] = $data['address'] ?? $preview['header']['address'] ?? null;
+            $preview['header']['postal_code'] = $data['postal_code'] ?? $preview['header']['postal_code'] ?? null;
+            $preview['header']['city'] = $data['city'] ?? $preview['header']['city'] ?? null;
+        }
         $preview['header']['planned_start_date'] = $data['planned_start_date'] ?? null;
         $preview['header']['planned_end_date'] = $data['planned_end_date'] ?? null;
         $preview = $calculationImport->applyReview($preview, $data['calculation_labor'] ?? []);

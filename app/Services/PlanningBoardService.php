@@ -1483,7 +1483,7 @@ class PlanningBoardService
             'address' => $project->address,
             'postal_code' => $project->postal_code,
             'city' => $project->city,
-            'naw_line' => null,
+            'naw_line' => $project->nawLine(),
             'maps_url' => $project->googleMapsUrl(),
             'who' => collect($personBars)->pluck('label')->filter()->unique()->values(),
             'status' => $project->status->label(),

@@ -88,18 +88,7 @@
         </div>
 
         <div @class(['hidden' => $linked]) data-small-work-standalone>
-            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="address">Adres</label>
-            <input id="address" name="address" value="{{ old('address') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Straat 12">
-            <div class="mt-2 grid grid-cols-2 gap-2">
-                <div>
-                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
-                    <input id="postal_code" name="postal_code" value="{{ old('postal_code') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="7411 HD">
-                </div>
-                <div>
-                    <label class="block text-[11px] uppercase tracking-wide text-nicon-muted" for="location">Plaats</label>
-                    <input id="location" name="location" value="{{ old('location') }}" class="mt-1 w-full border border-nicon-line px-3 py-2" placeholder="Deventer" @required(! $linked)>
-                </div>
-            </div>
+            <x-work-address id="address" class="mt-1" :required="! $linked" />
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">

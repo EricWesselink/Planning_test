@@ -155,40 +155,14 @@
                     </td>
                     <td class="px-2 py-1.5">
                         @can('update', $project)
-                            <div class="flex min-w-[12rem] flex-col gap-1">
-                                <input
-                                    id="index-{{ $project->id }}-address"
-                                    form="{{ $formId }}"
-                                    name="address"
-                                    value="{{ $editing ? old('address', $project->address) : $project->address }}"
-                                    aria-label="Straat"
-                                    title="Straat"
-                                    placeholder="Straat 12"
-                                    class="border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
-                                >
-                                <div class="flex gap-1">
-                                    <input
-                                        id="index-{{ $project->id }}-postal"
-                                        form="{{ $formId }}"
-                                        name="postal_code"
-                                        value="{{ $editing ? old('postal_code', $project->postal_code) : $project->postal_code }}"
-                                        aria-label="Postcode"
-                                        title="Postcode"
-                                        placeholder="1234 AB"
-                                        class="w-[6.5rem] shrink-0 border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
-                                    >
-                                    <input
-                                        id="index-{{ $project->id }}-city"
-                                        form="{{ $formId }}"
-                                        name="city"
-                                        value="{{ $editing ? old('city', $project->city) : $project->city }}"
-                                        aria-label="Plaats"
-                                        title="Plaats"
-                                        placeholder="Plaats"
-                                        class="min-w-0 flex-1 border border-nicon-line bg-white px-1.5 py-1 text-sm leading-tight"
-                                    >
-                                </div>
-                            </div>
+                            <x-work-address
+                                :id="'index-'.$project->id.'-address'"
+                                :label="null"
+                                :form="$formId"
+                                :use-old="$editing"
+                                :value="$project->nawLine()"
+                                class="min-w-[16rem] bg-white text-sm leading-tight"
+                            />
                         @else
                             {{ $project->nawLine() ?? '—' }}
                         @endcan

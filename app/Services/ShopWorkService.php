@@ -15,6 +15,7 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\PlanningHours;
+use App\Support\WorkAddress;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,8 @@ class ShopWorkService
      */
     public function create(array $data, User $user, array $files = []): Project
     {
+        $data = WorkAddress::overlay($data);
+
         return DB::transaction(function () use ($data, $user, $files) {
             $customer = $this->syncCustomer($data);
 
@@ -63,6 +66,7 @@ class ShopWorkService
                 'address' => $data['address'] ?? null,
                 'postal_code' => $data['postal_code'] ?? null,
                 'city' => $data['city'] ?? null,
+                'work_address' => $data['work_address'] ?? null,
                 'contact_phone' => $this->nullableString($data['contact_phone'] ?? null),
                 'contact_email' => $this->nullableString($data['contact_email'] ?? null),
                 'supervisor_user_id' => $user->id,
@@ -114,6 +118,8 @@ class ShopWorkService
      */
     public function update(Project $project, array $data, User $user, array $files = []): Project
     {
+        $data = WorkAddress::overlay($data);
+
         return DB::transaction(function () use ($project, $data, $user, $files) {
             $customer = $this->syncCustomer($data);
 
@@ -123,6 +129,7 @@ class ShopWorkService
                 'address' => $data['address'] ?? null,
                 'postal_code' => $data['postal_code'] ?? null,
                 'city' => $data['city'] ?? null,
+                'work_address' => $data['work_address'] ?? null,
                 'contact_phone' => $this->nullableString($data['contact_phone'] ?? null),
                 'contact_email' => $this->nullableString($data['contact_email'] ?? null),
                 'work_description' => $data['work_description'] ?? null,

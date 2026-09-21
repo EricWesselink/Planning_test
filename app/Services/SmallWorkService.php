@@ -18,6 +18,7 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkProgressEntry;
 use App\Support\PlanningHours;
+use App\Support\WorkAddress;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -77,13 +78,11 @@ class SmallWorkService
     {
         $hours = PlanningHours::snapHours((float) $data['hours']);
         $date = Carbon::parse($data['date'])->toDateString();
-        $location = trim((string) ($data['location'] ?? ''));
-        $address = trim((string) ($data['address'] ?? ''));
-        $postalCode = trim((string) ($data['postal_code'] ?? ''));
+        $address = $this->addressAttributes($data);
         $description = trim((string) $data['description']);
         $customer = Customer::query()->firstOrCreate(
             ['name' => trim((string) $data['customer_name'])],
-            ['city' => $location !== '' ? $location : null]
+            ['city' => $address['city']]
         );
 
         $project = Project::query()->create([
@@ -92,9 +91,7 @@ class SmallWorkService
                 : $this->intake->nextProjectNumber(),
             'customer_id' => $customer->id,
             'name' => $description,
-            'address' => $address !== '' ? $address : null,
-            'postal_code' => $postalCode !== '' ? $postalCode : null,
-            'city' => $location !== '' ? $location : null,
+            ...$address,
             'supervisor_user_id' => $user->id,
             'planned_start_date' => $date,
             'planned_end_date' => $date,
@@ -149,22 +146,18 @@ class SmallWorkService
         return DB::transaction(function () use ($project, $data, $user, $files) {
             $hours = PlanningHours::snapHours((float) $data['hours']);
             $date = Carbon::parse($data['date'])->toDateString();
-            $location = trim((string) ($data['location'] ?? ''));
-            $address = trim((string) ($data['address'] ?? ''));
-            $postalCode = trim((string) ($data['postal_code'] ?? ''));
+            $address = $this->addressAttributes($data);
             $description = trim((string) $data['description']);
             $customer = Customer::query()->firstOrCreate(
                 ['name' => trim((string) $data['customer_name'])],
-                ['city' => $location !== '' ? $location : null]
+                ['city' => $address['city']]
             );
             $workNumber = trim((string) ($data['work_number'] ?? ''));
 
             $project->update([
                 'customer_id' => $customer->id,
                 'name' => $description,
-                'address' => $address !== '' ? $address : null,
-                'postal_code' => $postalCode !== '' ? $postalCode : null,
-                'city' => $location !== '' ? $location : null,
+                ...$address,
                 'planned_start_date' => $date,
                 'planned_end_date' => $date,
                 'project_number' => $workNumber !== '' ? $workNumber : $project->project_number,
@@ -190,6 +183,34 @@ class SmallWorkService
 
             return $project->fresh(['customer', 'workItems', 'assignments', 'documents', 'workActivities']) ?? $project;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{address: ?string, postal_code: ?string, city: ?string, work_address?: ?string}
+     */
+    private function addressAttributes(array $data): array
+    {
+        if (array_key_exists('work_address', $data)) {
+            $parsed = WorkAddress::overlay($data);
+
+            return [
+                'address' => $parsed['address'],
+                'postal_code' => $parsed['postal_code'],
+                'city' => $parsed['city'],
+                'work_address' => $parsed['work_address'],
+            ];
+        }
+
+        $location = trim((string) ($data['location'] ?? ''));
+        $address = trim((string) ($data['address'] ?? ''));
+        $postalCode = trim((string) ($data['postal_code'] ?? ''));
+
+        return [
+            'address' => $address !== '' ? $address : null,
+            'postal_code' => $postalCode !== '' ? $postalCode : null,
+            'city' => $location !== '' ? $location : null,
+        ];
     }
 
     /**

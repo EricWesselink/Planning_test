@@ -212,6 +212,7 @@ class ShopProjectController extends Controller
         $shopUnits = array_map(fn (WorkUnit $unit): string => $unit->value, WorkUnit::shopCases());
         $validator = Validator::make($request->all(), [
             'customer_name' => ['required', 'string', 'max:255'],
+            'work_address' => ['nullable', 'string', 'max:1000'],
             'city' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],

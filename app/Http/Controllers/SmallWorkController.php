@@ -232,9 +232,10 @@ class SmallWorkController extends Controller
                 }),
             ],
             'description' => ['required', 'string', 'max:255'],
+            'work_address' => ['nullable', 'string', 'max:1000'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
-            'location' => [$standalone ? 'required' : 'nullable', 'string', 'max:255'],
+            'location' => [Rule::requiredIf(fn () => $standalone && ! filled($request->input('work_address'))), 'nullable', 'string', 'max:255'],
             'date' => ['required', 'date'],
             'klaar_date' => ['nullable', 'date', 'after_or_equal:date'],
             'quantity' => ['nullable', 'numeric', 'min:0'],
@@ -259,9 +260,10 @@ class SmallWorkController extends Controller
         return $request->validate([
             'customer_name' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:255'],
+            'work_address' => ['nullable', 'string', 'max:1000'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
-            'location' => ['required', 'string', 'max:255'],
+            'location' => [Rule::requiredIf(fn () => ! filled($request->input('work_address'))), 'nullable', 'string', 'max:255'],
             'date' => ['required', 'date'],
             'hours' => ['required', 'numeric', Rule::in([2, 4, 6, 8])],
             'work_number' => [

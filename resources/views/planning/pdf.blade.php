@@ -318,8 +318,8 @@
             @if ($clientProject->customer)
                 · Opdrachtgever: {{ $clientProject->customer->name }}
             @endif
-            @if ($clientProject->address || $clientProject->city)
-                · {{ trim($clientProject->address.' '.$clientProject->postal_code.' '.$clientProject->city) }}
+            @if ($clientProject->nawLine())
+                · {{ $clientProject->nawLine() }}
             @endif
         @endif
         · Afgedrukt {{ now()->translatedFormat('d M Y') }}

@@ -23,17 +23,8 @@
                     <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="customer_name">Klant</label>
                     <input id="customer_name" name="customer_name" value="{{ old('customer_name') }}" required class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="Jansen">
                 </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="city">Plaats</label>
-                    <input id="city" name="city" value="{{ old('city') }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="Hengelo">
-                </div>
                 <div class="sm:col-span-2">
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="address">Adres</label>
-                    <input id="address" name="address" value="{{ old('address') }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="Straat 12">
-                </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="postal_code">Postcode</label>
-                    <input id="postal_code" name="postal_code" value="{{ old('postal_code') }}" class="mt-1 w-full border border-nicon-line px-2 py-1.5" placeholder="7551 AA">
+                    <x-work-address id="address" class="mt-1 px-2 py-1.5" />
                 </div>
                 <div>
                     <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="contact_phone">Telefoon</label>

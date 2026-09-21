@@ -55,8 +55,8 @@ class WorkTicketPdfService
      *     floors: string,
      *     rooms: string,
      *     drawings: list<string>,
-     *     drawingItems: list<array{name: string, url: ?string, path: ?string, is_image: bool}>,
-     *     drawingEmbeds: list<array{name: string, path: ?string, is_image: bool}>,
+     *     drawingItems: list<array{name: string, url: ?string, path: ?string, is_image: bool, is_pdf: bool}>,
+     *     drawingEmbeds: list<array{name: string, path: ?string, is_image: bool, is_pdf: bool}>,
      *     drawingUrl: ?string,
      *     drawingIsPdf: bool,
      *     drawingIsImage: bool,
@@ -620,7 +620,7 @@ class WorkTicketPdfService
 
     /**
      * @param  Collection<int, ProjectDocument>  $documents
-     * @return list<array{name: string, url: ?string, path: ?string, is_image: bool}>
+     * @return list<array{name: string, url: ?string, path: ?string, is_image: bool, is_pdf: bool}>
      */
     private function drawingItems(Collection $documents, ?Project $project, bool $embedDrawings): array
     {
@@ -630,11 +630,21 @@ class WorkTicketPdfService
                 'url' => $project !== null
                     ? route('projects.documents.show', [$project, $document])
                     : null,
-                'path' => $embedDrawings ? $this->storedImagePath($document) : null,
+                'path' => $embedDrawings ? $this->embeddedDrawingPath($document) : null,
                 'is_image' => $document->isImage(),
+                'is_pdf' => $document->isPdf(),
             ])
             ->values()
             ->all();
+    }
+
+    private function embeddedDrawingPath(ProjectDocument $document): ?string
+    {
+        if ($document->isImage()) {
+            return $this->storedImagePath($document);
+        }
+
+        return $document->isPdf() ? $this->layerImage($document, 1) : null;
     }
 
     private function recipientName(WorkTicket $ticket): string

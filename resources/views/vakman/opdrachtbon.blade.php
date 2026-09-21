@@ -54,6 +54,7 @@
             'url' => route('projects.documents.show', [$project, $drawing]),
             'path' => null,
             'is_image' => $drawing->isImage(),
+            'is_pdf' => $drawing->isPdf(),
         ])->all(),
     ])
 </body>

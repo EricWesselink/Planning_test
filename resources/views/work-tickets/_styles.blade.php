@@ -159,6 +159,13 @@
         max-height: 170mm;
         border: 0.4pt solid #d5dde5;
     }
+    .drawing-pdf {
+        display: block;
+        width: 100%;
+        height: 220mm;
+        border: 0.4pt solid #d5dde5;
+        background: #fff;
+    }
     .drawing-page .map {
         min-height: 0;
         margin: 8px 0;

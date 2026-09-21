@@ -28,6 +28,7 @@ use App\Services\SourceUpdateService;
 use App\Services\WorkTicketService;
 use App\Support\Format;
 use App\Support\PlanningWeek;
+use App\Support\WorkAddress;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -134,6 +135,7 @@ class ProjectController extends Controller
         }
         $this->normalizeWorkItemBudgets($request);
         $validator = Validator::make($request->all(), [
+            'work_address' => ['nullable', 'string', 'max:1000'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'city' => ['nullable', 'string', 'max:255'],
@@ -162,6 +164,10 @@ class ProjectController extends Controller
         $data = $validator->validate();
 
         $fields = ['address', 'postal_code', 'city'];
+        if (array_key_exists('work_address', $data)) {
+            $data = WorkAddress::overlay($data);
+            $fields[] = 'work_address';
+        }
         $canViewLabor = $request->user()?->canViewLaborCosts() ?? false;
         if ($canViewLabor && $request->exists('basis_uurtarief')) {
             $fields[] = 'basis_uurtarief';
@@ -206,6 +212,7 @@ class ProjectController extends Controller
             'work_code' => ['nullable', 'string', 'max:32'],
             'name' => ['required', 'string', 'max:255'],
             'customer_name' => ['required', 'string', 'max:255'],
+            'work_address' => ['nullable', 'string', 'max:1000'],
             'city' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],

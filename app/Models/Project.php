@@ -7,6 +7,7 @@ use App\Enums\ProjectKind;
 use App\Enums\ProjectStatus;
 use App\Enums\WorkUnit;
 use App\Support\PlanningWeek;
+use App\Support\WorkAddress;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,7 +21,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
-    'project_number', 'customer_id', 'name', 'address', 'postal_code', 'city',
+    'project_number', 'customer_id', 'name', 'address', 'postal_code', 'city', 'work_address',
     'contact_name', 'contact_phone', 'contact_role', 'contact_email', 'supervisor_user_id',
     'planned_start_date', 'planned_end_date', 'actual_start_date', 'actual_end_date',
     'status', 'kind', 'notes', 'work_description', 'basis_uurtarief', 'order_amount',
@@ -34,6 +35,13 @@ class Project extends Model
     protected $attributes = [
         'kind' => 'project',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Project $project): void {
+            WorkAddress::sync($project);
+        });
+    }
 
     protected function casts(): array
     {
@@ -76,6 +84,7 @@ class Project extends Model
                 ->orWhere('address', 'like', $like)
                 ->orWhere('postal_code', 'like', $like)
                 ->orWhere('city', 'like', $like)
+                ->orWhere('work_address', 'like', $like)
                 ->orWhereHas(
                     'customer',
                     fn (Builder $customer) => $customer->where('name', 'like', $like),
@@ -592,11 +601,12 @@ class Project extends Model
 
     public function nawLine(): ?string
     {
-        $street = trim((string) $this->address);
-        $place = trim(implode(' ', array_filter([$this->postal_code, $this->city])));
-        $line = trim(implode(', ', array_filter([$street, $place])));
+        $stored = trim((string) $this->work_address);
+        if ($stored !== '') {
+            return $stored;
+        }
 
-        return $line !== '' ? $line : null;
+        return WorkAddress::compose($this->address, $this->postal_code, $this->city);
     }
 
     public function contactRoleLabel(): ?string

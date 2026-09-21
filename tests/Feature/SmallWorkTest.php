@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\SimplePdf;
 use Tests\TestCase;
 
 class SmallWorkTest extends TestCase
@@ -871,6 +872,43 @@ class SmallWorkTest extends TestCase
             ->assertSee('plattegrond.png')
             ->assertSee('class="drawing"', false)
             ->assertSee('<img src="', false);
+    }
+
+    public function test_servicebon_shows_an_attached_pdf_drawing(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pdf = new UploadedFile(
+            SimplePdf::path('Kelvinlaan'),
+            'reparatie Kelvinlaan 4.pdf',
+            'application/pdf',
+            null,
+            true
+        );
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Polinder',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-11',
+            'hours' => 4,
+            'attachments' => [$pdf],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $document = $project->documents()->first();
+        $this->assertNotNull($document);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('Tekeningen')
+            ->assertSee('reparatie Kelvinlaan 4.pdf')
+            ->assertSee('<iframe', false)
+            ->assertSee('class="drawing-pdf"', false)
+            ->assertSee(route('projects.documents.show', [$project, $document], false), false);
     }
 
     public function test_rejects_an_unsupported_small_work_drawing(): void

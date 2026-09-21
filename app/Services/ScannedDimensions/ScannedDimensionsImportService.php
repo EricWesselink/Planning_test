@@ -15,6 +15,7 @@ use App\Models\WorkItem;
 use App\Services\Meetstaat\PdfTextExtractor;
 use App\Services\ProjectIntakeService;
 use App\Services\RoomWorkSetup;
+use App\Support\WorkAddress;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
@@ -234,6 +235,8 @@ class ScannedDimensionsImportService
             throw new \InvalidArgumentException('Voeg minstens één ruimte met netto m² toe.');
         }
 
+        $data = WorkAddress::overlay($data);
+
         return DB::transaction(function () use (
             $data,
             $parsed,
@@ -256,6 +259,7 @@ class ScannedDimensionsImportService
                 'address' => $data['address'] ?? null,
                 'postal_code' => $data['postal_code'] ?? null,
                 'city' => $data['city'] ?? null,
+                'work_address' => $data['work_address'] ?? null,
                 'supervisor_user_id' => $user->id,
                 'planned_start_date' => $data['planned_start_date'] ?? null,
                 'planned_end_date' => $data['planned_end_date'] ?? null,

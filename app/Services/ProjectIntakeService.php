@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\WorkItem;
 use App\Services\Meetstaat\MaterialIdentity;
 use App\Support\MaterialColor;
+use App\Support\WorkAddress;
 use App\Support\WorkType;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -50,6 +51,8 @@ class ProjectIntakeService
      */
     public function create(array $data, ?UploadedFile $plattegrond, ?UploadedFile $meetstaat, User $user, ?UploadedFile $excel = null): array
     {
+        $data = WorkAddress::overlay($data);
+
         return DB::transaction(function () use ($data, $plattegrond, $meetstaat, $user, $excel) {
             $customer = Customer::query()->firstOrCreate(
                 ['name' => $data['customer_name']],
@@ -63,6 +66,7 @@ class ProjectIntakeService
                 'address' => $data['address'] ?? null,
                 'postal_code' => $data['postal_code'] ?? null,
                 'city' => $data['city'] ?? null,
+                'work_address' => $data['work_address'] ?? null,
                 'supervisor_user_id' => $user->id,
                 'planned_start_date' => $data['planned_start_date'] ?? null,
                 'planned_end_date' => $data['planned_end_date'] ?? null,
@@ -603,6 +607,7 @@ class ProjectIntakeService
                 'address' => $header['address'] ?? null,
                 'postal_code' => $header['postal_code'] ?? null,
                 'city' => $header['city'] ?? null,
+                'work_address' => $header['work_address'] ?? null,
                 'supervisor_user_id' => $user->id,
                 'planned_start_date' => $header['planned_start_date'] ?? $header['date'] ?? null,
                 'planned_end_date' => $header['planned_end_date'] ?? null,
