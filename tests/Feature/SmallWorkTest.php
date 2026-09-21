@@ -396,6 +396,91 @@ class SmallWorkTest extends TestCase
         }
     }
 
+    public function test_shifting_one_checked_activity_leaves_the_other_in_place(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-stroken');
+        $tapijt = $this->floorActivity('tapijt');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Hegeman Bouwgroep',
+            'description' => 'hestel schoon maken',
+            'location' => 'Deventer',
+            'date' => '2026-09-22',
+            'hours' => 8,
+            'work_activity_ids' => [$pvc->id, $tapijt->id],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->firstOrFail();
+        $pvcItem = $project->workItems()->where('name', 'PVC stroken')->firstOrFail();
+        $tapijtItem = $project->workItems()->where('name', 'Tapijt')->firstOrFail();
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $pvcItem->id,
+                'work_item_ids' => [$pvcItem->id, $tapijtItem->id],
+                'start_date' => '2026-09-22',
+                'end_date' => '2026-09-22',
+                'people_count' => 1,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment = $project->assignments()->firstOrFail();
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-21']))
+            ->assertOk()
+            ->getContent();
+        $this->assertMatchesRegularExpression(
+            '/PVC stroken[\s\S]*?data-work-item-id="'.$pvcItem->id.'"[\s\S]*?data-shift-id="'.$assignment->id.'"/',
+            $html,
+        );
+        $this->assertMatchesRegularExpression(
+            '/Tapijt[\s\S]*?data-work-item-id="'.$tapijtItem->id.'"[\s\S]*?data-shift-id="'.$assignment->id.'"/',
+            $html,
+        );
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $worker->id,
+                'work_item_id' => $pvcItem->id,
+                'start_date' => '2026-09-22',
+                'end_date' => '2026-09-22',
+            ])
+            ->assertOk();
+        $this->assertSame(1, $project->assignments()->count());
+        $this->assertTrue($assignment->fresh()->coversWorkIds([$pvcItem->id, $tapijtItem->id]));
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $worker->id,
+                'work_item_id' => $pvcItem->id,
+                'start_date' => '2026-09-22',
+                'end_date' => '2026-09-23',
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertSame(2, $project->assignments()->count());
+        $this->assertSame('2026-09-22', $assignment->start_date->toDateString());
+        $this->assertSame('2026-09-22', $assignment->end_date->toDateString());
+        $this->assertSame(8.0, $assignment->plannedHoursValue());
+        $this->assertTrue($assignment->coversWorkIds([$tapijtItem->id]));
+        $this->assertFalse($assignment->coversWorkIds([$pvcItem->id]));
+
+        $forked = $project->assignments()->whereKeyNot($assignment->id)->firstOrFail();
+        $this->assertSame($pvcItem->id, (int) $forked->work_item_id);
+        $this->assertSame('2026-09-22', $forked->start_date->toDateString());
+        $this->assertSame('2026-09-23', $forked->end_date->toDateString());
+        $this->assertSame(16.0, $forked->plannedHoursValue());
+        $this->assertTrue($forked->coversWorkIds([$pvcItem->id]));
+        $this->assertFalse($forked->coversWorkIds([$tapijtItem->id]));
+    }
+
     public function test_planning_dialog_keeps_the_description_when_the_job_has_no_activities(): void
     {
         $user = User::factory()->create();

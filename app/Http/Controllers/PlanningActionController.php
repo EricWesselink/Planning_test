@@ -517,7 +517,7 @@ class PlanningActionController extends Controller
             return response()->json(['ok' => true]);
         }
         if ($sharedLine === 'fork') {
-            $this->forkSharedSmallWorkLine(
+            $created = $this->forkSharedSmallWorkLine(
                 $assignment,
                 $targetItem,
                 $start,
@@ -530,6 +530,7 @@ class PlanningActionController extends Controller
                 $isProvisional,
                 $roles,
             );
+            $this->releaseForkedActivityLine($assignment, $created, $targetItem);
 
             return response()->json(['ok' => true]);
         }
@@ -1148,8 +1149,9 @@ class PlanningActionController extends Controller
     }
 
     /**
-     * A klein/service visit planned on the job is drawn on every activity line.
-     * Changing one line forks that line; an unchanged drop stays on the shared visit.
+     * A klein/service visit drawn on several activity lines forks the line that
+     * moves. An unchanged drop stays on the shared visit. Saving the dialog with
+     * an explicit work-item list still moves that whole visit.
      *
      * @param  array<string, mixed>  $data
      * @param  list<int>  $crewIds
@@ -1172,25 +1174,18 @@ class PlanningActionController extends Controller
         if ($project === null || ! $project->isSmallWork() || (int) $target->project_id !== (int) $project->id) {
             return null;
         }
-        if ($assignment->workItem?->work_activity_id !== null) {
-            return null;
-        }
         if (array_key_exists('work_item_ids', $data)) {
             return null;
+        }
+        if ($assignment->workItem?->work_activity_id !== null) {
+            return $this->multiActivityLineAction($assignment, $target, $data, $start, $end, $workerId, $crewIds);
         }
         if ((int) $target->id === (int) $assignment->work_item_id) {
             return null;
         }
 
         $project->loadMissing(['workItems', 'assignments']);
-        $groups = [];
-        foreach ($project->workItems as $item) {
-            if ($item->work_activity_id === null || $item->isExtraWork()) {
-                continue;
-            }
-            $key = $item->packageKey() === 'ondergrond' ? 'ondergrond' : 'item-'.$item->id;
-            $groups[$key][] = (int) $item->id;
-        }
+        $groups = $this->smallWorkActivityGroups($project);
         $dedicatedIds = $project->assignments
             ->filter(fn (WorkerAssignment $row): bool => (int) $row->id !== (int) $assignment->id)
             ->map(fn (WorkerAssignment $row): int => (int) $row->work_item_id)
@@ -1254,6 +1249,116 @@ class PlanningActionController extends Controller
     /**
      * @param  array<string, mixed>  $data
      * @param  list<int>  $crewIds
+     * @return 'fork'|'keep'|null
+     */
+    private function multiActivityLineAction(
+        WorkerAssignment $assignment,
+        WorkItem $target,
+        array $data,
+        Carbon $start,
+        Carbon $end,
+        int $workerId,
+        array $crewIds,
+    ): ?string {
+        $project = $assignment->project;
+        if ($project === null) {
+            return null;
+        }
+        $project->loadMissing('workItems');
+        $hoursId = (int) ($project->workItems->first(
+            fn (WorkItem $item): bool => $item->work_activity_id === null && ! $item->isExtraWork(),
+        )?->id ?? 0);
+        $specific = array_values(array_filter(
+            $assignment->linkedWorkItemIds(),
+            static fn (int $id): bool => $id > 0 && $id !== $hoursId,
+        ));
+        $covered = 0;
+        $targetCovered = false;
+        foreach ($this->smallWorkActivityGroups($project) as $ids) {
+            if (array_intersect($specific, $ids) === []) {
+                continue;
+            }
+            $covered++;
+            if (in_array((int) $target->id, $ids, true)) {
+                $targetCovered = true;
+            }
+        }
+        if ($covered < 2 || ! $targetCovered) {
+            return null;
+        }
+
+        return $this->assignmentScheduleChanged($assignment, $data, $start, $end, $workerId, $crewIds)
+            ? 'fork'
+            : 'keep';
+    }
+
+    /**
+     * @return list<list<int>>
+     */
+    private function smallWorkActivityGroups(Project $project): array
+    {
+        $groups = [];
+        foreach ($project->workItems as $item) {
+            if ($item->work_activity_id === null || $item->isExtraWork()) {
+                continue;
+            }
+            $key = $item->packageKey() === 'ondergrond' ? 'ondergrond' : 'item-'.$item->id;
+            $groups[$key][] = (int) $item->id;
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function activityLineIds(Project $project, WorkItem $target): array
+    {
+        $project->loadMissing('workItems');
+        foreach ($this->smallWorkActivityGroups($project) as $ids) {
+            if (in_array((int) $target->id, $ids, true)) {
+                return $ids;
+            }
+        }
+
+        return [(int) $target->id];
+    }
+
+    /**
+     * The forked line leaves the original visit, which keeps the other activities.
+     */
+    private function releaseForkedActivityLine(WorkerAssignment $original, WorkerAssignment $created, WorkItem $target): void
+    {
+        $original->loadMissing(['workItem', 'project.workItems']);
+        if ($original->workItem?->work_activity_id === null || $original->project === null) {
+            return;
+        }
+        $remove = $this->activityLineIds($original->project, $target);
+        $remaining = array_values(array_filter(
+            $original->linkedWorkItemIds(),
+            function (int $id) use ($original, $remove): bool {
+                if (in_array($id, $remove, true)) {
+                    return false;
+                }
+                $item = $original->project?->workItems->firstWhere('id', $id);
+
+                return $item !== null && $item->work_activity_id !== null && ! $item->isExtraWork();
+            },
+        ));
+        if ($remaining === []) {
+            return;
+        }
+        if (in_array((int) $original->work_item_id, $remove, true)) {
+            $original->work_item_id = $remaining[0];
+            $original->save();
+        }
+        $original->syncLinkedWorkItems($remaining);
+        $created->syncLinkedWorkItems($remove);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<int>  $crewIds
      * @param  array{foreman: ?int, holder: ?int}  $roles
      */
     private function forkSharedSmallWorkLine(
@@ -1268,7 +1373,11 @@ class PlanningActionController extends Controller
         bool $includeSunday,
         bool $isProvisional,
         array $roles,
-    ): void {
+    ): WorkerAssignment {
+        $assignment->loadMissing('project.workItems');
+        $lineIds = $assignment->project === null
+            ? [(int) $target->id]
+            : $this->activityLineIds($assignment->project, $target);
         $startTime = PlanningHours::normalizeTime($data['start_time'] ?? $assignment->startTimeValue(), PlanningHours::DAY_START);
         $endTime = PlanningHours::normalizeTime($data['end_time'] ?? $assignment->endTimeValue(), PlanningHours::DAY_END);
         $created = $this->createScheduledAssignment(
@@ -1284,7 +1393,7 @@ class PlanningActionController extends Controller
             array_key_exists('crew_member_ids', $data) ? $crewIds : [],
             $includeSaturday,
             $includeSunday,
-            [(int) $target->id],
+            $lineIds,
             $isProvisional,
         );
         if (! array_key_exists('crew_member_ids', $data)) {
@@ -1295,6 +1404,8 @@ class PlanningActionController extends Controller
             WorkerAssignment::roleIdInCrew($roles['foreman'], $crew),
             WorkerAssignment::roleIdInCrew($roles['holder'], $crew),
         );
+
+        return $created;
     }
 
     /**

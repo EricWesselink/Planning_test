@@ -1572,6 +1572,9 @@ class PlanningBoardService
                         $project->displayTitle(),
                     );
                 }
+                foreach ($bars as $index => $bar) {
+                    $bars[$index]['work_item_id'] = (int) $child['id'];
+                }
                 $child['person_bars'] = $bars;
                 $child['bar_count'] = $this->stackedBarCount($bars);
 
