@@ -7,6 +7,7 @@ use App\Enums\TimeEntryStatus;
 use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\TimeEntry;
+use App\Models\User;
 use App\Models\Worker;
 use App\Support\PlanningHours;
 use Carbon\Carbon;
@@ -20,6 +21,7 @@ class PersonnelHoursService
 {
     public function __construct(
         private PersonnelWeekService $weeks,
+        private TimeEntryService $timeEntries,
     ) {}
 
     /**
@@ -107,6 +109,57 @@ class PersonnelHoursService
     }
 
     /**
+     * Week of the logged-in craftsman. Query parameters other than the week date are ignored.
+     *
+     * @return array{
+     *     start: Carbon,
+     *     end: Carbon,
+     *     number: int,
+     *     period: string,
+     *     prev_url: string,
+     *     next_url: string,
+     *     submitted: float,
+     *     approved: float,
+     *     difference: float,
+     *     submitted_label: string,
+     *     approved_label: string,
+     *     difference_label: string,
+     *     days: list<array{heading: string, entries: list<array{project: string, lines: list<string>, status: string, reason: ?string}>}>
+     * }
+     */
+    public function ownWeek(User $user, ?string $week): array
+    {
+        $start = $this->ownWeekStart($week);
+        $end = $start->copy()->addDays(5);
+        $entries = $this->ownEntries($user, $start, $end);
+        $submitted = round($entries->sum(fn (TimeEntry $entry): float => $entry->submittedHoursValue()), 2);
+        $approved = round($entries->sum(function (TimeEntry $entry): float {
+            if (! $entry->isApproved()) {
+                return 0.0;
+            }
+
+            return round((float) ($entry->approved_hours ?? 0), 2);
+        }), 2);
+        $difference = round($approved - $submitted, 2);
+
+        return [
+            'start' => $start,
+            'end' => $end,
+            'number' => $start->isoWeek(),
+            'period' => $start->translatedFormat('j M').' – '.$end->translatedFormat('j M Y'),
+            'prev_url' => route('vakman.hours.index', ['week' => $start->copy()->subWeek()->toDateString()]),
+            'next_url' => route('vakman.hours.index', ['week' => $start->copy()->addWeek()->toDateString()]),
+            'submitted' => $submitted,
+            'approved' => $approved,
+            'difference' => $difference,
+            'submitted_label' => $this->vakmanHoursLabel($submitted),
+            'approved_label' => $this->vakmanHoursLabel($approved),
+            'difference_label' => $this->signedVakmanHoursLabel($difference),
+            'days' => $this->ownDays($entries),
+        ];
+    }
+
+    /**
      * @return Builder<TimeEntry>
      */
     private function overviewQuery(Request $request): Builder
@@ -165,6 +218,156 @@ class PersonnelHoursService
         }
 
         return PlanningHours::hoursLabel($hours);
+    }
+
+    private function ownWeekStart(?string $week): Carbon
+    {
+        if (is_string($week) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $week) === 1) {
+            $date = Carbon::createFromFormat('Y-m-d', $week);
+            if ($date instanceof Carbon && $date->format('Y-m-d') === $week) {
+                return $date->startOfWeek(Carbon::MONDAY)->startOfDay();
+            }
+        }
+
+        return now()->startOfWeek(Carbon::MONDAY)->startOfDay();
+    }
+
+    /**
+     * @return Collection<int, TimeEntry>
+     */
+    private function ownEntries(User $user, CarbonInterface $start, CarbonInterface $end): Collection
+    {
+        $workerId = $user->scheduledWorkerId();
+        if ($workerId === null) {
+            return collect();
+        }
+
+        $query = TimeEntry::query()
+            ->with('project')
+            ->where('worker_id', $workerId);
+
+        $scheduledCrewId = $user->scheduledCrewMemberId();
+        if ($scheduledCrewId !== null) {
+            $query->where('crew_member_id', $scheduledCrewId);
+        } else {
+            $resolvedCrewId = $this->timeEntries->resolvedCrewMemberId($user);
+            $query->where(function (Builder $inner) use ($resolvedCrewId): void {
+                $inner->whereNull('crew_member_id');
+                if ($resolvedCrewId !== null) {
+                    $inner->orWhere('crew_member_id', $resolvedCrewId);
+                }
+            });
+        }
+
+        return $query
+            ->whereDate('date', '>=', $start->toDateString())
+            ->whereDate('date', '<=', $end->toDateString())
+            ->orderBy('date')
+            ->orderBy('start_time')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * @param  Collection<int, TimeEntry>  $entries
+     * @return list<array{heading: string, entries: list<array{project: string, lines: list<string>, status: string, reason: ?string}>}>
+     */
+    private function ownDays(Collection $entries): array
+    {
+        $days = [];
+        foreach ($entries as $entry) {
+            $key = $entry->date->toDateString();
+            if (! isset($days[$key])) {
+                $days[$key] = [
+                    'date' => $entry->date->copy(),
+                    'submitted' => 0.0,
+                    'entries' => [],
+                ];
+            }
+            $days[$key]['submitted'] = round($days[$key]['submitted'] + $entry->submittedHoursValue(), 2);
+            $days[$key]['entries'][] = [
+                'project' => $entry->project?->name ?? 'Project',
+                'lines' => $this->ownEntryLines($entry),
+                'status' => $this->ownStatusLabel($entry),
+                'reason' => $entry->isAdjusted() && filled($entry->review_note) ? (string) $entry->review_note : null,
+            ];
+        }
+
+        $rows = [];
+        foreach ($days as $day) {
+            $rows[] = [
+                'heading' => ucfirst($day['date']->translatedFormat('l j F')).' — totaal '.$this->vakmanHoursLabel($day['submitted']),
+                'entries' => $day['entries'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function ownEntryLines(TimeEntry $entry): array
+    {
+        if (! $entry->hasSubmittedTimes()) {
+            return [$this->vakmanHoursLabel($entry->submittedHoursValue()).' · oude urenregistratie'];
+        }
+
+        if ($entry->isAdjusted()) {
+            $approvedHours = round((float) ($entry->approved_hours ?? 0), 2);
+            $approvedClock = $this->approvedClockLabel($entry);
+
+            return [
+                'Ingediend: '.$entry->submittedIntervalLabel().' · '.$this->vakmanHoursLabel($entry->submittedHoursValue()),
+                'Goedgekeurd: '.($approvedClock !== null ? $approvedClock.' · ' : '').$this->vakmanHoursLabel($approvedHours),
+            ];
+        }
+
+        return [
+            $entry->submittedIntervalLabel().' · Pauze '.$entry->breakLabel().' · '.$this->vakmanHoursLabel($entry->submittedHoursValue()),
+        ];
+    }
+
+    private function approvedClockLabel(TimeEntry $entry): ?string
+    {
+        if ($entry->approved_start_time === null || $entry->approved_end_time === null) {
+            return null;
+        }
+
+        return PlanningHours::formatTime((string) $entry->approved_start_time)
+            .'–'.PlanningHours::formatTime((string) $entry->approved_end_time);
+    }
+
+    private function ownStatusLabel(TimeEntry $entry): string
+    {
+        if ($entry->isAdjusted()) {
+            return 'Aangepast & goedgekeurd';
+        }
+
+        if ($entry->isRejected()) {
+            return 'Afgewezen';
+        }
+
+        return $entry->status->weekLabel();
+    }
+
+    private function vakmanHoursLabel(float $hours): string
+    {
+        $number = round(abs($hours), 2);
+        $text = abs($number - (int) round($number)) < 0.001
+            ? (string) (int) round($number)
+            : rtrim(rtrim(number_format($number, 2, ',', ''), '0'), ',');
+
+        return ($hours < -0.0001 ? '-' : '').$text.'u';
+    }
+
+    private function signedVakmanHoursLabel(float $hours): string
+    {
+        if ($hours > 0.0001) {
+            return '+'.$this->vakmanHoursLabel($hours);
+        }
+
+        return $this->vakmanHoursLabel($hours);
     }
 
     /**

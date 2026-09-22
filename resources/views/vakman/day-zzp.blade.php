@@ -119,7 +119,7 @@
                             <ul class="mt-1 space-y-1">
                                 @foreach ($job['drawings'] as $drawing)
                                     <li>
-                                        <a href="{{ route('projects.documents.show', [$project, $drawing]) }}" class="text-nicon-orange">{{ $drawing->original_filename ?: 'Tekening' }}</a>
+                                        <a href="{{ $drawing->isPdf() ? route('vakman.drawings.show', ['project' => $project, 'document' => $drawing, 'day' => $job['date']]) : route('projects.documents.show', [$project, $drawing]) }}" class="text-nicon-orange">{{ $drawing->drawingLabel() }}</a>
                                     </li>
                                 @endforeach
                             </ul>
@@ -130,9 +130,6 @@
                     @if ($job['project_url'] ?? null)
                         <a href="{{ $job['project_url'] }}" class="bg-nicon-ink px-4 py-3 text-center text-sm font-medium text-white">Projectinformatie</a>
                     @endif
-                    @if ($job['drawing_url'] ?? null)
-                        <a href="{{ $job['drawing_url'] }}" class="border border-nicon-line px-4 py-3 text-center text-sm font-medium">Tekeningen</a>
-                    @endif
                     @forelse ($job['tickets'] as $ticket)
                         <a href="{{ route('work-tickets.show', $ticket) }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">{{ $ticket->kind->label() }} {{ $ticket->number }}</a>
                     @empty
@@ -140,6 +137,13 @@
                             <a href="{{ $job['opdrachtbon_url'] }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">Opdrachtbon</a>
                         @endif
                     @endforelse
+                    @if ($job['project_url'] ?? null)
+                        @if ($job['drawing_url'] ?? null)
+                            <a href="{{ $job['drawing_url'] }}" class="border border-nicon-line px-4 py-3 text-center text-sm font-medium">Tekening</a>
+                        @else
+                            <span class="border border-nicon-line px-4 py-3 text-center text-sm font-medium text-nicon-muted" aria-disabled="true" title="Geen tekening beschikbaar">Geen tekening</span>
+                        @endif
+                    @endif
                     @if (! empty($job['hourly_label']))
                         <p class="text-sm text-nicon-muted">{{ $job['hourly_label'] }}</p>
                     @endif

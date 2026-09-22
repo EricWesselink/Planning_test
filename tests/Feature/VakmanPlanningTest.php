@@ -190,11 +190,11 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('href="'.route('work-tickets.show', $ticket).'" class="vakman-week-job-bon"', false);
     }
 
-    public function test_tekeningen_button_opens_the_project_board_when_a_plattegrond_exists(): void
+    public function test_tekening_button_opens_the_pdf_page_when_a_plattegrond_exists(): void
     {
         $this->travelTo('2026-09-10 08:00:00');
         [$nick, $own] = $this->seedProjects();
-        ProjectDocument::query()->create([
+        $drawing = ProjectDocument::query()->create([
             'project_id' => $own->id,
             'document_type' => 'plattegrond',
             'original_filename' => 'Plattegrond_BG.pdf',
@@ -204,17 +204,24 @@ class VakmanPlanningTest extends TestCase
             'parse_status' => 'done',
         ]);
         $user = User::factory()->vakman($nick->id)->create();
+        $drawingUrl = route('vakman.drawings.show', [
+            'project' => $own,
+            'document' => $drawing,
+            'day' => '2026-09-10',
+        ]);
 
         $this->actingAs($user)
             ->get(route('vakman.planning'))
             ->assertOk()
-            ->assertSee('Tekeningen')
-            ->assertSee('href="'.route('projects.show', $own).'"', false);
+            ->assertSee('href="'.$drawingUrl.'"', false)
+            ->assertSee('>Tekening</a>', false)
+            ->assertDontSee('href="'.route('projects.show', $own).'"', false);
 
         $this->actingAs($user)
             ->get(route('vakman.planning.day', '2026-09-10'))
             ->assertOk()
-            ->assertSee('Tekeningen')
+            ->assertSee('Tekening')
+            ->assertSee('href="'.$drawingUrl.'"', false)
             ->assertSee('href="'.route('projects.show', $own).'"', false);
     }
 
@@ -543,21 +550,28 @@ class VakmanPlanningTest extends TestCase
         ]);
         $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
 
+        $drawingUrl = route('vakman.drawings.show', [
+            'project' => $own,
+            'document' => $drawing,
+            'day' => '2026-09-10',
+        ]);
+
         $this->actingAs($user)
             ->get(route('vakman.planning.day', '2026-09-10'))
             ->assertOk()
             ->assertSee('Tekeningen')
-            ->assertSee('fase 1 verdieping 1 (4/5).pdf')
+            ->assertSee('fase 1 verdieping 1 (4/5)')
+            ->assertSee('href="'.$drawingUrl.'"', false)
             ->assertSee('href="'.route('projects.show', $own).'"', false)
-            ->assertSee('href="'.route('projects.documents.show', [$own, $drawing]).'"', false)
+            ->assertDontSee('href="'.route('projects.documents.show', [$own, $drawing]).'"', false)
             ->assertDontSee('€');
 
         $this->actingAs($user)
             ->get(route('vakman.planning.opdrachtbon', ['date' => '2026-09-10', 'project' => $own]))
             ->assertOk()
-            ->assertSee('Tekeningen')
+            ->assertSee('Tekening')
             ->assertSee('fase 1 verdieping 1 (4/5).pdf')
-            ->assertSee('href="'.route('projects.show', $own).'"', false)
+            ->assertSee('href="'.$drawingUrl.'"', false)
             ->assertSee('href="'.route('projects.documents.show', [$own, $drawing]).'"', false);
     }
 
@@ -902,6 +916,60 @@ class VakmanPlanningTest extends TestCase
             ->assertDontSee('Team 1')
             ->assertDontSee('Eigen medewerker')
             ->assertDontSee('Opdrachtnemer');
+    }
+
+    public function test_week_card_places_the_hours_form_under_route(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        [$nick] = $this->seedProjects();
+        $user = User::factory()->vakman($nick->id)->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('vakman.planning'))
+            ->assertOk()
+            ->assertSee('Bekijk werk')
+            ->assertSee('Uren indienen')
+            ->getContent();
+
+        $route = strpos($html, 'vakman-job-route');
+        $drawing = strpos($html, 'Geen tekening');
+        $hours = strpos($html, 'vakman-hours-block');
+        $this->assertNotFalse($route);
+        $this->assertNotFalse($drawing);
+        $this->assertNotFalse($hours);
+        $this->assertLessThan($drawing, $route);
+        $this->assertLessThan($hours, $drawing);
+        $this->assertStringContainsString('name="start_time"', $html);
+    }
+
+    public function test_mobile_hours_form_uses_the_full_card_width(): void
+    {
+        $css = file_get_contents(resource_path('css/app.css'));
+        $this->assertIsString($css);
+
+        $mobileStart = strpos($css, '@media (max-width: 899px)');
+        $mobileEnd = strpos($css, '.vakman-month {');
+        $this->assertNotFalse($mobileStart);
+        $this->assertNotFalse($mobileEnd);
+        $mobile = substr($css, $mobileStart, $mobileEnd - $mobileStart);
+
+        $this->assertStringNotContainsString('.vakman-job-card-actions > .vakman-job-route', $mobile);
+        $this->assertStringContainsString('.vakman-job-card-actions > .vakman-hours-block', $mobile);
+        $this->assertStringContainsString('grid-column: 1 / -1', $mobile);
+        $this->assertStringContainsString('min-width: 0', $mobile);
+        $this->assertStringContainsString('width: 100%', $mobile);
+        $this->assertStringContainsString('overflow-x: hidden', $mobile);
+
+        $narrowStart = strpos($css, '@media (max-width: 360px)');
+        $this->assertNotFalse($narrowStart);
+        $this->assertGreaterThan($mobileStart, $narrowStart);
+        $narrow = substr($css, $narrowStart, 280);
+        $this->assertStringContainsString('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);', $narrow);
+        $this->assertStringContainsString('.vakman-hours-times > .vakman-hours-field:nth-child(3)', $narrow);
+
+        $desktopTimes = strpos($css, 'grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 5.5rem);');
+        $this->assertNotFalse($desktopTimes);
+        $this->assertLessThan($mobileStart, $desktopTimes);
     }
 
     /**

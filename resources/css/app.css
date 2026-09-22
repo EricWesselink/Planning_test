@@ -5400,6 +5400,8 @@ button.plan-labor-toggle:hover {
     display: grid;
     gap: 0.5rem;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .vakman-hours-status {
@@ -5429,15 +5431,119 @@ button.plan-labor-toggle:hover {
     color: var(--color-nicon-muted);
 }
 
+.vakman-hours-block {
+    flex: 1 0 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    border-top: 1px solid var(--color-nicon-line);
+    padding-top: 0.75rem;
+}
+
+.vakman-drawing {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--color-nicon-paper);
+}
+
+.vakman-drawing-bar {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.75rem 0.85rem;
+    background: white;
+    border-bottom: 1px solid var(--color-nicon-line);
+}
+
+.vakman-drawing-back {
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--color-nicon-orange);
+    text-decoration: none;
+}
+
+.vakman-drawing-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.vakman-drawing-name {
+    font-size: 0.875rem;
+    color: var(--color-nicon-steel);
+}
+
+.vakman-drawing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.vakman-drawing-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    color: inherit;
+    font-size: 0.875rem;
+    font-weight: 650;
+    text-decoration: none;
+}
+
+.vakman-drawing-action.is-save {
+    background: var(--color-nicon-ink);
+    border-color: var(--color-nicon-ink);
+    color: white;
+}
+
+.vakman-drawing-list {
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--color-nicon-orange);
+    text-decoration: none;
+}
+
+.vakman-drawing-pages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 0.5rem;
+    -webkit-overflow-scrolling: touch;
+}
+
+.vakman-drawing-pages canvas {
+    display: block;
+    max-width: none;
+    margin: 0 auto 0.5rem;
+    background: white;
+    box-shadow: 0 1px 4px rgba(28, 25, 23, 0.12);
+}
+
+.vakman-drawing-status {
+    padding: 1rem;
+    color: var(--color-nicon-muted);
+}
+
 .vakman-hours-form {
     display: grid;
     gap: 0.4rem;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .vakman-hours-times {
     display: grid;
-    grid-template-columns: 1fr 1fr 5.5rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 5.5rem);
     gap: 0.4rem;
+    width: 100%;
+    min-width: 0;
 }
 
 .vakman-hours-total {
@@ -5448,10 +5554,16 @@ button.plan-labor-toggle:hover {
 .vakman-hours-field {
     display: grid;
     gap: 0.15rem;
+    min-width: 0;
+    max-width: 100%;
     font-size: 0.75rem;
 }
 
 .vakman-hours-field input {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     border: 1px solid var(--color-nicon-line);
     padding: 0.4rem 0.55rem;
     background: white;
@@ -5482,6 +5594,11 @@ button.plan-labor-toggle:hover {
     border: 1px solid var(--color-nicon-line);
     background: white;
     color: inherit;
+}
+
+.vakman-job-btn.is-disabled {
+    opacity: 0.55;
+    pointer-events: none;
 }
 
 .vakman-week--zzp {
@@ -5879,6 +5996,38 @@ button.plan-labor-toggle:hover {
     }
 
     .vakman-job-card-actions .vakman-job-btn:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+
+    .vakman-job-card-actions > .vakman-hours-block {
+        grid-column: 1 / -1;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .vakman-hours,
+    .vakman-hours-form,
+    .vakman-hours-times,
+    .vakman-hours-field,
+    .vakman-hours-field input {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .vakman-hours-field input[type="time"]::-webkit-datetime-edit,
+    .vakman-hours-field input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+        min-width: 0;
+        padding: 0;
+    }
+}
+
+@media (max-width: 360px) {
+    .vakman-hours-times {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .vakman-hours-times > .vakman-hours-field:nth-child(3) {
         grid-column: 1 / -1;
     }
 }

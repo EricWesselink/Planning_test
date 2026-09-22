@@ -54,6 +54,7 @@
                     $links = $user?->isVakman()
                         ? [
                             ['href' => route('vakman.planning'), 'label' => 'Mijn planning', 'active' => request()->routeIs('vakman.planning*') || (request()->routeIs('work-tickets.*') && $user?->isVakman()), 'home' => true],
+                            ['href' => route('vakman.hours.index'), 'label' => 'Mijn uren', 'active' => request()->routeIs('vakman.hours.index')],
                             ['href' => route('vakman.password.edit'), 'label' => 'Wachtwoord wijzigen', 'short' => 'Wachtwoord', 'active' => request()->routeIs('vakman.password.*')],
                         ]
                         : $officeLinks;

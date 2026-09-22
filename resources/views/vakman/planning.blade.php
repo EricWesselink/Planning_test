@@ -11,7 +11,9 @@
         $monthQuery = ['view' => 'month', 'month' => $agenda['monthStart']->format('Y-m')];
         $monthWeeks = $view === 'month' ? $agenda['days']->chunk(7) : collect();
         $weekEnd = $agenda['weekStart']->copy()->addDays(5);
-        $selectedDay = $agenda['days']->firstWhere('is_today')
+        $requestedDay = request()->query('day');
+        $selectedDay = (is_string($requestedDay) ? $agenda['days']->firstWhere('key', $requestedDay) : null)
+            ?? $agenda['days']->firstWhere('is_today')
             ?? $agenda['days']->first(fn (array $day): bool => $day['jobs'] !== [])
             ?? $agenda['days']->first();
         $selectedDayKey = is_array($selectedDay) ? ($selectedDay['key'] ?? '') : '';

@@ -47,6 +47,14 @@ class ProjectDocument extends Model
     public function isPdf(): bool
     {
         return $this->mime_type === 'application/pdf'
-            || str_ends_with(strtolower($this->original_filename), '.pdf');
+            || str_ends_with(strtolower((string) $this->original_filename), '.pdf');
+    }
+
+    public function drawingLabel(): string
+    {
+        $name = trim((string) $this->original_filename);
+        $stripped = preg_replace('/\.pdf$/i', '', $name);
+
+        return is_string($stripped) && $stripped !== '' ? $stripped : 'Tekening';
     }
 }

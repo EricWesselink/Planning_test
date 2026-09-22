@@ -72,7 +72,7 @@
                             <ul class="mt-1 space-y-1">
                                 @foreach ($job['drawings'] as $drawing)
                                     <li>
-                                        <a href="{{ route('projects.documents.show', [$project, $drawing]) }}" class="text-nicon-orange">{{ $drawing->original_filename ?: 'Tekening' }}</a>
+                                        <a href="{{ $drawing->isPdf() ? route('vakman.drawings.show', ['project' => $project, 'document' => $drawing, 'day' => $job['date']]) : route('projects.documents.show', [$project, $drawing]) }}" class="text-nicon-orange">{{ $drawing->drawingLabel() }}</a>
                                     </li>
                                 @endforeach
                             </ul>
@@ -82,9 +82,6 @@
                 <div class="flex flex-col gap-2 border-t border-nicon-line p-4">
                     @if ($job['project_url'] ?? null)
                         <a href="{{ $job['project_url'] }}" class="bg-nicon-ink px-4 py-3 text-center text-sm font-medium text-white">Bekijk werk</a>
-                    @endif
-                    @if ($job['drawing_url'] ?? null)
-                        <a href="{{ $job['drawing_url'] }}" class="border border-nicon-line px-4 py-3 text-center text-sm font-medium">Tekeningen</a>
                     @endif
                     @forelse ($job['tickets'] as $ticket)
                         @if ($job['is_work_ticket_holder'])
@@ -100,6 +97,13 @@
                     @endforelse
                     @if ($job['maps_url'])
                         <a href="{{ $job['maps_url'] }}" class="border border-nicon-line px-4 py-3 text-center text-sm font-medium" target="_blank" rel="noopener noreferrer">Route</a>
+                    @endif
+                    @if ($job['project_url'] ?? null)
+                        @if ($job['drawing_url'] ?? null)
+                            <a href="{{ $job['drawing_url'] }}" class="border border-nicon-line px-4 py-3 text-center text-sm font-medium">Tekening</a>
+                        @else
+                            <span class="border border-nicon-line px-4 py-3 text-center text-sm font-medium text-nicon-muted" aria-disabled="true" title="Geen tekening beschikbaar">Geen tekening</span>
+                        @endif
                     @endif
                     @if (! empty($job['can_register_hours']))
                         @foreach ($job['hour_slots'] ?? [] as $slot)

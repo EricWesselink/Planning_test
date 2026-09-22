@@ -90,20 +90,24 @@
             @if ($job['project_url'] ?? null)
                 <a href="{{ $job['url'] }}" class="vakman-job-btn vakman-job-btn-ink">Bekijk werk</a>
             @endif
-            @if ($job['drawing_url'] ?? null)
-                <a href="{{ $job['drawing_url'] }}" class="vakman-job-btn vakman-job-btn-ghost">Tekeningen</a>
-            @endif
             @if ($job['werkbon_url'] ?? null)
                 <a href="{{ $job['werkbon_url'] }}" class="vakman-job-btn vakman-job-btn-orange">Open werkbon</a>
             @elseif ($job['opdrachtbon_url'] ?? null)
                 <a href="{{ $job['opdrachtbon_url'] }}" class="vakman-job-btn vakman-job-btn-orange">Opdrachtbon</a>
             @endif
             @if ($job['maps_url'] ?? null)
-                <a href="{{ $job['maps_url'] }}" class="vakman-job-btn vakman-job-btn-ghost" target="_blank" rel="noopener noreferrer">Route</a>
+                <a href="{{ $job['maps_url'] }}" class="vakman-job-btn vakman-job-btn-ghost vakman-job-route" target="_blank" rel="noopener noreferrer">Route</a>
+            @endif
+            @if ($job['project_url'] ?? null)
+                @if ($job['drawing_url'] ?? null)
+                    <a href="{{ $job['drawing_url'] }}" class="vakman-job-btn vakman-job-btn-ghost">Tekening</a>
+                @else
+                    <span class="vakman-job-btn vakman-job-btn-ghost is-disabled" aria-disabled="true" title="Geen tekening beschikbaar">Geen tekening</span>
+                @endif
             @endif
             @if (! empty($job['can_register_hours']))
                 @foreach ($job['hour_slots'] ?? [] as $slot)
-                    <div class="w-full border-t border-nicon-line pt-3">
+                    <div class="vakman-hours-block">
                         @if (count($job['hour_slots']) > 1)
                             <p class="mb-2 text-xs text-nicon-muted">{{ $slot['work_title'] }} · gepland {{ \App\Support\PlanningHours::hoursLabel($slot['planned_hours']) }}</p>
                         @endif

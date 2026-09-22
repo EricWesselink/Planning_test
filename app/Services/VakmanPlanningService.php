@@ -262,7 +262,7 @@ class VakmanPlanningService
                 'is_work_ticket_holder' => ! $isExternal && $assignment->isWorkTicketResponsible($user),
                 'url' => route('vakman.planning.day', $date->toDateString()),
                 'project_url' => route('projects.show', $project),
-                'drawing_url' => $this->drawingUrl($project),
+                'drawing_url' => $this->drawingUrl($project, $date),
                 'tickets' => $tickets,
                 'werkbon_url' => $this->werkbonUrl($user, $assignment, $tickets, $date, $isExternal),
                 'opdrachtbon_url' => $isExternal
@@ -583,13 +583,47 @@ class VakmanPlanningService
         return PlanningHours::intervalsOverlap($left[0], $left[1], $right[0], $right[1]);
     }
 
-    private function drawingUrl(Project $project): ?string
+    /**
+     * @return Collection<int, ProjectDocument>
+     */
+    public function pdfDrawings(Project $project): Collection
     {
-        if ($project->isWinkel() || $project->plattegrond() === null) {
+        $project->loadMissing('documents');
+        $drawings = $project->documents
+            ->filter(fn (ProjectDocument $document): bool => $document->document_type === 'plattegrond' && $document->isPdf())
+            ->sortBy('id')
+            ->values();
+
+        if ($drawings->isNotEmpty() || ! $project->isSmallWork()) {
+            return $drawings;
+        }
+
+        return $project->documents
+            ->filter(fn (ProjectDocument $document): bool => $document->document_type === 'bijlage' && $document->isPdf())
+            ->sortBy('id')
+            ->values();
+    }
+
+    private function drawingUrl(Project $project, CarbonInterface $date): ?string
+    {
+        $drawings = $this->pdfDrawings($project);
+        if ($drawings->isEmpty()) {
             return null;
         }
 
-        return route('projects.show', $project);
+        $query = ['day' => $date->toDateString()];
+        if ($drawings->count() === 1) {
+            return route('vakman.drawings.show', [
+                'project' => $project,
+                'document' => $drawings->first(),
+                ...$query,
+            ]);
+        }
+
+        return route('vakman.drawings.index', [
+            'project' => $project,
+            ...$query,
+        ]);
     }
 
     /**
