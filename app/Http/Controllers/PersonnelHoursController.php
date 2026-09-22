@@ -7,6 +7,7 @@ use App\Models\CrewMember;
 use App\Models\TimeEntry;
 use App\Models\Worker;
 use App\Services\TimeEntryService;
+use App\Support\PlanningHours;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,19 +39,46 @@ class PersonnelHoursController extends Controller
     public function update(Request $request, TimeEntry $timeEntry, TimeEntryService $hours): RedirectResponse
     {
         Gate::authorize('approve', $timeEntry);
-        $data = $request->validate([
-            'approved_hours' => ['required', 'numeric', 'min:0', 'max:24'],
-            'review_note' => ['nullable', 'string', 'max:2000'],
-        ], [
-            'approved_hours.required' => 'Vul de goedgekeurde uren in.',
-            'approved_hours.min' => 'Uren moeten minimaal 0 zijn.',
-        ]);
-        $entry = $hours->approveAdjusted(
-            $timeEntry,
-            $request->user(),
-            (float) $data['approved_hours'],
-            $data['review_note'] ?? null,
-        );
+        if ($request->exists('approved_start_time') || $request->exists('approved_end_time')) {
+            $data = $request->validate([
+                'approved_start_time' => ['required', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+                'approved_end_time' => ['required', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+                'approved_break_minutes' => ['required', 'integer', 'min:0', 'max:1440'],
+                'review_note' => ['nullable', 'string', 'max:2000'],
+            ], [
+                'approved_start_time.required' => 'Vul een begintijd in.',
+                'approved_end_time.required' => 'Vul een eindtijd in.',
+                'approved_break_minutes.required' => 'Vul de pauze in minuten in.',
+            ]);
+            $start = PlanningHours::normalizeTime($data['approved_start_time']);
+            $end = PlanningHours::normalizeTime($data['approved_end_time']);
+            $breakMinutes = (int) $data['approved_break_minutes'];
+            $entry = $hours->approveAdjusted(
+                $timeEntry,
+                $request->user(),
+                $hours->clockNet($start, $end, $breakMinutes, true, 'approved_end_time', 'approved_break_minutes'),
+                $data['review_note'] ?? null,
+                [
+                    'start_time' => $start,
+                    'end_time' => $end,
+                    'break_minutes' => $breakMinutes,
+                ],
+            );
+        } else {
+            $data = $request->validate([
+                'approved_hours' => ['required', 'numeric', 'min:0', 'max:24'],
+                'review_note' => ['nullable', 'string', 'max:2000'],
+            ], [
+                'approved_hours.required' => 'Vul de goedgekeurde uren in.',
+                'approved_hours.min' => 'Uren moeten minimaal 0 zijn.',
+            ]);
+            $entry = $hours->approveAdjusted(
+                $timeEntry,
+                $request->user(),
+                (float) $data['approved_hours'],
+                $data['review_note'] ?? null,
+            );
+        }
 
         return back()->with('status', $entry->isAdjusted()
             ? $entry->approvedHoursLabel().' aangepast en goedgekeurd.'

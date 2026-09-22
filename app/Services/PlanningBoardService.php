@@ -29,6 +29,16 @@ class PlanningBoardService
 {
     public const WEEK_OPTIONS = [1, 2, 3, 4, 6, 8];
 
+    /** @var array<int, string> */
+    public const DAY_OPTIONS = [
+        1 => 'Maandag',
+        2 => 'Dinsdag',
+        3 => 'Woensdag',
+        4 => 'Donderdag',
+        5 => 'Vrijdag',
+        6 => 'Zaterdag',
+    ];
+
     public function __construct(
         private ConflictService $conflicts,
         private PlanningAvailabilityService $availability,
@@ -81,10 +91,20 @@ class PlanningBoardService
         );
         [$weekStart, $weeks, $printPeriod] = $this->periodWindow($request, $requestedStart);
         $days = $this->weekDays($weekStart, $weeks);
+        $dayOfWeek = $this->dayOfWeekFilter($request);
+        if ($dayOfWeek !== null) {
+            $filteredDays = $days
+                ->filter(fn (Carbon $day): bool => $day->dayOfWeekIso === $dayOfWeek)
+                ->values();
+            if ($filteredDays->isNotEmpty()) {
+                $days = $filteredDays;
+            } else {
+                $dayOfWeek = null;
+            }
+        }
         $weekBands = $this->weekBands($days, $weeks);
         $kindFilter = $this->kindFilter($request);
         $staffingFilter = $this->staffingFilter($request);
-        $todoRunning = $this->todoRunningFilter($request);
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         [$filterWorkerId, $filterCrewMemberId, $whoValue] = $this->whoFilter($request);
         $workerId = $scheduledWorkerId ?? $filterWorkerId;
@@ -115,10 +135,8 @@ class PlanningBoardService
             ->with($relations)
             ->when($kindFilter !== null, fn ($q) => $this->constrainKind($q, $kindFilter))
             ->when($request->filled('project_id'), fn ($q) => $q->where('id', $request->integer('project_id')))
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
-            ->when($staffingFilter === 'planned', fn ($q) => $this->constrainAssignedInWindow($q, $windowStart, $windowEnd))
-            ->when($todoRunning, fn ($q) => $this->constrainTodoRunning($q, $windowStart, $windowEnd));
+            ->when($staffingFilter === 'planned', fn ($q) => $this->constrainAssignedInWindow($q, $windowStart, $windowEnd));
 
         $projects = $projectQuery
             ->orderBy('planned_start_date')
@@ -137,8 +155,8 @@ class PlanningBoardService
                 $q->active()->accessibleBy($request->user());
                 $this->constrainKind($q, $kindFilter);
             })
-            ->where('end_date', '>=', $windowStart->toDateString())
-            ->where('start_date', '<=', $windowEnd->toDateString())
+            ->whereDate('end_date', '>=', $windowStart->toDateString())
+            ->whereDate('start_date', '<=', $windowEnd->toDateString())
             ->when($workerId, fn ($q) => $q->where('worker_id', $workerId))
             ->when($crewMemberId, fn ($q) => $this->constrainCrewMember($q, $crewMemberId))
             ->when(
@@ -152,8 +170,8 @@ class PlanningBoardService
         $internalAssignments = WorkerAssignment::query()
             ->with(['worker', 'team', 'crewMembers'])
             ->where('kind', AssignmentKind::Internal)
-            ->where('end_date', '>=', $windowStart->toDateString())
-            ->where('start_date', '<=', $windowEnd->toDateString())
+            ->whereDate('end_date', '>=', $windowStart->toDateString())
+            ->whereDate('start_date', '<=', $windowEnd->toDateString())
             ->when($workerId, fn ($q) => $q->where('worker_id', $workerId))
             ->when($crewMemberId, fn ($q) => $this->constrainCrewMember($q, $crewMemberId))
             ->get();
@@ -385,11 +403,6 @@ class PlanningBoardService
 
         $internalRows = $this->internalRows($internalAssignments, $days, $doubleBooked);
 
-        $todoRunningCount = $this->todoRunningRowCount($rows);
-        if ($todoRunning) {
-            $rows = $this->filterTodoRunningRows($rows);
-        }
-
         $doubleFilter = $this->doubleBookingPresentation($request, $doubleBooked, $occupancy);
         if ($doubleFilter['active']) {
             $rows = $this->filterRowsToAssignments($rows, $doubleFilter['assignment_ids']);
@@ -417,10 +430,9 @@ class PlanningBoardService
             'thisWeek' => now()->startOfWeek(Carbon::MONDAY)->startOfDay()->toDateString(),
             'days' => $days,
             'dayCount' => $days->count(),
-            'dayMin' => $weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56)),
+            'dayMin' => $days->count() === 1 ? 0 : ($weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56))),
             'rows' => $rows,
-            'projects' => $this->filterProjects($request, $kindFilter, $staffingFilter, $todoRunning, $scheduledWorkerId, $windowStart, $windowEnd),
-            'todoRunningCount' => $todoRunningCount,
+            'projects' => $this->filterProjects($request, $kindFilter, $staffingFilter, $scheduledWorkerId, $windowStart, $windowEnd),
             'warnings' => $warnings,
             'doubleFilter' => [
                 'active' => $doubleFilter['active'],
@@ -437,9 +449,8 @@ class PlanningBoardService
                 'project_id' => $request->input('project_id'),
                 'who' => $scheduledWorkerId ? '' : $whoValue,
                 'worker_id' => $scheduledWorkerId ?? ($whoValue !== '' ? null : $filterWorkerId),
-                'status' => $request->input('status'),
                 'staffing' => $scheduledWorkerId === null ? ($staffingFilter ?? '') : '',
-                'todo_running' => $todoRunning ? '1' : '',
+                'day' => $dayOfWeek === null ? '' : (string) $dayOfWeek,
                 'hours_view' => $hoursView,
                 'doubles' => $doubleFilter['active'] ? '1' : '',
                 'double_crew' => $doubleFilter['crew_id'] ?? '',
@@ -589,7 +600,6 @@ class PlanningBoardService
         Request $request,
         ProjectKind|string|null $kindFilter,
         ?string $staffingFilter,
-        bool $todoRunning,
         ?int $scheduledWorkerId,
         Carbon $windowStart,
         Carbon $windowEnd,
@@ -601,7 +611,6 @@ class PlanningBoardService
             ->when($kindFilter !== null, fn (Builder $query) => $this->constrainKind($query, $kindFilter))
             ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn (Builder $query) => $query->whereDoesntHave('assignments'))
             ->when($staffingFilter === 'planned', fn (Builder $query) => $this->constrainAssignedInWindow($query, $windowStart, $windowEnd))
-            ->when($todoRunning, fn (Builder $query) => $this->constrainTodoRunning($query, $windowStart, $windowEnd))
             ->orderBy('project_number')
             ->get();
     }
@@ -610,8 +619,8 @@ class PlanningBoardService
     {
         return $query->whereHas('assignments', function (Builder $assignments) use ($windowStart, $windowEnd): void {
             $assignments
-                ->where('end_date', '>=', $windowStart->toDateString())
-                ->where('start_date', '<=', $windowEnd->toDateString());
+                ->whereDate('end_date', '>=', $windowStart->toDateString())
+                ->whereDate('start_date', '<=', $windowEnd->toDateString());
         });
     }
 
@@ -654,60 +663,11 @@ class PlanningBoardService
         return in_array($value, ['open', 'planned'], true) ? $value : null;
     }
 
-    private function todoRunningFilter(Request $request): bool
+    private function dayOfWeekFilter(Request $request): ?int
     {
-        return $request->boolean('todo_running');
-    }
+        $value = (int) $request->input('day');
 
-    private function constrainTodoRunning(Builder $query, Carbon $windowStart, Carbon $windowEnd): Builder
-    {
-        return $query
-            ->whereNotIn('status', [ProjectStatus::Gereed, ProjectStatus::Opgeleverd])
-            ->where(function (Builder $outer) use ($windowStart, $windowEnd): void {
-                $outer->where(function (Builder $project) use ($windowStart, $windowEnd): void {
-                    $this->constrainPeriodOverlap($project, 'planned_start_date', 'planned_end_date', $windowStart, $windowEnd);
-                })->orWhereHas('workItems', function (Builder $items) use ($windowStart, $windowEnd): void {
-                    $this->constrainPeriodOverlap($items, 'planned_start_date', 'planned_end_date', $windowStart, $windowEnd);
-                })->orWhereHas('assignments', function (Builder $assignments) use ($windowStart, $windowEnd): void {
-                    $assignments
-                        ->where('end_date', '>=', $windowStart->toDateString())
-                        ->where('start_date', '<=', $windowEnd->toDateString());
-                });
-            });
-    }
-
-    private function constrainPeriodOverlap(
-        Builder $query,
-        string $startColumn,
-        string $endColumn,
-        Carbon $windowStart,
-        Carbon $windowEnd,
-    ): void {
-        $query->where($startColumn, '<=', $windowEnd->toDateString())
-            ->where(function (Builder $end) use ($endColumn, $windowStart): void {
-                $end->whereNull($endColumn)
-                    ->orWhere($endColumn, '>=', $windowStart->toDateString());
-            });
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $rows
-     */
-    private function todoRunningRowCount(array $rows): int
-    {
-        return count($this->filterTodoRunningRows($rows));
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $rows
-     * @return list<array<string, mixed>>
-     */
-    private function filterTodoRunningRows(array $rows): array
-    {
-        return array_values(array_filter(
-            $rows,
-            fn (array $row): bool => $this->rowIsTodoRunning($row),
-        ));
+        return array_key_exists($value, self::DAY_OPTIONS) ? $value : null;
     }
 
     /**
@@ -937,22 +897,6 @@ class PlanningBoardService
         }
 
         return $bars;
-    }
-
-    /**
-     * @param  array<string, mixed>  $row
-     */
-    private function rowIsTodoRunning(array $row): bool
-    {
-        if (($row['type'] ?? '') === 'section' || ! empty($row['done'])) {
-            return false;
-        }
-
-        if ((int) ($row['sort_bucket'] ?? 3) === 0) {
-            return true;
-        }
-
-        return ($row['bar'] ?? null) !== null || (int) ($row['bar_count'] ?? 0) > 0;
     }
 
     /**

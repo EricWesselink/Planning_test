@@ -19,7 +19,7 @@
                 @endforeach
             </ul>
         @endif
-        <form method="POST" action="{{ route('vakman.hours.store') }}" class="mt-4 space-y-3 border border-nicon-line bg-white p-4">
+        <form method="POST" action="{{ route('vakman.hours.store') }}" class="mt-4 space-y-3 border border-nicon-line bg-white p-4" data-hours-clock>
             @csrf
             <input type="hidden" name="date" value="{{ $date->toDateString() }}">
             <label class="grid gap-1 text-sm">
@@ -42,10 +42,27 @@
                     @endforeach
                 </select>
             </label>
-            <label class="grid gap-1 text-sm">
-                <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Gewerkte uren</span>
-                <input type="number" name="hours" min="0.25" max="24" step="0.25" required value="{{ old('hours', 8) }}" class="border border-nicon-line px-3 py-2">
-            </label>
+            @php
+                $plannedSlots = collect($detail['jobs'] ?? [])->sum(
+                    fn (array $job): int => empty($job['can_register_hours']) ? 0 : count($job['hour_slots'] ?? [])
+                );
+                $standardDay = $plannedSlots === 0;
+            @endphp
+            <div class="grid grid-cols-[1fr_1fr_6rem] gap-2">
+                <label class="grid gap-1 text-sm">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Van</span>
+                    <input type="time" name="start_time" required value="{{ old('start_time', $standardDay ? \App\Support\PlanningHours::REGISTERED_DAY_START : '') }}" class="border border-nicon-line px-3 py-2" data-clock-start>
+                </label>
+                <label class="grid gap-1 text-sm">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Tot</span>
+                    <input type="time" name="end_time" required value="{{ old('end_time', $standardDay ? \App\Support\PlanningHours::REGISTERED_DAY_END : '') }}" class="border border-nicon-line px-3 py-2" data-clock-end>
+                </label>
+                <label class="grid gap-1 text-sm">
+                    <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Pauze</span>
+                    <input type="number" name="break_minutes" min="0" max="1440" step="1" required value="{{ old('break_minutes', $standardDay ? \App\Support\PlanningHours::REGISTERED_BREAK_MINUTES : '') }}" class="border border-nicon-line px-3 py-2" inputmode="numeric" data-clock-break>
+                </label>
+            </div>
+            <p class="text-sm font-semibold" data-clock-total>Totaal</p>
             <label class="grid gap-1 text-sm">
                 <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Opmerking</span>
                 <input type="text" name="note" value="{{ old('note') }}" class="border border-nicon-line px-3 py-2">
@@ -54,3 +71,7 @@
         </form>
     </div>
 @endsection
+
+@push('scripts')
+    @vite(['resources/js/vakman-hours.js'])
+@endpush

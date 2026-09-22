@@ -13,12 +13,30 @@
         $excelYear = (int) $weekStart->isoWeekYear();
     @endphp
     <div class="planning-page">
+        <div class="planning-mobile-bar">
+            <a class="planning-mobile-btn" href="{{ route('planning', array_merge($query, ['week' => $prevWeek])) }}" title="Vorige week" aria-label="Vorige week">‹</a>
+            <span class="planning-mobile-week">Week {{ $weekStart->isoWeek() }}</span>
+            <a class="planning-mobile-btn" href="{{ route('planning', array_merge($query, ['week' => $nextWeek])) }}" title="Volgende week" aria-label="Volgende week">›</a>
+            <button type="button" class="planning-mobile-btn" id="planning-mobile-filters" aria-expanded="false" aria-controls="planning-filters">Filters</button>
+            @if ($canManagePlanning)
+                <button type="button" class="planning-mobile-btn" id="planning-mobile-availability" aria-expanded="false" aria-controls="planning-available">Beschikbaarheid</button>
+            @endif
+            <a class="planning-mobile-btn" href="{{ route('planning', array_merge($query, ['week' => $thisWeek])) }}" title="Ga naar vandaag">Vandaag</a>
+        </div>
         <div class="planning-controls">
             <div class="planning-controls-row">
                 <div class="planning-controls-title">
                     <div class="planning-eyebrow">Planbord</div>
                     <h1 class="planning-heading">Planning</h1>
-                    <p class="planning-week-label">{{ $weekRangeLabel }} · {{ $weekStart->translatedFormat('d M') }} – {{ $days->last()->translatedFormat('d M Y') }}</p>
+                    <p class="planning-week-label">
+                        @if (($filters['day'] ?? '') !== '' && $days->count() === 1)
+                            {{ $weekRangeLabel }} · {{ $days->first()->translatedFormat('l d M Y') }}
+                        @elseif (($filters['day'] ?? '') !== '')
+                            {{ $weekRangeLabel }} · {{ $days->first()->translatedFormat('l d M') }} – {{ $days->last()->translatedFormat('d M Y') }}
+                        @else
+                            {{ $weekRangeLabel }} · {{ $weekStart->translatedFormat('d M') }} – {{ $days->last()->translatedFormat('d M Y') }}
+                        @endif
+                    </p>
                     @php $hoursView = $hoursView ?? ($filters['hours_view'] ?? 'planned'); @endphp
                     <div class="mt-2 flex gap-1 text-xs">
                         <a href="{{ route('planning', array_merge($query, ['hours_view' => 'planned'])) }}" class="planning-filter{{ $hoursView === 'planned' ? ' is-active' : '' }}">Gepland</a>
@@ -100,7 +118,7 @@
                 </div>
             </div>
 
-            <form method="GET" class="planning-filters">
+            <form method="GET" id="planning-filters" class="planning-filters">
                 <input type="hidden" name="week" value="{{ $weekStart->toDateString() }}">
                 <input type="hidden" name="weeks" value="{{ $weeks }}">
                 <select name="kind" class="planning-filter" onchange="this.form.submit()" aria-label="Soort werk">
@@ -131,52 +149,18 @@
                             </optgroup>
                         @endif
                     </select>
-                @endif
-                <select name="status" class="planning-filter" onchange="this.form.submit()" aria-label="Status">
-                    <option value="">Status</option>
-                    <option value="in_uitvoering" @selected(($filters['status'] ?? '') === 'in_uitvoering')>Lopend</option>
-                    <option value="gepland" @selected(($filters['status'] ?? '') === 'gepland')>Nieuw</option>
-                </select>
-                @if ($canManagePlanning)
                     <select name="staffing" class="planning-filter" onchange="this.form.submit()" aria-label="Inplanning">
                         <option value="" @selected(($filters['staffing'] ?? '') === '')>Inplanning</option>
                         <option value="open" @selected(($filters['staffing'] ?? '') === 'open')>Nog niet ingepland</option>
                         <option value="planned" @selected(($filters['staffing'] ?? '') === 'planned')>Ingepland</option>
                     </select>
-                    @php
-                        $weekStaffedQuery = [
-                            'week' => $weekStart->toDateString(),
-                            'weeks' => $weeks,
-                            'staffing' => 'planned',
-                        ];
-                        if (($filters['todo_running'] ?? '') === '1') {
-                            $weekStaffedQuery['todo_running'] = '1';
-                        }
-                        $weekStaffedActive = ($filters['staffing'] ?? '') === 'planned'
-                            && empty($filters['who'])
-                            && empty($filters['worker_id'])
-                            && empty($filters['project_id'])
-                            && empty($filters['status'])
-                            && empty($filters['kind']);
-                        $todoRunningActive = ($filters['todo_running'] ?? '') === '1';
-                        $todoRunningQuery = $todoRunningActive
-                            ? array_diff_key($query, ['todo_running' => true])
-                            : array_merge($query, ['todo_running' => '1']);
-                    @endphp
-                    @if ($todoRunningActive)
-                        <input type="hidden" name="todo_running" value="1">
-                    @endif
-                    <a
-                        href="{{ route('planning', $weekStaffedQuery) }}"
-                        class="planning-filter planning-filter--staffed{{ $weekStaffedActive ? ' is-active' : '' }}"
-                        title="Alle werken waarop deze week een vakman staat"
-                    >Deze week met vakman</a>
-                    <a
-                        href="{{ route('planning', $todoRunningQuery) }}"
-                        class="planning-filter planning-filter--todo{{ $todoRunningActive ? ' is-active' : '' }}"
-                        title="Werken die deze week nog vakmensen nodig hebben of al lopen"
-                    >Te plannen + lopend ({{ $todoRunningCount }})</a>
                 @endif
+                <select name="day" class="planning-filter" onchange="this.form.submit()" aria-label="Dag">
+                    <option value="" @selected(($filters['day'] ?? '') === '')>Hele week</option>
+                    @foreach (\App\Services\PlanningBoardService::DAY_OPTIONS as $isoDay => $dayLabel)
+                        <option value="{{ $isoDay }}" @selected((string) ($filters['day'] ?? '') === (string) $isoDay)>{{ $dayLabel }}</option>
+                    @endforeach
+                </select>
                 <a href="{{ route('planning', ['week' => $weekStart->toDateString(), 'weeks' => $weeks]) }}" class="planning-filter planning-filter--reset">Reset</a>
             </form>
 
@@ -254,7 +238,7 @@
         </div>
 
         <div class="planning-scroll-area" id="plan-scroller" data-scroll-key="nicon.planning.scroll">
-            <div class="plan-board{{ $canViewLaborCosts ? ' plan-board--labor' : '' }}" id="plan-board"
+            <div class="plan-board{{ $canViewLaborCosts ? ' plan-board--labor' : '' }}{{ $dayCount === 1 ? ' plan-board--one-day' : '' }}" id="plan-board"
                  @if ($canViewLaborCosts) data-labor-fold-key="nicon.planning.laborFolded" @endif
                  data-shift-url="{{ route('planning.shift') }}"
                  data-move-url="{{ route('planning.assignments.move') }}"
@@ -292,7 +276,7 @@
                             $availabilityTeams = $teamManDays;
                             $availabilityDayLabels = collect($availabilityDays)->keyBy('date');
                         @endphp
-                        <div class="planning-available" data-plan-avail>
+                        <div class="planning-available" id="planning-available" data-plan-avail>
                             <div class="plan-line plan-line--avail plan-line--avail-head">
                                 <div class="plan-frozen plan-frozen--avail">
                                     <div class="plan-cell plan-cell--avail-title">

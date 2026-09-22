@@ -70,7 +70,12 @@ input[type="file"]::-webkit-file-upload-button {
     appearance: none;
     margin-right: 0.75rem;
     cursor: pointer;
-    border: 1px solid color-mix(in srgb, var(--color-nicon-orange) 45%, var(--color-nicon-line));
+    border: 1px solid
+        color-mix(
+            in srgb,
+            var(--color-nicon-orange) 45%,
+            var(--color-nicon-line)
+        );
     background: color-mix(in srgb, var(--color-nicon-orange) 16%, white);
     color: var(--color-nicon-orange-dark);
     padding: 0.35rem 0.85rem;
@@ -279,10 +284,7 @@ input[type="file"]::-webkit-file-upload-button:hover {
 
 @media (min-width: 1280px) {
     .planning-filters {
-        grid-template-columns:
-            minmax(8.5rem, 0.9fr) minmax(11rem, 1.3fr)
-            minmax(8rem, 0.95fr) minmax(7rem, 0.85fr) minmax(8.5rem, 0.95fr)
-            minmax(9.75rem, 1.1fr) minmax(11rem, 1.25fr) minmax(4.5rem, 0.5fr);
+        grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
     }
 }
 
@@ -291,25 +293,11 @@ input[type="file"]::-webkit-file-upload-button:hover {
     width: 100%;
 }
 
-.planning-filter--reset,
-.planning-filter--staffed,
-.planning-filter--todo {
+.planning-filter--reset {
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-}
-
-.planning-filter--staffed.is-active {
-    background: var(--color-nicon-ink);
-    border-color: var(--color-nicon-ink);
-    color: white;
-}
-
-.planning-filter--todo.is-active {
-    background: var(--color-nicon-orange);
-    border-color: var(--color-nicon-ink);
-    color: white;
 }
 
 .planning-warnings {
@@ -1408,6 +1396,22 @@ button.plan-labor-toggle:hover {
     font-size: 8px;
 }
 
+.plan-board--one-day .plan-days {
+    min-width: 0;
+}
+
+.plan-board--one-day .plan-day-times {
+    font-size: 12px;
+}
+
+.plan-board--one-day .person-bar {
+    font-size: 13px;
+}
+
+.plan-board--one-day .bar-label {
+    padding: 0 8px;
+}
+
 .person-stack {
     position: relative;
 }
@@ -1973,7 +1977,9 @@ button.plan-labor-toggle:hover {
     font-size: 9px;
 }
 
-#project-board .board-progress-toggle[aria-expanded="true"] .board-progress-caret::before {
+#project-board
+    .board-progress-toggle[aria-expanded="true"]
+    .board-progress-caret::before {
     content: "▼";
 }
 
@@ -3978,13 +3984,21 @@ button.plan-labor-toggle:hover {
 
 .work-group.is-picked:not(.is-done) .group-status,
 .group-status.text-nicon-ok {
-    border-color: color-mix(in srgb, var(--color-nicon-ok) 40%, var(--color-nicon-line));
+    border-color: color-mix(
+        in srgb,
+        var(--color-nicon-ok) 40%,
+        var(--color-nicon-line)
+    );
     background: #f7fee7;
     color: var(--color-nicon-ok);
 }
 
 .work-group.is-done .group-status {
-    border-color: color-mix(in srgb, var(--color-nicon-ok) 40%, var(--color-nicon-line));
+    border-color: color-mix(
+        in srgb,
+        var(--color-nicon-ok) 40%,
+        var(--color-nicon-line)
+    );
     background: #f7fee7;
     color: var(--color-nicon-ok);
 }
@@ -5420,6 +5434,17 @@ button.plan-labor-toggle:hover {
     gap: 0.4rem;
 }
 
+.vakman-hours-times {
+    display: grid;
+    grid-template-columns: 1fr 1fr 5.5rem;
+    gap: 0.4rem;
+}
+
+.vakman-hours-total {
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
 .vakman-hours-field {
     display: grid;
     gap: 0.15rem;
@@ -6493,23 +6518,47 @@ img.calc-print-canvas {
 @page {
     size: A3 landscape;
     margin: 0;
-    @top-left { content: ""; }
-    @top-center { content: ""; }
-    @top-right { content: ""; }
-    @bottom-left { content: ""; }
-    @bottom-center { content: ""; }
-    @bottom-right { content: ""; }
+    @top-left {
+        content: "";
+    }
+    @top-center {
+        content: "";
+    }
+    @top-right {
+        content: "";
+    }
+    @bottom-left {
+        content: "";
+    }
+    @bottom-center {
+        content: "";
+    }
+    @bottom-right {
+        content: "";
+    }
 }
 
 @page portrait-a3 {
     size: A3 portrait;
     margin: 0;
-    @top-left { content: ""; }
-    @top-center { content: ""; }
-    @top-right { content: ""; }
-    @bottom-left { content: ""; }
-    @bottom-center { content: ""; }
-    @bottom-right { content: ""; }
+    @top-left {
+        content: "";
+    }
+    @top-center {
+        content: "";
+    }
+    @top-right {
+        content: "";
+    }
+    @bottom-left {
+        content: "";
+    }
+    @bottom-center {
+        content: "";
+    }
+    @bottom-right {
+        content: "";
+    }
 }
 
 .calc-print-drawing-page.is-portrait {
@@ -6794,4 +6843,279 @@ img.calc-print-canvas {
     display: inline-block;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+}
+
+.planning-mobile-bar {
+    display: none;
+}
+
+@media (max-width: 768px), ((max-height: 520px) and (max-width: 1000px)) {
+    html:has(.planning-page),
+    body:has(.planning-page) {
+        max-width: 100%;
+        overflow-x: hidden;
+        overflow-y: hidden;
+    }
+
+    .nicon-shell:has(.planning-page) {
+        height: 100dvh;
+        max-height: 100dvh;
+        overflow: hidden;
+    }
+
+    .nicon-shell:has(.planning-page) .nicon-main,
+    .nicon-shell:has(.planning-page) .nicon-main > main,
+    .planning-page {
+        min-height: 0;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    .planning-mobile-bar {
+        display: flex;
+        flex: 0 0 auto;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        max-width: 100%;
+        padding: 0.35rem max(0.5rem, env(safe-area-inset-right)) 0.35rem
+            max(0.5rem, env(safe-area-inset-left));
+        background: var(--color-nicon-paper);
+        border-bottom: 1px solid var(--color-nicon-line);
+    }
+
+    .planning-mobile-week {
+        flex: 0 0 auto;
+        min-width: 4.5rem;
+        padding: 0 0.1rem;
+        text-align: center;
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .planning-mobile-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2.5rem;
+        min-width: 2.5rem;
+        padding: 0.35rem 0.55rem;
+        border: 1px solid var(--color-nicon-line);
+        background: white;
+        color: var(--color-nicon-ink);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.1;
+        text-decoration: none;
+    }
+
+    .planning-mobile-bar > a[aria-label="Vorige week"],
+    .planning-mobile-bar > a[aria-label="Volgende week"] {
+        padding-left: 0.7rem;
+        padding-right: 0.7rem;
+        font-size: 1.35rem;
+        line-height: 1;
+    }
+
+    .planning-page.is-filters-open #planning-mobile-filters,
+    .planning-page.is-availability-open #planning-mobile-availability {
+        background: var(--color-nicon-ink);
+        border-color: var(--color-nicon-ink);
+        color: white;
+    }
+
+    .planning-page:not(.is-filters-open) .planning-controls-row,
+    .planning-page:not(.is-filters-open) .planning-filters,
+    .planning-page:not(.is-filters-open) .planning-hint {
+        display: none;
+    }
+
+    .planning-page:not(.is-filters-open) .planning-controls {
+        padding: 0;
+        border-bottom: 0;
+    }
+
+    .planning-page:not(.is-filters-open)
+        .planning-controls:not(
+            :has(.planning-warnings, .planning-doubles-banner, .text-nicon-danger, .text-nicon-ok)
+        ) {
+        display: none;
+    }
+
+    .planning-page.is-filters-open .planning-controls {
+        max-height: min(42dvh, 22rem);
+        max-width: 100%;
+        overflow: auto;
+    }
+
+    .planning-page.is-filters-open .planning-controls-row,
+    .planning-page.is-filters-open .planning-toolbar,
+    .planning-page.is-filters-open .planning-filters {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .planning-filters {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .planning-filters .planning-filter {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .planning-page:not(.is-availability-open) .planning-available {
+        display: none;
+    }
+
+    .planning-scroll-area {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: auto;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x pan-y;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .plan-board,
+    .plan-board--labor,
+    .plan-board--labor.plan-board--labor-collapsed {
+        --planning-sidebar-width: 11rem;
+        --plan-day-min: 12rem !important;
+        --plan-labor-width: 0px;
+        --plan-col-fold-open: 0px;
+        --plan-col-fold-close: 0px;
+    }
+
+    .plan-table {
+        width: max(
+            100%,
+            calc(
+                var(--planning-sidebar-width) +
+                    (var(--plan-days, 5) * var(--plan-day-min, 12rem))
+            )
+        );
+    }
+
+    .plan-line {
+        grid-template-columns: var(--planning-sidebar-width) minmax(0, 1fr);
+    }
+
+    .plan-sticky-top {
+        position: static;
+    }
+
+    .plan-line--head.sticky-head {
+        position: sticky;
+        top: 0;
+        z-index: 900;
+    }
+
+    .plan-frozen,
+    .plan-board--labor .plan-frozen {
+        grid-template-columns: minmax(0, 1fr);
+        min-width: var(--planning-sidebar-width);
+        width: var(--planning-sidebar-width);
+        max-width: var(--planning-sidebar-width);
+    }
+
+    .plan-frozen > .plan-cell--num,
+    .plan-frozen > .plan-labor-block,
+    .plan-frozen > .plan-labor-toggle {
+        display: none;
+    }
+
+    .plan-cell--werk,
+    .plan-project-title {
+        font-size: 13px;
+    }
+
+    .person-bar,
+    .person-bar .bar-label {
+        font-size: 12px;
+    }
+
+    .person-bar {
+        touch-action: pan-x pan-y;
+    }
+
+    .plan-day-times {
+        font-size: 11px;
+    }
+
+    .plan-board.plan-board--one-day,
+    .plan-board--labor.plan-board--one-day {
+        --planning-sidebar-width: 8.25rem;
+        --plan-day-min: 0px !important;
+    }
+
+    .plan-board--one-day .plan-table {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .plan-board--one-day .plan-days {
+        min-width: 0;
+    }
+
+    .plan-board--one-day .plan-day-weekday {
+        font-size: 15px;
+        letter-spacing: 0.04em;
+    }
+
+    .plan-board--one-day .plan-day-date {
+        font-size: 13px;
+    }
+
+    .plan-board--one-day .plan-day-times {
+        font-size: 13px;
+    }
+
+    .plan-board--one-day .person-bar,
+    .plan-board--one-day .person-bar .bar-label {
+        font-size: 14px;
+    }
+}
+
+@media (max-height: 520px) and (max-width: 1000px) {
+    .nicon-shell:has(.planning-page) .nicon-topbar > div {
+        padding-top: 0.15rem;
+        padding-bottom: 0.15rem;
+    }
+
+    .planning-mobile-bar {
+        padding-top: 0.15rem;
+        padding-bottom: 0.15rem;
+    }
+
+    .planning-scroll-area {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+}
+
+@media print {
+    .planning-mobile-bar {
+        display: none !important;
+    }
+
+    .planning-page .planning-controls-row {
+        display: flex !important;
+    }
+
+    .planning-page .planning-filters {
+        display: grid !important;
+    }
+
+    .planning-page .planning-hint,
+    .planning-page .planning-available {
+        display: block !important;
+    }
 }

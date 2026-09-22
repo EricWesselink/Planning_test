@@ -23,6 +23,9 @@ class TimeEntryService
      * @param  array{
      *     date: string,
      *     hours: float|int|string,
+     *     start_time?: string|null,
+     *     end_time?: string|null,
+     *     break_minutes?: int|null,
      *     note?: string|null,
      *     worker_assignment_id?: int|null,
      *     project_id?: int|null,
@@ -39,7 +42,11 @@ class TimeEntryService
         $worker = $this->registrantWorker($user, $hourlyOpdracht);
         $crewMemberId = $this->resolvedCrewMemberId($user, $worker);
         $date = (string) $data['date'];
-        $hours = round((float) $data['hours'], 2);
+        $clock = $this->submittedClock($data);
+        $hours = $clock === null ? round((float) $data['hours'], 2) : $clock['hours'];
+        $startTime = $clock === null ? null : $clock['start_time'];
+        $endTime = $clock === null ? null : $clock['end_time'];
+        $breakMinutes = $clock === null ? null : $clock['break_minutes'];
         $note = $this->nullableNote($data['note'] ?? null);
         $workItemId = isset($data['work_item_id']) ? (int) $data['work_item_id'] : 0;
 
@@ -60,7 +67,7 @@ class TimeEntryService
         );
 
         return DB::transaction(function () use (
-            $user, $worker, $crewMemberId, $date, $hours, $note, $assignment, $isUnplanned,
+            $user, $worker, $crewMemberId, $date, $hours, $clock, $startTime, $endTime, $breakMinutes, $note, $assignment, $isUnplanned,
             $project, $workItem, $plannedHours, $identity,
         ): TimeEntry {
             $existing = TimeEntry::query()
@@ -97,6 +104,18 @@ class TimeEntryService
                 ]);
             }
 
+            if ($clock !== null) {
+                $this->assertNoTimeOverlap(
+                    (int) $worker->id,
+                    $crewMemberId,
+                    $date,
+                    $startTime,
+                    $endTime,
+                    $existing?->id,
+                    'start_time',
+                );
+            }
+
             $payload = [
                 'worker_id' => $worker->id,
                 'crew_member_id' => $crewMemberId,
@@ -108,6 +127,9 @@ class TimeEntryService
                 'planned_hours' => $plannedHours,
                 'hours' => $hours,
                 'approved_hours' => null,
+                'approved_start_time' => null,
+                'approved_end_time' => null,
+                'approved_break_minutes' => null,
                 'note' => $note,
                 'status' => TimeEntryStatus::Submitted,
                 'is_unplanned' => $isUnplanned,
@@ -118,6 +140,11 @@ class TimeEntryService
                 'reviewed_by' => null,
                 'review_note' => null,
             ];
+            if ($clock !== null) {
+                $payload['start_time'] = $startTime;
+                $payload['end_time'] = $endTime;
+                $payload['break_minutes'] = $breakMinutes;
+            }
 
             if ($existing === null) {
                 return TimeEntry::query()->create($payload);
@@ -130,17 +157,35 @@ class TimeEntryService
     }
 
     /**
-     * @param  array{hours: float|int|string, note?: string|null}  $data
+     * @param  array{hours: float|int|string, note?: string|null, start_time?: string, end_time?: string, break_minutes?: int}  $data
      */
     public function updateOpen(TimeEntry $entry, User $user, array $data): TimeEntry
     {
-        return DB::transaction(function () use ($entry, $user, $data): TimeEntry {
+        $clock = $this->submittedClock($data);
+        $hours = $clock === null ? round((float) $data['hours'], 2) : $clock['hours'];
+
+        return DB::transaction(function () use ($entry, $user, $data, $clock, $hours): TimeEntry {
             $locked = $this->lock($entry);
             $this->assertOpen($locked);
 
-            $locked->fill([
-                'hours' => round((float) $data['hours'], 2),
+            if ($clock !== null) {
+                $this->assertNoTimeOverlap(
+                    (int) $locked->worker_id,
+                    $locked->crew_member_id === null ? null : (int) $locked->crew_member_id,
+                    $locked->date->toDateString(),
+                    $clock['start_time'],
+                    $clock['end_time'],
+                    $locked->id,
+                    'start_time',
+                );
+            }
+
+            $fill = [
+                'hours' => $hours,
                 'approved_hours' => null,
+                'approved_start_time' => null,
+                'approved_end_time' => null,
+                'approved_break_minutes' => null,
                 'note' => array_key_exists('note', $data) ? $this->nullableNote($data['note'] ?? null) : $locked->note,
                 'status' => TimeEntryStatus::Submitted,
                 'submitted_at' => now(),
@@ -148,15 +193,24 @@ class TimeEntryService
                 'reviewed_at' => null,
                 'reviewed_by' => null,
                 'review_note' => null,
-            ])->save();
+            ];
+            if ($clock !== null) {
+                $fill['start_time'] = $clock['start_time'];
+                $fill['end_time'] = $clock['end_time'];
+                $fill['break_minutes'] = $clock['break_minutes'];
+            }
+            $locked->fill($fill)->save();
 
             return $locked->fresh() ?? $locked;
         });
     }
 
-    public function approveAdjusted(TimeEntry $entry, User $reviewer, float $approvedHours, ?string $reason = null): TimeEntry
+    /**
+     * @param  array{start_time: string, end_time: string, break_minutes: int}|null  $approvedClock
+     */
+    public function approveAdjusted(TimeEntry $entry, User $reviewer, float $approvedHours, ?string $reason = null, ?array $approvedClock = null): TimeEntry
     {
-        return DB::transaction(function () use ($entry, $reviewer, $approvedHours, $reason): TimeEntry {
+        return DB::transaction(function () use ($entry, $reviewer, $approvedHours, $reason, $approvedClock): TimeEntry {
             $locked = $this->lock($entry);
             if (! $locked->isSubmitted() && ! $locked->isApproved()) {
                 throw ValidationException::withMessages([
@@ -170,6 +224,21 @@ class TimeEntryService
                 throw ValidationException::withMessages([
                     'review_note' => 'Vul een reden in als je de uren aanpast.',
                 ]);
+            }
+
+            if ($approvedClock !== null) {
+                $this->assertNoTimeOverlap(
+                    (int) $locked->worker_id,
+                    $locked->crew_member_id === null ? null : (int) $locked->crew_member_id,
+                    $locked->date->toDateString(),
+                    $approvedClock['start_time'],
+                    $approvedClock['end_time'],
+                    $locked->id,
+                    'approved_start_time',
+                );
+                $locked->approved_start_time = $approvedClock['start_time'];
+                $locked->approved_end_time = $approvedClock['end_time'];
+                $locked->approved_break_minutes = $approvedClock['break_minutes'];
             }
 
             $locked->approved_hours = $approvedHours;
@@ -268,6 +337,12 @@ class TimeEntryService
     {
         if ($entry->approved_hours === null) {
             $entry->approved_hours = $entry->hours;
+        }
+
+        if ($entry->approved_start_time === null && $entry->start_time !== null) {
+            $entry->approved_start_time = $entry->start_time;
+            $entry->approved_end_time = $entry->end_time;
+            $entry->approved_break_minutes = $entry->break_minutes;
         }
 
         $entry->status = TimeEntryStatus::Approved;
@@ -523,5 +598,110 @@ class TimeEntryService
         $note = trim((string) $note);
 
         return $note === '' ? null : $note;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{start_time: string, end_time: string, break_minutes: int, hours: float}|null
+     */
+    private function submittedClock(array $data): ?array
+    {
+        if (! array_key_exists('start_time', $data) && ! array_key_exists('end_time', $data)) {
+            return null;
+        }
+
+        $start = PlanningHours::normalizeTime((string) ($data['start_time'] ?? ''));
+        $end = PlanningHours::normalizeTime((string) ($data['end_time'] ?? ''));
+        $breakMinutes = (int) ($data['break_minutes'] ?? 0);
+
+        return [
+            'start_time' => $start,
+            'end_time' => $end,
+            'break_minutes' => $breakMinutes,
+            'hours' => $this->assertUsableClock($start, $end, $breakMinutes, false, 'end_time', 'break_minutes'),
+        ];
+    }
+
+    public function clockNet(string $start, string $end, int $breakMinutes, bool $allowZero, string $endField, string $breakField): float
+    {
+        return $this->assertUsableClock($start, $end, $breakMinutes, $allowZero, $endField, $breakField);
+    }
+
+    private function assertUsableClock(
+        string $start,
+        string $end,
+        int $breakMinutes,
+        bool $allowZero,
+        string $endField,
+        string $breakField,
+    ): float {
+        $span = PlanningHours::minutesFromMidnight($end) - PlanningHours::minutesFromMidnight($start);
+        if ($span < 0 || (! $allowZero && $span === 0)) {
+            throw ValidationException::withMessages([
+                $endField => 'Tot moet later zijn dan Van.',
+            ]);
+        }
+
+        if ($breakMinutes > $span) {
+            throw ValidationException::withMessages([
+                $breakField => 'Pauze mag niet langer zijn dan de tijd tussen Van en Tot.',
+            ]);
+        }
+
+        $net = PlanningHours::netHours($start, $end, $breakMinutes);
+        if (! $allowZero && $net < 0.01) {
+            throw ValidationException::withMessages([
+                $breakField => 'Netto uren moeten meer dan 0 zijn.',
+            ]);
+        }
+
+        if ($net > 24) {
+            throw ValidationException::withMessages([
+                $endField => 'Een dag kan maximaal 24 uur zijn.',
+            ]);
+        }
+
+        return $net;
+    }
+
+    private function assertNoTimeOverlap(
+        int $workerId,
+        ?int $crewMemberId,
+        string $date,
+        string $start,
+        string $end,
+        ?int $ignoreId,
+        string $errorField,
+    ): void {
+        $from = PlanningHours::minutesFromMidnight($start);
+        $to = PlanningHours::minutesFromMidnight($end);
+        $rows = TimeEntry::query()
+            ->where('worker_id', $workerId)
+            ->whereDate('date', $date)
+            ->where('status', '!=', TimeEntryStatus::Rejected)
+            ->when(
+                $crewMemberId !== null,
+                fn ($query) => $query->where('crew_member_id', $crewMemberId),
+                fn ($query) => $query->whereNull('crew_member_id'),
+            )
+            ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($rows as $row) {
+            if (! $row->hasSubmittedTimes() && $row->approved_start_time === null) {
+                continue;
+            }
+
+            $otherStart = (string) ($row->approved_start_time ?: $row->start_time);
+            $otherEnd = (string) ($row->approved_end_time ?: $row->end_time);
+            $otherFrom = PlanningHours::minutesFromMidnight($otherStart);
+            $otherTo = PlanningHours::minutesFromMidnight($otherEnd);
+            if ($from < $otherTo && $otherFrom < $to) {
+                throw ValidationException::withMessages([
+                    $errorField => 'Deze tijden overlappen met een andere urenregel op deze dag.',
+                ]);
+            }
+        }
     }
 }

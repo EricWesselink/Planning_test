@@ -12,7 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'worker_id', 'crew_member_id', 'user_id', 'project_id', 'work_item_id',
-    'worker_assignment_id', 'date', 'planned_hours', 'hours', 'approved_hours', 'note', 'status',
+    'worker_assignment_id', 'date', 'planned_hours', 'hours', 'start_time', 'end_time', 'break_minutes',
+    'approved_hours', 'approved_start_time', 'approved_end_time', 'approved_break_minutes', 'note', 'status',
     'is_unplanned', 'identity_key', 'submitted_at', 'submitted_by',
     'reviewed_at', 'reviewed_by', 'review_note', 'processed_at',
     'work_progress_entry_id', 'actual_assignment_id',
@@ -34,7 +35,9 @@ class TimeEntry extends Model
             'date' => 'date',
             'planned_hours' => 'decimal:2',
             'hours' => 'decimal:2',
+            'break_minutes' => 'integer',
             'approved_hours' => 'decimal:2',
+            'approved_break_minutes' => 'integer',
             'status' => TimeEntryStatus::class,
             'is_unplanned' => 'boolean',
             'submitted_at' => 'datetime',
@@ -101,6 +104,60 @@ class TimeEntry extends Model
     public function submittedHoursValue(): float
     {
         return round((float) $this->hours, 2);
+    }
+
+    public function hasSubmittedTimes(): bool
+    {
+        return $this->start_time !== null && $this->end_time !== null;
+    }
+
+    public function startTimeLabel(): ?string
+    {
+        return $this->start_time === null ? null : PlanningHours::formatTime((string) $this->start_time);
+    }
+
+    public function endTimeLabel(): ?string
+    {
+        return $this->end_time === null ? null : PlanningHours::formatTime((string) $this->end_time);
+    }
+
+    public function submittedIntervalLabel(): ?string
+    {
+        $start = $this->startTimeLabel();
+        $end = $this->endTimeLabel();
+        if ($start === null || $end === null) {
+            return null;
+        }
+
+        return $start.'–'.$end;
+    }
+
+    public function breakLabel(): string
+    {
+        return ((int) ($this->break_minutes ?? 0)).' min';
+    }
+
+    public function approvedStartLabel(): ?string
+    {
+        $time = $this->approved_start_time ?? $this->start_time;
+
+        return $time === null ? null : PlanningHours::formatTime((string) $time);
+    }
+
+    public function approvedEndLabel(): ?string
+    {
+        $time = $this->approved_end_time ?? $this->end_time;
+
+        return $time === null ? null : PlanningHours::formatTime((string) $time);
+    }
+
+    public function approvedBreakMinutes(): int
+    {
+        if ($this->approved_break_minutes !== null) {
+            return (int) $this->approved_break_minutes;
+        }
+
+        return (int) ($this->break_minutes ?? 0);
     }
 
     public function approvedHoursValue(): ?float

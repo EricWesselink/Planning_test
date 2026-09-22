@@ -474,7 +474,10 @@ class VakmanPlanningTest extends TestCase
         $this->actingAs($user)
             ->get(route('vakman.planning.day', '2026-09-10'))
             ->assertOk()
-            ->assertSee('Gewerkte uren')
+            ->assertSee('>Van<', false)
+            ->assertSee('>Tot<', false)
+            ->assertSee('>Pauze<', false)
+            ->assertDontSee('Gewerkte uren')
             ->assertSee('Uurprijs')
             ->assertSee('€ 45,00');
 
@@ -483,7 +486,9 @@ class VakmanPlanningTest extends TestCase
                 'date' => '2026-09-10',
                 'worker_assignment_id' => $assignment->id,
                 'project_id' => $own->id,
-                'hours' => 6,
+                'start_time' => '08:00',
+                'end_time' => '14:00',
+                'break_minutes' => 0,
             ])
             ->assertRedirect()
             ->assertSessionHas('status', '6u ingediend');

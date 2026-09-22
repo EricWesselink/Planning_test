@@ -13,6 +13,7 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkProgressEntry;
+use App\Support\PlanningHours;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -247,9 +248,253 @@ class TimeEntryTest extends TestCase
         $this->actingAs($vakman)
             ->get(route('vakman.planning.day', '2026-09-21'))
             ->assertOk()
-            ->assertSee('Uren invullen')
+            ->assertSee('Uren indienen')
+            ->assertSee('name="start_time"', false)
+            ->assertSee('name="end_time"', false)
+            ->assertSee('name="break_minutes"', false)
+            ->assertSee('>Van<', false)
+            ->assertSee('>Tot<', false)
+            ->assertSee('>Pauze<', false)
             ->assertSee('Uren op niet-gepland werk')
-            ->assertSee('Gewerkte uren');
+            ->assertDontSee('Gewerkte uren');
+    }
+
+    public function test_standard_registered_day_is_eight_hours_and_five_days_are_forty(): void
+    {
+        $this->assertSame(8.0, PlanningHours::netHours('07:30', '16:30', 60));
+        $this->assertSame(6.0, PlanningHours::netHours('07:30', '14:00', 30));
+
+        [$vakman, $assignment, $item] = $this->plannedVakman();
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-21'),
+            Carbon::parse('2026-09-25'),
+            '08:00:00',
+            '16:00:00',
+        );
+        $assignment->save();
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-21'))
+            ->assertOk()
+            ->assertSee('name="start_time" required value="07:30"', false)
+            ->assertSee('name="end_time" required value="16:30"', false)
+            ->assertSee('name="break_minutes" min="0" max="1440" step="1" required value="60"', false);
+
+        foreach (['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25'] as $date) {
+            $this->actingAs($vakman)
+                ->post(route('vakman.hours.store'), [
+                    'date' => $date,
+                    'worker_assignment_id' => $assignment->id,
+                    'work_item_id' => $item->id,
+                    'start_time' => '07:30',
+                    'end_time' => '16:30',
+                    'break_minutes' => 60,
+                ])
+                ->assertRedirect()
+                ->assertSessionHas('status', '8u ingediend');
+        }
+
+        $entries = TimeEntry::query()->orderBy('date')->get();
+        $this->assertCount(5, $entries);
+        $this->assertSame('07:30', $entries->first()->startTimeLabel());
+        $this->assertSame('16:30', $entries->first()->endTimeLabel());
+        $this->assertSame(60, (int) $entries->first()->break_minutes);
+        $this->assertSame(8.0, $entries->first()->submittedHoursValue());
+        $this->assertSame(40.0, round($entries->sum(fn (TimeEntry $entry): float => $entry->submittedHoursValue()), 2));
+    }
+
+    public function test_extra_jobs_on_one_day_stay_blank_and_saved_hours_keep_their_clock(): void
+    {
+        [$vakman, $first, $item] = $this->plannedVakman();
+        $secondItem = WorkItem::query()->create([
+            'project_id' => $first->project_id,
+            'name' => 'Plinten',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'in_uitvoering',
+        ]);
+        $second = new WorkerAssignment([
+            'worker_id' => $first->worker_id,
+            'project_id' => $first->project_id,
+            'work_item_id' => $secondItem->id,
+        ]);
+        $second->applySchedule(
+            Carbon::parse('2026-09-21'),
+            Carbon::parse('2026-09-21'),
+            '14:00:00',
+            '16:30:00',
+        );
+        $second->save();
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-21'))
+            ->assertOk()
+            ->assertDontSee('value="07:30"', false)
+            ->assertDontSee('value="60"', false);
+
+        $this->actingAs($vakman)
+            ->post(route('vakman.hours.store'), [
+                'date' => '2026-09-21',
+                'worker_assignment_id' => $first->id,
+                'work_item_id' => $item->id,
+                'start_time' => '09:00',
+                'end_time' => '12:00',
+                'break_minutes' => 30,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '2,5u ingediend');
+
+        $entry = TimeEntry::query()->first();
+        $this->assertSame('09:00', $entry->startTimeLabel());
+        $this->assertSame('12:00', $entry->endTimeLabel());
+        $this->assertSame(30, (int) $entry->break_minutes);
+        $this->assertSame(2.5, $entry->submittedHoursValue());
+
+        $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-21'))
+            ->assertOk()
+            ->assertSee('name="start_time" required value="09:00"', false)
+            ->assertSee('name="end_time" required value="12:00"', false)
+            ->assertSee('name="break_minutes" min="0" max="1440" step="1" required value="30"', false)
+            ->assertDontSee('value="07:30"', false);
+    }
+
+    public function test_vakman_registers_separate_works_by_clock_without_overlap(): void
+    {
+        [$vakman, $first, $item] = $this->plannedVakman('Peter');
+        $secondItem = WorkItem::query()->create([
+            'project_id' => $first->project_id,
+            'name' => 'Plinten',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'in_uitvoering',
+        ]);
+        $second = new WorkerAssignment([
+            'worker_id' => $first->worker_id,
+            'project_id' => $first->project_id,
+            'work_item_id' => $secondItem->id,
+        ]);
+        $second->applySchedule(
+            Carbon::parse('2026-09-21'),
+            Carbon::parse('2026-09-21'),
+            '14:00:00',
+            '16:30:00',
+        );
+        $second->save();
+
+        $this->actingAs($vakman)
+            ->post(route('vakman.hours.store'), [
+                'date' => '2026-09-21',
+                'worker_assignment_id' => $first->id,
+                'work_item_id' => $item->id,
+                'start_time' => '07:30',
+                'end_time' => '14:00',
+                'break_minutes' => 0,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '6,5u ingediend');
+
+        $this->actingAs($vakman)
+            ->post(route('vakman.hours.store'), [
+                'date' => '2026-09-21',
+                'worker_assignment_id' => $second->id,
+                'work_item_id' => $secondItem->id,
+                'start_time' => '14:00',
+                'end_time' => '16:30',
+                'break_minutes' => 0,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '2,5u ingediend');
+
+        $entries = TimeEntry::query()->orderBy('id')->get();
+        $this->assertCount(2, $entries);
+        $this->assertSame('07:30', $entries[0]->startTimeLabel());
+        $this->assertSame('14:00', $entries[0]->endTimeLabel());
+        $this->assertSame(0, (int) $entries[0]->break_minutes);
+        $this->assertSame(6.5, $entries[0]->submittedHoursValue());
+        $this->assertSame(2.5, $entries[1]->submittedHoursValue());
+        $this->assertSame(9.0, round($entries->sum(fn (TimeEntry $entry): float => $entry->submittedHoursValue()), 2));
+
+        $this->actingAs($vakman)
+            ->from(route('vakman.planning.day', '2026-09-21'))
+            ->patch(route('vakman.hours.update', $entries[1]), [
+                'start_time' => '13:00',
+                'end_time' => '15:00',
+                'break_minutes' => 0,
+            ])
+            ->assertRedirect(route('vakman.planning.day', '2026-09-21'))
+            ->assertSessionHasErrors([
+                'start_time' => 'Deze tijden overlappen met een andere urenregel op deze dag.',
+            ]);
+
+        $this->assertSame('14:00', $entries[1]->fresh()->startTimeLabel());
+        $this->assertSame(2.5, $entries[1]->fresh()->submittedHoursValue());
+    }
+
+    public function test_reviewer_corrects_clock_times_and_keeps_the_submitted_times(): void
+    {
+        [$vakman, $assignment, $item] = $this->plannedVakman('Peter');
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-21',
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $item->id,
+            'start_time' => '07:30',
+            'end_time' => '16:30',
+            'break_minutes' => 30,
+        ])->assertSessionHas('status', '8,5u ingediend');
+        $entry = TimeEntry::query()->first();
+        $leader = User::factory()->projectleider()->create(['name' => 'Eric']);
+        $weekstaat = $this->weekstaatDay($assignment);
+
+        $this->actingAs($leader)
+            ->get($weekstaat)
+            ->assertOk()
+            ->assertSee('Gepland:')
+            ->assertSee('8u')
+            ->assertSee('Ingediend:')
+            ->assertSee('07:30–16:30')
+            ->assertSee('Pauze:')
+            ->assertSee('30 min')
+            ->assertSee('Netto:')
+            ->assertSee('8,5u')
+            ->assertSee('name="approved_start_time"', false)
+            ->assertSee('name="approved_break_minutes"', false);
+
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.update', $entry), [
+                'approved_start_time' => '07:30',
+                'approved_end_time' => '16:00',
+                'approved_break_minutes' => 30,
+                'review_note' => 'Eerder gestopt',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '8u aangepast en goedgekeurd.');
+
+        $entry = $entry->fresh();
+        $this->assertSame('07:30', $entry->startTimeLabel());
+        $this->assertSame('16:30', $entry->endTimeLabel());
+        $this->assertSame(30, (int) $entry->break_minutes);
+        $this->assertSame(8.5, $entry->submittedHoursValue());
+        $this->assertSame('16:00', $entry->approvedEndLabel());
+        $this->assertSame(8.0, $entry->approvedHoursValue());
+
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.update', $entry), [
+                'approved_start_time' => '08:00',
+                'approved_end_time' => '08:00',
+                'approved_break_minutes' => 0,
+                'review_note' => 'Na controle geen uren',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '0u aangepast en goedgekeurd.');
+
+        $entry = $entry->fresh();
+        $this->assertSame('07:30', $entry->startTimeLabel());
+        $this->assertSame('16:30', $entry->endTimeLabel());
+        $this->assertSame(30, (int) $entry->break_minutes);
+        $this->assertSame(8.5, $entry->submittedHoursValue());
+        $this->assertSame(0.0, $entry->approvedHoursValue());
+        $this->assertSame('Na controle geen uren', $entry->review_note);
     }
 
     public function test_approved_hours_show_on_project_and_planning_actual_view(): void

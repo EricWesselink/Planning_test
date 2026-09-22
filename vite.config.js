@@ -23,6 +23,7 @@ export default defineConfig({
                 "resources/js/calculation-print-dialog.js",
                 "resources/js/calculation-print.js",
                 "resources/js/snag-pdf.js",
+                "resources/js/vakman-hours.js",
             ],
             refresh: true,
         }),

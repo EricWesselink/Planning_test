@@ -1,7 +1,19 @@
 @php
     $entry = $entry ?? null;
     $locked = $entry?->isApproved() ?? false;
-    $hoursValue = old('hours', $entry?->submittedHoursValue() ?? ($plannedHours ?? 8));
+    if ($entry !== null) {
+        $startValue = old('start_time', $entry->startTimeLabel() ?? '');
+        $endValue = old('end_time', $entry->endTimeLabel() ?? '');
+        $breakValue = old('break_minutes', $entry->break_minutes ?? 0);
+    } elseif ($prefillStandardDay ?? false) {
+        $startValue = old('start_time', \App\Support\PlanningHours::REGISTERED_DAY_START);
+        $endValue = old('end_time', \App\Support\PlanningHours::REGISTERED_DAY_END);
+        $breakValue = old('break_minutes', \App\Support\PlanningHours::REGISTERED_BREAK_MINUTES);
+    } else {
+        $startValue = old('start_time', '');
+        $endValue = old('end_time', '');
+        $breakValue = old('break_minutes', '');
+    }
     $noteValue = old('note', $entry?->note);
     $statusText = null;
     $statusClass = '';
@@ -15,7 +27,7 @@
         $statusText = 'Afgewezen / Ter correctie';
         $statusClass = ' is-rejected';
     } elseif ($entry) {
-        $statusText = $entry->hoursLabel().' ingediend';
+        $statusText = ($entry->submittedIntervalLabel() ?? $entry->hoursLabel()).' ingediend';
     }
 @endphp
 <div class="vakman-hours">
@@ -24,7 +36,11 @@
     @endif
     @if ($entry)
         <dl class="vakman-hours-history">
-            <div><span>Ingediend</span> {{ $entry->hoursLabel() }}</div>
+            <div><span>Ingediend</span> {{ $entry->submittedIntervalLabel() ?? $entry->hoursLabel() }}</div>
+            @if ($entry->hasSubmittedTimes())
+                <div><span>Pauze</span> {{ $entry->breakLabel() }}</div>
+                <div><span>Netto</span> {{ $entry->hoursLabel() }}</div>
+            @endif
             @if ($entry->isApproved())
                 <div><span>Goedgekeurd</span> {{ $entry->approvedHoursLabel() }}</div>
             @endif
@@ -40,7 +56,7 @@
         </dl>
     @endif
     @if (! $locked)
-        <form method="POST" action="{{ $entry ? route('vakman.hours.update', $entry) : route('vakman.hours.store') }}" class="vakman-hours-form">
+        <form method="POST" action="{{ $entry ? route('vakman.hours.update', $entry) : route('vakman.hours.store') }}" class="vakman-hours-form" data-hours-clock>
             @csrf
             @if ($entry)
                 @method('PATCH')
@@ -56,15 +72,31 @@
                     <input type="hidden" name="work_item_id" value="{{ $workItemId }}">
                 @endif
             @endif
-            <label class="vakman-hours-field">
-                <span>Gewerkte uren</span>
-                <input type="number" name="hours" min="0.25" max="24" step="0.25" required value="{{ $hoursValue }}" inputmode="decimal">
-            </label>
+            <div class="vakman-hours-times">
+                <label class="vakman-hours-field">
+                    <span>Van</span>
+                    <input type="time" name="start_time" required value="{{ $startValue }}" data-clock-start>
+                </label>
+                <label class="vakman-hours-field">
+                    <span>Tot</span>
+                    <input type="time" name="end_time" required value="{{ $endValue }}" data-clock-end>
+                </label>
+                <label class="vakman-hours-field">
+                    <span>Pauze</span>
+                    <input type="number" name="break_minutes" min="0" max="1440" step="1" required value="{{ $breakValue }}" inputmode="numeric" data-clock-break>
+                </label>
+            </div>
+            <p class="vakman-hours-total" data-clock-total>Totaal</p>
             <label class="vakman-hours-field">
                 <span>Opmerking (optioneel)</span>
                 <input type="text" name="note" value="{{ $noteValue }}" maxlength="2000">
             </label>
-            <button class="vakman-job-btn vakman-job-btn-ink">{{ $entry ? 'Uren aanpassen' : 'Uren invullen' }}</button>
+            <button class="vakman-job-btn vakman-job-btn-ink">{{ $entry ? 'Uren aanpassen' : 'Uren indienen' }}</button>
         </form>
     @endif
 </div>
+@once
+    @push('scripts')
+        @vite(['resources/js/vakman-hours.js'])
+    @endpush
+@endonce

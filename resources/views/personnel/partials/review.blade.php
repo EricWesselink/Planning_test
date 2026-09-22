@@ -23,6 +23,12 @@
                 <div><span class="text-nicon-muted">Project:</span> {{ $detail['project'] }}</div>
                 <div><span class="text-nicon-muted">Gepland:</span> {{ $detail['planned_label'] }}</div>
                 <div><span class="text-nicon-muted">Ingediend:</span> {{ $detail['submitted_label'] }}</div>
+                @if ($detail['break_label'])
+                    <div><span class="text-nicon-muted">Pauze:</span> {{ $detail['break_label'] }}</div>
+                @endif
+                @if ($detail['net_label'])
+                    <div><span class="text-nicon-muted">Netto:</span> {{ $detail['net_label'] }}</div>
+                @endif
                 <div><span class="text-nicon-muted">Goedgekeurd:</span> {{ $detail['approved_label'] }}</div>
                 <div @class(['text-nicon-warn' => abs($detail['difference']) > 0.01])>
                     <span class="text-nicon-muted">Verschil t.o.v. planning:</span> {{ $detail['difference_label'] }}
@@ -64,22 +70,39 @@
             @if ($canReviewHours && ($entry->isSubmitted() || $entry->isApproved()))
                 <form id="{{ $formId }}" method="POST" action="{{ route('personnel.hours.update', $entry) }}" class="mt-3 grid gap-2">
                     @csrf
-                    <label class="grid gap-1 text-xs">
-                        <span class="uppercase tracking-wide text-nicon-muted">Goedgekeurde uren</span>
-                        <span class="inline-flex items-center gap-2">
-                            <input
-                                type="number"
-                                name="approved_hours"
-                                min="0"
-                                max="24"
-                                step="0.25"
-                                required
-                                value="{{ old('approved_hours', $entry->approvedHoursValue() ?? $entry->submittedHoursValue()) }}"
-                                class="w-24 border border-nicon-line bg-white px-2 py-1"
-                            >
-                            uur
-                        </span>
-                    </label>
+                    @if ($entry->hasSubmittedTimes())
+                        <div class="grid grid-cols-[1fr_1fr_6rem] gap-2">
+                            <label class="grid gap-1 text-xs">
+                                <span class="uppercase tracking-wide text-nicon-muted">Van</span>
+                                <input type="time" name="approved_start_time" required value="{{ old('approved_start_time', $entry->approvedStartLabel()) }}" class="border border-nicon-line bg-white px-2 py-1">
+                            </label>
+                            <label class="grid gap-1 text-xs">
+                                <span class="uppercase tracking-wide text-nicon-muted">Tot</span>
+                                <input type="time" name="approved_end_time" required value="{{ old('approved_end_time', $entry->approvedEndLabel()) }}" class="border border-nicon-line bg-white px-2 py-1">
+                            </label>
+                            <label class="grid gap-1 text-xs">
+                                <span class="uppercase tracking-wide text-nicon-muted">Pauze</span>
+                                <input type="number" name="approved_break_minutes" min="0" max="1440" step="1" required value="{{ old('approved_break_minutes', $entry->approvedBreakMinutes()) }}" class="border border-nicon-line bg-white px-2 py-1">
+                            </label>
+                        </div>
+                    @else
+                        <label class="grid gap-1 text-xs">
+                            <span class="uppercase tracking-wide text-nicon-muted">Goedgekeurde uren</span>
+                            <span class="inline-flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    name="approved_hours"
+                                    min="0"
+                                    max="24"
+                                    step="0.25"
+                                    required
+                                    value="{{ old('approved_hours', $entry->approvedHoursValue() ?? $entry->submittedHoursValue()) }}"
+                                    class="w-24 border border-nicon-line bg-white px-2 py-1"
+                                >
+                                uur
+                            </span>
+                        </label>
+                    @endif
                     <label class="grid gap-1 text-xs">
                         <span class="uppercase tracking-wide text-nicon-muted">Reden/opmerking beoordelaar</span>
                         <textarea name="review_note" rows="2" maxlength="2000" class="border border-nicon-line bg-white px-2 py-1">{{ old('review_note', $entry->review_note) }}</textarea>

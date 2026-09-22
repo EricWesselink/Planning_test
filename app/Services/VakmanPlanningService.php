@@ -230,7 +230,7 @@ class VakmanPlanningService
 
         $others = $colleagues;
 
-        return $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed, $isExternal, $entries): array {
+        $jobs = $own->map(function (WorkerAssignment $assignment) use ($user, $others, $date, $detailed, $isExternal, $entries): array {
             if ($assignment->isInternal()) {
                 return $this->internalJobCard($user, $assignment, $date, $isExternal);
             }
@@ -296,6 +296,33 @@ class VakmanPlanningService
                     : null,
             ];
         })->values()->all();
+
+        return $this->markStandardDayPrefill($jobs);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $jobs
+     * @return list<array<string, mixed>>
+     */
+    private function markStandardDayPrefill(array $jobs): array
+    {
+        $registrableSlots = 0;
+        foreach ($jobs as $job) {
+            if (empty($job['can_register_hours'])) {
+                continue;
+            }
+
+            $registrableSlots += count($job['hour_slots'] ?? []);
+        }
+
+        $prefill = $registrableSlots === 1;
+        foreach ($jobs as $jobIndex => $job) {
+            foreach ($job['hour_slots'] ?? [] as $slotIndex => $slot) {
+                $jobs[$jobIndex]['hour_slots'][$slotIndex]['prefill_standard_day'] = $prefill && ($slot['entry'] ?? null) === null;
+            }
+        }
+
+        return $jobs;
     }
 
     /**
@@ -1023,7 +1050,7 @@ class VakmanPlanningService
     }
 
     /**
-     * @return list<array{assignment_id: int, project_id: int, work_item_id: ?int, work_title: string, planned_hours: float, entry: ?TimeEntry}>
+     * @return list<array{assignment_id: int, project_id: int, work_item_id: ?int, work_title: string, planned_hours: float, planned_start: string, planned_end: string, entry: ?TimeEntry}>
      */
     private function hourSlots(User $user, WorkerAssignment $assignment, CarbonInterface $date, Collection $entries): array
     {
@@ -1036,6 +1063,7 @@ class VakmanPlanningService
         })->values();
         $entry = $visitEntries->first(fn (TimeEntry $row): bool => ! $row->isApproved())
             ?? $visitEntries->first();
+        $interval = $assignment->intervalOnDate($date);
 
         return [[
             'assignment_id' => (int) $assignment->id,
@@ -1043,6 +1071,12 @@ class VakmanPlanningService
             'work_item_id' => $item?->id,
             'work_title' => $item?->planningTitle() ?? 'Werkzaamheid',
             'planned_hours' => round($assignment->hoursOnDate($date), 2),
+            'planned_start' => $interval === null
+                ? PlanningHours::formatTime($assignment->startTimeValue())
+                : $interval[0]->format('H:i'),
+            'planned_end' => $interval === null
+                ? PlanningHours::formatTime($assignment->endTimeValue())
+                : $interval[1]->format('H:i'),
             'entry' => $entry,
         ]];
     }

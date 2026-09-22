@@ -15,6 +15,12 @@ class PlanningHours
 
     public const DAY_END = '16:00';
 
+    public const REGISTERED_DAY_START = '07:30';
+
+    public const REGISTERED_DAY_END = '16:30';
+
+    public const REGISTERED_BREAK_MINUTES = 60;
+
     public static function snapHours(float|int $hours): int
     {
         $snapped = (int) round(((float) $hours) / self::SNAP_HOURS) * self::SNAP_HOURS;
@@ -47,6 +53,21 @@ class PlanningHours
         $endAt = Carbon::parse('2000-01-01 '.self::normalizeTime($end, self::DAY_END));
 
         return max(0.0, ($endAt->timestamp - $startAt->timestamp) / 3600);
+    }
+
+    public static function minutesFromMidnight(?string $time): int
+    {
+        $normalized = self::normalizeTime($time, '00:00');
+        $at = Carbon::parse('2000-01-01 '.$normalized);
+
+        return ((int) $at->format('H')) * 60 + (int) $at->format('i');
+    }
+
+    public static function netHours(string $start, string $end, int $breakMinutes): float
+    {
+        $span = self::minutesFromMidnight($end) - self::minutesFromMidnight($start);
+
+        return round(max(0, $span - max(0, $breakMinutes)) / 60, 2);
     }
 
     public static function fractionFromTime(?string $time): float

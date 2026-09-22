@@ -113,6 +113,9 @@
                             'projectId' => $slot['project_id'],
                             'workItemId' => $slot['work_item_id'],
                             'plannedHours' => $slot['planned_hours'],
+                            'plannedStart' => $slot['planned_start'] ?? null,
+                            'plannedEnd' => $slot['planned_end'] ?? null,
+                            'prefillStandardDay' => $slot['prefill_standard_day'] ?? false,
                             'entry' => $slot['entry'],
                         ])
                     </div>

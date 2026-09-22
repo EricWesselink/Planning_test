@@ -78,7 +78,7 @@ class PlanningWeekTest extends TestCase
         $user = User::factory()->create();
 
         $html = $this->actingAs($user)
-            ->get(route('planning', ['week' => '2026-09-07', 'status' => 'gepland']))
+            ->get(route('planning', ['week' => '2026-09-07', 'kind' => 'project']))
             ->assertOk()
             ->getContent();
 
@@ -91,7 +91,7 @@ class PlanningWeekTest extends TestCase
             $html
         );
         $this->assertMatchesRegularExpression(
-            '/<a class="planning-btn planning-btn--icon" href="[^"]*status=gepland[^"]*" title="Vorige week" aria-label="Vorige week">/',
+            '/<a class="planning-btn planning-btn--icon" href="[^"]*kind=project[^"]*" title="Vorige week" aria-label="Vorige week">/',
             $html
         );
         $this->assertStringNotContainsString('>Vorige</a>', $html);
@@ -105,7 +105,7 @@ class PlanningWeekTest extends TestCase
         $user = User::factory()->create();
 
         $html = $this->actingAs($user)
-            ->get(route('planning', ['week' => '2026-09-07', 'status' => 'gepland']))
+            ->get(route('planning', ['week' => '2026-09-07', 'kind' => 'project']))
             ->assertOk()
             ->getContent();
 
@@ -114,7 +114,7 @@ class PlanningWeekTest extends TestCase
             $html
         );
         $this->assertMatchesRegularExpression(
-            '/<a class="planning-btn" href="[^"]*status=gepland[^"]*" title="Ga naar deze week">Deze week<\/a>/',
+            '/<a class="planning-btn" href="[^"]*kind=project[^"]*" title="Ga naar deze week">Deze week<\/a>/',
             $html
         );
     }
