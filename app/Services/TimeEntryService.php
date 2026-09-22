@@ -82,7 +82,10 @@ class TimeEntryService
                     ->where('worker_assignment_id', $assignment->id)
                     ->when(
                         $crewMemberId !== null,
-                        fn ($query) => $query->where('crew_member_id', $crewMemberId),
+                        fn ($query) => $query->where(function ($query) use ($crewMemberId): void {
+                            $query->where('crew_member_id', $crewMemberId)
+                                ->orWhereNull('crew_member_id');
+                        }),
                         fn ($query) => $query->whereNull('crew_member_id'),
                     )
                     ->lockForUpdate()
@@ -226,7 +229,7 @@ class TimeEntryService
                 ]);
             }
 
-            if ($approvedClock !== null) {
+            if ($approvedClock !== null && $this->approvedClockChanged($locked, $approvedClock)) {
                 $this->assertNoTimeOverlap(
                     (int) $locked->worker_id,
                     $locked->crew_member_id === null ? null : (int) $locked->crew_member_id,
@@ -577,6 +580,24 @@ class TimeEntryService
         }
 
         return $project;
+    }
+
+    /**
+     * @param  array{start_time: string, end_time: string, break_minutes: int}  $clock
+     */
+    public function approvedClockChanged(TimeEntry $entry, array $clock): bool
+    {
+        $currentStart = $entry->approved_start_time ?? $entry->start_time;
+        $currentEnd = $entry->approved_end_time ?? $entry->end_time;
+        if ($currentStart === null || $currentEnd === null) {
+            return true;
+        }
+
+        $currentBreak = $entry->approved_break_minutes ?? $entry->break_minutes;
+
+        return PlanningHours::normalizeTime((string) $currentStart) !== $clock['start_time']
+            || PlanningHours::normalizeTime((string) $currentEnd) !== $clock['end_time']
+            || (int) $currentBreak !== (int) $clock['break_minutes'];
     }
 
     private function lock(TimeEntry $entry): TimeEntry

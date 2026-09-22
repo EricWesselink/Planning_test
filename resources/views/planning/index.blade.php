@@ -149,11 +149,6 @@
                             </optgroup>
                         @endif
                     </select>
-                    <select name="staffing" class="planning-filter" onchange="this.form.submit()" aria-label="Inplanning">
-                        <option value="" @selected(($filters['staffing'] ?? '') === '')>Inplanning</option>
-                        <option value="open" @selected(($filters['staffing'] ?? '') === 'open')>Nog niet ingepland</option>
-                        <option value="planned" @selected(($filters['staffing'] ?? '') === 'planned')>Ingepland</option>
-                    </select>
                 @endif
                 <select name="day" class="planning-filter" onchange="this.form.submit()" aria-label="Dag">
                     <option value="" @selected(($filters['day'] ?? '') === '')>Hele week</option>

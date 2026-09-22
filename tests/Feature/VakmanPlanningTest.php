@@ -954,6 +954,9 @@ class VakmanPlanningTest extends TestCase
         $mobile = substr($css, $mobileStart, $mobileEnd - $mobileStart);
 
         $this->assertStringNotContainsString('.vakman-job-card-actions > .vakman-job-route', $mobile);
+        $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-title', $mobile);
+        $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-leave-row', $mobile);
+        $this->assertStringContainsString('.vakman-job-card-actions > .vakman-job-drawing', $mobile);
         $this->assertStringContainsString('.vakman-job-card-actions > .vakman-hours-block', $mobile);
         $this->assertStringContainsString('grid-column: 1 / -1', $mobile);
         $this->assertStringContainsString('min-width: 0', $mobile);
@@ -970,6 +973,37 @@ class VakmanPlanningTest extends TestCase
         $desktopTimes = strpos($css, 'grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 5.5rem);');
         $this->assertNotFalse($desktopTimes);
         $this->assertLessThan($mobileStart, $desktopTimes);
+    }
+
+    public function test_mobile_vakman_header_is_shorter_than_on_desktop(): void
+    {
+        $css = file_get_contents(resource_path('css/app.css'));
+        $this->assertIsString($css);
+        $mobileStart = strpos($css, '@media (max-width: 899px)');
+        $desktopStart = strpos($css, '@media (min-width: 900px)');
+        $this->assertNotFalse($mobileStart);
+        $this->assertNotFalse($desktopStart);
+        $mobile = substr($css, $mobileStart, $desktopStart > $mobileStart ? $desktopStart - $mobileStart : 8000);
+
+        $this->assertStringContainsString('.nicon-impersonate button', $mobile);
+        $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-title', $mobile);
+        $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-leave-row', $mobile);
+        $this->assertStringContainsString('display: none', $mobile);
+        $this->assertStringContainsString('.nicon-topbar--vakman .nicon-topbar-brand', $mobile);
+        $this->assertStringContainsString('.nicon-topbar--vakman .nicon-topbar-menu a', $mobile);
+        $this->assertStringContainsString('flex-direction: row', $mobile);
+        $this->assertStringContainsString('align-items: center', $mobile);
+        $this->assertStringContainsString('content: "|";', $mobile);
+        $this->assertStringContainsString('min-height: 2.2rem', $mobile);
+        $this->assertStringContainsString('white-space: nowrap', $mobile);
+        $this->assertStringContainsString('grid-template-columns: repeat(3, minmax(0, 1fr))', $mobile);
+        $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-nav a:first-of-type', $mobile);
+        $this->assertStringContainsString('min-height: 2.35rem', $mobile);
+
+        $desktop = substr($css, $desktopStart, 2500);
+        $this->assertStringNotContainsString('.nicon-topbar--vakman .nicon-topbar-menu a', $desktop);
+        $this->assertStringNotContainsString('content: "|";', $desktop);
+        $this->assertStringNotContainsString('min-height: 2.2rem', $desktop);
     }
 
     /**

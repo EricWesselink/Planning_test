@@ -34,8 +34,9 @@ class PlanningDayFilterTest extends TestCase
             ->assertSee('>Vrijdag</option>', false)
             ->assertSee('>Zaterdag</option>', false)
             ->assertSee('name="kind"', false)
-            ->assertSee('name="staffing"', false)
-            ->assertSee('aria-label="Inplanning"', false)
+            ->assertDontSee('name="staffing"', false)
+            ->assertDontSee('aria-label="Inplanning"', false)
+            ->assertDontSee('Nog niet ingepland')
             ->assertDontSee('Deze week met vakman')
             ->assertDontSee('Te plannen')
             ->assertDontSee('aria-label="Status"', false)
@@ -85,7 +86,7 @@ class PlanningDayFilterTest extends TestCase
         $this->assertStringNotContainsString('plan-board--one-day', $html);
     }
 
-    public function test_day_filter_keeps_kind_staffing_and_worker_filters(): void
+    public function test_day_filter_keeps_kind_and_worker_filters(): void
     {
         $user = User::factory()->create();
         $keesProject = $this->makeProject('250200101', 'Kees op woensdag');
@@ -109,9 +110,9 @@ class PlanningDayFilterTest extends TestCase
             ->assertOk()
             ->assertSee('plan-project-title">Kees op woensdag', false)
             ->assertDontSee('plan-project-title">Piet op woensdag', false)
-            ->assertDontSee('Alleen maandag')
+            ->assertDontSee('plan-project-title">Alleen maandag', false)
             ->assertSee('value="'.ProjectKind::Project->value.'" selected', false)
-            ->assertSee('value="planned" selected', false)
+            ->assertDontSee('name="staffing"', false)
             ->assertSee('value="worker:'.$kees->id.'" selected', false)
             ->assertSee('value="3" selected', false)
             ->getContent();
@@ -196,6 +197,15 @@ class PlanningDayFilterTest extends TestCase
         $this->assertNotFalse($start);
         $this->assertNotFalse($end);
         $mobile = substr($css, $start, $end - $start);
+
+        $oneDay = strpos($css, '.planning-page:has(.plan-board--one-day)');
+        $this->assertNotFalse($oneDay);
+        $this->assertLessThan($start, $oneDay);
+        $desktopDay = substr($css, $oneDay, $start - $oneDay);
+        $this->assertStringContainsString('overflow-x: hidden', $desktopDay);
+        $this->assertStringContainsString('max-width: 100%', $desktopDay);
+        $this->assertStringContainsString('.plan-board--one-day .plan-table', $desktopDay);
+        $this->assertStringContainsString('width: 100%', $desktopDay);
 
         $this->assertStringContainsString('overflow-x: hidden', $mobile);
         $this->assertStringContainsString('.planning-scroll-area', $mobile);

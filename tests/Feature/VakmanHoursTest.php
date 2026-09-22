@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Models\Worker;
+use App\Models\WorkItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -57,15 +58,27 @@ class VakmanHoursTest extends TestCase
         $this->assertLessThan($password, $hours);
         $this->assertLessThan($leave, $password);
         $this->assertLessThan($logout, $leave);
+
+        $css = file_get_contents(resource_path('css/app.css'));
+        $this->assertIsString($css);
+        $start = strpos($css, '@media (max-width: 899px)');
+        $this->assertNotFalse($start);
+        $mobile = substr($css, $start, 1800);
+        $this->assertStringContainsString('.nicon-topbar--vakman .nicon-topbar-menu', $mobile);
+        $this->assertStringContainsString('grid-template-columns: repeat(3, minmax(0, 1fr))', $mobile);
+        $this->assertStringContainsString('overflow: hidden', $mobile);
+        $this->assertStringContainsString('display: contents', $mobile);
     }
 
     public function test_vakman_sees_own_hours_and_week_totals_for_the_current_week(): void
     {
         $this->travelTo('2026-09-22 08:00:00');
         $vakman = $this->makeVakman('Peter');
-        $project = $this->makeProject('Griftland College');
+        $project = $this->makeProject('Harm Wesselink - Zwolle', '2026-004');
+        $item = $this->makeWork($project, 'PVC');
         foreach (['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25'] as $date) {
             $this->makeEntry($vakman, $project, [
+                'work_item_id' => $item->id,
                 'date' => $date,
                 'hours' => 8,
                 'start_time' => '07:30:00',
@@ -86,25 +99,75 @@ class VakmanHoursTest extends TestCase
             'break_minutes' => 0,
         ]);
 
-        $this->actingAs($vakman)
+        $html = $this->actingAs($vakman)
             ->get(route('vakman.hours.index'))
             ->assertOk()
-            ->assertSee('Maandag 21 september — totaal 8u')
-            ->assertSee('Griftland College')
-            ->assertSee('07:30–16:30 · Pauze 60 min · 8u')
-            ->assertSee('Status: Goedgekeurd')
-            ->assertSee('Totaal ingediend deze week: 40u')
-            ->assertSee('Totaal goedgekeurd deze week: 40u')
-            ->assertSee('Ingediend: 40u')
-            ->assertSee('Goedgekeurd: 40u')
+            ->assertSee('Ma 21')
+            ->assertSee('Vr 25')
+            ->assertSee('Harm Wesselink - Zwolle')
+            ->assertSee('Werknummer: 2026-004')
+            ->assertSee('Werkzaamheid: PVC')
+            ->assertSee('07:30–16:30')
+            ->assertSee('Pauze: 60 min')
+            ->assertSee('Ingediend: 07:30–16:30 · 8u')
+            ->assertSee('Goedgekeurd: 07:30–16:30 · 8u')
             ->assertSee('Verschil: 0u')
-            ->assertDontSee('08:00–12:00');
+            ->assertSee('Status: Goedgekeurd')
+            ->assertSeeInOrder(['Vr 25', 'Totaal deze week: 40u'])
+            ->assertSee('40u ingediend · 40u goedgekeurd · 0u te beoordelen')
+            ->assertDontSee('Maandag 21 september — totaal 8u')
+            ->assertDontSee('Totaal ingediend deze week')
+            ->assertDontSee('08:00–12:00')
+            ->getContent();
+        $this->assertSame(5, substr_count($html, 'mijn-uren-row'));
+        $this->assertStringNotContainsString('mijn-uren-row" open', $html);
 
         $this->actingAs($vakman)
             ->get(route('vakman.hours.index', ['week' => '2026-09-14']))
             ->assertOk()
             ->assertSee('08:00–12:00')
-            ->assertDontSee('Totaal ingediend deze week: 40u');
+            ->assertSee('4u ingediend · 0u goedgekeurd · 4u te beoordelen')
+            ->assertSee('Goedgekeurd: —')
+            ->assertDontSee('40u goedgekeurd');
+    }
+
+    public function test_two_projects_on_one_day_stay_separate_rows(): void
+    {
+        $this->travelTo('2026-09-21 08:00:00');
+        $vakman = $this->makeVakman('Peter');
+        $first = $this->makeProject('Harm Wesselink - Zwolle', '2026-004');
+        $second = $this->makeProject('Griftland College', '2026-018');
+        $this->makeEntry($vakman, $first, [
+            'date' => '2026-09-21',
+            'hours' => 6.75,
+            'work_item_id' => $this->makeWork($first, 'PVC')->id,
+        ]);
+        $this->makeEntry($vakman, $second, [
+            'date' => '2026-09-21',
+            'hours' => 2,
+            'start_time' => '14:00:00',
+            'end_time' => '16:00:00',
+            'break_minutes' => 0,
+            'work_item_id' => $this->makeWork($second, 'Tapijt')->id,
+        ]);
+
+        $html = $this->actingAs($vakman)
+            ->get(route('vakman.hours.index'))
+            ->assertOk()
+            ->assertSee('Ma 21')
+            ->assertSee('Harm Wesselink - Zwolle')
+            ->assertSee('Werknummer: 2026-004')
+            ->assertSee('Werkzaamheid: PVC')
+            ->assertSee('6,75u · oude urenregistratie')
+            ->assertSee('Griftland College')
+            ->assertSee('Werknummer: 2026-018')
+            ->assertSee('Werkzaamheid: Tapijt')
+            ->assertSee('14:00–16:00')
+            ->assertSee('Pauze: 0 min')
+            ->assertSee('8,75u ingediend · 0u goedgekeurd · 8,75u te beoordelen')
+            ->assertDontSee('Week 39: 0u goedgekeurd')
+            ->getContent();
+        $this->assertSame(2, substr_count($html, 'mijn-uren-row'));
     }
 
     public function test_adjusted_hours_show_the_submitted_and_approved_clocks(): void
@@ -132,7 +195,9 @@ class VakmanHoursTest extends TestCase
             ->assertSee('Ingediend: 07:00–16:30 · 8,5u')
             ->assertSee('Goedgekeurd: 07:30–16:30 · 8u')
             ->assertSee('Reden: uren starten vanaf 07:30')
-            ->assertSee('Status: Aangepast & goedgekeurd');
+            ->assertSee('Status: Aangepast & goedgekeurd')
+            ->assertSee('>8u<', false)
+            ->assertDontSee('>8,5u<', false);
     }
 
     public function test_zero_approved_hours_do_not_fall_back_to_submitted_hours(): void
@@ -156,11 +221,12 @@ class VakmanHoursTest extends TestCase
         $this->actingAs($vakman)
             ->get(route('vakman.hours.index'))
             ->assertOk()
-            ->assertSee('Totaal ingediend deze week: 8u')
-            ->assertSee('Totaal goedgekeurd deze week: 0u')
-            ->assertSee('Goedgekeurd: 0u')
-            ->assertDontSee('Totaal goedgekeurd deze week: 8u')
-            ->assertDontSee('Goedgekeurd: 8u');
+            ->assertSee('8u ingediend · 0u goedgekeurd · 0u te beoordelen')
+            ->assertSee('Goedgekeurd: 07:30–07:30 · 0u')
+            ->assertSee('Verschil: -8u')
+            ->assertDontSee('Week 39: 0u goedgekeurd')
+            ->assertDontSee('Goedgekeurd: 8u')
+            ->assertDontSee('Goedgekeurd 8u');
     }
 
     public function test_entries_without_clock_times_stay_visible(): void
@@ -256,15 +322,26 @@ class VakmanHoursTest extends TestCase
         return User::factory()->vakman($worker->id)->create(['name' => $name]);
     }
 
-    private function makeProject(string $name): Project
+    private function makeProject(string $name, ?string $number = null): Project
     {
         $customer = Customer::query()->first() ?? Customer::query()->create(['name' => 'Gemeente']);
 
         return Project::query()->create([
-            'project_number' => 'P-'.fake()->unique()->numerify('######'),
+            'project_number' => $number ?? 'P-'.fake()->unique()->numerify('######'),
             'customer_id' => $customer->id,
             'name' => $name,
             'city' => 'Amersfoort',
+            'status' => 'in_uitvoering',
+        ]);
+    }
+
+    private function makeWork(Project $project, string $name): WorkItem
+    {
+        return WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => $name,
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
             'status' => 'in_uitvoering',
         ]);
     }

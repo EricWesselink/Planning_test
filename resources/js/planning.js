@@ -1004,23 +1004,26 @@ if (board) {
         hoursHint.classList.remove("hidden");
     }
 
-    function siblingSegments(bar) {
+    function siblingSegments(bar, stack) {
         const id = bar.dataset.shiftId;
-        if (!id) {
+        const root = stack || bar.closest(".person-stack");
+        if (!id || !root) {
             return [];
         }
 
-        return [
-            ...board.querySelectorAll(`.person-bar[data-shift-id="${id}"]`),
-        ].filter((el) => el !== bar);
+        return [...root.querySelectorAll(`.person-bar[data-shift-id="${id}"]`)].filter(
+            (el) => el !== bar,
+        );
     }
 
     function hideSiblingSegments(bar) {
-        siblingSegments(bar).forEach((el) => el.classList.add("hidden"));
+        siblingSegments(bar, drag?.originStack).forEach((el) =>
+            el.classList.add("hidden"),
+        );
     }
 
-    function showSiblingSegments(bar) {
-        siblingSegments(bar).forEach((el) => el.classList.remove("hidden"));
+    function showSiblingSegments(bar, stack) {
+        siblingSegments(bar, stack).forEach((el) => el.classList.remove("hidden"));
     }
 
     function restoreBar(current) {
@@ -1034,7 +1037,7 @@ if (board) {
         current.bar.dataset.workItemId = current.originWorkItemId;
         current.bar.dataset.startDate = current.startDate;
         current.bar.dataset.endDate = current.endDate;
-        showSiblingSegments(current.bar);
+        showSiblingSegments(current.bar, current.originStack);
         if (current.originStack) {
             current.originStack.appendChild(current.bar);
             current.bar.style.top = current.originTop;

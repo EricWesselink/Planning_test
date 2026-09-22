@@ -1093,7 +1093,10 @@ class VakmanPlanningService
         $visitEntries = $entries->filter(function (TimeEntry $entry) use ($assignment, $date, $crewId): bool {
             return (int) $entry->worker_assignment_id === (int) $assignment->id
                 && $entry->date->toDateString() === $date->toDateString()
-                && (int) ($entry->crew_member_id ?? 0) === (int) ($crewId ?? 0);
+                && (
+                    (int) ($entry->crew_member_id ?? 0) === (int) ($crewId ?? 0)
+                    || ($crewId !== null && $entry->crew_member_id === null)
+                );
         })->values();
         $entry = $visitEntries->first(fn (TimeEntry $row): bool => ! $row->isApproved())
             ?? $visitEntries->first();

@@ -124,7 +124,9 @@ class PersonnelHoursService
      *     submitted_label: string,
      *     approved_label: string,
      *     difference_label: string,
-     *     days: list<array{heading: string, entries: list<array{project: string, lines: list<string>, status: string, reason: ?string}>}>
+     *     pending_label: string,
+     *     total_label: string,
+     *     days: list<array{heading: string, day_label: string, entries: list<array<string, mixed>>}>
      * }
      */
     public function ownWeek(User $user, ?string $week): array
@@ -141,6 +143,16 @@ class PersonnelHoursService
             return round((float) ($entry->approved_hours ?? 0), 2);
         }), 2);
         $difference = round($approved - $submitted, 2);
+        $pending = round($entries->sum(function (TimeEntry $entry): float {
+            return $entry->isSubmitted() ? $entry->submittedHoursValue() : 0.0;
+        }), 2);
+        $total = round($entries->sum(function (TimeEntry $entry): float {
+            if ($entry->isApproved()) {
+                return (float) ($entry->approved_hours ?? 0);
+            }
+
+            return $entry->submittedHoursValue();
+        }), 2);
 
         return [
             'start' => $start,
@@ -155,6 +167,8 @@ class PersonnelHoursService
             'submitted_label' => $this->vakmanHoursLabel($submitted),
             'approved_label' => $this->vakmanHoursLabel($approved),
             'difference_label' => $this->signedVakmanHoursLabel($difference),
+            'pending_label' => $this->vakmanHoursLabel($pending),
+            'total_label' => $this->vakmanHoursLabel($total),
             'days' => $this->ownDays($entries),
         ];
     }
@@ -243,7 +257,7 @@ class PersonnelHoursService
         }
 
         $query = TimeEntry::query()
-            ->with('project')
+            ->with(['project', 'workItem', 'assignment.workItem'])
             ->where('worker_id', $workerId);
 
         $scheduledCrewId = $user->scheduledCrewMemberId();
@@ -270,7 +284,7 @@ class PersonnelHoursService
 
     /**
      * @param  Collection<int, TimeEntry>  $entries
-     * @return list<array{heading: string, entries: list<array{project: string, lines: list<string>, status: string, reason: ?string}>}>
+     * @return list<array{heading: string, entries: list<array{project: string, work_number: string, work: string, lines: list<string>, status: string, reason: ?string}>}>
      */
     private function ownDays(Collection $entries): array
     {
@@ -285,10 +299,24 @@ class PersonnelHoursService
                 ];
             }
             $days[$key]['submitted'] = round($days[$key]['submitted'] + $entry->submittedHoursValue(), 2);
+            $badge = $this->ownBadge($entry);
             $days[$key]['entries'][] = [
                 'project' => $entry->project?->name ?? 'Project',
+                'project_code' => $entry->project?->workCode() ?: '—',
+                'work_number' => $entry->project?->workNumber() ?: '—',
+                'work' => $this->ownWorkLabel($entry),
+                'time' => $entry->submittedIntervalLabel() ?? '—',
+                'hours' => $this->vakmanHoursLabel($entry->isApproved()
+                    ? (float) ($entry->approved_hours ?? 0)
+                    : $entry->submittedHoursValue()),
+                'break' => $entry->hasSubmittedTimes() ? $entry->breakLabel() : '—',
+                'submitted' => $this->ownSubmittedDetail($entry),
+                'approved' => $this->ownApprovedDetail($entry),
+                'difference' => $this->ownDifferenceLabel($entry),
                 'lines' => $this->ownEntryLines($entry),
                 'status' => $this->ownStatusLabel($entry),
+                'badge' => $badge['label'],
+                'badge_tone' => $badge['tone'],
                 'reason' => $entry->isAdjusted() && filled($entry->review_note) ? (string) $entry->review_note : null,
             ];
         }
@@ -297,11 +325,78 @@ class PersonnelHoursService
         foreach ($days as $day) {
             $rows[] = [
                 'heading' => ucfirst($day['date']->translatedFormat('l j F')).' — totaal '.$this->vakmanHoursLabel($day['submitted']),
+                'day_label' => $this->ownDayLabel($day['date']),
                 'entries' => $day['entries'],
             ];
         }
 
         return $rows;
+    }
+
+    private function ownDayLabel(CarbonInterface $date): string
+    {
+        $name = mb_substr($date->translatedFormat('l'), 0, 2);
+
+        return ucfirst($name).' '.$date->format('j');
+    }
+
+    /**
+     * @return array{label: string, tone: string}
+     */
+    private function ownBadge(TimeEntry $entry): array
+    {
+        if ($entry->isAdjusted()) {
+            return ['label' => 'Aangepast', 'tone' => 'adjusted'];
+        }
+
+        if ($entry->isApproved()) {
+            return ['label' => '✓', 'tone' => 'approved'];
+        }
+
+        if ($entry->isRejected()) {
+            return ['label' => 'Afgewezen', 'tone' => 'rejected'];
+        }
+
+        return ['label' => 'Te beoordelen', 'tone' => 'open'];
+    }
+
+    private function ownSubmittedDetail(TimeEntry $entry): string
+    {
+        if (! $entry->hasSubmittedTimes()) {
+            return $this->vakmanHoursLabel($entry->submittedHoursValue()).' · oude urenregistratie';
+        }
+
+        return $entry->submittedIntervalLabel().' · '.$this->vakmanHoursLabel($entry->submittedHoursValue());
+    }
+
+    private function ownApprovedDetail(TimeEntry $entry): string
+    {
+        if (! $entry->isApproved()) {
+            return '—';
+        }
+
+        $hours = $this->vakmanHoursLabel($entry->approvedHoursValue() ?? 0.0);
+        $clock = $this->approvedClockLabel($entry);
+
+        return $clock !== null ? $clock.' · '.$hours : $hours;
+    }
+
+    private function ownDifferenceLabel(TimeEntry $entry): string
+    {
+        if (! $entry->isApproved()) {
+            return '—';
+        }
+
+        $approved = $entry->approvedHoursValue() ?? 0.0;
+
+        return $this->signedVakmanHoursLabel(round($approved - $entry->submittedHoursValue(), 2));
+    }
+
+    private function ownWorkLabel(TimeEntry $entry): string
+    {
+        $name = $entry->workName();
+
+        return $name === 'Werkzaamheid' ? '—' : $name;
     }
 
     /**
@@ -501,7 +596,7 @@ class PersonnelHoursService
                 $cells[] = [
                     ...$cell,
                     'hours' => $dayHours,
-                    'hours_label' => $dayHours > 0.01 ? PlanningHours::hoursLabel($dayHours) : '',
+                    'hours_label' => PlanningHours::hoursLabel($dayHours),
                     'entry_status' => $dayStatus,
                     'entry_status_label' => $this->cellStatusLabel($dayEntries, $dayHours, $unplanned),
                     'entry_tone' => $tone,
@@ -522,12 +617,13 @@ class PersonnelHoursService
             ];
         }
 
-        $weekStatus = $this->weekStatus($statuses, $countedHours);
+        $weekStatus = $this->weekStatus($statuses);
         $weekReview = $this->weekReview($mine);
 
         return [
             ...$row,
             'cells' => $cells,
+            'has_hour_entries' => $mine->isNotEmpty(),
             'submitted_hours' => round($countedHours, 2),
             'submitted_label' => PlanningHours::hoursLabel($countedHours),
             'hours_status' => $weekStatus,
@@ -582,9 +678,9 @@ class PersonnelHoursService
     /**
      * @param  list<TimeEntryStatus>  $statuses
      */
-    private function weekStatus(array $statuses, float $submittedHours): ?TimeEntryStatus
+    private function weekStatus(array $statuses): ?TimeEntryStatus
     {
-        if ($statuses === [] || $submittedHours < 0.01) {
+        if ($statuses === []) {
             return null;
         }
         if (in_array(TimeEntryStatus::Submitted, $statuses, true)) {

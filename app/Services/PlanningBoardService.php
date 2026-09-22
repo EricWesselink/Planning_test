@@ -104,7 +104,6 @@ class PlanningBoardService
         }
         $weekBands = $this->weekBands($days, $weeks);
         $kindFilter = $this->kindFilter($request);
-        $staffingFilter = $this->staffingFilter($request);
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         [$filterWorkerId, $filterCrewMemberId, $whoValue] = $this->whoFilter($request);
         $workerId = $scheduledWorkerId ?? $filterWorkerId;
@@ -134,9 +133,7 @@ class PlanningBoardService
             ->active()
             ->with($relations)
             ->when($kindFilter !== null, fn ($q) => $this->constrainKind($q, $kindFilter))
-            ->when($request->filled('project_id'), fn ($q) => $q->where('id', $request->integer('project_id')))
-            ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn ($q) => $q->whereDoesntHave('assignments'))
-            ->when($staffingFilter === 'planned', fn ($q) => $this->constrainAssignedInWindow($q, $windowStart, $windowEnd));
+            ->when($request->filled('project_id'), fn ($q) => $q->where('id', $request->integer('project_id')));
 
         $projects = $projectQuery
             ->orderBy('planned_start_date')
@@ -239,6 +236,7 @@ class PlanningBoardService
                         }
 
                         $workName = $assignment->workItem?->typeLabel() ?? $primary->typeLabel();
+                        $before = count($personBars);
                         [$personBars, $usedIds] = $this->appendAssignmentPersonBars(
                             $personBars,
                             $usedIds,
@@ -248,6 +246,11 @@ class PlanningBoardService
                             $workName,
                             $project->name,
                         );
+                        if ($this->coversSeveralBoardLines($assignment, $project)) {
+                            for ($index = $before; $index < count($personBars); $index++) {
+                                $personBars[$index]['work_item_id'] = (int) $primary->id;
+                            }
+                        }
                     }
 
                     $budgetHours = round((float) $items->sum(
@@ -432,7 +435,7 @@ class PlanningBoardService
             'dayCount' => $days->count(),
             'dayMin' => $days->count() === 1 ? 0 : ($weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56))),
             'rows' => $rows,
-            'projects' => $this->filterProjects($request, $kindFilter, $staffingFilter, $scheduledWorkerId, $windowStart, $windowEnd),
+            'projects' => $this->filterProjects($request, $kindFilter),
             'warnings' => $warnings,
             'doubleFilter' => [
                 'active' => $doubleFilter['active'],
@@ -449,7 +452,6 @@ class PlanningBoardService
                 'project_id' => $request->input('project_id'),
                 'who' => $scheduledWorkerId ? '' : $whoValue,
                 'worker_id' => $scheduledWorkerId ?? ($whoValue !== '' ? null : $filterWorkerId),
-                'staffing' => $scheduledWorkerId === null ? ($staffingFilter ?? '') : '',
                 'day' => $dayOfWeek === null ? '' : (string) $dayOfWeek,
                 'hours_view' => $hoursView,
                 'doubles' => $doubleFilter['active'] ? '1' : '',
@@ -599,29 +601,14 @@ class PlanningBoardService
     private function filterProjects(
         Request $request,
         ProjectKind|string|null $kindFilter,
-        ?string $staffingFilter,
-        ?int $scheduledWorkerId,
-        Carbon $windowStart,
-        Carbon $windowEnd,
     ): Collection {
         return Project::query()
             ->accessibleBy($request->user())
             ->active()
             ->with('workItems')
             ->when($kindFilter !== null, fn (Builder $query) => $this->constrainKind($query, $kindFilter))
-            ->when($staffingFilter === 'open' && $scheduledWorkerId === null, fn (Builder $query) => $query->whereDoesntHave('assignments'))
-            ->when($staffingFilter === 'planned', fn (Builder $query) => $this->constrainAssignedInWindow($query, $windowStart, $windowEnd))
             ->orderBy('project_number')
             ->get();
-    }
-
-    private function constrainAssignedInWindow(Builder $query, Carbon $windowStart, Carbon $windowEnd): Builder
-    {
-        return $query->whereHas('assignments', function (Builder $assignments) use ($windowStart, $windowEnd): void {
-            $assignments
-                ->whereDate('end_date', '>=', $windowStart->toDateString())
-                ->whereDate('start_date', '<=', $windowEnd->toDateString());
-        });
     }
 
     /**
@@ -654,13 +641,6 @@ class PlanningBoardService
                     ->whereIn('worker_id', CrewMember::query()->whereKey($crewMemberId)->select('worker_id'));
             });
         });
-    }
-
-    private function staffingFilter(Request $request): ?string
-    {
-        $value = (string) $request->input('staffing', '');
-
-        return in_array($value, ['open', 'planned'], true) ? $value : null;
     }
 
     private function dayOfWeekFilter(Request $request): ?int
@@ -1210,6 +1190,23 @@ class PlanningBoardService
         ];
     }
 
+    /**
+     * True when one visit is drawn on more than one board line, so a drag can move just that line.
+     */
+    private function coversSeveralBoardLines(WorkerAssignment $assignment, Project $project): bool
+    {
+        $linked = array_flip($assignment->linkedWorkItemIds($project->relationLoaded('workOrders') ? $project->workOrders : null));
+        $keys = [];
+        foreach ($project->workItems as $item) {
+            if (! isset($linked[(int) $item->id]) || $item->isExtraWork() || (float) $item->ordered_quantity <= 0.0001) {
+                continue;
+            }
+            $keys[$item->typeKey()] = true;
+        }
+
+        return count($keys) >= 2;
+    }
+
     private function primaryWorkItem(Collection $items): WorkItem
     {
         $preferred = [
@@ -1227,16 +1224,9 @@ class PlanningBoardService
 
     private function personBar(WorkerAssignment $assignment, array $bar, array $doubleBooked, Collection $days, string $workName, string $projectName = ''): array
     {
-        $label = $assignment->planningLabel();
-        $approvedHours = (float) ($assignment->getAttribute('approved_hours') ?? 0);
-        if ($approvedHours > 0.01) {
-            $planned = $assignment->plannedHoursValue();
-            $label .= ' · werkelijk '.PlanningHours::hoursLabel($approvedHours);
-            if ($planned > 0.01) {
-                $delta = round($approvedHours - $planned, 2);
-                $label .= ' · verschil '.($delta > 0.0001 ? '+' : '').PlanningHours::hoursLabel($delta);
-            }
-        }
+        $approvedHours = $assignment->getAttribute('approved_hours');
+        $hoursOverride = $approvedHours === null ? null : (float) $approvedHours;
+        $label = $assignment->planningLabel($hoursOverride);
         $ticketLabel = $assignment->planningTicketLabel();
         $ticket = $assignment->workTickets->first();
         $double = $days->contains(
@@ -1260,8 +1250,8 @@ class PlanningBoardService
             'work_ticket_holder_id' => $assignment->work_ticket_crew_member_id,
             'label' => $label,
             'title' => filled($ticketLabel)
-                ? $assignment->detailTitle($workName, $projectName).' · '.$ticketLabel
-                : $assignment->detailTitle($workName, $projectName),
+                ? $assignment->detailTitle($workName, $projectName, $hoursOverride).' · '.$ticketLabel
+                : $assignment->detailTitle($workName, $projectName, $hoursOverride),
             'ticket' => $ticketLabel,
             'ticket_mark' => $assignment->planningTicketMark(),
             'ticket_url' => $ticket === null ? null : route('work-tickets.show', $ticket),
@@ -2195,7 +2185,10 @@ class PlanningBoardService
         }
 
         $entries = TimeEntry::query()
-            ->where('status', TimeEntryStatus::Approved)
+            ->where(function ($query): void {
+                $query->where('status', TimeEntryStatus::Approved)
+                    ->orWhere('status', TimeEntryStatus::Submitted);
+            })
             ->where(function ($query) use ($ids): void {
                 $query->whereIn('worker_assignment_id', $ids)
                     ->orWhereIn('actual_assignment_id', $ids);
@@ -2203,13 +2196,21 @@ class PlanningBoardService
             ->get();
 
         $byAssignment = $entries->groupBy(function (TimeEntry $entry): int {
-            return (int) ($entry->worker_assignment_id ?: $entry->actual_assignment_id);
+            return (int) ($entry->worker_assignment_id ?? $entry->actual_assignment_id);
         });
 
         foreach ($assignments as $assignment) {
-            $hours = (float) ($byAssignment->get($assignment->id)?->sum(
-                fn (TimeEntry $entry): float => $entry->accountedHoursValue()
-            ) ?? 0);
+            $matched = $byAssignment->get($assignment->id);
+            if ($matched === null || $matched->isEmpty()) {
+                continue;
+            }
+            $hours = (float) $matched->sum(function (TimeEntry $entry): float {
+                if (! $entry->isApproved() || $entry->approved_hours === null) {
+                    return 0.0;
+                }
+
+                return round((float) $entry->approved_hours, 2);
+            });
             $assignment->setAttribute('approved_hours', round($hours, 2));
         }
     }

@@ -80,6 +80,8 @@ class ConflictService
         ?string $endTime = null,
         bool $includeSaturday = false,
         bool $includeSunday = false,
+        ?int $projectId = null,
+        ?int $workItemId = null,
     ): ?array {
         $worker = Worker::query()->findOrFail($workerId);
         $capacity = $worker->peopleCount();
@@ -89,7 +91,7 @@ class ConflictService
         $from = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
 
-        $personConflict = $this->firstPersonConflict($existing, $start, $end, $from, $to, $addingIds, $worker, $includeSaturday, $includeSunday);
+        $personConflict = $this->firstPersonConflict($existing, $start, $end, $from, $to, $addingIds, $worker, $includeSaturday, $includeSunday, $projectId);
         if ($personConflict !== null) {
             return $personConflict;
         }
@@ -104,8 +106,14 @@ class ConflictService
 
                 continue;
             }
-            $used = $this->peakPeople($existing, $day, $window[0], $window[1], $addingIds);
-            $peak = max($peak, $used + $adding);
+            $peak = max($peak, $this->peakPeople($existing, $day, $window[0], $window[1], $addingIds, [
+                'people' => $adding,
+                'project_id' => $projectId,
+                'work_item_id' => $workItemId,
+                'member_ids' => $addingIds,
+                'start' => $window[0],
+                'end' => $window[1],
+            ]));
             $day->addDay();
         }
 
@@ -148,6 +156,7 @@ class ConflictService
         Worker $worker,
         bool $includeSaturday = false,
         bool $includeSunday = false,
+        ?int $projectId = null,
     ): ?array {
         if ($addingIds === []) {
             return null;
@@ -164,6 +173,9 @@ class ConflictService
             }
 
             foreach ($existing as $assignment) {
+                if ($projectId !== null && (int) $assignment->project_id === $projectId) {
+                    continue;
+                }
                 foreach ($assignment->crewMembers as $member) {
                     if (! in_array((int) $member->id, $addingIds, true)) {
                         continue;
@@ -212,6 +224,7 @@ class ConflictService
                 $byPerson[$personId]['name'] = $member->label();
                 $byPerson[$personId]['slots'][] = [
                     'assignment_id' => (int) $assignment->id,
+                    'project_id' => (int) ($assignment->project_id ?? 0),
                     'start' => $interval[0],
                     'end' => $interval[1],
                 ];
@@ -226,6 +239,9 @@ class ConflictService
             for ($i = 0; $i < $count; $i++) {
                 for ($j = $i + 1; $j < $count; $j++) {
                     if (! PlanningHours::intervalsOverlap($slots[$i]['start'], $slots[$i]['end'], $slots[$j]['start'], $slots[$j]['end'])) {
+                        continue;
+                    }
+                    if ($slots[$i]['project_id'] > 0 && $slots[$i]['project_id'] === $slots[$j]['project_id']) {
                         continue;
                     }
                     $ids[$slots[$i]['assignment_id']] = true;
@@ -249,28 +265,22 @@ class ConflictService
      * @param  Collection<int, WorkerAssignment>  $assignments
      * @param  list<int>  $excludeCrewIds
      */
+    /**
+     * @param  list<int>  $excludeCrewIds
+     * @param  array{people: int, project_id: ?int, work_item_id: ?int, member_ids: list<int>, start: CarbonInterface, end: CarbonInterface}|null  $extra
+     */
     private function peakPeople(
         Collection $assignments,
         CarbonInterface $day,
         ?CarbonInterface $windowStart = null,
         ?CarbonInterface $windowEnd = null,
         array $excludeCrewIds = [],
+        ?array $extra = null,
     ): int {
-        $events = $this->assignmentEvents($assignments, $day, $excludeCrewIds, $windowStart, $windowEnd);
-        if ($events === []) {
-            return 0;
-        }
-
-        $this->sortEvents($events);
-
-        $current = 0;
-        $peak = 0;
-        foreach ($events as $event) {
-            $current += $event[1];
-            $peak = max($peak, $current);
-        }
-
-        return $peak;
+        return $this->sweepCoverage(
+            $this->coverageIntervals($assignments, $day, $excludeCrewIds, $windowStart, $windowEnd, $extra),
+            PHP_INT_MAX,
+        )['peak'];
     }
 
     /**
@@ -281,47 +291,100 @@ class ConflictService
      */
     private function overCapacityAssignmentIds(Collection $assignments, CarbonInterface $day, int $capacity): array
     {
-        $events = $this->assignmentEvents($assignments, $day);
-        if ($events === []) {
-            return [];
+        return $this->sweepCoverage(
+            $this->coverageIntervals($assignments, $day),
+            $capacity,
+        )['over_ids'];
+    }
+
+    /**
+     * Onderdelen of the same project share one crew. Headcount is the distinct
+     * people on that job, or the largest unnamed group, not the sum of the parts.
+     * A second project still adds people.
+     *
+     * @param  list<array{start: int, end: int, people: int, group: string, assignment: int, member: int}>  $intervals
+     * @return array{peak: int, over_ids: list<int>}
+     */
+    private function sweepCoverage(array $intervals, int $capacity): array
+    {
+        if ($intervals === []) {
+            return ['peak' => 0, 'over_ids' => []];
         }
 
-        $this->sortEvents($events);
+        $points = [];
+        foreach ($intervals as $interval) {
+            $points[$interval['start']] = true;
+            $points[$interval['end']] = true;
+        }
+        $points = array_map('intval', array_keys($points));
+        sort($points);
 
-        $active = [];
-        $current = 0;
+        $peak = 0;
         $over = [];
-        foreach ($events as $event) {
-            $assignmentId = $event[2];
-            $current += $event[1];
-            $active[$assignmentId] = ($active[$assignmentId] ?? 0) + $event[1];
-            if ($active[$assignmentId] === 0) {
-                unset($active[$assignmentId]);
-            }
-            if ($current <= $capacity) {
+        $last = count($points) - 1;
+        for ($index = 0; $index < $last; $index++) {
+            $at = $points[$index];
+            if ($points[$index + 1] <= $at) {
                 continue;
             }
-            foreach (array_keys($active) as $id) {
-                $over[(int) $id] = true;
+            $byGroup = [];
+            foreach ($intervals as $interval) {
+                if ($interval['start'] > $at || $interval['end'] <= $at) {
+                    continue;
+                }
+                $group = $interval['group'];
+                $item = $interval['work_item'];
+                $byGroup[$group]['assignments'][$interval['assignment']] = true;
+                if ($interval['member'] > 0) {
+                    $byGroup[$group]['items'][$item]['members'][$interval['member']] = true;
+                } else {
+                    $byGroup[$group]['items'][$item]['unnamed'] = ($byGroup[$group]['items'][$item]['unnamed'] ?? 0) + $interval['people'];
+                }
+            }
+            $total = 0;
+            $active = [];
+            foreach ($byGroup as $bucket) {
+                $onThisWork = 0;
+                foreach ($bucket['items'] ?? [] as $itemBucket) {
+                    $onThisWork = max($onThisWork, max(count($itemBucket['members'] ?? []), $itemBucket['unnamed'] ?? 0));
+                }
+                $total += $onThisWork;
+                foreach (array_keys($bucket['assignments']) as $assignmentId) {
+                    if ((int) $assignmentId > 0) {
+                        $active[(int) $assignmentId] = true;
+                    }
+                }
+            }
+            $peak = max($peak, $total);
+            if ($total <= $capacity) {
+                continue;
+            }
+            foreach (array_keys($active) as $assignmentId) {
+                $over[$assignmentId] = true;
             }
         }
 
-        return array_map('intval', array_keys($over));
+        return [
+            'peak' => $peak,
+            'over_ids' => array_map('intval', array_keys($over)),
+        ];
     }
 
     /**
      * @param  Collection<int, WorkerAssignment>  $assignments
      * @param  list<int>  $excludeCrewIds
-     * @return list<array{0: int, 1: int, 2: int}>
+     * @param  array{people: int, project_id: ?int, member_ids: list<int>, start: CarbonInterface, end: CarbonInterface}|null  $extra
+     * @return list<array{start: int, end: int, people: int, group: string, assignment: int, member: int}>
      */
-    private function assignmentEvents(
+    private function coverageIntervals(
         Collection $assignments,
         CarbonInterface $day,
         array $excludeCrewIds = [],
         ?CarbonInterface $windowStart = null,
         ?CarbonInterface $windowEnd = null,
+        ?array $extra = null,
     ): array {
-        $events = [];
+        $intervals = [];
         foreach ($assignments as $assignment) {
             $crew = $assignment->relationLoaded('crewMembers') ? $assignment->crewMembers : collect();
             if ($crew->isNotEmpty()) {
@@ -333,7 +396,7 @@ class ConflictService
                     if ($interval === null) {
                         continue;
                     }
-                    $this->pushClippedEvent($events, $interval[0], $interval[1], 1, $windowStart, $windowEnd, (int) $assignment->id);
+                    $this->pushCoverageInterval($intervals, $interval[0], $interval[1], 1, $windowStart, $windowEnd, (int) $assignment->id, (int) $member->id, (int) ($assignment->project_id ?? 0), (int) ($assignment->work_item_id ?? 0));
                 }
 
                 continue;
@@ -343,40 +406,38 @@ class ConflictService
             if ($interval === null) {
                 continue;
             }
-            $this->pushClippedEvent($events, $interval[0], $interval[1], $assignment->peopleCount(), $windowStart, $windowEnd, (int) $assignment->id);
+            $this->pushCoverageInterval($intervals, $interval[0], $interval[1], $assignment->peopleCount(), $windowStart, $windowEnd, (int) $assignment->id, 0, (int) ($assignment->project_id ?? 0), (int) ($assignment->work_item_id ?? 0));
         }
 
-        return $events;
-    }
-
-    /**
-     * @param  list<array{0: int, 1: int, 2?: int}>  $events
-     */
-    private function sortEvents(array &$events): void
-    {
-        usort($events, function (array $left, array $right): int {
-            if ($left[0] === $right[0]) {
-                return $left[1] <=> $right[1];
+        if ($extra !== null) {
+            $members = $extra['member_ids'];
+            $workItemId = (int) ($extra['work_item_id'] ?? 0);
+            if ($members === []) {
+                $this->pushCoverageInterval($intervals, $extra['start'], $extra['end'], $extra['people'], $windowStart, $windowEnd, 0, 0, (int) ($extra['project_id'] ?? 0), $workItemId);
+            } else {
+                foreach ($members as $memberId) {
+                    $this->pushCoverageInterval($intervals, $extra['start'], $extra['end'], 1, $windowStart, $windowEnd, 0, (int) $memberId, (int) ($extra['project_id'] ?? 0), $workItemId);
+                }
             }
+        }
 
-            return $left[0] <=> $right[0];
-        });
+        return $intervals;
     }
 
     /**
-     * @param  list<array{0: int, 1: int}>  $events
+     * @param  list<array{start: int, end: int, people: int, group: string, work_item: int, assignment: int, member: int}>  $intervals
      */
-    /**
-     * @param  list<array{0: int, 1: int, 2: int}>  $events
-     */
-    private function pushClippedEvent(
-        array &$events,
+    private function pushCoverageInterval(
+        array &$intervals,
         CarbonInterface $start,
         CarbonInterface $end,
         int $people,
         ?CarbonInterface $windowStart,
         ?CarbonInterface $windowEnd,
-        int $assignmentId = 0,
+        int $assignmentId,
+        int $memberId,
+        int $projectId,
+        int $workItemId,
     ): void {
         $from = $windowStart ? $start->max($windowStart) : $start;
         $to = $windowEnd ? $end->min($windowEnd) : $end;
@@ -384,8 +445,15 @@ class ConflictService
             return;
         }
 
-        $events[] = [$from->timestamp, $people, $assignmentId];
-        $events[] = [$to->timestamp, -$people, $assignmentId];
+        $intervals[] = [
+            'start' => $from->timestamp,
+            'end' => $to->timestamp,
+            'people' => $people,
+            'group' => $projectId > 0 ? 'p'.$projectId : 'a'.$assignmentId,
+            'work_item' => $workItemId > 0 ? $workItemId : $assignmentId,
+            'assignment' => $assignmentId,
+            'member' => $memberId,
+        ];
     }
 
     /**

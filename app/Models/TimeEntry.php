@@ -172,7 +172,7 @@ class TimeEntry extends Model
     public function accountedHoursValue(): float
     {
         if ($this->isApproved()) {
-            return $this->approvedHoursValue() ?? $this->submittedHoursValue();
+            return $this->approvedHoursValue() ?? 0.0;
         }
 
         return $this->submittedHoursValue();
@@ -213,7 +213,7 @@ class TimeEntry extends Model
     public function reviewDifferenceHours(): float
     {
         $actual = $this->isApproved()
-            ? ($this->approvedHoursValue() ?? $this->submittedHoursValue())
+            ? ($this->approvedHoursValue() ?? 0.0)
             : $this->submittedHoursValue();
 
         return round($actual - $this->planningHoursValue(), 2);

@@ -100,9 +100,9 @@
             @endif
             @if ($job['project_url'] ?? null)
                 @if ($job['drawing_url'] ?? null)
-                    <a href="{{ $job['drawing_url'] }}" class="vakman-job-btn vakman-job-btn-ghost">Tekening</a>
+                    <a href="{{ $job['drawing_url'] }}" class="vakman-job-btn vakman-job-btn-ghost vakman-job-drawing">Tekening</a>
                 @else
-                    <span class="vakman-job-btn vakman-job-btn-ghost is-disabled" aria-disabled="true" title="Geen tekening beschikbaar">Geen tekening</span>
+                    <span class="vakman-job-btn vakman-job-btn-ghost vakman-job-drawing is-disabled" aria-disabled="true" title="Geen tekening beschikbaar">Geen tekening</span>
                 @endif
             @endif
             @if (! empty($job['can_register_hours']))

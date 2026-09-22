@@ -173,7 +173,7 @@ class PlanningProjectPeriodTest extends TestCase
             ->assertSee('Klaar 22-09-2026');
     }
 
-    public function test_staffing_filter_shows_only_works_without_a_craftsman(): void
+    public function test_staffing_query_does_not_hide_works(): void
     {
         $user = User::factory()->create();
         $open = $this->makePeriodProject('250200015', 'TWC open Utrecht');
@@ -200,10 +200,10 @@ class PlanningProjectPeriodTest extends TestCase
                 'staffing' => 'open',
             ]))
             ->assertOk()
-            ->assertSee('name="staffing"', false)
-            ->assertSee('>Nog niet ingepland</option>', false)
+            ->assertDontSee('name="staffing"', false)
+            ->assertDontSee('>Nog niet ingepland</option>', false)
             ->assertSee('TWC open Utrecht')
-            ->assertDontSee('TWC gepland Utrecht')
+            ->assertSee('TWC gepland Utrecht')
             ->assertSee('plan-missing-craftsman', false);
 
         $this->actingAs($user)
@@ -214,11 +214,10 @@ class PlanningProjectPeriodTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('TWC gepland Utrecht')
-            ->assertDontSee('TWC open Utrecht')
-            ->assertDontSee('plan-missing-craftsman', false);
+            ->assertSee('TWC open Utrecht');
     }
 
-    public function test_staffing_planned_only_shows_works_with_a_craftsman_in_the_visible_week(): void
+    public function test_staffing_query_still_shows_works_outside_the_visible_week(): void
     {
         $user = User::factory()->create();
         $thisWeek = $this->makePeriodProject('250200017', 'TWC deze week Utrecht');
@@ -253,7 +252,7 @@ class PlanningProjectPeriodTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('TWC deze week Utrecht')
-            ->assertDontSee('TWC andere week Utrecht');
+            ->assertSee('TWC andere week Utrecht');
     }
 
     public function test_planned_staffing_filter_shows_every_work_with_a_craftsman_this_week(): void
@@ -312,7 +311,7 @@ class PlanningProjectPeriodTest extends TestCase
             ->assertSee('Laakse Tuinen')
             ->assertSee('data-worker-id="'.$nick->id.'"', false)
             ->assertSee('data-worker-id="'.$peter->id.'"', false)
-            ->assertDontSee('Open werk Utrecht');
+            ->assertSee('Open werk Utrecht');
     }
 
     public function test_scheduling_a_craftsman_removes_the_warning_and_keeps_start_and_klaar_markers(): void

@@ -68,44 +68,47 @@
             @endif
 
             @if ($canReviewHours && ($entry->isSubmitted() || $entry->isApproved()))
-                <form id="{{ $formId }}" method="POST" action="{{ route('personnel.hours.update', $entry) }}" class="mt-3 grid gap-2">
+                <form id="{{ $formId }}" method="POST" action="{{ route('personnel.hours.update', $entry) }}" class="mt-3 grid gap-2" data-review-hours>
                     @csrf
                     @if ($entry->hasSubmittedTimes())
                         <div class="grid grid-cols-[1fr_1fr_6rem] gap-2">
                             <label class="grid gap-1 text-xs">
                                 <span class="uppercase tracking-wide text-nicon-muted">Van</span>
-                                <input type="time" name="approved_start_time" required value="{{ old('approved_start_time', $entry->approvedStartLabel()) }}" class="border border-nicon-line bg-white px-2 py-1">
+                                <input type="time" name="approved_start_time" required value="{{ old('approved_start_time', $entry->approvedStartLabel()) }}" class="border border-nicon-line bg-white px-2 py-1" data-review-start>
                             </label>
                             <label class="grid gap-1 text-xs">
                                 <span class="uppercase tracking-wide text-nicon-muted">Tot</span>
-                                <input type="time" name="approved_end_time" required value="{{ old('approved_end_time', $entry->approvedEndLabel()) }}" class="border border-nicon-line bg-white px-2 py-1">
+                                <input type="time" name="approved_end_time" required value="{{ old('approved_end_time', $entry->approvedEndLabel()) }}" class="border border-nicon-line bg-white px-2 py-1" data-review-end>
                             </label>
                             <label class="grid gap-1 text-xs">
                                 <span class="uppercase tracking-wide text-nicon-muted">Pauze</span>
-                                <input type="number" name="approved_break_minutes" min="0" max="1440" step="1" required value="{{ old('approved_break_minutes', $entry->approvedBreakMinutes()) }}" class="border border-nicon-line bg-white px-2 py-1">
+                                <input type="number" name="approved_break_minutes" min="0" max="1440" step="1" required value="{{ old('approved_break_minutes', $entry->approvedBreakMinutes()) }}" class="border border-nicon-line bg-white px-2 py-1" data-review-break>
                             </label>
                         </div>
-                    @else
-                        <label class="grid gap-1 text-xs">
-                            <span class="uppercase tracking-wide text-nicon-muted">Goedgekeurde uren</span>
-                            <span class="inline-flex items-center gap-2">
-                                <input
-                                    type="number"
-                                    name="approved_hours"
-                                    min="0"
-                                    max="24"
-                                    step="0.25"
-                                    required
-                                    value="{{ old('approved_hours', $entry->approvedHoursValue() ?? $entry->submittedHoursValue()) }}"
-                                    class="w-24 border border-nicon-line bg-white px-2 py-1"
-                                >
-                                uur
-                            </span>
-                        </label>
                     @endif
                     <label class="grid gap-1 text-xs">
+                        <span class="uppercase tracking-wide text-nicon-muted">Goedgekeurde uren</span>
+                        <span class="inline-flex items-center gap-2">
+                            <input
+                                type="number"
+                                name="approved_hours"
+                                min="0"
+                                max="24"
+                                step="0.25"
+                                required
+                                value="{{ old('approved_hours', $entry->approvedHoursValue() ?? $entry->submittedHoursValue()) }}"
+                                class="w-24 border border-nicon-line bg-white px-2 py-1"
+                                data-review-hours-input
+                            >
+                            uur
+                        </span>
+                    </label>
+                    <label class="grid gap-1 text-xs">
                         <span class="uppercase tracking-wide text-nicon-muted">Reden/opmerking beoordelaar</span>
-                        <textarea name="review_note" rows="2" maxlength="2000" class="border border-nicon-line bg-white px-2 py-1">{{ old('review_note', $entry->review_note) }}</textarea>
+                        <textarea name="review_note" rows="2" maxlength="2000" @class(['border bg-white px-2 py-1', 'border-nicon-danger' => $errors->has('review_note'), 'border-nicon-line' => ! $errors->has('review_note')])>{{ old('review_note', $entry->review_note) }}</textarea>
+                        @error('review_note')
+                            <span class="text-nicon-danger">{{ $message }}</span>
+                        @enderror
                     </label>
                 </form>
                 <div class="mt-2 flex flex-wrap gap-2 text-xs">
@@ -124,3 +127,45 @@
         </article>
     @endforeach
 </div>
+@once
+    @push('detached-forms')
+        <script>
+            document.querySelectorAll('[data-review-hours]').forEach((form) => {
+                const hours = form.querySelector('[data-review-hours-input]');
+                const start = form.querySelector('[data-review-start]');
+                const end = form.querySelector('[data-review-end]');
+                const pause = form.querySelector('[data-review-break]');
+                if (!hours || !start || !end) {
+                    return;
+                }
+                let hoursTouched = false;
+                hours.addEventListener('input', () => {
+                    hoursTouched = true;
+                });
+                const sync = () => {
+                    if (hoursTouched) {
+                        return;
+                    }
+                    const from = minutes(start.value);
+                    const to = minutes(end.value);
+                    const breakMinutes = Math.max(0, Number(pause?.value || 0));
+                    if (from === null || to === null || to < from || to - from < breakMinutes) {
+                        return;
+                    }
+                    const net = Math.round(((to - from - breakMinutes) / 60) * 100) / 100;
+                    hours.value = String(net);
+                };
+                [start, end, pause].forEach((field) => field?.addEventListener('input', sync));
+            });
+
+            function minutes(value) {
+                const match = /^(\d{1,2}):(\d{2})/.exec(value || '');
+                if (!match) {
+                    return null;
+                }
+
+                return Number(match[1]) * 60 + Number(match[2]);
+            }
+        </script>
+    @endpush
+@endonce

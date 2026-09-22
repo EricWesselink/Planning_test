@@ -16,7 +16,7 @@
         $isImpersonating = session()->has('impersonator_id') && session()->has('impersonate_id');
     @endphp
     @if ($isImpersonating)
-        <div class="flex items-center justify-between gap-4 bg-nicon-orange px-4 py-2 text-white">
+        <div class="nicon-impersonate flex items-center justify-between gap-4 bg-nicon-orange px-4 py-2 text-white">
             <p class="text-sm font-medium">Je bekijkt het account van {{ $user?->name }}</p>
             <form method="POST" action="{{ route('users.impersonate.stop') }}" class="shrink-0">
                 @csrf
@@ -25,8 +25,8 @@
         </div>
     @endif
     <header class="nicon-topbar bg-nicon-ink text-white{{ $user?->isVakman() ? ' nicon-topbar--vakman' : '' }}">
-        <div class="flex items-center gap-4 px-4 py-3">
-            <div class="shrink-0">
+        <div class="nicon-topbar-bar flex items-center gap-4 px-4 py-3">
+            <div class="nicon-topbar-brand shrink-0">
                 <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
                 <div class="flex items-center gap-2">
                     <div class="text-lg font-semibold leading-tight">{{ $user?->isVakman() ? 'Mijn planning' : 'Planning' }}</div>
@@ -35,6 +35,7 @@
                     @endif
                 </div>
             </div>
+            <div class="nicon-topbar-menu flex min-w-0 grow items-center gap-1">
             <nav class="flex min-w-0 grow items-center gap-1 overflow-x-auto text-sm">
                 @php
                     $user = auth()->user();
@@ -110,10 +111,11 @@
                     </a>
                 @endunless
             </nav>
-            <form method="POST" action="{{ route('logout') }}" class="shrink-0">
+            <form method="POST" action="{{ route('logout') }}" class="nicon-topbar-logout shrink-0">
                 @csrf
                 <button class="text-sm text-white/70 hover:text-white">Uitloggen</button>
             </form>
+            </div>
         </div>
     </header>
     <div class="nicon-main">

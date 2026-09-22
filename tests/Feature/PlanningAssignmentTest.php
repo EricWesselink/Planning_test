@@ -85,6 +85,154 @@ class PlanningAssignmentTest extends TestCase
             ->assertSee('data-work-item-ids="'.$linoleum->id.','.$coating->id.'"', false);
     }
 
+    public function test_shifts_one_planned_activity_and_leaves_the_other_on_the_original_days(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Willem',
+            'employment_type' => 'zzp',
+            'company' => 'Willem Vloeren',
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+        $customer = Customer::query()->create(['name' => 'Gemeente Amersfoort']);
+        $project = Project::query()->create([
+            'project_number' => '11P241267',
+            'customer_id' => $customer->id,
+            'name' => 'Grote vloeren',
+            'status' => 'in_uitvoering',
+            'planned_start_date' => '2026-09-28',
+            'planned_end_date' => '2026-09-30',
+        ]);
+        $primer = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Primen & Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 120,
+            'planned_start_date' => '2026-09-28',
+            'planned_end_date' => '2026-09-30',
+            'status' => 'in_uitvoering',
+        ]);
+        $pvc = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 80,
+            'planned_start_date' => '2026-09-28',
+            'planned_end_date' => '2026-09-30',
+            'status' => 'in_uitvoering',
+        ]);
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $primer->id,
+            'start_date' => '2026-09-28',
+            'end_date' => '2026-09-30',
+            'hours_per_day' => 8,
+            'people_count' => 1,
+        ]);
+        $assignment->syncLinkedWorkItems([$primer->id, $pvc->id]);
+
+        $html = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-28']))
+            ->assertOk()
+            ->getContent();
+        $this->assertStringContainsString('data-work-item-id="'.$primer->id.'"', $html);
+        $this->assertStringContainsString('data-work-item-id="'.$pvc->id.'"', $html);
+        $this->assertSame(2, substr_count($html, 'data-shift-id="'.$assignment->id.'"'));
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $worker->id,
+                'work_item_id' => $pvc->id,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-02',
+                'start_time' => '08:00',
+                'end_time' => '16:00',
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertSame('2026-09-28', $assignment->start_date->toDateString());
+        $this->assertSame('2026-09-30', $assignment->end_date->toDateString());
+        $this->assertTrue($assignment->coversWorkIds([$primer->id]));
+        $this->assertFalse($assignment->coversWorkIds([$pvc->id]));
+
+        $shifted = WorkerAssignment::query()
+            ->where('worker_id', $worker->id)
+            ->whereKeyNot($assignment->id)
+            ->first();
+        $this->assertNotNull($shifted);
+        $this->assertSame($pvc->id, (int) $shifted->work_item_id);
+        $this->assertSame('2026-10-01', $shifted->start_date->toDateString());
+        $this->assertSame('2026-10-02', $shifted->end_date->toDateString());
+        $this->assertTrue($shifted->coversWorkIds([$pvc->id]));
+        $this->assertFalse($shifted->coversWorkIds([$primer->id]));
+        $this->assertSame(2, WorkerAssignment::query()->count());
+    }
+
+    public function test_saving_both_activities_from_the_dialog_still_moves_the_whole_visit(): void
+    {
+        $user = User::factory()->create();
+        $worker = Worker::query()->create([
+            'name' => 'Willem',
+            'employment_type' => 'zzp',
+            'company' => 'Willem Vloeren',
+            'specialty' => 'PVC',
+            'active' => true,
+        ]);
+        $customer = Customer::query()->create(['name' => 'Gemeente Amersfoort']);
+        $project = Project::query()->create([
+            'project_number' => '11P241267',
+            'customer_id' => $customer->id,
+            'name' => 'Grote vloeren',
+            'status' => 'in_uitvoering',
+            'planned_start_date' => '2026-09-28',
+            'planned_end_date' => '2026-09-30',
+        ]);
+        $primer = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Primen & Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 120,
+            'status' => 'in_uitvoering',
+        ]);
+        $pvc = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 80,
+            'status' => 'in_uitvoering',
+        ]);
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $primer->id,
+            'start_date' => '2026-09-28',
+            'end_date' => '2026-09-30',
+            'hours_per_day' => 8,
+            'people_count' => 1,
+        ]);
+        $assignment->syncLinkedWorkItems([$primer->id, $pvc->id]);
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'worker_id' => $worker->id,
+                'work_item_id' => $pvc->id,
+                'work_item_ids' => [$primer->id, $pvc->id],
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-02',
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertSame('2026-10-01', $assignment->start_date->toDateString());
+        $this->assertSame('2026-10-02', $assignment->end_date->toDateString());
+        $this->assertTrue($assignment->coversWorkIds([$primer->id, $pvc->id]));
+        $this->assertSame(1, WorkerAssignment::query()->count());
+    }
+
     public function test_moves_an_assignment_to_a_work_item_on_another_project_keeping_the_same_id(): void
     {
         $user = User::factory()->create();
@@ -268,7 +416,7 @@ class PlanningAssignmentTest extends TestCase
     {
         $user = User::factory()->create();
         [, $linoleum] = $this->makeAssignmentOnTwoWorkItems();
-        $other = $this->makeWorkItem('School Zwolle', '260200091', 'PVC');
+        $other = $this->makeWorkItem('School Zwolle', '260200091', 'Linoleum');
 
         $html = $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
@@ -372,17 +520,18 @@ class PlanningAssignmentTest extends TestCase
         ]);
     }
 
-    public function test_returns_409_when_planned_people_exceed_the_team(): void
+    public function test_returns_409_when_planned_people_exceed_the_team_on_another_work(): void
     {
         $user = User::factory()->create();
-        [$assignment, , $coating] = $this->makeAssignmentOnTwoWorkItems(people: 2);
+        [$assignment] = $this->makeAssignmentOnTwoWorkItems(people: 2);
         $assignment->forceFill(['people_count' => 2])->save();
+        $other = $this->makeWorkItem('School Zwolle', '260200091', 'Linoleum');
 
         $this->actingAs($user)
             ->postJson(route('planning.assignments.store'), [
                 'worker_id' => $assignment->worker_id,
-                'project_id' => $assignment->project_id,
-                'work_item_id' => $coating->id,
+                'project_id' => $other->project_id,
+                'work_item_id' => $other->id,
                 'start_date' => '2026-09-08',
                 'end_date' => '2026-09-08',
                 'people_count' => 1,
@@ -397,7 +546,7 @@ class PlanningAssignmentTest extends TestCase
         $this->assertSame(1, WorkerAssignment::query()->where('worker_id', $assignment->worker_id)->count());
     }
 
-    public function test_returns_409_when_a_single_person_is_planned_on_two_onderdelen(): void
+    public function test_plans_a_single_person_on_two_onderdelen_of_the_same_work(): void
     {
         $user = User::factory()->create();
         [$assignment, , $coating] = $this->makeAssignmentOnTwoWorkItems(people: 1);
@@ -411,10 +560,10 @@ class PlanningAssignmentTest extends TestCase
                 'end_date' => '2026-09-08',
                 'people_count' => 1,
             ])
-            ->assertConflict()
-            ->assertJsonPath('conflict', true);
+            ->assertOk()
+            ->assertJson(['ok' => true]);
 
-        $this->assertSame(1, WorkerAssignment::query()->where('worker_id', $assignment->worker_id)->count());
+        $this->assertSame(2, WorkerAssignment::query()->where('worker_id', $assignment->worker_id)->count());
     }
 
     public function test_planning_board_does_not_warn_when_a_two_person_team_is_split(): void
@@ -438,15 +587,16 @@ class PlanningAssignmentTest extends TestCase
             ->assertDontSee('person-bar double', false);
     }
 
-    public function test_planning_board_warns_when_planned_people_exceed_the_team(): void
+    public function test_planning_board_warns_when_planned_people_exceed_the_team_on_another_work(): void
     {
         $user = User::factory()->create();
-        [$assignment, , $coating] = $this->makeAssignmentOnTwoWorkItems(people: 2);
+        [$assignment] = $this->makeAssignmentOnTwoWorkItems(people: 2);
         $assignment->forceFill(['people_count' => 2])->save();
+        $other = $this->makeWorkItem('School Zwolle', '260200091', 'Linoleum');
         WorkerAssignment::query()->create([
             'worker_id' => $assignment->worker_id,
-            'project_id' => $assignment->project_id,
-            'work_item_id' => $coating->id,
+            'project_id' => $other->project_id,
+            'work_item_id' => $other->id,
             'start_date' => '2026-09-08',
             'end_date' => '2026-09-08',
             'hours_per_day' => 8,

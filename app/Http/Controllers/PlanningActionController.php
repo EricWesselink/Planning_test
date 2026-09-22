@@ -111,6 +111,10 @@ class PlanningActionController extends Controller
             $crewIds,
             $dayStart,
             $dayEnd,
+            false,
+            false,
+            (int) $targetProjectId,
+            $assignment->work_item_id ? (int) $assignment->work_item_id : null,
         );
         if ($conflict && ! $request->boolean('confirm_conflict')) {
             return $this->conflictJson($conflict);
@@ -265,6 +269,9 @@ class PlanningActionController extends Controller
                     $group['end_time'],
                     $includeSaturday,
                     $includeSunday,
+                    null,
+                    (int) $item->project_id,
+                    (int) $item->id,
                 );
                 if ($blocked) {
                     return $blocked;
@@ -584,6 +591,8 @@ class PlanningActionController extends Controller
                 $group['end_time'],
                 $includeSaturday,
                 $includeSunday,
+                $targetItem ? (int) $targetItem->project_id : (int) $assignment->project_id,
+                $targetItem ? (int) $targetItem->id : ($assignment->work_item_id ? (int) $assignment->work_item_id : null),
             );
             if ($conflict && ! $request->boolean('confirm_conflict')) {
                 return $this->conflictJson($conflict);
@@ -1033,6 +1042,8 @@ class PlanningActionController extends Controller
         bool $includeSaturday = false,
         bool $includeSunday = false,
         ?int $ignoreAssignmentId = null,
+        ?int $projectId = null,
+        ?int $workItemId = null,
     ): ?JsonResponse {
         if ($confirm) {
             return null;
@@ -1051,6 +1062,8 @@ class PlanningActionController extends Controller
                 $endTime,
                 $includeSaturday,
                 $includeSunday,
+                $projectId,
+                $workItemId,
             );
             if ($conflict) {
                 return $this->conflictJson($conflict);
@@ -1410,15 +1423,21 @@ class PlanningActionController extends Controller
         int $workerId,
         array $crewIds,
     ): ?string {
-        if ($target === null || $target->work_activity_id === null) {
+        if ($target === null) {
             return null;
         }
-        $assignment->loadMissing(['project', 'workItem']);
+        $assignment->loadMissing(['project.workItems', 'workItem']);
         $project = $assignment->project;
-        if ($project === null || ! $project->isSmallWork() || (int) $target->project_id !== (int) $project->id) {
+        if ($project === null || (int) $target->project_id !== (int) $project->id) {
             return null;
         }
         if (array_key_exists('work_item_ids', $data)) {
+            return null;
+        }
+        if (! $project->isSmallWork()) {
+            return $this->quantityLineAction($assignment, $target, $data, $start, $end, $workerId, $crewIds);
+        }
+        if ($target->work_activity_id === null) {
             return null;
         }
         if ($assignment->workItem?->work_activity_id !== null) {
@@ -1537,6 +1556,71 @@ class PlanningActionController extends Controller
     }
 
     /**
+     * A normal project visit drawn on several board lines (ondergrond and PVC, for
+     * example) forks the line that is dragged. The other lines keep the original days.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  list<int>  $crewIds
+     * @return 'fork'|'keep'|null
+     */
+    private function quantityLineAction(
+        WorkerAssignment $assignment,
+        WorkItem $target,
+        array $data,
+        Carbon $start,
+        Carbon $end,
+        int $workerId,
+        array $crewIds,
+    ): ?string {
+        $project = $assignment->project;
+        if ($project === null) {
+            return null;
+        }
+        $linked = array_flip($assignment->linkedWorkItemIds());
+        $covered = 0;
+        $targetCovered = false;
+        foreach ($this->quantityLineGroups($project) as $ids) {
+            $hits = false;
+            foreach ($ids as $id) {
+                if (isset($linked[$id])) {
+                    $hits = true;
+                    break;
+                }
+            }
+            if (! $hits) {
+                continue;
+            }
+            $covered++;
+            if (in_array((int) $target->id, $ids, true)) {
+                $targetCovered = true;
+            }
+        }
+        if ($covered < 2 || ! $targetCovered) {
+            return null;
+        }
+
+        return $this->assignmentScheduleChanged($assignment, $data, $start, $end, $workerId, $crewIds)
+            ? 'fork'
+            : 'keep';
+    }
+
+    /**
+     * @return list<list<int>>
+     */
+    private function quantityLineGroups(Project $project): array
+    {
+        $groups = [];
+        foreach ($project->workItems as $item) {
+            if ($item->isExtraWork() || (float) $item->ordered_quantity <= 0.0001) {
+                continue;
+            }
+            $groups[$item->typeKey()][] = (int) $item->id;
+        }
+
+        return array_values($groups);
+    }
+
+    /**
      * @return list<list<int>>
      */
     private function smallWorkActivityGroups(Project $project): array
@@ -1569,24 +1653,59 @@ class PlanningActionController extends Controller
     }
 
     /**
+     * @return list<int>
+     */
+    private function draggedLineIds(Project $project, WorkItem $target): array
+    {
+        if ($project->isSmallWork()) {
+            return $this->activityLineIds($project, $target);
+        }
+
+        $key = $target->typeKey();
+        $ids = [];
+        foreach ($project->workItems as $item) {
+            if ($item->isExtraWork() || $item->typeKey() !== $key) {
+                continue;
+            }
+            $ids[] = (int) $item->id;
+        }
+
+        return $ids !== [] ? $ids : [(int) $target->id];
+    }
+
+    /**
      * The forked line leaves the original visit, which keeps the other activities.
      */
     private function releaseForkedActivityLine(WorkerAssignment $original, WorkerAssignment $created, WorkItem $target): void
     {
         $original->loadMissing(['workItem', 'project.workItems']);
-        if ($original->workItem?->work_activity_id === null || $original->project === null) {
+        $project = $original->project;
+        $workItem = $original->workItem;
+        if ($project === null || $workItem === null) {
             return;
         }
-        $remove = $this->activityLineIds($original->project, $target);
+        $quantityVisit = $workItem->work_activity_id === null
+            && ! $workItem->isExtraWork()
+            && (float) $workItem->ordered_quantity > 0.0001;
+        if ($workItem->work_activity_id === null && ! $quantityVisit) {
+            return;
+        }
+        $remove = $this->draggedLineIds($project, $target);
         $remaining = array_values(array_filter(
             $original->linkedWorkItemIds(),
-            function (int $id) use ($original, $remove): bool {
+            function (int $id) use ($project, $remove): bool {
                 if (in_array($id, $remove, true)) {
                     return false;
                 }
-                $item = $original->project?->workItems->firstWhere('id', $id);
+                $item = $project->workItems->firstWhere('id', $id);
+                if ($item === null || $item->isExtraWork()) {
+                    return false;
+                }
+                if ($item->work_activity_id !== null) {
+                    return true;
+                }
 
-                return $item !== null && $item->work_activity_id !== null && ! $item->isExtraWork();
+                return (float) $item->ordered_quantity > 0.0001;
             },
         ));
         if ($remaining === []) {
@@ -1621,7 +1740,7 @@ class PlanningActionController extends Controller
         $assignment->loadMissing('project.workItems');
         $lineIds = $assignment->project === null
             ? [(int) $target->id]
-            : $this->activityLineIds($assignment->project, $target);
+            : $this->draggedLineIds($assignment->project, $target);
         $startTime = PlanningHours::normalizeTime($data['start_time'] ?? $assignment->startTimeValue(), PlanningHours::DAY_START);
         $endTime = PlanningHours::normalizeTime($data['end_time'] ?? $assignment->endTimeValue(), PlanningHours::DAY_END);
         $created = $this->createScheduledAssignment(

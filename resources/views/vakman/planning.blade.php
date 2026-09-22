@@ -45,8 +45,8 @@
             </div>
         </div>
         @can('create', \App\Models\LeaveRequest::class)
-            <div>
-                <a href="{{ route('vakman.leave-requests.index') }}" class="inline-flex bg-nicon-orange px-4 py-2 text-sm font-medium text-white">Vrij aanvragen</a>
+            <div class="vakman-agenda-leave-row">
+                <a href="{{ route('vakman.leave-requests.index') }}" class="vakman-agenda-leave inline-flex bg-nicon-orange px-4 py-2 text-sm font-medium text-white">Vrij aanvragen</a>
             </div>
         @endcan
 

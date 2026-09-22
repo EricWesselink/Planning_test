@@ -105,7 +105,7 @@
                                 </a>
                             </td>
                         @endforeach
-                        <td class="px-2 py-1 whitespace-nowrap text-nicon-muted">{{ ($row['submitted_hours'] ?? 0) > 0.01 ? $row['submitted_label'] : $row['week_summary'] }}</td>
+                        <td class="px-2 py-1 whitespace-nowrap text-nicon-muted">{{ ! empty($row['has_hour_entries']) ? $row['submitted_label'] : $row['week_summary'] }}</td>
                         <td class="px-2 py-1 whitespace-nowrap">
                             @php
                                 $statusClass = match ($row['hours_tone'] ?? null) {

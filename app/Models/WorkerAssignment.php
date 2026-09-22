@@ -583,7 +583,7 @@ class WorkerAssignment extends Model
         };
     }
 
-    public function planningLabel(): string
+    public function planningLabel(?float $hoursOverride = null): string
     {
         if ($this->isInternal()) {
             $who = $this->presentNamesLabel()
@@ -625,7 +625,9 @@ class WorkerAssignment extends Model
             return $team.' · voorlopig · '.$weeks;
         }
 
-        $hours = $this->hoursLabel();
+        $hours = $hoursOverride === null
+            ? $this->hoursLabel()
+            : PlanningHours::hoursLabel($hoursOverride);
         $names = $this->presentNamesLabel();
 
         if ($names !== null) {
@@ -639,7 +641,7 @@ class WorkerAssignment extends Model
         return $team.' · '.$hours;
     }
 
-    public function detailTitle(string $workName, string $projectName = ''): string
+    public function detailTitle(string $workName, string $projectName = '', ?float $hoursOverride = null): string
     {
         if ($this->isInternal()) {
             $note = trim((string) $this->notes);
@@ -653,7 +655,7 @@ class WorkerAssignment extends Model
 
         if ($this->isProvisional()) {
             $lines = array_values(array_filter([
-                $this->planningLabel(),
+                $this->planningLabel($hoursOverride),
                 $projectName !== '' ? $projectName : null,
                 $workName !== '' ? $workName : null,
                 $this->dateRangeLabel(),
@@ -662,14 +664,17 @@ class WorkerAssignment extends Model
             return implode(' · ', $lines);
         }
 
+        $total = $hoursOverride === null
+            ? $this->hoursLabel()
+            : PlanningHours::hoursLabel($hoursOverride);
         $lines = array_values(array_filter([
-            $this->planningLabel(),
+            $this->planningLabel($hoursOverride),
             $projectName !== '' ? $projectName : null,
             $workName !== '' ? $workName : null,
             $this->dateRangeLabel(),
             $this->timeRangeLabel(),
-            $this->dailyHoursLabel(),
-            'Totaal '.$this->hoursLabel(),
+            $hoursOverride === null ? $this->dailyHoursLabel() : null,
+            'Totaal '.$total,
         ]));
 
         return implode(' · ', $lines);

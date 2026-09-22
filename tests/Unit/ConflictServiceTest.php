@@ -31,11 +31,11 @@ class ConflictServiceTest extends TestCase
         $this->assertSame([], $map);
     }
 
-    public function test_exceeding_team_size_is_double_booked(): void
+    public function test_exceeding_team_size_on_another_work_is_double_booked(): void
     {
-        [$worker, $egaliseren, $linoleum] = $this->makeTeamWithTwoWorkItems(2);
+        [$worker, $egaliseren] = $this->makeTeamWithTwoWorkItems(2);
         $this->assign($worker, $egaliseren, 2);
-        $this->assign($worker, $linoleum, 1);
+        $this->assign($worker, $this->otherWorkItem('School Zwolle', '260200091'), 1);
 
         $map = app(ConflictService::class)->doubleBookedMap(
             WorkerAssignment::query()->with('worker')->get(),
@@ -45,7 +45,7 @@ class ConflictServiceTest extends TestCase
         $this->assertSame(3, $map[$worker->id]['2026-09-07']['used']);
     }
 
-    public function test_a_single_person_on_two_onderdelen_is_double_booked(): void
+    public function test_a_single_person_on_two_onderdelen_of_the_same_work_is_not_double_booked(): void
     {
         [$worker, $egaliseren, $linoleum] = $this->makeTeamWithTwoWorkItems(1);
         $this->assign($worker, $egaliseren, 1);
@@ -56,7 +56,7 @@ class ConflictServiceTest extends TestCase
             $this->days(),
         );
 
-        $this->assertSame(2, $map[$worker->id]['2026-09-07']['used']);
+        $this->assertSame([], $map);
     }
 
     public function test_capacity_conflict_is_null_when_the_second_person_fits(): void
@@ -108,13 +108,28 @@ class ConflictServiceTest extends TestCase
         $this->assertSame([], $map);
     }
 
-    public function test_the_same_named_person_on_two_onderdelen_is_double_booked(): void
+    public function test_the_same_named_person_on_two_onderdelen_of_the_same_work_is_not_double_booked(): void
     {
         [$worker, $egaliseren, $linoleum] = $this->makeTeamWithTwoWorkItems(3, ['Piet', 'Kees', 'Jan']);
         $piet = $worker->crewPeople()->where('name', 'Piet')->first();
         $kees = $worker->crewPeople()->where('name', 'Kees')->first();
         $this->assignNamed($worker, $egaliseren, [$piet->id, $kees->id]);
         $this->assignNamed($worker, $linoleum, [$piet->id]);
+
+        $map = app(ConflictService::class)->doubleBookedMap(
+            WorkerAssignment::query()->with(['worker', 'crewMembers'])->get(),
+            $this->days(),
+        );
+
+        $this->assertSame([], $map);
+    }
+
+    public function test_the_same_named_person_on_two_works_is_double_booked(): void
+    {
+        [$worker, $egaliseren] = $this->makeTeamWithTwoWorkItems(3, ['Piet', 'Kees', 'Jan']);
+        $piet = $worker->crewPeople()->where('name', 'Piet')->first();
+        $this->assignNamed($worker, $egaliseren, [$piet->id]);
+        $this->assignNamed($worker, $this->otherWorkItem('School Zwolle', '260200091'), [$piet->id]);
 
         $map = app(ConflictService::class)->doubleBookedMap(
             WorkerAssignment::query()->with(['worker', 'crewMembers'])->get(),
@@ -235,6 +250,27 @@ class ConflictServiceTest extends TestCase
         ]);
 
         return [$worker, $egaliseren, $linoleum];
+    }
+
+    private function otherWorkItem(string $projectName, string $projectNumber): WorkItem
+    {
+        $customer = Customer::query()->create(['name' => $projectName]);
+        $project = Project::query()->create([
+            'project_number' => $projectNumber,
+            'customer_id' => $customer->id,
+            'name' => $projectName,
+            'status' => 'in_uitvoering',
+            'planned_start_date' => '2026-09-07',
+            'planned_end_date' => '2026-09-08',
+        ]);
+
+        return WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 80,
+            'status' => 'in_uitvoering',
+        ]);
     }
 
     private function assign(Worker $worker, WorkItem $item, int $people, string $startTime = '08:00:00', string $endTime = '16:00:00'): WorkerAssignment
