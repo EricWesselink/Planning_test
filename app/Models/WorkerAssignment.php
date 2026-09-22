@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AssignmentKind;
 use App\Enums\InternalBusinessUnit;
+use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Support\PlanningHours;
 use App\Support\PlanningWeek;
@@ -284,6 +285,16 @@ class WorkerAssignment extends Model
     public function isInternal(): bool
     {
         return $this->kind === AssignmentKind::Internal;
+    }
+
+    public function isHourlyOpdracht(): bool
+    {
+        $this->loadMissing('workTickets');
+
+        return $this->workTickets->contains(
+            fn (WorkTicket $ticket): bool => $ticket->isOpdrachtbon()
+                && $ticket->billing_method === WorkTicketBilling::Hourly
+        );
     }
 
     public function internalTitle(): string

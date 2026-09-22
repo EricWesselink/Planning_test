@@ -31,12 +31,16 @@ class TimeEntryService
      */
     public function submit(User $user, array $data): TimeEntry
     {
-        $worker = $this->registrantWorker($user);
+        $assignmentId = isset($data['worker_assignment_id']) ? (int) $data['worker_assignment_id'] : 0;
+        $preview = $assignmentId > 0
+            ? WorkerAssignment::query()->with('workTickets')->find($assignmentId)
+            : null;
+        $hourlyOpdracht = $preview?->isHourlyOpdracht() ?? false;
+        $worker = $this->registrantWorker($user, $hourlyOpdracht);
         $crewMemberId = $this->resolvedCrewMemberId($user, $worker);
         $date = (string) $data['date'];
         $hours = round((float) $data['hours'], 2);
         $note = $this->nullableNote($data['note'] ?? null);
-        $assignmentId = isset($data['worker_assignment_id']) ? (int) $data['worker_assignment_id'] : 0;
         $workItemId = isset($data['work_item_id']) ? (int) $data['work_item_id'] : 0;
 
         $assignment = $assignmentId > 0 ? $this->plannedAssignment($worker, $crewMemberId, $assignmentId, $date) : null;
@@ -412,7 +416,7 @@ class TimeEntryService
         return round($hours / count($linked), 2);
     }
 
-    private function registrantWorker(User $user): Worker
+    private function registrantWorker(User $user, bool $hourlyOpdracht = false): Worker
     {
         $workerId = $user->scheduledWorkerId();
         $worker = $workerId ? Worker::query()->with('crewPeople')->find($workerId) : null;
@@ -427,7 +431,7 @@ class TimeEntryService
             : null;
         if ($member instanceof CrewMember) {
             $member->setRelation('worker', $worker);
-            if (! $member->registersHours()) {
+            if (! $member->registersHours() && ! $hourlyOpdracht) {
                 throw ValidationException::withMessages([
                     'hours' => 'Voor jou staan uren registreren uit.',
                 ]);
@@ -436,7 +440,7 @@ class TimeEntryService
             return $worker;
         }
 
-        if (! $worker->registersHours()) {
+        if (! $worker->registersHours() && ! $hourlyOpdracht) {
             throw ValidationException::withMessages([
                 'hours' => 'Voor jou staan uren registreren uit.',
             ]);

@@ -9,6 +9,16 @@
         <a href="{{ $weekUrl }}" class="text-sm text-nicon-orange">← Weekoverzicht</a>
         <h1 class="mt-2 text-2xl font-semibold">{{ $detail['heading'] }}</h1>
         <p class="text-sm text-nicon-muted">{{ $worker?->planName() ?? auth()->user()?->name }}</p>
+        @if (session('status'))
+            <p class="mt-3 text-sm text-nicon-ok">{{ session('status') }}</p>
+        @endif
+        @if ($errors->any())
+            <ul class="mt-3 list-disc pl-5 text-sm text-nicon-danger">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        @endif
 
         @forelse ($detail['jobs'] as $job)
             @php
@@ -58,6 +68,12 @@
                                 @foreach ($job['works'] as $work)
                                     <li>
                                         {{ $work['title'] }} · {{ $work['quantity'] }} {{ $work['unit'] }}
+                                        @if (($work['price_label'] ?? null) !== null)
+                                            · {{ $work['price_label'] }}
+                                            @if (($work['amount'] ?? null) !== null)
+                                                · {{ \App\Support\Format::money($work['amount']) }}
+                                            @endif
+                                        @endif
                                         @if (($work['note'] ?? '') !== '')
                                             <span class="text-nicon-muted">— {{ $work['note'] }}</span>
                                         @endif
@@ -124,6 +140,26 @@
                             <a href="{{ $job['opdrachtbon_url'] }}" class="bg-nicon-orange px-4 py-3 text-center text-sm font-medium text-white">Opdrachtbon</a>
                         @endif
                     @endforelse
+                    @if (! empty($job['hourly_label']))
+                        <p class="text-sm text-nicon-muted">{{ $job['hourly_label'] }}</p>
+                    @endif
+                    @if (! empty($job['can_register_hours']))
+                        @foreach ($job['hour_slots'] ?? [] as $slot)
+                            <div class="border-t border-nicon-line pt-3">
+                                @if (count($job['hour_slots']) > 1)
+                                    <p class="mb-2 text-xs text-nicon-muted">{{ $slot['work_title'] }} · gepland {{ \App\Support\PlanningHours::hoursLabel($slot['planned_hours']) }}</p>
+                                @endif
+                                @include('vakman.partials.hours-form', [
+                                    'date' => $detail['date']->toDateString(),
+                                    'assignmentId' => $slot['assignment_id'],
+                                    'projectId' => $slot['project_id'],
+                                    'workItemId' => $slot['work_item_id'],
+                                    'plannedHours' => $slot['planned_hours'],
+                                    'entry' => $slot['entry'],
+                                ])
+                            </div>
+                        @endforeach
+                    @endif
                 </div>
             </article>
         @empty

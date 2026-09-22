@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Models\WorkerAssignment;
 use App\Services\TimeEntryService;
 use App\Services\VakmanPlanningService;
 use Carbon\Carbon;
@@ -38,7 +39,17 @@ class VakmanTimeEntryController extends Controller
     public function store(Request $request, TimeEntryService $hours): RedirectResponse
     {
         $user = $this->vakman($request);
-        Gate::authorize('create', TimeEntry::class);
+        if (! $user->can('create', TimeEntry::class)) {
+            $assignment = WorkerAssignment::query()
+                ->with('workTickets')
+                ->find((int) $request->input('worker_assignment_id'));
+            abort_unless(
+                $assignment !== null
+                && (int) $assignment->worker_id === (int) $user->scheduledWorkerId()
+                && $assignment->isHourlyOpdracht(),
+                403,
+            );
+        }
 
         $data = $this->validated($request);
         $entry = $hours->submit($user, $data);

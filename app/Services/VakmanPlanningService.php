@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ProjectKind;
 use App\Enums\VoucherPriceKind;
+use App\Enums\WorkTicketBilling;
 use App\Enums\WorkUnit;
 use App\Models\CrewMember;
 use App\Models\Project;
@@ -236,6 +237,7 @@ class VakmanPlanningService
 
             $project = $assignment->project;
             $tickets = $this->ticketsOnDate($assignment, $date);
+            $hourlyOpdracht = $isExternal ? $this->hourlyOpdracht($tickets) : null;
             $holder = $isExternal ? null : $assignment->workTicketHolder;
             $card = [
                 'assignment' => $assignment,
@@ -267,14 +269,19 @@ class VakmanPlanningService
                     ? route('vakman.planning.opdrachtbon', [$date->toDateString(), $project])
                     : null,
                 'hour_slots' => $this->hourSlots($user, $assignment, $date, $entries),
-                'can_register_hours' => $user->canRegisterHours(),
+                'can_register_hours' => $isExternal
+                    ? $hourlyOpdracht !== null
+                    : $user->canRegisterHours(),
+                'hourly_label' => $hourlyOpdracht?->billingLabel(),
             ];
 
             if (! $detailed) {
                 return $card;
             }
 
-            $works = $this->works($assignment, $tickets);
+            $works = $isExternal && $hourlyOpdracht === null
+                ? $this->pricedWorks($assignment)
+                : $this->works($assignment, $tickets);
             $rooms = $this->rooms($assignment, $works, $tickets);
 
             return [
@@ -952,6 +959,17 @@ class VakmanPlanningService
     /**
      * @return Collection<int, WorkTicket>
      */
+    /**
+     * @param  Collection<int, WorkTicket>  $tickets
+     */
+    private function hourlyOpdracht(Collection $tickets): ?WorkTicket
+    {
+        return $tickets->first(
+            fn (WorkTicket $ticket): bool => $ticket->isOpdrachtbon()
+                && $ticket->billing_method === WorkTicketBilling::Hourly
+        );
+    }
+
     private function ticketsOnDate(WorkerAssignment $assignment, CarbonInterface $date): Collection
     {
         if (! $assignment->relationLoaded('workTickets')) {

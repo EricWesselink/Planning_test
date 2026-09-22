@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\AvailabilityKind;
 use App\Enums\WorkOrderType;
+use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Enums\WorkUnit;
 use App\Models\AreaTask;
@@ -426,7 +427,8 @@ class VakmanPlanningTest extends TestCase
             ->assertSee('08:00 – 16:00')
             ->assertDontSee('Bekijk werk')
             ->assertDontSee('Werkbon')
-            ->assertDontSee('€');
+            ->assertSee('€ 12,50')
+            ->assertDontSee('Gewerkte uren');
 
         $this->actingAs($user)
             ->get(route('vakman.planning.opdrachtbon', ['date' => '2026-09-10', 'project' => $own]))
@@ -442,6 +444,49 @@ class VakmanPlanningTest extends TestCase
         $this->actingAs($user)
             ->get(route('vakman.planning.werkbon', '2026-09-10'))
             ->assertForbidden();
+    }
+
+    public function test_zzp_with_an_hourly_opdracht_can_fill_in_hours(): void
+    {
+        $this->travelTo('2026-09-10 08:00:00');
+        $nick = $this->makeWorker('Nick Seine', 'zzp');
+        $own = $this->makeProject('Laakse Tuinen');
+        $assignment = WorkerAssignment::query()->create([
+            'worker_id' => $nick->id,
+            'project_id' => $own->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+            'hours_per_day' => 8,
+        ]);
+        WorkTicket::query()->create([
+            'number' => 'OB-2026-0008',
+            'kind' => WorkTicketKind::Opdrachtbon,
+            'worker_assignment_id' => $assignment->id,
+            'project_id' => $own->id,
+            'worker_id' => $nick->id,
+            'billing_method' => WorkTicketBilling::Hourly,
+            'hourly_rate' => 45,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-12',
+        ]);
+        $user = User::factory()->vakman($nick->id)->create(['name' => 'Nick Seine']);
+
+        $this->actingAs($user)
+            ->get(route('vakman.planning.day', '2026-09-10'))
+            ->assertOk()
+            ->assertSee('Gewerkte uren')
+            ->assertSee('Uurprijs')
+            ->assertSee('€ 45,00');
+
+        $this->actingAs($user)
+            ->post(route('vakman.hours.store'), [
+                'date' => '2026-09-10',
+                'worker_assignment_id' => $assignment->id,
+                'project_id' => $own->id,
+                'hours' => 6,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '6u ingediend');
     }
 
     public function test_zzp_today_link_sits_outside_the_week_arrows(): void
