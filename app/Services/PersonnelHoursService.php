@@ -8,7 +8,6 @@ use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\TimeEntry;
 use App\Models\Worker;
-use App\Models\WorkItem;
 use App\Support\PlanningHours;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -57,7 +56,7 @@ class PersonnelHoursService
     public function pendingForWeek(Collection $days): array
     {
         return TimeEntry::query()
-            ->with(['worker', 'crewMember', 'project', 'workItem', 'assignment', 'submitter'])
+            ->with(['worker', 'crewMember', 'project', 'workItem', 'assignment.crewMembers', 'submitter'])
             ->where('status', TimeEntryStatus::Submitted)
             ->whereDate('date', '>=', $days->first())
             ->whereDate('date', '<=', $days->last())
@@ -72,9 +71,39 @@ class PersonnelHoursService
      */
     public function overview(Request $request): LengthAwarePaginator
     {
-        $query = $this->overviewQuery($request);
+        return $this->overviewQuery($request)
+            ->with(['worker', 'crewMember', 'project', 'workItem', 'assignment', 'submitter', 'reviewer'])
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->paginate(50)
+            ->withQueryString();
+    }
 
-        return $query->paginate(50)->withQueryString();
+    /**
+     * @return array{submitted: float, approved: float, difference: float, label: string}
+     */
+    public function overviewTotals(Request $request): array
+    {
+        $row = $this->overviewQuery($request)
+            ->selectRaw('COALESCE(SUM(hours), 0) as submitted_hours')
+            ->selectRaw(
+                'COALESCE(SUM(CASE WHEN status = ? THEN COALESCE(approved_hours, 0) ELSE 0 END), 0) as approved_hours',
+                [TimeEntryStatus::Approved->value],
+            )
+            ->first();
+
+        $submitted = round((float) ($row?->getAttribute('submitted_hours') ?? 0), 2);
+        $approved = round((float) ($row?->getAttribute('approved_hours') ?? 0), 2);
+        $difference = round($approved - $submitted, 2);
+
+        return [
+            'submitted' => $submitted,
+            'approved' => $approved,
+            'difference' => $difference,
+            'label' => 'Ingediend: '.PlanningHours::hoursLabel($submitted)
+                .' | Goedgekeurd: '.PlanningHours::hoursLabel($approved)
+                .' | Verschil: '.$this->signedHoursLabel($difference),
+        ];
     }
 
     /**
@@ -82,10 +111,7 @@ class PersonnelHoursService
      */
     private function overviewQuery(Request $request): Builder
     {
-        $query = TimeEntry::query()
-            ->with(['worker', 'crewMember', 'project', 'workItem', 'assignment', 'submitter', 'reviewer'])
-            ->orderByDesc('date')
-            ->orderByDesc('id');
+        $query = TimeEntry::query();
 
         if ($request->filled('week')) {
             $start = Carbon::parse($request->string('week')->toString())->startOfWeek(Carbon::MONDAY);
@@ -98,21 +124,13 @@ class PersonnelHoursService
         if ($request->filled('to')) {
             $query->whereDate('date', '<=', $request->date('to'));
         }
-        if ($request->filled('worker_id')) {
-            $query->where('worker_id', $request->integer('worker_id'));
-        }
-        if ($request->filled('crew_member_id')) {
-            $query->where('crew_member_id', $request->integer('crew_member_id'));
-        }
+        $this->applyPersonFilter($query, $request->string('person')->toString());
         if ($request->filled('project_id')) {
             $query->where('project_id', $request->integer('project_id'));
         }
         if ($request->filled('work_number')) {
             $number = trim($request->string('work_number')->toString());
             $query->whereHas('project', fn ($q) => $q->where('project_number', 'like', '%'.$number.'%'));
-        }
-        if ($request->filled('work_item_id')) {
-            $query->where('work_item_id', $request->integer('work_item_id'));
         }
         if ($request->filled('status')) {
             $status = TimeEntryStatus::tryFrom($request->string('status')->toString());
@@ -124,11 +142,29 @@ class PersonnelHoursService
         return $query;
     }
 
-    public function approvedHoursTotal(Request $request): float
+    /**
+     * @param  Builder<TimeEntry>  $query
+     */
+    private function applyPersonFilter(Builder $query, string $person): void
     {
-        return round((float) $this->overviewQuery($request)
-            ->where('status', TimeEntryStatus::Approved)
-            ->sum('approved_hours'), 2);
+        if (preg_match('/^member-(\d+)$/', $person, $matches) === 1) {
+            $query->where('crew_member_id', (int) $matches[1]);
+
+            return;
+        }
+
+        if (preg_match('/^worker-(\d+)$/', $person, $matches) === 1) {
+            $query->where('worker_id', (int) $matches[1])->whereNull('crew_member_id');
+        }
+    }
+
+    private function signedHoursLabel(float $hours): string
+    {
+        if ($hours > 0.0001) {
+            return '+'.PlanningHours::hoursLabel($hours);
+        }
+
+        return PlanningHours::hoursLabel($hours);
     }
 
     /**
@@ -151,21 +187,46 @@ class PersonnelHoursService
     }
 
     /**
-     * @return array{workers: Collection<int, Worker>, projects: Collection<int, Project>, workItems: Collection<int, WorkItem>}
+     * @return array{people: list<array{value: string, label: string}>, projects: Collection<int, Project>}
      */
     public function filterOptions(): array
     {
+        $people = [];
+        $workers = Worker::query()
+            ->with('crewPeople')
+            ->where(function ($query): void {
+                $query->where('registers_hours', true)
+                    ->orWhereHas('crewPeople', fn ($q) => $q->where('registers_hours', true));
+            })
+            ->get();
+
+        foreach ($workers as $worker) {
+            $members = $worker->crewPeople
+                ->filter(fn (CrewMember $member): bool => trim((string) $member->name) !== '' && $member->registersHours());
+            if ($members->isNotEmpty()) {
+                foreach ($members as $member) {
+                    $people[] = [
+                        'value' => 'member-'.$member->id,
+                        'label' => $member->displayName(),
+                    ];
+                }
+
+                continue;
+            }
+
+            if ($worker->registersHours()) {
+                $people[] = [
+                    'value' => 'worker-'.$worker->id,
+                    'label' => $worker->planName(),
+                ];
+            }
+        }
+
+        usort($people, fn (array $left, array $right): int => strcasecmp($left['label'], $right['label']));
+
         return [
-            'workers' => Worker::query()
-                ->with('crewPeople')
-                ->where(function ($query): void {
-                    $query->where('registers_hours', true)
-                        ->orWhereHas('crewPeople', fn ($q) => $q->where('registers_hours', true));
-                })
-                ->orderBy('name')
-                ->get(),
+            'people' => $people,
             'projects' => Project::query()->active()->orderBy('name')->limit(200)->get(),
-            'workItems' => WorkItem::query()->orderBy('name')->limit(300)->get(),
         ];
     }
 
@@ -181,7 +242,7 @@ class PersonnelHoursService
         }
 
         return TimeEntry::query()
-            ->with(['project', 'workItem', 'assignment', 'reviewer', 'worker', 'crewMember'])
+            ->with(['project', 'workItem', 'assignment.crewMembers', 'reviewer', 'worker', 'crewMember'])
             ->whereIn('worker_id', $workerIds)
             ->whereDate('date', '>=', $from)
             ->whereDate('date', '<=', $to)
@@ -393,12 +454,13 @@ class PersonnelHoursService
             'project' => $entry->project?->displayTitle() ?? 'Project',
             'work_number' => $entry->project?->workNumber() ?? '',
             'work' => $entry->workName(),
-            'planned' => $entry->plannedHoursValue(),
-            'planned_label' => PlanningHours::hoursLabel($entry->plannedHoursValue()),
+            'planned' => $entry->planningHoursValue(),
+            'planned_label' => PlanningHours::hoursLabel($entry->planningHoursValue()),
             'submitted' => $entry->hoursValue(),
             'submitted_label' => $entry->hoursLabel(),
-            'difference' => $entry->differenceHours(),
-            'difference_label' => ($entry->differenceHours() > 0.0001 ? '+' : '').PlanningHours::hoursLabel($entry->differenceHours()),
+            'approved_label' => $entry->isApproved() ? $entry->approvedHoursLabel() : '—',
+            'difference' => $entry->reviewDifferenceHours(),
+            'difference_label' => ($entry->reviewDifferenceHours() > 0.0001 ? '+' : '').PlanningHours::hoursLabel($entry->reviewDifferenceHours()),
             'note' => $entry->note,
             'status' => $entry->status,
             'is_unplanned' => $entry->is_unplanned,

@@ -1027,38 +1027,24 @@ class VakmanPlanningService
      */
     private function hourSlots(User $user, WorkerAssignment $assignment, CarbonInterface $date, Collection $entries): array
     {
-        $items = $this->workItems($assignment, $this->ticketsOnDate($assignment, $date));
-        if ($items->isEmpty() && $assignment->workItem) {
-            $items = collect([$assignment->workItem]);
-        }
-        if ($items->isEmpty()) {
-            $items = collect([null]);
-        }
-
+        $item = $assignment->workItem ?? $this->resolvedWorkItem($assignment);
         $crewId = $this->hours->resolvedCrewMemberId($user, $user->worker);
-        $planned = $assignment->hoursOnDate($date);
-        $share = $items->count() > 1 ? round($planned / $items->count(), 2) : $planned;
+        $visitEntries = $entries->filter(function (TimeEntry $entry) use ($assignment, $date, $crewId): bool {
+            return (int) $entry->worker_assignment_id === (int) $assignment->id
+                && $entry->date->toDateString() === $date->toDateString()
+                && (int) ($entry->crew_member_id ?? 0) === (int) ($crewId ?? 0);
+        })->values();
+        $entry = $visitEntries->first(fn (TimeEntry $row): bool => ! $row->isApproved())
+            ?? $visitEntries->first();
 
-        return $items->map(function (?WorkItem $item) use ($assignment, $date, $entries, $crewId, $share): array {
-            $key = TimeEntry::identityKey(
-                (int) $assignment->worker_id,
-                $crewId,
-                $date->toDateString(),
-                (int) $assignment->id,
-                $item?->id,
-            );
-
-            return [
-                'assignment_id' => (int) $assignment->id,
-                'project_id' => (int) $assignment->project_id,
-                'work_item_id' => $item?->id,
-                'work_title' => $item?->planningTitle() ?? 'Werkzaamheid',
-                'planned_hours' => $share,
-                'entry' => $entries->first(
-                    fn (TimeEntry $entry): bool => $entry->identity_key === $key
-                ),
-            ];
-        })->values()->all();
+        return [[
+            'assignment_id' => (int) $assignment->id,
+            'project_id' => (int) $assignment->project_id,
+            'work_item_id' => $item?->id,
+            'work_title' => $item?->planningTitle() ?? 'Werkzaamheid',
+            'planned_hours' => round($assignment->hoursOnDate($date), 2),
+            'entry' => $entry,
+        ]];
     }
 
     private function dayHeading(CarbonInterface $date): string

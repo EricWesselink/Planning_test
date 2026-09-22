@@ -52,7 +52,8 @@ class WorkerPersonnelController extends Controller
             'canReviewHours' => $request->user()?->canReviewHours() ?? false,
             'pendingEntries' => [],
             'overview' => null,
-            'filters' => ['workers' => collect(), 'projects' => collect(), 'workItems' => collect()],
+            'filters' => ['people' => [], 'projects' => collect()],
+            'overviewTotals' => null,
             'dayDetails' => [],
             'detailDate' => null,
             'detailPerson' => null,
@@ -64,7 +65,7 @@ class WorkerPersonnelController extends Controller
 
         if ($tab === 'overzicht') {
             $payload['overview'] = $this->hours->overview($request);
-            $payload['approvedHoursTotal'] = $this->hours->approvedHoursTotal($request);
+            $payload['overviewTotals'] = $this->hours->overviewTotals($request);
             $payload['filters'] = $this->hours->filterOptions();
         }
 

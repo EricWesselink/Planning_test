@@ -21,7 +21,7 @@
         <tbody>
             @forelse ($pendingEntries as $entry)
                 @php
-                    $diff = $entry->differenceHours();
+                    $diff = $entry->reviewDifferenceHours();
                 @endphp
                 <tr @class(['border-t border-nicon-line', 'bg-nicon-paper/60' => abs($diff) > 0.01])>
                     <td class="px-2 py-1.5 whitespace-nowrap font-semibold">{{ $entry->personName() }}</td>
@@ -34,7 +34,7 @@
                     <td class="px-2 py-1.5 whitespace-nowrap">{{ $entry->project?->workNumber() }}</td>
                     <td class="px-2 py-1.5">{{ $entry->workName() }}</td>
                     <td class="px-2 py-1.5 whitespace-nowrap">{{ $entry->date->translatedFormat('D j M') }}</td>
-                    <td class="px-2 py-1.5">{{ \App\Support\PlanningHours::hoursLabel($entry->plannedHoursValue()) }}</td>
+                    <td class="px-2 py-1.5">{{ \App\Support\PlanningHours::hoursLabel($entry->planningHoursValue()) }}</td>
                     <td class="px-2 py-1.5 font-medium">{{ $entry->hoursLabel() }}</td>
                     <td @class(['px-2 py-1.5', 'font-medium text-nicon-warn' => abs($diff) > 0.01])>{{ ($diff > 0.0001 ? '+' : '').\App\Support\PlanningHours::hoursLabel($diff) }}</td>
                     <td class="px-2 py-1.5 text-nicon-muted">{{ $entry->note }}</td>

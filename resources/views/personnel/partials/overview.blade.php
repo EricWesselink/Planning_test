@@ -1,6 +1,6 @@
 @php
     $overview = $overview ?? null;
-    $filters = $filters ?? ['workers' => collect(), 'projects' => collect(), 'workItems' => collect()];
+    $filters = $filters ?? ['people' => [], 'projects' => collect()];
 @endphp
 <form method="GET" action="{{ route('personnel.index') }}" class="mt-4 grid gap-2 border border-nicon-line bg-white p-3 text-sm sm:grid-cols-4">
     <input type="hidden" name="tab" value="overzicht">
@@ -18,10 +18,10 @@
     </label>
     <label class="grid gap-1">
         <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Medewerker</span>
-        <select name="worker_id" class="border border-nicon-line px-2 py-1.5">
-            <option value="">Alle</option>
-            @foreach ($filters['workers'] as $worker)
-                <option value="{{ $worker->id }}" @selected((int) request('worker_id') === (int) $worker->id)>{{ $worker->planName() }}</option>
+        <select name="person" class="border border-nicon-line px-2 py-1.5">
+            <option value="">Alle medewerkers</option>
+            @foreach ($filters['people'] as $person)
+                <option value="{{ $person['value'] }}" @selected(request('person') === $person['value'])>{{ $person['label'] }}</option>
             @endforeach
         </select>
     </label>
@@ -39,15 +39,6 @@
         <input type="text" name="work_number" value="{{ request('work_number') }}" class="border border-nicon-line px-2 py-1.5">
     </label>
     <label class="grid gap-1">
-        <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Werkzaamheid</span>
-        <select name="work_item_id" class="border border-nicon-line px-2 py-1.5">
-            <option value="">Alle</option>
-            @foreach ($filters['workItems'] as $item)
-                <option value="{{ $item->id }}" @selected((int) request('work_item_id') === (int) $item->id)>{{ $item->planningTitle() }}</option>
-            @endforeach
-        </select>
-    </label>
-    <label class="grid gap-1">
         <span class="text-[11px] uppercase tracking-wide text-nicon-muted">Status</span>
         <select name="status" class="border border-nicon-line px-2 py-1.5">
             <option value="">Alle</option>
@@ -60,7 +51,7 @@
         <button class="border border-nicon-ink bg-nicon-ink px-3 py-1.5 text-white">Filter</button>
     </div>
 </form>
-<p class="mt-3 text-sm">Totaal goedgekeurd: {{ \App\Support\PlanningHours::hoursLabel($approvedHoursTotal ?? 0) }}</p>
+<p class="mt-3 text-sm">{{ $overviewTotals['label'] ?? 'Ingediend: 0u | Goedgekeurd: 0u | Verschil: 0u' }}</p>
 <div class="mt-4 overflow-x-auto border border-nicon-line bg-white">
     <table class="min-w-full text-xs">
         <thead class="border-b border-nicon-line bg-nicon-paper text-left uppercase tracking-wide text-nicon-muted">

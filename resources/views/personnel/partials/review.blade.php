@@ -23,8 +23,9 @@
                 <div><span class="text-nicon-muted">Project:</span> {{ $detail['project'] }}</div>
                 <div><span class="text-nicon-muted">Gepland:</span> {{ $detail['planned_label'] }}</div>
                 <div><span class="text-nicon-muted">Ingediend:</span> {{ $detail['submitted_label'] }}</div>
+                <div><span class="text-nicon-muted">Goedgekeurd:</span> {{ $detail['approved_label'] }}</div>
                 <div @class(['text-nicon-warn' => abs($detail['difference']) > 0.01])>
-                    <span class="text-nicon-muted">Verschil:</span> {{ $detail['difference_label'] }}
+                    <span class="text-nicon-muted">Verschil t.o.v. planning:</span> {{ $detail['difference_label'] }}
                 </div>
                 <div>
                     <span class="text-nicon-muted">Opmerking medewerker:</span>
@@ -60,7 +61,7 @@
                 @endif
             @endif
 
-            @if ($canReviewHours && $entry->isSubmitted())
+            @if ($canReviewHours && ($entry->isSubmitted() || $entry->isApproved()))
                 <form id="{{ $formId }}" method="POST" action="{{ route('personnel.hours.update', $entry) }}" class="mt-3 grid gap-2">
                     @csrf
                     <label class="grid gap-1 text-xs">
@@ -73,7 +74,7 @@
                                 max="24"
                                 step="0.25"
                                 required
-                                value="{{ old('approved_hours', $entry->submittedHoursValue()) }}"
+                                value="{{ old('approved_hours', $entry->approvedHoursValue() ?? $entry->submittedHoursValue()) }}"
                                 class="w-24 border border-nicon-line bg-white px-2 py-1"
                             >
                             uur
@@ -81,16 +82,20 @@
                     </label>
                     <label class="grid gap-1 text-xs">
                         <span class="uppercase tracking-wide text-nicon-muted">Reden/opmerking beoordelaar</span>
-                        <textarea name="review_note" rows="2" maxlength="2000" class="border border-nicon-line bg-white px-2 py-1">{{ old('review_note') }}</textarea>
+                        <textarea name="review_note" rows="2" maxlength="2000" class="border border-nicon-line bg-white px-2 py-1">{{ old('review_note', $entry->review_note) }}</textarea>
                     </label>
                 </form>
                 <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                    <form method="POST" action="{{ route('personnel.hours.approve', $entry) }}">
-                        @csrf
-                        <button class="border border-nicon-ok bg-white px-2 py-1 text-nicon-ok">Goedkeuren</button>
-                    </form>
+                    @if ($entry->isSubmitted())
+                        <form method="POST" action="{{ route('personnel.hours.approve', $entry) }}">
+                            @csrf
+                            <button class="border border-nicon-ok bg-white px-2 py-1 text-nicon-ok">Goedkeuren</button>
+                        </form>
+                    @endif
                     <button form="{{ $formId }}" formaction="{{ route('personnel.hours.update', $entry) }}" name="_method" value="PATCH" class="border border-nicon-ink bg-nicon-ink px-2 py-1 text-white">Aanpassen &amp; goedkeuren</button>
-                    <button form="{{ $formId }}" formaction="{{ route('personnel.hours.reject', $entry) }}" class="border border-nicon-danger bg-white px-2 py-1 text-nicon-danger">Afwijzen</button>
+                    @if ($entry->isSubmitted())
+                        <button form="{{ $formId }}" formaction="{{ route('personnel.hours.reject', $entry) }}" class="border border-nicon-danger bg-white px-2 py-1 text-nicon-danger">Afwijzen</button>
+                    @endif
                 </div>
             @endif
         </article>

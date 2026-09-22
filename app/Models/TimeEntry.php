@@ -126,9 +126,40 @@ class TimeEntry extends Model
         return round((float) $this->planned_hours, 2);
     }
 
+    public function planningHoursValue(): float
+    {
+        $assignment = $this->assignment;
+        if (! $assignment instanceof WorkerAssignment || $assignment->isHoursOrigin() || $assignment->isProvisional()) {
+            return $this->plannedHoursValue();
+        }
+
+        $assignment->loadMissing('crewMembers');
+        $member = $this->crew_member_id
+            ? $assignment->crewMembers->firstWhere('id', (int) $this->crew_member_id)
+            : null;
+
+        if ($member instanceof CrewMember && ($member->pivot?->start_time || $member->pivot?->end_time)) {
+            return round(PlanningHours::hoursBetween(
+                PlanningHours::normalizeTime($member->pivot->start_time, $assignment->startTimeValue()),
+                PlanningHours::normalizeTime($member->pivot->end_time, $assignment->endTimeValue()),
+            ), 2);
+        }
+
+        return round($assignment->hoursOnDate($this->date), 2);
+    }
+
     public function differenceHours(): float
     {
         return round($this->hoursValue() - $this->plannedHoursValue(), 2);
+    }
+
+    public function reviewDifferenceHours(): float
+    {
+        $actual = $this->isApproved()
+            ? ($this->approvedHoursValue() ?? $this->submittedHoursValue())
+            : $this->submittedHoursValue();
+
+        return round($actual - $this->planningHoursValue(), 2);
     }
 
     public function hoursLabel(): string

@@ -400,7 +400,7 @@ class TimeEntryTest extends TestCase
             ->assertOk()
             ->assertSee('6,5u goedgekeurd')
             ->assertSee('Goedgekeurd door Eric')
-            ->assertDontSee('Aanpassen & goedkeuren');
+            ->assertSee('Aanpassen & goedkeuren');
     }
 
     public function test_adjusting_hours_requires_a_reason_and_counts_approved_hours(): void
@@ -458,7 +458,7 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('personnel.index', ['week' => '2026-09-21', 'tab' => 'overzicht']))
             ->assertOk()
-            ->assertSee('Totaal goedgekeurd: 7u')
+            ->assertSee('Ingediend: 6,5u | Goedgekeurd: 7u | Verschil: +0,5u')
             ->assertSee('ingediend 6,5u');
 
         $this->actingAs($leader)
@@ -527,6 +527,221 @@ class TimeEntryTest extends TestCase
             ->assertSee('Ingediend door medewerker: 8u')
             ->assertSee('Goedgekeurd door Eric: 0u')
             ->assertSee('Na controle geen uren');
+    }
+
+    public function test_approved_hours_stay_editable_and_follow_the_live_plan(): void
+    {
+        [$vakman, $assignment, $item] = $this->plannedVakman('Peter');
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-21',
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $item->id,
+            'hours' => '10',
+        ]);
+        $entry = TimeEntry::query()->first();
+        $leader = User::factory()->projectleider()->create(['name' => 'Eric']);
+        $weekstaat = $this->weekstaatDay($assignment);
+
+        $this->actingAs($leader)->post(route('personnel.hours.approve', $entry));
+
+        $entry = $entry->fresh();
+        $this->assertSame(10.0, $entry->submittedHoursValue());
+        $this->assertSame(10.0, $entry->approvedHoursValue());
+        $this->assertSame(8.0, $entry->planningHoursValue());
+
+        $this->actingAs($leader)
+            ->get($weekstaat)
+            ->assertOk()
+            ->assertSee('Gepland:')
+            ->assertSee('8u')
+            ->assertSee('Ingediend:')
+            ->assertSee('10u')
+            ->assertSee('Goedgekeurd:')
+            ->assertSee('Verschil t.o.v. planning:')
+            ->assertSee('+2u')
+            ->assertSee('Aanpassen & goedkeuren');
+
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-21'),
+            Carbon::parse('2026-09-21'),
+            '08:00:00',
+            '12:00:00',
+        );
+        $assignment->save();
+        $entry = $entry->fresh();
+        $this->assertSame(10.0, $entry->submittedHoursValue());
+        $this->assertSame(10.0, $entry->approvedHoursValue());
+        $this->assertSame(4.0, $entry->planningHoursValue());
+
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.update', $entry), [
+                'approved_hours' => '0',
+                'review_note' => 'Na controle geen uren',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '0u aangepast en goedgekeurd.');
+
+        $entry = $entry->fresh();
+        $this->assertSame(10.0, $entry->submittedHoursValue());
+        $this->assertSame(0.0, $entry->approvedHoursValue());
+        $this->assertSame('Na controle geen uren', $entry->review_note);
+        $this->assertSame(0.0, (float) WorkProgressEntry::query()->value('worked_hours'));
+    }
+
+    public function test_the_same_assignment_does_not_create_a_second_time_entry(): void
+    {
+        [$vakman, $assignment, $item] = $this->plannedVakman('Peter');
+        $other = WorkItem::query()->create([
+            'project_id' => $assignment->project_id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 20,
+            'status' => 'in_uitvoering',
+        ]);
+
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-21',
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $item->id,
+            'hours' => '4',
+        ])->assertRedirect();
+
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-21',
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $other->id,
+            'hours' => '10',
+        ])->assertRedirect();
+
+        $this->assertSame(1, TimeEntry::query()->count());
+        $entry = TimeEntry::query()->first();
+        $this->assertSame($assignment->id, $entry->worker_assignment_id);
+        $this->assertSame(10.0, $entry->submittedHoursValue());
+        $this->assertSame(8.0, $entry->planningHoursValue());
+        $this->assertNull($entry->approvedHoursValue());
+    }
+
+    public function test_hours_overview_filters_people_and_totals_match_the_rows(): void
+    {
+        $leader = User::factory()->projectleider()->create();
+        $team = Worker::query()->create([
+            'name' => 'Team 2 Peter',
+            'employment_type' => 'eigen',
+            'specialty' => 'PVC',
+            'active' => true,
+            'registers_hours' => true,
+        ]);
+        $jose = CrewMember::query()->create([
+            'worker_id' => $team->id,
+            'name' => 'José',
+            'sort_order' => 1,
+        ]);
+        $peter = CrewMember::query()->create([
+            'worker_id' => $team->id,
+            'name' => 'Peter',
+            'sort_order' => 0,
+        ]);
+        $griftland = $this->makeProject('Griftland College', ['project_number' => '251000077']);
+        $other = $this->makeProject('Andere klus');
+        $pvc = WorkItem::query()->create([
+            'project_id' => $griftland->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'in_uitvoering',
+        ]);
+        $tapijt = WorkItem::query()->create([
+            'project_id' => $other->id,
+            'name' => 'Tapijt',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'in_uitvoering',
+        ]);
+        TimeEntry::factory()->create([
+            'worker_id' => $team->id,
+            'crew_member_id' => $jose->id,
+            'project_id' => $griftland->id,
+            'work_item_id' => $pvc->id,
+            'date' => '2026-09-21',
+            'hours' => 4,
+            'approved_hours' => 0,
+            'status' => TimeEntryStatus::Approved,
+        ]);
+        TimeEntry::factory()->create([
+            'worker_id' => $team->id,
+            'crew_member_id' => $jose->id,
+            'project_id' => $griftland->id,
+            'work_item_id' => $pvc->id,
+            'date' => '2026-09-21',
+            'hours' => 10,
+            'approved_hours' => 10,
+            'status' => TimeEntryStatus::Approved,
+        ]);
+        TimeEntry::factory()->create([
+            'worker_id' => $team->id,
+            'crew_member_id' => $peter->id,
+            'project_id' => $other->id,
+            'work_item_id' => $tapijt->id,
+            'date' => '2026-09-21',
+            'hours' => 8,
+            'approved_hours' => 8,
+            'status' => TimeEntryStatus::Approved,
+        ]);
+        TimeEntry::factory()->create([
+            'worker_id' => $team->id,
+            'crew_member_id' => $jose->id,
+            'project_id' => $griftland->id,
+            'work_item_id' => $pvc->id,
+            'date' => '2026-09-28',
+            'hours' => 5,
+            'approved_hours' => 5,
+            'status' => TimeEntryStatus::Approved,
+        ]);
+
+        $this->actingAs($leader)
+            ->get(route('personnel.index', ['tab' => 'overzicht', 'week' => '2026-09-21']))
+            ->assertOk()
+            ->assertSee('Alle medewerkers')
+            ->assertSeeInOrder(['José', 'Peter'])
+            ->assertDontSee('Team 2 Peter')
+            ->assertDontSee('name="work_item_id"', false)
+            ->assertSee('Werkzaamheid')
+            ->assertSee('font-semibold">José</td>', false)
+            ->assertSee('font-semibold">Peter</td>', false)
+            ->assertSee('Ingediend: 22u | Goedgekeurd: 18u | Verschil: -4u');
+
+        $this->actingAs($leader)
+            ->get(route('personnel.index', [
+                'tab' => 'overzicht',
+                'week' => '2026-09-21',
+                'person' => 'member-'.$jose->id,
+            ]))
+            ->assertOk()
+            ->assertSee('font-semibold">José</td>', false)
+            ->assertSee('PVC')
+            ->assertDontSee('font-semibold">Peter</td>', false)
+            ->assertSee('Ingediend: 14u | Goedgekeurd: 10u | Verschil: -4u');
+
+        $this->actingAs($leader)
+            ->get(route('personnel.index', [
+                'tab' => 'overzicht',
+                'week' => '2026-09-21',
+                'person' => 'member-'.$peter->id,
+            ]))
+            ->assertOk()
+            ->assertSee('font-semibold">Peter</td>', false)
+            ->assertDontSee('font-semibold">José</td>', false)
+            ->assertSee('Ingediend: 8u | Goedgekeurd: 8u | Verschil: 0u');
+
+        $this->actingAs($leader)
+            ->get(route('personnel.index', [
+                'tab' => 'overzicht',
+                'week' => '2026-09-28',
+                'person' => 'member-'.$peter->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Geen uren gevonden')
+            ->assertSee('Ingediend: 0u | Goedgekeurd: 0u | Verschil: 0u');
     }
 
     public function test_rejecting_hours_requires_a_reason(): void

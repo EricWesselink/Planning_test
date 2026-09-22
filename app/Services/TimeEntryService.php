@@ -68,6 +68,29 @@ class TimeEntryService
                 ->lockForUpdate()
                 ->first();
 
+            if ($existing === null && $assignment !== null) {
+                $sameVisit = TimeEntry::query()
+                    ->where('worker_id', $worker->id)
+                    ->whereDate('date', $date)
+                    ->where('worker_assignment_id', $assignment->id)
+                    ->when(
+                        $crewMemberId !== null,
+                        fn ($query) => $query->where('crew_member_id', $crewMemberId),
+                        fn ($query) => $query->whereNull('crew_member_id'),
+                    )
+                    ->lockForUpdate()
+                    ->orderBy('id')
+                    ->get();
+
+                if ($sameVisit->count() === 1) {
+                    $existing = $sameVisit->first();
+                } elseif ($sameVisit->count() > 1) {
+                    throw ValidationException::withMessages([
+                        'hours' => 'Voor deze inzet staan al meerdere urenregels. Pas die aan in de urenregistratie.',
+                    ]);
+                }
+            }
+
             if ($existing?->isApproved()) {
                 throw ValidationException::withMessages([
                     'hours' => 'Goedgekeurde uren kun je niet meer zelf wijzigen.',
@@ -135,7 +158,11 @@ class TimeEntryService
     {
         return DB::transaction(function () use ($entry, $reviewer, $approvedHours, $reason): TimeEntry {
             $locked = $this->lock($entry);
-            $this->assertSubmitted($locked);
+            if (! $locked->isSubmitted() && ! $locked->isApproved()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Wijs afgewezen uren eerst opnieuw in.',
+                ]);
+            }
 
             $approvedHours = round($approvedHours, 2);
             $note = $this->nullableNote($reason);
@@ -489,19 +516,6 @@ class TimeEntryService
                 'hours' => 'Goedgekeurde uren kun je niet meer zelf wijzigen.',
             ]);
         }
-    }
-
-    private function assertSubmitted(TimeEntry $entry): void
-    {
-        if ($entry->isSubmitted()) {
-            return;
-        }
-
-        throw ValidationException::withMessages([
-            'status' => $entry->isRejected()
-                ? 'Wijs afgewezen uren eerst opnieuw in.'
-                : 'Deze uren zijn al beoordeeld.',
-        ]);
     }
 
     private function nullableNote(mixed $note): ?string
