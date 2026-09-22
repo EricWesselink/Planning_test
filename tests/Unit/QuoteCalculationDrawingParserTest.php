@@ -248,7 +248,8 @@ TXT);
         $this->assertNotNull($recreatie);
         $this->assertSame('v01.d', $recreatie['product_code']);
         $this->assertStringContainsStringIgnoringCase('marmoleum', (string) $recreatie['product']);
-        $this->assertEqualsWithDelta(78.9, (float) $recreatie['quantity'], 0.1);
+        $this->assertEqualsWithDelta(78.9, (float) $recreatie['room_area'], 0.1);
+        $this->assertEqualsWithDelta(72.86, (float) $recreatie['quantity'], 0.05);
 
         $localMat = collect($parsed['lines'])->first(
             fn (array $line) => $line['room_number'] === 'A-00-01'
@@ -257,7 +258,11 @@ TXT);
         );
         $this->assertNotNull($localMat);
         $this->assertSame(FinishRole::Local->value, $localMat['finish_role'] ?? FinishRole::Local->value);
-        $this->assertNotEquals(78.9, (float) ($localMat['quantity'] ?? 0));
+        $this->assertEqualsWithDelta(6.04, (float) $localMat['quantity'], 0.05);
+        $finishArea = collect($parsed['lines'])
+            ->filter(fn (array $line) => $line['room_number'] === 'A-00-01' && $line['unit'] === WorkUnit::SquareMeter)
+            ->sum(fn (array $line) => (float) ($line['quantity'] ?? 0));
+        $this->assertEqualsWithDelta(78.9, $finishArea, 0.05);
 
         $speel = collect($parsed['lines'])->first(
             fn (array $line) => $line['room_number'] === 'A-00-12' && $line['unit'] === WorkUnit::SquareMeter

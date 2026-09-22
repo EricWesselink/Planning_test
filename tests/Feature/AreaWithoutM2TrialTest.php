@@ -389,6 +389,7 @@ TXT, 'proef-namen.pdf'),
         $this->assertNotNull($room);
         $this->assertSame(7.0, (float) $room['calculated_m2']);
         $this->assertSame('maatketting', $room['method']);
+        $this->assertNotEquals(99.0, (float) $room['calculated_m2']);
         Storage::disk('local')->assertExists(TrialStore::DIRECTORY.'/'.$id.'/preview.png');
 
         $this->actingAs($user)

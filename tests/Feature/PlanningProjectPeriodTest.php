@@ -541,6 +541,7 @@ class PlanningProjectPeriodTest extends TestCase
 
     public function test_todo_running_button_toggles_and_shows_the_week_count(): void
     {
+        $this->travelTo('2026-09-16 08:00:00');
         $user = User::factory()->create();
         $this->makePeriodProject('250200030', 'Open deze week Utrecht');
         $staffed = $this->makePeriodProject('250200031', 'Lopend met vakman Utrecht');
@@ -579,6 +580,7 @@ class PlanningProjectPeriodTest extends TestCase
                 'week' => '2026-09-14',
                 'weeks' => 1,
                 'kind' => 'project',
+                'hours_view' => 'planned',
                 'todo_running' => '1',
             ]))
             ->assertDontSee('planning-filter--todo is-active', false)

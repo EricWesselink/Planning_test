@@ -330,7 +330,7 @@ class WorkTicketService
         )));
 
         if ($this->hasSelections($input)) {
-            return $this->mergeExtraWork($project, $this->resolveSelections($project, $input), $extraIds, $assignment);
+            return $this->mergeExtraWork($project, $this->resolveSelections($project, $input), $extraIds, $assignment, $input);
         }
 
         $floorsInput = is_array($input['floors'] ?? null) ? $input['floors'] : [];
@@ -357,7 +357,7 @@ class WorkTicketService
                     is_array($input['document_ids'] ?? null) ? $input['document_ids'] : [],
                     $project->documents->pluck('id')->all(),
                 ),
-                'totals' => $this->extraWorkTotals($project, $extraIds, $assignment),
+                'totals' => $this->extraWorkTotals($project, $extraIds, $assignment, $input),
             ];
         }
         $selectedFloors = [];
@@ -421,7 +421,7 @@ class WorkTicketService
             'work_item_ids' => $workItemIds,
             'document_ids' => $documentIds,
             'totals' => null,
-        ], $extraIds, $assignment);
+        ], $extraIds, $assignment, $input);
     }
 
     /**
@@ -527,7 +527,7 @@ class WorkTicketService
      *     totals: array<int, array{name: string, quantity: float, unit: WorkUnit}>|null
      * }
      */
-    private function mergeExtraWork(Project $project, array $resolved, array $extraIds, ?WorkerAssignment $assignment): array
+    private function mergeExtraWork(Project $project, array $resolved, array $extraIds, ?WorkerAssignment $assignment, array $input = []): array
     {
         if ($extraIds === []) {
             return $resolved;
@@ -539,7 +539,7 @@ class WorkTicketService
             $base = $this->totalsFor($project, $resolved['area_ids'], $resolved['work_item_ids']);
         }
 
-        $resolved['totals'] = ($base ?? []) + $this->extraWorkTotals($project, $extraIds, $assignment);
+        $resolved['totals'] = ($base ?? []) + $this->extraWorkTotals($project, $extraIds, $assignment, $input);
 
         return $resolved;
     }
@@ -548,14 +548,27 @@ class WorkTicketService
      * @param  list<int>  $itemIds
      * @return array<int, array{name: string, quantity: float, unit: WorkUnit}>
      */
-    private function extraWorkTotals(Project $project, array $itemIds, ?WorkerAssignment $assignment): array
+    private function extraWorkTotals(Project $project, array $itemIds, ?WorkerAssignment $assignment, array $input = []): array
     {
         $totals = [];
         $fallbackHours = max(1.0, $assignment?->plannedHoursValue() ?? 1.0);
+        $hourlyItemId = filter_var($input['general_work'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            ? (int) ($assignment?->work_item_id ?? 0)
+            : 0;
 
         foreach ($itemIds as $itemId) {
             $item = $project->workItems->firstWhere('id', $itemId);
             if ($item === null) {
+                continue;
+            }
+
+            if ($hourlyItemId > 0 && (int) $itemId === $hourlyItemId) {
+                $totals[$itemId] = [
+                    'name' => $item->name,
+                    'quantity' => $fallbackHours,
+                    'unit' => WorkUnit::Hours,
+                ];
+
                 continue;
             }
 

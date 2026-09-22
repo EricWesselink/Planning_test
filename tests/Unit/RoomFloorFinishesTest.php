@@ -46,4 +46,27 @@ class RoomFloorFinishesTest extends TestCase
         $this->assertEqualsWithDelta(6.24, (float) $floors[1]['quantity'], 0.001);
         $this->assertTrue((new RoomFloorFinishes)->matchesRoomArea($floors, 78.9));
     }
+
+    public function test_several_local_finishes_are_subtracted_from_the_main_finish(): void
+    {
+        $roomArea = 78.9;
+        $floors = (new RoomFloorFinishes)->split(['v01.d', 'v09', 'v10'], $roomArea, [6.04, 4.2]);
+
+        $this->assertEqualsWithDelta(68.66, (float) $floors[0]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(6.04, (float) $floors[1]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(4.2, (float) $floors[2]['quantity'], 0.001);
+        $this->assertTrue((new RoomFloorFinishes)->matchesRoomArea($floors, $roomArea));
+    }
+
+    public function test_the_main_finish_never_becomes_negative(): void
+    {
+        $floors = (new RoomFloorFinishes)->split(['v01.d', 'v09', 'v10'], 10.0, [6.0, 6.0]);
+
+        $this->assertNull($floors[0]['quantity']);
+        $this->assertEqualsWithDelta(6.0, (float) $floors[1]['quantity'], 0.001);
+        $this->assertEqualsWithDelta(6.0, (float) $floors[2]['quantity'], 0.001);
+        foreach ($floors as $finish) {
+            $this->assertTrue($finish['quantity'] === null || $finish['quantity'] >= 0);
+        }
+    }
 }

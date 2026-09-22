@@ -110,7 +110,10 @@ class AreaWithoutM2Analyzer
             if (is_string($raster['error'] ?? null) && $raster['error'] !== '') {
                 $warnings[] = $raster['error'];
             }
-            $previewPath = is_string($raster['preview_path'] ?? null) ? $raster['preview_path'] : null;
+            $geometryPreview = $raster['preview_path'] ?? null;
+            if (is_string($geometryPreview) && is_file($geometryPreview)) {
+                @unlink($geometryPreview);
+            }
         }
 
         $result = $this->analyzePages($pages, $filename, $source, $engine, $ocrMean);

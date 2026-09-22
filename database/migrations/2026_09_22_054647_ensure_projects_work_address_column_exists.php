@@ -2,8 +2,6 @@
 
 use App\Support\WorkAddress;
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -14,8 +12,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('projects', function (Blueprint $table) {
-            $table->dropColumn('work_address');
-        });
+        // The earlier work_address migration owns this column. Rolling this back must not delete addresses.
     }
 };

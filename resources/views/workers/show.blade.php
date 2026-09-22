@@ -120,18 +120,19 @@
             </div>
         </div>
 
-        <div data-zzp-only>
-            <div class="mt-8 flex items-end justify-between gap-4 flex-wrap">
-                <h2 class="font-semibold">Uitgevoerd</h2>
-                <a href="{{ route('production.index', ['worker_id' => $worker->id]) }}" class="text-sm text-nicon-orange-dark">Open in productie</a>
-            </div>
-            @include('production._groups', [
-                'groups' => $groups,
-                'canCreateVouchers' => $canCreateVouchers,
-                'vouchersByKey' => $vouchersByKey,
-                'billingByKey' => $billingByKey ?? collect(),
-                'sheetsByKey' => $sheetsByKey ?? collect(),
-            ])
+    @endif
+
+    @if ($worker->employment_type->isExternal() || $groups->isNotEmpty())
+        <div class="mt-8 flex items-end justify-between gap-4 flex-wrap">
+            <h2 class="font-semibold">Uitgevoerd</h2>
+            <a href="{{ route('production.index', ['worker_id' => $worker->id]) }}" class="text-sm text-nicon-orange-dark">Open in productie</a>
         </div>
+        @include('production._groups', [
+            'groups' => $groups,
+            'canCreateVouchers' => $canCreateVouchers,
+            'vouchersByKey' => $vouchersByKey,
+            'billingByKey' => $billingByKey ?? collect(),
+            'sheetsByKey' => $sheetsByKey ?? collect(),
+        ])
     @endif
 @endsection

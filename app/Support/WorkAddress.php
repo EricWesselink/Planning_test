@@ -3,7 +3,9 @@
 namespace App\Support;
 
 use App\Models\Project;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class WorkAddress
 {
@@ -130,6 +132,17 @@ class WorkAddress
         }
 
         $project->work_address = $composed;
+    }
+
+    public static function ensureColumn(): void
+    {
+        if (! Schema::hasColumn('projects', 'work_address')) {
+            Schema::table('projects', function (Blueprint $table): void {
+                $table->string('work_address', 1000)->nullable()->after('city');
+            });
+        }
+
+        self::backfill();
     }
 
     public static function backfill(): void

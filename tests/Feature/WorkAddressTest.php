@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\WorkActivity;
 use App\Support\WorkAddress;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -79,6 +80,37 @@ class WorkAddressTest extends TestCase
 
         $this->assertNull(DB::table('projects')->find($emptyId)->work_address);
         $this->assertTrue(Schema::hasColumns('projects', ['address', 'postal_code', 'city', 'work_address']));
+    }
+
+    public function test_missing_work_address_column_is_added_without_changing_existing_project_rows(): void
+    {
+        $customer = Customer::query()->create(['name' => 'Hegeman']);
+        $id = $this->insertProject($customer->id, [
+            'project_number' => '260900010',
+            'address' => 'Kerkstraat 12',
+            'city' => 'Utrecht',
+        ]);
+
+        Schema::table('projects', function (Blueprint $table): void {
+            $table->dropColumn('work_address');
+        });
+
+        WorkAddress::ensureColumn();
+
+        $row = DB::table('projects')->find($id);
+        $this->assertTrue(Schema::hasColumn('projects', 'work_address'));
+        $this->assertSame('Bestaand werk', $row->name);
+        $this->assertSame('Kerkstraat 12', $row->address);
+        $this->assertSame('Utrecht', $row->city);
+        $this->assertSame('Kerkstraat 12, Utrecht', $row->work_address);
+
+        DB::table('projects')->where('id', $id)->update(['work_address' => 'Handmatig aangepast']);
+        WorkAddress::ensureColumn();
+
+        $again = DB::table('projects')->find($id);
+        $this->assertSame('Handmatig aangepast', $again->work_address);
+        $this->assertSame('Kerkstraat 12', $again->address);
+        $this->assertSame('Utrecht', $again->city);
     }
 
     public function test_pasted_work_address_is_stored_and_shown_as_one_line(): void

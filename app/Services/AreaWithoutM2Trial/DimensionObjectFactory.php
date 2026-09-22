@@ -96,6 +96,18 @@ class DimensionObjectFactory
         }
         $open = array_values($open);
 
+        $claimed = [];
+        foreach ($this->outerWallLabels($open, $lines, $pageMin) as $object) {
+            $accepted[] = $object;
+            $claimed[$this->candidateKey($object)] = true;
+        }
+        if ($claimed !== []) {
+            $open = array_values(array_filter(
+                $open,
+                fn (array $row): bool => ! isset($claimed[$this->candidateKey($row)]),
+            ));
+        }
+
         foreach ($open as $row) {
             $miss = $missByKey[$this->candidateKey($row)] ?? null;
             $excluded[] = [
@@ -276,6 +288,136 @@ class DimensionObjectFactory
             'extension-ticks',
             0.75,
         );
+    }
+
+    /**
+     * One closed rectangle and no dimension line: a millimetre text just
+     * outside one side is that side's length. Extra walls keep the normal chain.
+     *
+     * @param  list<array{mm: int, text: string, x?: float, y?: float, page?: int, standalone?: bool}>  $rows
+     * @param  list<array<string, mixed>>  $lines
+     * @return list<array<string, mixed>>
+     */
+    private function outerWallLabels(array $rows, array $lines, float $pageMin): array
+    {
+        $gap = max(6.0, $pageMin * 0.01);
+        $vertical = $this->clusteredAxes($lines, 'v', $gap);
+        $horizontal = $this->clusteredAxes($lines, 'h', $gap);
+        if (count($vertical) !== 2 || count($horizontal) !== 2) {
+            return [];
+        }
+
+        $left = $vertical[0];
+        $right = $vertical[1];
+        $bottom = $horizontal[0];
+        $top = $horizontal[1];
+        if (($right - $left) < 24 || ($top - $bottom) < 24) {
+            return [];
+        }
+
+        $margin = max(130.0, $pageMin * 0.15);
+        $alongSlack = max(24.0, $pageMin * 0.04);
+        $bySide = ['below' => [], 'above' => [], 'left' => [], 'right' => []];
+        foreach ($rows as $row) {
+            if (! ($row['standalone'] ?? false)) {
+                continue;
+            }
+            $x = (float) ($row['x'] ?? 0);
+            $y = (float) ($row['y'] ?? 0);
+            $inX = $x >= $left - $alongSlack && $x <= $right + $alongSlack;
+            $inY = $y >= $bottom - $alongSlack && $y <= $top + $alongSlack;
+            $sides = [];
+            if ($inX && $y < $bottom && ($bottom - $y) <= $margin) {
+                $sides['below'] = $bottom - $y;
+            }
+            if ($inX && $y > $top && ($y - $top) <= $margin) {
+                $sides['above'] = $y - $top;
+            }
+            if ($inY && $x < $left && ($left - $x) <= $margin) {
+                $sides['left'] = $left - $x;
+            }
+            if ($inY && $x > $right && ($x - $right) <= $margin) {
+                $sides['right'] = $x - $right;
+            }
+            if ($sides === []) {
+                continue;
+            }
+            $side = array_key_first($sides);
+            $nearest = $sides[$side];
+            foreach ($sides as $name => $distance) {
+                if ($distance < $nearest) {
+                    $side = $name;
+                    $nearest = $distance;
+                }
+            }
+            $bySide[$side][] = $row;
+        }
+
+        $widthSides = array_values(array_filter(
+            ['below', 'above'],
+            fn (string $side): bool => count($bySide[$side]) === 1,
+        ));
+        $heightSides = array_values(array_filter(
+            ['left', 'right'],
+            fn (string $side): bool => count($bySide[$side]) === 1,
+        ));
+        if (count($widthSides) !== 1 || count($heightSides) !== 1) {
+            return [];
+        }
+
+        $objects = [];
+        foreach (['below' => $bottom, 'above' => $top] as $side => $along) {
+            if (count($bySide[$side]) !== 1) {
+                continue;
+            }
+            $objects[] = $this->objectFromChain($bySide[$side][0], [
+                'start' => $left,
+                'end' => $right,
+                'along' => $along,
+                'span' => $right - $left,
+                'distance' => 0.0,
+            ], 'horizontal', 'maattekst buiten wand', 0.9);
+        }
+        foreach (['left' => $left, 'right' => $right] as $side => $along) {
+            if (count($bySide[$side]) !== 1) {
+                continue;
+            }
+            $objects[] = $this->objectFromChain($bySide[$side][0], [
+                'start' => $bottom,
+                'end' => $top,
+                'along' => $along,
+                'span' => $top - $bottom,
+                'distance' => 0.0,
+            ], 'vertical', 'maattekst buiten wand', 0.9);
+        }
+
+        return $objects;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lines
+     * @return list<float>
+     */
+    private function clusteredAxes(array $lines, string $axis, float $gap): array
+    {
+        $positions = [];
+        foreach ($lines as $line) {
+            if (($line['axis'] ?? '') !== $axis) {
+                continue;
+            }
+            $positions[] = $axis === 'v'
+                ? ((float) $line['x1'] + (float) $line['x2']) / 2
+                : ((float) $line['y1'] + (float) $line['y2']) / 2;
+        }
+        sort($positions);
+        $clustered = [];
+        foreach ($positions as $position) {
+            if ($clustered === [] || abs($position - $clustered[array_key_last($clustered)]) > $gap) {
+                $clustered[] = $position;
+            }
+        }
+
+        return $clustered;
     }
 
     /**

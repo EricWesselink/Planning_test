@@ -20,7 +20,7 @@
         ], true),
     ));
 @endphp
-<div class="board-labor mt-4 space-y-3" @if ($labor['detail'] ?? null) title="{{ $labor['detail'] }}" @endif>
+<div class="board-labor mt-4 space-y-3">
     <div class="board-labor-head">
     @if (is_array($orderFinance))
         <p class="text-sm text-nicon-steel">{{ $orderFinance['compact'] }}</p>
@@ -131,7 +131,7 @@
                     @foreach ($itemLabor['people'] ?? [] as $person)
                         <div class="text-xs text-nicon-steel">{{ $person['name'] }} – {{ $itemLabor['title'] }} – {{ $person['hours_label'] }}</div>
                     @endforeach
-                    @if (($itemLabor['bar_label'] ?? null) !== null && ($itemLabor['bar_percent'] ?? null) !== null)
+                    @if ($itemOver && ($itemLabor['bar_label'] ?? null) !== null && ($itemLabor['bar_percent'] ?? null) !== null)
                         <div class="plan-hour-bar board-labor-bar plan-hour-bar--{{ $itemLabor['tone'] ?? 'none' }}">
                             <span class="plan-hour-bar-track" aria-hidden="true">
                                 <span class="plan-hour-bar-fill" style="width: {{ $itemLabor['bar_percent'] }}%"></span>

@@ -18,6 +18,7 @@ use App\Models\WorkItem;
 use App\Support\Format;
 use App\Support\PlanningHours;
 use App\Support\PlanningLaborForecast;
+use App\Support\WorkType;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -193,21 +194,14 @@ class PlanningBoardService
             if ($project->isWinkel()) {
                 [$workRows, $usedIds] = $this->winkelWorkRows($project, $projectAssignments, $days, $doubleBooked, $usedIds, $labor);
             } else {
-                foreach ($project->workItems
-                    ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
-                    ->groupBy(fn (WorkItem $item) => $item->typeKey())
-                    ->sortBy(
-                        fn (Collection $items) => $items->min(fn (WorkItem $item) => $item->phase()->sort())
-                    ) as $packageKey => $items) {
-                    $isOndergrond = $packageKey === 'ondergrond';
-                    $primary = $isOndergrond
-                        ? $this->primaryWorkItem($items)
-                        : $items->sortByDesc(fn (WorkItem $item) => (float) $item->ordered_quantity)->first();
-                    $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->all();
-                    $ordered = (float) $items->sum(fn (WorkItem $item) => (float) $item->ordered_quantity);
+                foreach ($this->quantityWorkGroups($project) as $packageKey => $items) {
+                    $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
                     if ($ordered <= 0.0001) {
                         continue;
                     }
+                    $isOndergrond = $packageKey === 'ondergrond';
+                    ['primary' => $primary, 'title' => $title] = $this->boardGroupHeading($isOndergrond, $items);
+                    $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->all();
                     $done = (float) $items->sum(fn (WorkItem $item) => $item->completedQuantity());
                     $rest = (float) $items->sum(fn (WorkItem $item) => $item->remainingQuantity());
                     $itemWarnings = [];
@@ -251,7 +245,6 @@ class PlanningBoardService
 
                     $starts = $items->pluck('planned_start_date')->filter();
                     $ends = $items->pluck('planned_end_date')->filter();
-                    $title = $isOndergrond ? $primary->packageLabel() : $primary->planningTitle();
                     $steps = $isOndergrond && $items->count() > 1
                         ? $items->sortBy(fn (WorkItem $item) => $item->phase()->sort())->map(fn (WorkItem $item) => $item->name)->values()->all()
                         : [];
@@ -411,7 +404,7 @@ class PlanningBoardService
 
         $availabilityOverview = $scheduledWorkerId
             ? ['days' => [], 'teams' => []]
-            : $this->availability->overview($days);
+            : $this->availability->overview($days, $workerId);
         $teamManDays = $availabilityOverview['teams'];
 
         return [
@@ -1152,6 +1145,125 @@ class PlanningBoardService
         }
 
         return (int) round(min(100, max(0, $completed / $ordered * 100)));
+    }
+
+    /**
+     * Werkzaamheden die bij “Wat gaan ze doen” horen: dezelfde groepen als het planbord van dit project.
+     *
+     * @return list<array{id: int, name: string, group: string, notes: string, type_key: string, project_id: int, project: string, member_ids: list<int>}>
+     */
+    public function plannableWorkChoices(Project $project): array
+    {
+        $project->loadMissing('workItems');
+
+        if ($project->isSmallWork() || $project->isWinkel()) {
+            return $this->individualWorkChoices($project);
+        }
+
+        $choices = [];
+        foreach ($this->quantityWorkGroups($project) as $packageKey => $items) {
+            $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
+            if ($ordered <= 0.0001) {
+                continue;
+            }
+            $isOndergrond = $packageKey === 'ondergrond';
+            ['primary' => $primary, 'title' => $title] = $this->boardGroupHeading($isOndergrond, $items);
+            $choices[] = $this->workChoice($project, $primary, $title, $items);
+        }
+
+        foreach ($project->workItems->filter(fn (WorkItem $item): bool => $item->isExtraWork()) as $item) {
+            if ((float) $item->ordered_quantity <= 0.0001 && $item->planned_start_date === null) {
+                continue;
+            }
+            $label = trim((string) $item->name);
+            $choices[] = $this->workChoice($project, $item, $label !== '' ? $label : 'Extra werk', collect([$item]));
+        }
+
+        return $choices;
+    }
+
+    /**
+     * @return Collection<string, Collection<int, WorkItem>>
+     */
+    private function quantityWorkGroups(Project $project): Collection
+    {
+        return $project->workItems
+            ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
+            ->groupBy(fn (WorkItem $item): string => $item->typeKey())
+            ->sortBy(
+                fn (Collection $items): int => (int) $items->min(fn (WorkItem $item): int => $item->phase()->sort())
+            );
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     * @return array{primary: WorkItem, title: string}
+     */
+    private function boardGroupHeading(bool $isOndergrond, Collection $items): array
+    {
+        $primary = $isOndergrond
+            ? $this->primaryWorkItem($items)
+            : $items->sortByDesc(fn (WorkItem $item): float => (float) $item->ordered_quantity)->first();
+
+        return [
+            'primary' => $primary,
+            'title' => $isOndergrond ? $primary->packageLabel() : $primary->planningTitle(),
+        ];
+    }
+
+    /**
+     * @return list<array{id: int, name: string, group: string, notes: string, type_key: string, project_id: int, project: string, member_ids: list<int>}>
+     */
+    private function individualWorkChoices(Project $project): array
+    {
+        $items = $project->workItems
+            ->filter(fn (WorkItem $item): bool => (float) $item->ordered_quantity > 0.0001 || $item->work_activity_id !== null);
+        if ($project->isSmallWork() && $items->contains(fn (WorkItem $item): bool => $item->work_activity_id !== null)) {
+            $items = $items->reject(fn (WorkItem $item): bool => $item->work_activity_id === null && ! $item->isExtraWork());
+        }
+
+        return $items
+            ->map(function (WorkItem $item) use ($project): array {
+                $name = $item->productLabel() ?: (WorkType::looksLikeRoom($item->name) ? $item->typeLabel() : $item->name);
+
+                return $this->workChoice(
+                    $project,
+                    $item,
+                    $name !== '' ? $name : $item->planningTitle(),
+                    collect([$item]),
+                    trim((string) $item->notes),
+                );
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     * @return array{id: int, name: string, group: string, notes: string, type_key: string, project_id: int, project: string, member_ids: list<int>}
+     */
+    private function workChoice(Project $project, WorkItem $primary, string $title, Collection $items, string $notes = ''): array
+    {
+        $ids = $items
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        if (! in_array((int) $primary->id, $ids, true)) {
+            array_unshift($ids, (int) $primary->id);
+        }
+
+        return [
+            'id' => (int) $primary->id,
+            'name' => $title,
+            'group' => $title,
+            'notes' => $notes,
+            'type_key' => $primary->typeKey(),
+            'project_id' => $project->id,
+            'project' => $project->displayTitle(),
+            'member_ids' => $ids,
+        ];
     }
 
     private function primaryWorkItem(Collection $items): WorkItem

@@ -9,6 +9,11 @@ class RoomFloorFinishes
     /**
      * Split a room's floor codes into a main finish plus local patches.
      *
+     * Room area is the physical floor of the room. Finish area is what is
+     * actually laid for one material. They are not the same once a local
+     * patch has its own m²: the main finish is the remainder, never negative,
+     * and the finishes together add back up to the room area.
+     *
      * The first code is the room-finish symbol. Extra codes never receive the
      * full room area. When every local patch has its own m², the main finish
      * gets the remainder so the sum matches the room total.

@@ -393,12 +393,12 @@ class WorkTicketPdfService
      */
     private function personNamesOnAssignment(WorkerAssignment $assignment): array
     {
-        $present = $assignment->presentNames();
+        $present = array_values(array_filter(
+            $assignment->presentNames(),
+            fn (string $name): bool => ! $this->looksLikeTeamLabel($name) && ! $this->isPlaceholderPerson($name),
+        ));
         if ($present !== []) {
-            return array_values(array_filter(
-                $present,
-                fn (string $name): bool => ! $this->looksLikeTeamLabel($name),
-            ));
+            return $present;
         }
 
         $worker = $assignment->worker;
@@ -419,7 +419,7 @@ class WorkTicketPdfService
 
         $fromCrew = ($worker->relationLoaded('crewPeople') ? $worker->activeCrewPeople() : collect())
             ->map(fn (CrewMember $member): string => trim($member->label()))
-            ->filter(fn (string $name): bool => $name !== '' && ! $this->looksLikeTeamLabel($name))
+            ->filter(fn (string $name): bool => $name !== '' && ! $this->looksLikeTeamLabel($name) && ! $this->isPlaceholderPerson($name))
             ->values()
             ->all();
         if ($fromCrew !== []) {
@@ -471,6 +471,11 @@ class WorkTicketPdfService
     private function looksLikeTeamLabel(string $name): bool
     {
         return preg_match('/^team(\s|\d|$)/iu', trim($name)) === 1;
+    }
+
+    private function isPlaceholderPerson(string $name): bool
+    {
+        return preg_match('/^Persoon \d+$/u', trim($name)) === 1;
     }
 
     /**

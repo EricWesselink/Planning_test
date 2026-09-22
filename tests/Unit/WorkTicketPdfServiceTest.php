@@ -19,6 +19,7 @@ use App\Models\WorkTicket;
 use App\Services\WorkTicketPdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Tests\Support\SimplePdf;
 use Tests\TestCase;
 
 class WorkTicketPdfServiceTest extends TestCase
@@ -162,6 +163,8 @@ class WorkTicketPdfServiceTest extends TestCase
 
     public function test_build_places_selected_rooms_on_their_drawing_pages(): void
     {
+        Storage::fake('local');
+
         $ticket = $this->makeTicket();
         $project = $ticket->project;
         $floorOne = ProjectFloor::query()->create([
@@ -247,6 +250,8 @@ class WorkTicketPdfServiceTest extends TestCase
 
     public function test_build_falls_back_to_the_first_drawing_page_without_markers(): void
     {
+        Storage::fake('local');
+
         $ticket = $this->makeTicket();
         $project = $ticket->project;
         $floor = ProjectFloor::query()->create([
@@ -284,6 +289,48 @@ class WorkTicketPdfServiceTest extends TestCase
         $this->assertSame('1e verdieping', $data['floorLayers'][0]['name']);
         $this->assertNull($data['floorLayers'][0]['image']);
         $this->assertSame([], $data['floorLayers'][0]['pins']);
+    }
+
+    public function test_build_rasterizes_a_drawing_pdf_when_the_file_is_stored(): void
+    {
+        Storage::fake('local');
+
+        $ticket = $this->makeTicket();
+        $project = $ticket->project;
+        $floor = ProjectFloor::query()->create([
+            'project_id' => $project->id,
+            'name' => '1e verdieping',
+            'sort_order' => 1,
+        ]);
+        $area = ProjectArea::query()->create([
+            'project_id' => $project->id,
+            'project_floor_id' => $floor->id,
+            'area_number' => '1.63',
+            'name' => 'oefenruimte',
+            'square_meters' => 28,
+            'status' => 'niet_gestart',
+            'sort_order' => 1,
+        ]);
+        $relative = 'work-tickets/tests/'.uniqid('plan-', true).'/plan.pdf';
+        Storage::disk('local')->put($relative, SimplePdf::bytes('Plattegrond'));
+        ProjectDocument::query()->create([
+            'project_id' => $project->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => 'fase-1.pdf',
+            'file_path' => $relative,
+            'mime_type' => 'application/pdf',
+            'file_size' => 800,
+            'parse_status' => 'done',
+        ]);
+        $ticket->floors()->attach($floor->id, ['entire_floor' => true]);
+        $ticket->areas()->attach($area->id);
+
+        $data = app(WorkTicketPdfService::class)->build($ticket->fresh(), false);
+
+        $this->assertSame('image', $data['drawingRender']);
+        $this->assertCount(1, $data['floorLayers']);
+        $this->assertSame(1, $data['floorLayers'][0]['page']);
+        $this->assertStringStartsWith('data:image/png;base64,', (string) $data['floorLayers'][0]['image']);
     }
 
     public function test_build_embeds_a_stored_drawing_image_as_a_data_uri(): void

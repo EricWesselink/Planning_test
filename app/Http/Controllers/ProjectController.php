@@ -85,7 +85,7 @@ class ProjectController extends Controller
         $projects = Project::query()
             ->accessibleBy($request->user())
             ->archived()
-            ->with(['customer', 'workActivities.category', 'workItems.progressEntries', 'assignments.worker', 'assignments.crewMembers'])
+            ->with(['customer', 'workActivities.category', 'workItems.progressEntries'])
             ->orderByDesc('archived_at')
             ->get();
 

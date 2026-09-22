@@ -27,9 +27,6 @@ class ProjectBoardService
         $this->setup->ensureProject($project);
         $project->load([
             'customer',
-            'floors.areas.tasks.workItem',
-            'floors.areas.tasks.completedByWorker',
-            'floors.areas.markers',
             'areas.tasks.workItem',
             'areas.tasks.completedByWorker',
             'areas.markers',

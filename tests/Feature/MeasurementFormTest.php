@@ -288,7 +288,7 @@ class MeasurementFormTest extends TestCase
             ],
             'measurement' => [
                 'meter_user_id' => $meter->id,
-                'ordered_at' => '2026-09-12',
+                'ordered_at' => '2026-09-14',
                 'rows' => [
                     ['room' => 'Keuken', 'product' => 'PVC banen', 'quantity' => '11', 'unit' => WorkUnit::SquareMeter->value],
                     ['room' => 'Overloop', 'product' => 'Tapijt', 'quantity' => '6', 'unit' => WorkUnit::SquareMeter->value],
@@ -298,7 +298,7 @@ class MeasurementFormTest extends TestCase
         ])->assertRedirect(route('projects.show', $project));
 
         $project->refresh()->load('measurementForm.rows');
-        $this->assertSame('2026-09-12', $project->measurementForm?->ordered_at?->toDateString());
+        $this->assertSame('2026-09-14', $project->measurementForm?->ordered_at?->toDateString());
         $this->assertSame(['Keuken', 'Overloop'], $project->measurementForm?->rows->pluck('room')->all());
         $this->assertSame('PVC banen', $project->measurementForm?->rows->first()?->product);
         $this->assertDatabaseCount('measurement_form_rows', 2);

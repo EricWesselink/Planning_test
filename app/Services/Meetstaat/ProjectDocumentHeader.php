@@ -52,7 +52,15 @@ class ProjectDocumentHeader
 
         if (preg_match('/^Referentie\s*:\s*(.+)$/iu', $line, $match)) {
             // Volledige referentie letterlijk bewaren — nooit de 11P-code (of vergelijkbaar) knippen.
+            // Een titelblok plakt soms "Datum :" op dezelfde regel; die hoort niet bij de referentie.
             $reference = trim($match[1]);
+            if (preg_match('/^(.*?)\s+Datum\s*:\s*(.+)$/iu', $reference, $parts)) {
+                $reference = trim($parts[1]);
+                $gluedDate = self::parseDate(trim($parts[2]));
+                if ($gluedDate !== null && blank($header['date'] ?? null)) {
+                    $header['date'] = $gluedDate;
+                }
+            }
             $header['reference'] = $reference !== '' ? $reference : null;
             if ($header['reference'] !== null) {
                 $header['project_name'] = $header['reference'];
@@ -133,6 +141,47 @@ class ProjectDocumentHeader
         return mb_strtolower(preg_replace('/\s+/u', ' ', $value) ?? $value);
     }
 
+    private static function sameHeaderValue(string $field, string $primary, string $other): bool
+    {
+        if (self::normalizeComparable($primary) === self::normalizeComparable($other)) {
+            return true;
+        }
+
+        if ($field !== 'reference') {
+            return false;
+        }
+
+        $other = trim((string) preg_replace('/\s+Datum\s*:.*$/iu', '', $other));
+        if (self::normalizeComparable($primary) === self::normalizeComparable($other)) {
+            return true;
+        }
+
+        if (! str_contains($other, '…') && ! str_contains($other, '...')) {
+            return false;
+        }
+
+        $primaryCode = self::leadingProjectCode($primary);
+        $otherCode = self::leadingProjectCode($other);
+        if ($primaryCode === null || $otherCode === null || $primaryCode !== $otherCode) {
+            return false;
+        }
+
+        $visible = trim((string) preg_replace('/[….]{1,3}.*$/u', '', $other));
+        $visibleName = self::normalizeComparable((string) preg_replace('/^'.preg_quote($otherCode, '/').'\s*/iu', '', $visible));
+        $primaryName = self::normalizeComparable((string) preg_replace('/^'.preg_quote($primaryCode, '/').'\s*/iu', '', $primary));
+
+        return $visibleName !== '' && str_starts_with($primaryName, $visibleName);
+    }
+
+    private static function leadingProjectCode(string $value): ?string
+    {
+        if (! preg_match('/\b(\d{2}P\d{4,})\b/iu', $value, $match)) {
+            return null;
+        }
+
+        return mb_strtoupper($match[1]);
+    }
+
     /**
      * @param  array<string, mixed>|null  $primary
      * @param  array<string, mixed>|null  $other
@@ -156,7 +205,7 @@ class ProjectDocumentHeader
             if ($primaryValue === '' || $otherValue === '') {
                 continue;
             }
-            if (self::normalizeComparable($primaryValue) === self::normalizeComparable($otherValue)) {
+            if (self::sameHeaderValue($key, $primaryValue, $otherValue)) {
                 continue;
             }
 

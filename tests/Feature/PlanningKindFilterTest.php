@@ -187,7 +187,7 @@ class PlanningKindFilterTest extends TestCase
         return $project->fresh('workItems');
     }
 
-    private function createWinkel(User $user, string $customer, string $city, string $activitySlug = 'pvc'): Project
+    private function createWinkel(User $user, string $customer, string $city, string $activitySlug = 'pvc-banen'): Project
     {
         Storage::fake('local');
         $activity = WorkActivity::query()->where('slug', $activitySlug)->firstOrFail();

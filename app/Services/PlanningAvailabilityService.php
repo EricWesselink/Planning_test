@@ -54,9 +54,19 @@ class PlanningAvailabilityService
      * @param  Collection<int, CarbonInterface>  $days
      * @return array{days: list<array{date: string, label: string}>, teams: list<array<string, mixed>>}
      */
-    public function overview(Collection $days): array
+    public function overview(Collection $days, ?int $workerId = null): array
     {
-        return $this->build($days, true);
+        $overview = $this->build($days, true);
+        if ($workerId === null || $workerId < 1) {
+            return $overview;
+        }
+
+        $overview['teams'] = array_values(array_filter(
+            $overview['teams'],
+            fn (array $team): bool => (int) ($team['worker_id'] ?? 0) === $workerId,
+        ));
+
+        return $overview;
     }
 
     /**

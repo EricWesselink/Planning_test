@@ -174,4 +174,84 @@ class DimensionObjectFactoryTest extends TestCase
         $this->assertSame([3300, 1200, 3500], $chain['segments'] ?? null);
         $this->assertTrue($chain['valid'] ?? false);
     }
+
+    public function test_labels_outside_a_single_rectangle_become_its_width_and_height(): void
+    {
+        $page = [
+            'page' => 1,
+            'width' => 800.0,
+            'height' => 600.0,
+            'texts' => [
+                ['text' => '3500', 'x' => 350.0, 'y' => 140.0, 'page' => 1],
+                ['text' => '2000', 'x' => 80.0, 'y' => 290.0, 'page' => 1],
+                ['text' => '99 m2', 'x' => 350.0, 'y' => 290.0, 'page' => 1],
+            ],
+            'walls' => [
+                ['x1' => 200.0, 'y1' => 180.0, 'x2' => 500.0, 'y2' => 180.0, 'axis' => 'h'],
+                ['x1' => 200.0, 'y1' => 400.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'h'],
+                ['x1' => 200.0, 'y1' => 180.0, 'x2' => 200.0, 'y2' => 400.0, 'axis' => 'v'],
+                ['x1' => 500.0, 'y1' => 180.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'v'],
+            ],
+            'ticks' => [],
+        ];
+
+        $result = (new DimensionObjectFactory)->fromPage($page, [], []);
+        $byMm = collect($result['accepted'])->keyBy('mm');
+
+        $this->assertSame('horizontal', $byMm[3500]['orientation'] ?? null);
+        $this->assertSame('vertical', $byMm[2000]['orientation'] ?? null);
+        $this->assertSame('chain', $byMm[3500]['source'] ?? null);
+        $this->assertSame('chain', $byMm[2000]['source'] ?? null);
+        $this->assertEqualsWithDelta(200.0, $byMm[3500]['endpoint1']['x'], 0.1);
+        $this->assertEqualsWithDelta(500.0, $byMm[3500]['endpoint2']['x'], 0.1);
+        $this->assertEqualsWithDelta(180.0, $byMm[2000]['endpoint1']['y'], 0.1);
+        $this->assertEqualsWithDelta(400.0, $byMm[2000]['endpoint2']['y'], 0.1);
+    }
+
+    public function test_an_outside_label_is_ignored_when_the_drawing_has_more_than_one_room(): void
+    {
+        $page = [
+            'page' => 1,
+            'width' => 800.0,
+            'height' => 600.0,
+            'texts' => [
+                ['text' => '3500', 'x' => 250.0, 'y' => 140.0, 'page' => 1],
+            ],
+            'walls' => [
+                ['x1' => 200.0, 'y1' => 180.0, 'x2' => 400.0, 'y2' => 180.0, 'axis' => 'h'],
+                ['x1' => 200.0, 'y1' => 400.0, 'x2' => 400.0, 'y2' => 400.0, 'axis' => 'h'],
+                ['x1' => 200.0, 'y1' => 180.0, 'x2' => 200.0, 'y2' => 400.0, 'axis' => 'v'],
+                ['x1' => 400.0, 'y1' => 180.0, 'x2' => 400.0, 'y2' => 400.0, 'axis' => 'v'],
+                ['x1' => 560.0, 'y1' => 180.0, 'x2' => 560.0, 'y2' => 400.0, 'axis' => 'v'],
+            ],
+            'ticks' => [],
+        ];
+
+        $result = (new DimensionObjectFactory)->fromPage($page, [], []);
+
+        $this->assertNotContains(3500, array_column($result['accepted'], 'mm'));
+    }
+
+    public function test_one_outside_label_does_not_become_a_dimension(): void
+    {
+        $page = [
+            'page' => 1,
+            'width' => 900.0,
+            'height' => 700.0,
+            'texts' => [
+                ['text' => '3600', 'x' => 300.0, 'y' => 50.0, 'page' => 1],
+            ],
+            'walls' => [
+                ['x1' => 100.0, 'y1' => 100.0, 'x2' => 500.0, 'y2' => 100.0, 'axis' => 'h'],
+                ['x1' => 100.0, 'y1' => 400.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'h'],
+                ['x1' => 100.0, 'y1' => 100.0, 'x2' => 100.0, 'y2' => 400.0, 'axis' => 'v'],
+                ['x1' => 500.0, 'y1' => 100.0, 'x2' => 500.0, 'y2' => 400.0, 'axis' => 'v'],
+            ],
+            'ticks' => [],
+        ];
+
+        $result = (new DimensionObjectFactory)->fromPage($page, [], []);
+
+        $this->assertNotContains(3600, array_column($result['accepted'], 'mm'));
+    }
 }

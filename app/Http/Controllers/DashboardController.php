@@ -6,7 +6,6 @@ use App\Enums\ProjectStatus;
 use App\Models\Project;
 use App\Models\WorkerAssignment;
 use App\Services\DashboardOverviewService;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -16,7 +15,7 @@ class DashboardController extends Controller
     public function __invoke(Request $request, DashboardOverviewService $overview): View
     {
         Gate::authorize('view-dashboard');
-        $today = Carbon::parse('2026-09-10');
+        $today = now()->startOfDay();
         $user = $request->user();
 
         $todayAssignments = WorkerAssignment::query()
@@ -46,7 +45,7 @@ class DashboardController extends Controller
         $running = Project::query()
             ->accessibleBy($user)
             ->active()
-            ->with(['workItems.progressEntries', 'assignments.worker', 'workActivities.category', 'customer'])
+            ->with(['workItems.progressEntries', 'assignments', 'workActivities.category', 'customer'])
             ->where('status', ProjectStatus::InUitvoering)
             ->orderBy('planned_end_date')
             ->get();
@@ -54,7 +53,7 @@ class DashboardController extends Controller
         $upcoming = Project::query()
             ->accessibleBy($user)
             ->active()
-            ->with(['assignments', 'workOrders.worker', 'workItems', 'workActivities.category', 'customer'])
+            ->with(['assignments', 'workOrders', 'workItems', 'workActivities.category', 'customer'])
             ->whereIn('status', [ProjectStatus::Gepland, ProjectStatus::NietGestart])
             ->orderBy('planned_start_date')
             ->get();

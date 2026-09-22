@@ -179,7 +179,7 @@ class WorkTicketTest extends TestCase
         $css = (string) file_get_contents(resource_path('css/app.css'));
         $this->assertStringContainsString('.project-board.is-ticket-mode .board-project-info', $css);
         $this->assertStringContainsString('.project-board.is-ticket-mode.is-project-info-open .board-project-info', $css);
-        $this->assertStringContainsString('grid-template-rows: auto minmax(14rem, 1fr)', $css);
+        $this->assertStringContainsString('grid-template-rows: auto minmax(0, 1fr)', $css);
     }
 
     public function test_projectleider_ticket_mode_keeps_the_drawing_and_omits_the_progress_form(): void
@@ -965,7 +965,7 @@ class WorkTicketTest extends TestCase
             ])
             ->assertRedirect(route('work-tickets.create', $seed['assignment']))
             ->assertSessionHasErrors([
-                'selections' => 'Voeg minstens één selectie toe, of vink algemeen werk aan.',
+                'selections' => 'Voeg minstens één selectie toe, of kies algemeen werk of winkelwerk.',
             ]);
 
         $this->assertSame(0, WorkTicket::query()->count());

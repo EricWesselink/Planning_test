@@ -36,9 +36,14 @@ class ProjectOverviewPdfService
     /**
      * @return Collection<int, Project>
      */
-    public function projects(Request $request): Collection
+    public function projects(Request $request, bool $withPlanningTeam = false): Collection
     {
         $filters = $this->filters($request);
+        $with = ['customer', 'workActivities.category', 'workItems.progressEntries'];
+        if ($withPlanningTeam) {
+            $with[] = 'assignments.worker';
+            $with[] = 'assignments.crewMembers';
+        }
 
         return Project::query()
             ->accessibleBy($request->user())
@@ -46,7 +51,7 @@ class ProjectOverviewPdfService
             ->matchingSearch($filters['search'])
             ->matchingKind($filters['kind'])
             ->startingInIsoWeek($filters['week'], $filters['weekYear'])
-            ->with(['customer', 'workActivities.category', 'workItems.progressEntries', 'assignments.worker', 'assignments.crewMembers'])
+            ->with($with)
             ->orderByRaw('planned_start_date is null')
             ->orderBy('planned_start_date')
             ->orderBy('id')
@@ -81,7 +86,7 @@ class ProjectOverviewPdfService
     public function build(Request $request): array
     {
         $filters = $this->filters($request);
-        $projects = $this->projects($request);
+        $projects = $this->projects($request, true);
         $generatedOn = now()->format('d-m-Y H:i');
 
         return [

@@ -40,11 +40,12 @@
 
             return abs(round($calculated - $declared, 2)) > 0.05;
         });
-        $openProject = $projectIdentityMissing
-            || $errors->has('customer_name')
+        $openProject = $errors->has('customer_name')
             || $errors->has('project_name')
+            || ($projectIdentityMissing && $areas->isEmpty())
             || (! $closureReady && (
-                $issueCategories->contains('project_header')
+                $projectIdentityMissing
+                || $issueCategories->contains('project_header')
                 || $failedCheckKeys->contains('project_header')
                 || ! empty($preview['project_header_mismatches'])
             ));

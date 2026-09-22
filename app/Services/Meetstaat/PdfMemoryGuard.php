@@ -25,7 +25,10 @@ class PdfMemoryGuard
             return;
         }
 
-        $projected = memory_get_usage(true) + (int) round($size * (float) config('pdf.php_parser_expansion_factor'));
+        // PHP's memory_limit follows bytes still in use. The system reservation
+        // stays high after earlier work in the same process and would reject a
+        // PDF that still fits in the free part of that reservation.
+        $projected = memory_get_usage() + (int) round($size * (float) config('pdf.php_parser_expansion_factor'));
         $ceiling = (int) round($limit * (float) config('pdf.php_parser_headroom', 0.90));
 
         if ($projected > $ceiling) {

@@ -19,6 +19,13 @@ class DashboardTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->travelTo('2026-09-10 08:00:00');
+    }
+
     public function test_unauthenticated_dashboard_redirects_to_login(): void
     {
         $this->get(route('dashboard'))->assertRedirect(route('login'));

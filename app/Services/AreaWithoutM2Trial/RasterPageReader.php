@@ -241,7 +241,7 @@ class RasterPageReader
             $height = (float) ($size[1] ?? 1);
 
             $wallsStarted = hrtime(true);
-            $detected = $this->detectWalls($image, $width, $height);
+            $detected = $this->detectWalls($image, $width, $height, $ocr['boxes'] ?? []);
             $wallsSeconds = $this->secondsSince($wallsStarted);
 
             $previewPath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'nicon-area-preview-'.bin2hex(random_bytes(8)).'.png';
@@ -281,7 +281,7 @@ class RasterPageReader
     }
 
     /**
-     * @return array{words: list<array{text: string, x: float, y: float, page: int, confidence: float}>, mean_confidence: ?float}
+     * @return array{words: list<array{text: string, x: float, y: float, page: int, confidence: float}>, boxes: list<array{left: float, top: float, width: float, height: float}>, mean_confidence: ?float}
      */
     private function ocrWords(string $image): array
     {
@@ -289,16 +289,17 @@ class RasterPageReader
         $ok = $this->runTesseract($image, $outBase, 'eng');
         $tsv = $outBase.'.tsv';
         if (! $ok || ! is_file($tsv)) {
-            return ['words' => [], 'mean_confidence' => null];
+            return ['words' => [], 'boxes' => [], 'mean_confidence' => null];
         }
 
         $size = getimagesize($image);
         $height = (float) ($size[1] ?? 1);
         $words = [];
+        $boxes = [];
         $confidences = [];
         $handle = fopen($tsv, 'r');
         if ($handle === false) {
-            return ['words' => [], 'mean_confidence' => null];
+            return ['words' => [], 'boxes' => [], 'mean_confidence' => null];
         }
         $header = fgetcsv($handle, 0, "\t");
         unset($header);
@@ -324,6 +325,12 @@ class RasterPageReader
                 'height' => $wordHeight,
                 'width' => $width,
             ];
+            $boxes[] = [
+                'left' => $left,
+                'top' => $top,
+                'width' => $width,
+                'height' => $wordHeight,
+            ];
             $confidences[] = $conf;
         }
         fclose($handle);
@@ -331,9 +338,14 @@ class RasterPageReader
         $stitched = $this->stitchWords($words);
         $mean = $confidences === [] ? null : array_sum($confidences) / count($confidences);
 
-        return ['words' => $stitched, 'mean_confidence' => $mean === null ? null : round($mean, 1)];
+        return [
+            'words' => $stitched,
+            'boxes' => $boxes,
+            'mean_confidence' => $mean === null ? null : round($mean, 1),
+        ];
     }
 
+    /**
     /**
      * @param  list<array{text: string, x: float, y: float, page: int, confidence: float, height?: float, width?: float}>  $words
      * @return list<array{text: string, x: float, y: float, page: int, confidence: float}>
@@ -463,6 +475,38 @@ class RasterPageReader
     }
 
     /**
+     * Glyph ink is not a wall. Room labels otherwise become a narrow false contour
+     * around the name, and the real rectangle is ignored.
+     *
+     * @param  list<array{left: float, top: float, width: float, height: float}>  $boxes
+     */
+    private function coverTextInk(\GdImage $image, array $boxes, float $scale): void
+    {
+        if ($boxes === []) {
+            return;
+        }
+
+        $white = imagecolorallocate($image, 255, 255, 255);
+        if ($white === false) {
+            return;
+        }
+
+        $maxX = imagesx($image) - 1;
+        $maxY = imagesy($image) - 1;
+        foreach ($boxes as $box) {
+            $x1 = max(0, (int) floor(((float) $box['left'] - 1) * $scale));
+            $y1 = max(0, (int) floor(((float) $box['top'] - 1) * $scale));
+            $x2 = min($maxX, (int) ceil(((float) $box['left'] + (float) $box['width'] + 1) * $scale));
+            $y2 = min($maxY, (int) ceil(((float) $box['top'] + (float) $box['height'] + 1) * $scale));
+            if ($x2 < $x1 || $y2 < $y1) {
+                continue;
+            }
+            imagefilledrectangle($image, $x1, $y1, $x2, $y2, $white);
+        }
+    }
+
+    /**
+     * @param  list<array{left: float, top: float, width: float, height: float}>  $textBoxes
      * @return array{
      *     walls: list<array<string, mixed>>,
      *     ticks: list<array<string, mixed>>,
@@ -470,7 +514,7 @@ class RasterPageReader
      *     wall_extract: array<string, mixed>
      * }
      */
-    private function detectWalls(string $imagePath, float $width, float $height): array
+    private function detectWalls(string $imagePath, float $width, float $height, array $textBoxes = []): array
     {
         $empty = [
             'walls' => [],
@@ -499,6 +543,8 @@ class RasterPageReader
             imagedestroy($image);
             $image = $small;
         }
+
+        $this->coverTextInk($image, $textBoxes, $scale);
 
         $minH = max(18, (int) round($w * 0.04));
         $minV = max(18, (int) round($h * 0.04));
