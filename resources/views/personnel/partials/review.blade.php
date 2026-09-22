@@ -69,9 +69,9 @@
                             <input
                                 type="number"
                                 name="approved_hours"
-                                min="0.25"
+                                min="0"
                                 max="24"
-                                step="0.1"
+                                step="0.25"
                                 required
                                 value="{{ old('approved_hours', $entry->submittedHoursValue()) }}"
                                 class="w-24 border border-nicon-line bg-white px-2 py-1"

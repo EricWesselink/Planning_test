@@ -49,7 +49,7 @@
                                 <form method="POST" action="{{ route('personnel.hours.update', $entry) }}" class="flex flex-wrap items-center gap-1">
                                     @csrf
                                     @method('PATCH')
-                                    <input type="number" name="approved_hours" value="{{ $entry->submittedHoursValue() }}" min="0.25" max="24" step="0.1" class="w-16 border border-nicon-line px-1 py-0.5" aria-label="Goedgekeurde uren">
+                                    <input type="number" name="approved_hours" value="{{ $entry->submittedHoursValue() }}" min="0" max="24" step="0.25" class="w-16 border border-nicon-line px-1 py-0.5" aria-label="Goedgekeurde uren">
                                     <input type="text" name="review_note" placeholder="Reden bij aanpassing" class="w-36 border border-nicon-line px-1 py-0.5" aria-label="Reden">
                                     <button class="border border-nicon-line bg-white px-2 py-0.5">Aanpassen &amp; goedkeuren</button>
                                 </form>

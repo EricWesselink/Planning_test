@@ -39,11 +39,11 @@ class PersonnelHoursController extends Controller
     {
         Gate::authorize('approve', $timeEntry);
         $data = $request->validate([
-            'approved_hours' => ['required', 'numeric', 'min:0.25', 'max:24'],
+            'approved_hours' => ['required', 'numeric', 'min:0', 'max:24'],
             'review_note' => ['nullable', 'string', 'max:2000'],
         ], [
             'approved_hours.required' => 'Vul de goedgekeurde uren in.',
-            'approved_hours.min' => 'Uren moeten minimaal 0,25 zijn.',
+            'approved_hours.min' => 'Uren moeten minimaal 0 zijn.',
         ]);
         $entry = $hours->approveAdjusted(
             $timeEntry,

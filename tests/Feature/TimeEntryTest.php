@@ -484,6 +484,51 @@ class TimeEntryTest extends TestCase
             ->assertDontSee('Uren aanpassen');
     }
 
+    public function test_approving_zero_hours_keeps_submitted_hours_and_the_review_note(): void
+    {
+        [$vakman, $assignment, $item] = $this->plannedVakman('Peter');
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-21',
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $item->id,
+            'hours' => '8',
+        ]);
+        $entry = TimeEntry::query()->first();
+        $leader = User::factory()->projectleider()->create(['name' => 'Eric']);
+        $weekstaat = $this->weekstaatDay($assignment);
+
+        $this->actingAs($leader)
+            ->get($weekstaat)
+            ->assertOk()
+            ->assertSee('min="0"', false)
+            ->assertSee('step="0.25"', false)
+            ->assertDontSee('min="0.25"', false);
+
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.update', $entry), [
+                'approved_hours' => '0',
+                'review_note' => 'Na controle geen uren',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', '0u aangepast en goedgekeurd.');
+
+        $entry = $entry->fresh();
+        $this->assertNotNull($entry->approved_hours);
+        $this->assertSame(8.0, $entry->submittedHoursValue());
+        $this->assertSame(0.0, $entry->approvedHoursValue());
+        $this->assertTrue($entry->isApproved());
+        $this->assertTrue($entry->isAdjusted());
+        $this->assertSame('Na controle geen uren', $entry->review_note);
+        $this->assertSame(0.0, (float) WorkProgressEntry::query()->value('worked_hours'));
+
+        $this->actingAs($leader)
+            ->get($weekstaat)
+            ->assertOk()
+            ->assertSee('Ingediend door medewerker: 8u')
+            ->assertSee('Goedgekeurd door Eric: 0u')
+            ->assertSee('Na controle geen uren');
+    }
+
     public function test_rejecting_hours_requires_a_reason(): void
     {
         [$vakman, $assignment, $item] = $this->plannedVakman();
