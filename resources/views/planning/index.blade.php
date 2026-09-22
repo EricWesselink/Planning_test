@@ -254,28 +254,6 @@
         </div>
 
         <div class="planning-scroll-area" id="plan-scroller" data-scroll-key="nicon.planning.scroll">
-            @php
-                $workItemsByProject = $projects->mapWithKeys(function ($project) {
-                    $items = $project->workItems
-                        ->filter(fn ($item) => (float) $item->ordered_quantity > 0.0001 || $item->work_activity_id !== null);
-                    if ($project->isSmallWork() && $items->contains(fn ($item) => $item->work_activity_id !== null)) {
-                        $items = $items->reject(fn ($item) => $item->work_activity_id === null && ! $item->isExtraWork());
-                    }
-                    $items = $items
-                        ->map(fn ($item) => [
-                            'id' => $item->id,
-                            'name' => $item->productLabel() ?: (\App\Support\WorkType::looksLikeRoom($item->name) ? $item->typeLabel() : $item->name),
-                            'group' => $item->planningTitle(),
-                            'notes' => trim((string) $item->notes),
-                            'type_key' => $item->typeKey(),
-                            'project_id' => $project->id,
-                            'project' => $project->displayTitle(),
-                        ])
-                        ->values();
-
-                    return [$project->id => $items];
-                });
-            @endphp
             <div class="plan-board{{ $canViewLaborCosts ? ' plan-board--labor' : '' }}" id="plan-board"
                  @if ($canViewLaborCosts) data-labor-fold-key="nicon.planning.laborFolded" @endif
                  data-shift-url="{{ route('planning.shift') }}"

@@ -61,6 +61,9 @@ class PlanningController extends Controller
             'canAssignPlanning' => $request->user()?->canAssignPlanning() ?? false,
             'canViewLaborCosts' => $request->user()?->canViewLaborCosts() ?? false,
             'weekplanningTeams' => $weekplanning->scheduledGroups($request),
+            'workItemsByProject' => $data['projects']->mapWithKeys(
+                fn (Project $project): array => [$project->id => $board->plannableWorkChoices($project)]
+            ),
         ]));
     }
 

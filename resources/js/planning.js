@@ -17,7 +17,7 @@ import { bindLaborFold } from './planning-labor-fold';
 import { bindPlanningScrollRestore, reloadPlanningBoard } from './planning-scroll';
 import { bindPlanningDatePickers, workdaysForIsoWeek } from './planning-datepicker.js';
 import { isoWeekFromDate } from './planning-weeks.js';
-import { planningWorkChoices } from './planning-work-choices.js';
+import { planningCheckedWorkIds, planningProjectWorkItems, planningWorkChoices } from './planning-work-choices.js';
 import {
     candidatesFetchInit,
     datesForExactMode,
@@ -91,6 +91,7 @@ if (board) {
     let candidatesRequestId = 0;
     let selectedWho = '';
     let selectedWhoChoice = null;
+    let openedWorkIds = [];
     let saving = false;
     const submitBtn = form.querySelector('button[type="submit"]');
     const dayCount = dates.length;
@@ -169,9 +170,17 @@ if (board) {
     }
 
     function selectedWorkIds() {
-        return [...(workList?.querySelectorAll('input[type="checkbox"]:checked') || [])]
-            .map((input) => Number(input.value))
-            .filter((id) => id > 0);
+        const checked = [...(workList?.querySelectorAll('input[type="checkbox"]:checked') || [])]
+            .map((input) => ({
+                id: Number(input.value),
+                checked: true,
+                memberIds: String(input.dataset.memberIds || input.value)
+                    .split(',')
+                    .map((id) => Number(id))
+                    .filter((id) => id > 0),
+            }));
+
+        return planningCheckedWorkIds(checked, openedWorkIds);
     }
 
     function fillWorkItems(projectId, selectedId) {
@@ -180,66 +189,48 @@ if (board) {
                 .map((id) => Number(id))
                 .filter((id) => id > 0),
         );
-        const edit = Boolean(form.dataset.assignmentId);
-        const sources = edit || ! projectId
-            ? Object.entries(workItems)
-            : [[String(projectId), workItems[projectId] || workItems[String(projectId)] || []]];
+        openedWorkIds = [...selected];
+        const choices = planningWorkChoices(planningProjectWorkItems(workItems, projectId));
         if (workList) {
             workList.innerHTML = '';
         }
-        sources.forEach(([pid, items]) => {
-            const rows = Array.isArray(items) ? items : [];
-            if (rows.length === 0 || !workList) {
+        choices.forEach((choice) => {
+            if (!workList) {
                 return;
             }
-            const choices = planningWorkChoices(rows);
-            if (edit && choices.length > 0) {
-                const heading = document.createElement('div');
-                heading.className = 'pt-1 text-[10px] uppercase tracking-wide text-nicon-muted';
-                heading.textContent = choices[0].project || `Project ${pid}`;
-                workList.append(heading);
-            }
-            choices.forEach((choice) => {
-                const row = document.createElement('label');
-                row.className = 'flex items-center gap-2 text-sm leading-tight';
-                const input = document.createElement('input');
-                input.type = 'checkbox';
-                input.value = String(choice.id);
-                input.dataset.projectId = choice.projectId || String(pid);
-                input.checked = selected.has(choice.id);
-                input.addEventListener('change', () => {
-                    if (input.checked) {
-                        const projectKey = input.dataset.projectId;
-                        workList.querySelectorAll('input[type="checkbox"]:checked').forEach((other) => {
-                            if (other !== input && other.dataset.projectId !== projectKey) {
-                                other.checked = false;
-                            }
-                        });
-                    }
-                    const ids = selectedWorkIds();
-                    workSelect.value = ids[0] ? String(ids[0]) : '';
-                    syncProjectFromWork();
-                    refreshCandidates();
-                });
-                const text = document.createElement('span');
-                text.className = 'min-w-0 truncate';
-                text.textContent = choice.label;
-                row.append(input, text);
-                workList.append(row);
+            const row = document.createElement('label');
+            row.className = 'flex items-center gap-2 text-sm leading-tight';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.value = String(choice.id);
+            input.dataset.projectId = choice.projectId || String(projectId || '');
+            input.dataset.memberIds = choice.memberIds.join(',');
+            input.checked = choice.memberIds.some((id) => selected.has(id));
+            input.addEventListener('change', () => {
+                if (input.checked) {
+                    const projectKey = input.dataset.projectId;
+                    workList.querySelectorAll('input[type="checkbox"]:checked').forEach((other) => {
+                        if (other !== input && other.dataset.projectId !== projectKey) {
+                            other.checked = false;
+                        }
+                    });
+                }
+                const ids = selectedWorkIds();
+                workSelect.value = ids[0] ? String(ids[0]) : '';
+                syncProjectFromWork();
+                refreshCandidates();
             });
+            const text = document.createElement('span');
+            text.className = 'min-w-0 truncate';
+            text.textContent = choice.label;
+            row.append(input, text);
+            workList.append(row);
         });
         if (workList && workList.children.length === 0) {
             const empty = document.createElement('p');
             empty.className = 'text-sm text-nicon-muted';
             empty.textContent = 'Geen werkzaamheden';
             workList.append(empty);
-        }
-        const ids = selectedWorkIds();
-        if (ids.length === 0 && selected.size > 0 && workList) {
-            const first = workList.querySelector('input[type="checkbox"]');
-            if (first) {
-                first.checked = true;
-            }
         }
         workSelect.value = selectedWorkIds()[0] ? String(selectedWorkIds()[0]) : '';
         syncProjectFromWork();
