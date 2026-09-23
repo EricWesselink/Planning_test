@@ -173,9 +173,8 @@ class PlanningBoardService
             ->when($crewMemberId, fn ($q) => $this->constrainCrewMember($q, $crewMemberId))
             ->get();
 
-        if ($hoursView === 'actual') {
-            $this->applyApprovedHours($assignments);
-        }
+        $this->applyApprovedHours($assignments, $hoursView !== 'actual');
+        $this->applyUniqueBarHours($assignments->concat($internalAssignments));
 
         if ($workerId || $crewMemberId) {
             $projects = $projects->whereIn('id', $assignments->pluck('project_id'))->values();
@@ -1225,7 +1224,14 @@ class PlanningBoardService
     private function personBar(WorkerAssignment $assignment, array $bar, array $doubleBooked, Collection $days, string $workName, string $projectName = ''): array
     {
         $approvedHours = $assignment->getAttribute('approved_hours');
-        $hoursOverride = $approvedHours === null ? null : (float) $approvedHours;
+        $uniqueHours = $assignment->getAttribute('unique_hours');
+        if ($approvedHours !== null) {
+            $hoursOverride = (float) $approvedHours;
+        } elseif ($uniqueHours !== null && abs((float) $uniqueHours - $assignment->plannedHoursValue()) >= 0.01) {
+            $hoursOverride = (float) $uniqueHours;
+        } else {
+            $hoursOverride = null;
+        }
         $label = $assignment->planningLabel($hoursOverride);
         $ticketLabel = $assignment->planningTicketLabel();
         $ticket = $assignment->workTickets->first();
@@ -2177,7 +2183,7 @@ class PlanningBoardService
     /**
      * @param  Collection<int, WorkerAssignment>  $assignments
      */
-    private function applyApprovedHours(Collection $assignments): void
+    private function applyApprovedHours(Collection $assignments, bool $onlyWhenApproved = false): void
     {
         $ids = $assignments->modelKeys();
         if ($ids === []) {
@@ -2204,14 +2210,145 @@ class PlanningBoardService
             if ($matched === null || $matched->isEmpty()) {
                 continue;
             }
-            $hours = (float) $matched->sum(function (TimeEntry $entry): float {
-                if (! $entry->isApproved() || $entry->approved_hours === null) {
-                    return 0.0;
-                }
-
-                return round((float) $entry->approved_hours, 2);
-            });
+            $approved = $matched->filter(
+                fn (TimeEntry $entry): bool => $entry->isApproved() && $entry->approved_hours !== null,
+            );
+            if ($onlyWhenApproved && ($approved->isEmpty() || ! $this->approvedEntriesCoverPlan($assignment, $approved))) {
+                continue;
+            }
+            $hours = (float) $approved->sum(
+                fn (TimeEntry $entry): float => round((float) $entry->approved_hours, 2),
+            );
             $assignment->setAttribute('approved_hours', round($hours, 2));
         }
+    }
+
+    /**
+     * @param  Collection<int, TimeEntry>  $approved
+     */
+    private function approvedEntriesCoverPlan(WorkerAssignment $assignment, Collection $approved): bool
+    {
+        $covered = $approved
+            ->map(fn (TimeEntry $entry): string => $entry->date->toDateString())
+            ->unique();
+        $day = $assignment->start_date->copy()->startOfDay();
+        $last = $assignment->end_date->copy()->startOfDay();
+        while ($day->lte($last)) {
+            if (PlanningHours::countsOnDate($day, $assignment->includesSaturday(), $assignment->includesSunday())
+                && ! $covered->contains($day->toDateString())) {
+                return false;
+            }
+            $day->addDay();
+        }
+
+        return true;
+    }
+
+    private function applyUniqueBarHours(Collection $assignments): void
+    {
+        $workerIds = $assignments->pluck('worker_id')->filter()->unique()->values();
+        if ($workerIds->isEmpty()) {
+            return;
+        }
+
+        $start = $assignments->min(fn (WorkerAssignment $assignment) => $assignment->start_date);
+        $end = $assignments->max(fn (WorkerAssignment $assignment) => $assignment->end_date);
+        if ($start === null || $end === null) {
+            return;
+        }
+
+        $related = WorkerAssignment::query()
+            ->with('crewMembers')
+            ->whereIn('worker_id', $workerIds)
+            ->whereDate('end_date', '>=', $start->toDateString())
+            ->whereDate('start_date', '<=', $end->toDateString())
+            ->get();
+        $hoursById = $this->uniqueHoursByAssignment($related);
+        foreach ($assignments as $assignment) {
+            if (! array_key_exists($assignment->id, $hoursById)) {
+                continue;
+            }
+            $assignment->setAttribute('unique_hours', $hoursById[$assignment->id]);
+        }
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @return array<int, float>
+     */
+    private function uniqueHoursByAssignment(Collection $assignments): array
+    {
+        $groups = [];
+        foreach ($assignments as $assignment) {
+            if ($assignment->isProvisional() || $assignment->isHoursOrigin()) {
+                continue;
+            }
+            $assignment->loadMissing('crewMembers');
+            if ($assignment->crewMembers->isEmpty()) {
+                $groups['worker-'.$assignment->worker_id][] = [$assignment, null];
+
+                continue;
+            }
+            foreach ($assignment->crewMembers as $member) {
+                $groups['member-'.$member->id][] = [$assignment, $member];
+            }
+        }
+
+        $perPerson = [];
+        foreach ($groups as $entries) {
+            foreach ($this->claimedHoursForPeople($entries) as $id => $hours) {
+                $perPerson[$id][] = $hours;
+            }
+        }
+
+        $totals = [];
+        foreach ($perPerson as $id => $hoursList) {
+            $totals[(int) $id] = round(max($hoursList), 2);
+        }
+
+        return $totals;
+    }
+
+    /**
+     * @param  list<array{0: WorkerAssignment, 1: ?CrewMember}>  $entries
+     * @return array<int, float>
+     */
+    private function claimedHoursForPeople(array $entries): array
+    {
+        $start = null;
+        $end = null;
+        foreach ($entries as [$assignment]) {
+            $start = $start === null || $assignment->start_date->lt($start) ? $assignment->start_date->copy() : $start;
+            $end = $end === null || $assignment->end_date->gt($end) ? $assignment->end_date->copy() : $end;
+        }
+        if ($start === null || $end === null) {
+            return [];
+        }
+
+        $totals = [];
+        $day = $start->copy()->startOfDay();
+        $last = $end->copy()->startOfDay();
+        while ($day->lte($last)) {
+            $rows = [];
+            foreach ($entries as [$assignment, $member]) {
+                $interval = $member instanceof CrewMember
+                    ? $assignment->intervalForPerson($day, $member)
+                    : $assignment->intervalOnDate($day);
+                if ($interval === null) {
+                    continue;
+                }
+                $rows[] = [
+                    'id' => $assignment->id,
+                    'start' => $interval[0],
+                    'end' => $interval[1],
+                ];
+            }
+            foreach (PlanningHours::claimById($rows) as $id => $hours) {
+                $totals[(int) $id] = ($totals[(int) $id] ?? 0) + $hours;
+            }
+            $day->addDay();
+        }
+
+        return $totals;
     }
 }

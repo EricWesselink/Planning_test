@@ -49,9 +49,10 @@ class ProjectLaborCalculator
         $hoursByItem = $project->assignments->groupBy(
             fn (WorkerAssignment $assignment): int => $assignment->resolvedWorkItemId($project->workOrders) ?? 0
         );
+        $claimed = $this->claimedPersonHoursByAssignment($project->assignments);
         $unassignedHours = round(
             (float) ($hoursByItem->get(0)?->sum(
-                fn (WorkerAssignment $assignment): float => $assignment->plannedPersonHours()
+                fn (WorkerAssignment $assignment): float => $claimed[$assignment->id] ?? 0.0
             ) ?? 0),
             2,
         );
@@ -62,6 +63,7 @@ class ProjectLaborCalculator
                 $item,
                 $project,
                 $hoursByItem->get($item->id, collect()),
+                $claimed,
             );
         }
 
@@ -186,15 +188,92 @@ class ProjectLaborCalculator
     }
 
     /**
+     * Overlapping time of the same person is counted once and kept on the earliest bar.
+     *
      * @param  Collection<int, WorkerAssignment>  $assignments
+     * @return array<int, float>
+     */
+    private function claimedPersonHoursByAssignment(Collection $assignments): array
+    {
+        $workerIds = $assignments->pluck('worker_id')->unique()->filter()->values();
+        if ($workerIds->isEmpty()) {
+            return [];
+        }
+
+        $from = $assignments->min(fn (WorkerAssignment $assignment) => $assignment->start_date);
+        $to = $assignments->max(fn (WorkerAssignment $assignment) => $assignment->end_date);
+        $related = WorkerAssignment::query()
+            ->with('crewMembers')
+            ->whereIn('worker_id', $workerIds)
+            ->whereDate('start_date', '<=', $to)
+            ->whereDate('end_date', '>=', $from)
+            ->get()
+            ->reject(fn (WorkerAssignment $assignment): bool => $assignment->isProvisional() || $assignment->isHoursOrigin());
+
+        $groups = [];
+        foreach ($related as $assignment) {
+            $day = $assignment->start_date->copy()->startOfDay();
+            $last = $assignment->end_date->copy()->startOfDay();
+            while ($day->lte($last)) {
+                if ($assignment->crewMembers->isNotEmpty()) {
+                    foreach ($assignment->crewMembers as $member) {
+                        $interval = $assignment->intervalOnDateForMember($day, $member);
+                        if ($interval === null) {
+                            continue;
+                        }
+                        $groups['member:'.$member->id.'|'.$day->toDateString()][] = [
+                            'id' => $assignment->id,
+                            'start' => $interval[0],
+                            'end' => $interval[1],
+                        ];
+                    }
+                } else {
+                    $interval = $assignment->intervalOnDate($day);
+                    if ($interval === null) {
+                        $day->addDay();
+
+                        continue;
+                    }
+                    $groups['worker:'.$assignment->worker_id.'|'.$day->toDateString()][] = [
+                        'id' => $assignment->id,
+                        'start' => $interval[0],
+                        'end' => $interval[1],
+                        'people' => max(1, $assignment->peopleCount()),
+                    ];
+                }
+                $day->addDay();
+            }
+        }
+
+        $hours = [];
+        foreach ($groups as $rows) {
+            $claimed = PlanningHours::claimById($rows);
+            foreach ($claimed as $id => $value) {
+                $people = 1;
+                foreach ($rows as $row) {
+                    if ((int) $row['id'] === (int) $id && isset($row['people'])) {
+                        $people = (int) $row['people'];
+                        break;
+                    }
+                }
+                $hours[(int) $id] = round(($hours[(int) $id] ?? 0) + ($value * $people), 2);
+            }
+        }
+
+        return $hours;
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  array<int, float>  $claimedHours
      * @return array<string, mixed>
      */
-    public function forItem(WorkItem $item, Project $project, Collection $assignments): array
+    public function forItem(WorkItem $item, Project $project, Collection $assignments, array $claimedHours = []): array
     {
         $hourlyRate = $this->rateFor($item, $project);
         $plannedHours = round(
             (float) $assignments->sum(
-                fn (WorkerAssignment $assignment): float => $assignment->plannedPersonHours()
+                fn (WorkerAssignment $assignment): float => $claimedHours[$assignment->id] ?? $assignment->plannedPersonHours()
             ),
             2,
         );

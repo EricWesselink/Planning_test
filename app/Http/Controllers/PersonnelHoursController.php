@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class PersonnelHoursController extends Controller
 {
@@ -95,6 +96,40 @@ class PersonnelHoursController extends Controller
         return back()->with('status', $entry->isAdjusted()
             ? $entry->approvedHoursLabel().' aangepast en goedgekeurd.'
             : $entry->approvedHoursLabel().' goedgekeurd.');
+    }
+
+    public function updateDistribution(Request $request, TimeEntryService $hours): RedirectResponse
+    {
+        $lines = $request->input('lines', []);
+        if (is_array($lines)) {
+            foreach ($lines as $id => $hoursValue) {
+                $lines[$id] = str_replace(',', '.', (string) $hoursValue);
+            }
+            $request->merge(['lines' => $lines]);
+        }
+
+        $data = $request->validate([
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*' => ['required', 'numeric', 'min:0', 'max:24'],
+            'review_note' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'lines.*.required' => 'Vul de goedgekeurde uren in.',
+            'lines.*.min' => 'Uren moeten minimaal 0 zijn.',
+        ]);
+
+        $entries = TimeEntry::query()->whereIn('id', array_keys($data['lines']))->get();
+        if ($entries->count() !== count($data['lines'])) {
+            throw ValidationException::withMessages([
+                'lines' => 'Niet alle urenregels zijn gevonden.',
+            ]);
+        }
+        foreach ($entries as $entry) {
+            Gate::authorize('approve', $entry);
+        }
+
+        $hours->approveDistribution($request->user(), $data['lines'], $data['review_note'] ?? null);
+
+        return back()->with('status', 'Verdeling goedgekeurd.');
     }
 
     public function approveWeek(Request $request, TimeEntryService $hours): RedirectResponse

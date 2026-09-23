@@ -43,7 +43,11 @@ class TimeEntryService
         $crewMemberId = $this->resolvedCrewMemberId($user, $worker);
         $date = (string) $data['date'];
         $clock = $this->submittedClock($data);
-        $hours = $clock === null ? round((float) $data['hours'], 2) : $clock['hours'];
+        $hours = $clock === null
+            ? round((float) $data['hours'], 2)
+            : (array_key_exists('allocated_hours', $data)
+                ? round((float) $data['allocated_hours'], 2)
+                : $clock['hours']);
         $startTime = $clock === null ? null : $clock['start_time'];
         $endTime = $clock === null ? null : $clock['end_time'];
         $breakMinutes = $clock === null ? null : $clock['break_minutes'];
@@ -65,10 +69,11 @@ class TimeEntryService
             $assignment?->id,
             $workItem?->id,
         );
+        $ignoreAssignmentIds = array_map('intval', $data['ignore_assignment_ids'] ?? []);
 
         return DB::transaction(function () use (
             $user, $worker, $crewMemberId, $date, $hours, $clock, $startTime, $endTime, $breakMinutes, $note, $assignment, $isUnplanned,
-            $project, $workItem, $plannedHours, $identity,
+            $project, $workItem, $plannedHours, $identity, $ignoreAssignmentIds,
         ): TimeEntry {
             $existing = TimeEntry::query()
                 ->where('identity_key', $identity)
@@ -116,6 +121,7 @@ class TimeEntryService
                     $endTime,
                     $existing?->id,
                     'start_time',
+                    $ignoreAssignmentIds,
                 );
             }
 
@@ -156,6 +162,125 @@ class TimeEntryService
             $existing->fill($payload)->save();
 
             return $existing->fresh() ?? $existing;
+        });
+    }
+
+    /**
+     * One clock for a job, split into hours per activity. Each activity stays its own time entry.
+     *
+     * @param  array{date: string, start_time: string, end_time: string, break_minutes: int, note?: ?string, project_id?: ?int, allocations: list<array{worker_assignment_id: int, work_item_id: ?int, hours: float}>}  $data
+     * @return list<TimeEntry>
+     */
+    public function submitDistribution(User $user, array $data): array
+    {
+        $net = $this->clockNet(
+            $data['start_time'],
+            $data['end_time'],
+            (int) $data['break_minutes'],
+            false,
+            'end_time',
+            'break_minutes',
+        );
+        $lines = [];
+        $seen = [];
+        $sum = 0.0;
+        foreach ($data['allocations'] as $index => $row) {
+            $hours = $this->assertQuarterHours((float) $row['hours'], 'allocations.'.$index.'.hours');
+            $key = (int) $row['worker_assignment_id'].':'.(int) ($row['work_item_id'] ?? 0);
+            if (isset($seen[$key])) {
+                throw ValidationException::withMessages([
+                    'allocations' => 'Deze werkzaamheid staat al in de verdeling.',
+                ]);
+            }
+            $seen[$key] = true;
+            $row['hours'] = $hours;
+            $lines[] = $row;
+            $sum += $hours;
+        }
+        $sum = round($sum, 2);
+        if (abs($sum - $net) > 0.01) {
+            throw ValidationException::withMessages([
+                'allocations' => $this->distributionMismatchMessage($net, $sum),
+            ]);
+        }
+
+        $assignmentIds = array_map(fn (array $line): int => (int) $line['worker_assignment_id'], $lines);
+        $projectIds = WorkerAssignment::query()->whereIn('id', $assignmentIds)->pluck('project_id')->unique()->filter();
+        if ($projectIds->count() > 1) {
+            throw ValidationException::withMessages([
+                'allocations' => 'Verdeel de uren binnen één klus.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $data, $lines, $assignmentIds): array {
+            $entries = [];
+            foreach ($lines as $line) {
+                $entries[] = $this->submit($user, [
+                    'date' => $data['date'],
+                    'start_time' => $data['start_time'],
+                    'end_time' => $data['end_time'],
+                    'break_minutes' => $data['break_minutes'],
+                    'note' => $data['note'] ?? null,
+                    'worker_assignment_id' => $line['worker_assignment_id'],
+                    'work_item_id' => $line['work_item_id'],
+                    'project_id' => $data['project_id'] ?? null,
+                    'allocated_hours' => $line['hours'],
+                    'ignore_assignment_ids' => $assignmentIds,
+                ]);
+            }
+
+            return $entries;
+        });
+    }
+
+    /**
+     * @param  array<int, float|int|string>  $lines
+     */
+    public function approveDistribution(User $reviewer, array $lines, ?string $reason): void
+    {
+        $normalized = [];
+        foreach ($lines as $id => $hours) {
+            $normalized[(int) $id] = $hours;
+        }
+
+        DB::transaction(function () use ($reviewer, $normalized, $reason): void {
+            $entries = TimeEntry::query()->whereIn('id', array_keys($normalized))->lockForUpdate()->get();
+            if ($entries->count() !== count($normalized)) {
+                throw ValidationException::withMessages([
+                    'lines' => 'Niet alle urenregels zijn gevonden.',
+                ]);
+            }
+
+            $first = $entries->first();
+            $prepared = [];
+            $changed = false;
+            foreach ($entries as $entry) {
+                if ((int) $entry->project_id !== (int) $first->project_id
+                    || (int) $entry->worker_id !== (int) $first->worker_id
+                    || $entry->date->toDateString() !== $first->date->toDateString()
+                    || (int) ($entry->crew_member_id ?? 0) !== (int) ($first->crew_member_id ?? 0)) {
+                    throw ValidationException::withMessages([
+                        'lines' => 'Deze uren horen niet bij dezelfde klus.',
+                    ]);
+                }
+
+                $hours = $this->assertQuarterHours((float) $normalized[$entry->id], 'lines.'.$entry->id);
+                if (abs($hours - $entry->submittedHoursValue()) > 0.01) {
+                    $changed = true;
+                }
+                $prepared[$entry->id] = $hours;
+            }
+
+            $note = $this->nullableNote($reason);
+            if ($changed && $note === null) {
+                throw ValidationException::withMessages([
+                    'review_note' => 'Vul een reden in als je de uren aanpast.',
+                ]);
+            }
+
+            foreach ($entries as $entry) {
+                $this->approveAdjusted($entry, $reviewer, $prepared[$entry->id], $note);
+            }
         });
     }
 
@@ -502,12 +627,7 @@ class TimeEntryService
     ): float {
         $day = Carbon::parse($date)->startOfDay();
         $member = $crewMemberId ? $assignment->crewMembers->firstWhere('id', $crewMemberId) : null;
-        $hours = $member instanceof CrewMember
-            ? PlanningHours::hoursBetween(
-                PlanningHours::normalizeTime($member->pivot?->start_time, $assignment->startTimeValue()),
-                PlanningHours::normalizeTime($member->pivot?->end_time, $assignment->endTimeValue()),
-            )
-            : $assignment->hoursOnDate($day);
+        $hours = $assignment->claimedHoursOnDate($day, $member instanceof CrewMember ? $member : null);
 
         if ($workItem === null) {
             return round($hours, 2);
@@ -685,6 +805,38 @@ class TimeEntryService
         return $net;
     }
 
+    private function assertQuarterHours(float $hours, string $field): float
+    {
+        $hours = round($hours, 2);
+        if ($hours < 0 || $hours > 24) {
+            throw ValidationException::withMessages([
+                $field => 'Uren moeten tussen 0 en 24 liggen.',
+            ]);
+        }
+
+        if (abs(($hours * 4) - round($hours * 4)) > 0.001) {
+            throw ValidationException::withMessages([
+                $field => 'Uren gaan in stappen van 0,25.',
+            ]);
+        }
+
+        return $hours;
+    }
+
+    private function distributionMismatchMessage(float $net, float $sum): string
+    {
+        $delta = round($net - $sum, 2);
+        $label = PlanningHours::hourText(abs($delta)).' uur';
+        if ($delta > 0) {
+            return 'Nog '.$label.' verdelen';
+        }
+
+        return $label.' te veel verdeeld';
+    }
+
+    /**
+     * @param  list<int>  $ignoreAssignmentIds
+     */
     private function assertNoTimeOverlap(
         int $workerId,
         ?int $crewMemberId,
@@ -693,6 +845,7 @@ class TimeEntryService
         string $end,
         ?int $ignoreId,
         string $errorField,
+        array $ignoreAssignmentIds = [],
     ): void {
         $from = PlanningHours::minutesFromMidnight($start);
         $to = PlanningHours::minutesFromMidnight($end);
@@ -710,6 +863,9 @@ class TimeEntryService
             ->get();
 
         foreach ($rows as $row) {
+            if (in_array((int) $row->worker_assignment_id, $ignoreAssignmentIds, true)) {
+                continue;
+            }
             if (! $row->hasSubmittedTimes() && $row->approved_start_time === null) {
                 continue;
             }

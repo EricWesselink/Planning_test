@@ -181,4 +181,76 @@ class PlanningHoursTest extends TestCase
         $this->assertSame(0.0, PlanningHours::hoursOnDate(Carbon::parse('2026-09-19'), $start, $end, '08:00:00', '12:00:00'));
         $this->assertSame(36.0, PlanningHours::totalHours($start, $end, '08:00:00', '12:00:00'));
     }
+
+    public function test_separate_intervals_keep_their_own_hours(): void
+    {
+        $claimed = PlanningHours::claimById([
+            $this->span('a', '2026-09-21 08:00:00', '2026-09-21 12:00:00'),
+            $this->span('b', '2026-09-21 13:00:00', '2026-09-21 17:00:00'),
+        ]);
+
+        $this->assertSame(4.0, $claimed['a']);
+        $this->assertSame(4.0, $claimed['b']);
+        $this->assertSame(8.0, PlanningHours::uniqueHours([
+            [Carbon::parse('2026-09-21 08:00:00'), Carbon::parse('2026-09-21 12:00:00')],
+            [Carbon::parse('2026-09-21 13:00:00'), Carbon::parse('2026-09-21 17:00:00')],
+        ]));
+    }
+
+    public function test_partial_overlap_is_counted_once_on_the_earlier_bar(): void
+    {
+        $claimed = PlanningHours::claimById([
+            $this->span('a', '2026-09-21 08:00:00', '2026-09-21 14:00:00'),
+            $this->span('b', '2026-09-21 12:00:00', '2026-09-22 00:00:00'),
+        ]);
+
+        $this->assertSame(6.0, $claimed['a']);
+        $this->assertSame(10.0, $claimed['b']);
+        $this->assertSame(16.0, PlanningHours::uniqueHours([
+            [Carbon::parse('2026-09-21 08:00:00'), Carbon::parse('2026-09-21 14:00:00')],
+            [Carbon::parse('2026-09-21 12:00:00'), Carbon::parse('2026-09-22 00:00:00')],
+        ]));
+        $this->assertSame(12.0, PlanningHours::uniqueHours([
+            [Carbon::parse('2026-09-21 08:00:00'), Carbon::parse('2026-09-21 14:00:00')],
+            [Carbon::parse('2026-09-21 12:00:00'), Carbon::parse('2026-09-21 20:00:00')],
+        ]));
+    }
+
+    public function test_a_bar_fully_inside_another_adds_no_extra_hours(): void
+    {
+        $claimed = PlanningHours::claimById([
+            $this->span('outer', '2026-09-21 08:00:00', '2026-09-21 16:00:00'),
+            $this->span('inner', '2026-09-21 10:00:00', '2026-09-21 14:00:00'),
+        ]);
+
+        $this->assertSame(8.0, $claimed['outer']);
+        $this->assertSame(0.0, $claimed['inner']);
+        $this->assertSame(8.0, array_sum($claimed));
+    }
+
+    public function test_three_overlapping_intervals_share_one_unique_span(): void
+    {
+        $claimed = PlanningHours::claimById([
+            $this->span('a', '2026-09-21 08:00:00', '2026-09-21 12:00:00'),
+            $this->span('b', '2026-09-21 10:00:00', '2026-09-21 14:00:00'),
+            $this->span('c', '2026-09-21 12:00:00', '2026-09-21 16:00:00'),
+        ]);
+
+        $this->assertSame(4.0, $claimed['a']);
+        $this->assertSame(2.0, $claimed['b']);
+        $this->assertSame(2.0, $claimed['c']);
+        $this->assertSame(8.0, array_sum($claimed));
+    }
+
+    /**
+     * @return array{id: string, start: Carbon, end: Carbon}
+     */
+    private function span(string $id, string $start, string $end): array
+    {
+        return [
+            'id' => $id,
+            'start' => Carbon::parse($start),
+            'end' => Carbon::parse($end),
+        ];
+    }
 }

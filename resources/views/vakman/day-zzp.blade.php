@@ -147,25 +147,15 @@
                     @if (! empty($job['hourly_label']))
                         <p class="text-sm text-nicon-muted">{{ $job['hourly_label'] }}</p>
                     @endif
-                    @if (! empty($job['can_register_hours']))
-                        @foreach ($job['hour_slots'] ?? [] as $slot)
-                            <div class="border-t border-nicon-line pt-3">
-                                @if (count($job['hour_slots']) > 1)
-                                    <p class="mb-2 text-xs text-nicon-muted">{{ $slot['work_title'] }} · gepland {{ \App\Support\PlanningHours::hoursLabel($slot['planned_hours']) }}</p>
-                                @endif
-                                @include('vakman.partials.hours-form', [
-                                    'date' => $detail['date']->toDateString(),
-                                    'assignmentId' => $slot['assignment_id'],
-                                    'projectId' => $slot['project_id'],
-                                    'workItemId' => $slot['work_item_id'],
-                                    'plannedHours' => $slot['planned_hours'],
-                                    'plannedStart' => $slot['planned_start'],
-                                    'plannedEnd' => $slot['planned_end'],
-                                    'prefillStandardDay' => $slot['prefill_standard_day'] ?? false,
-                                    'entry' => $slot['entry'],
-                                ])
-                            </div>
-                        @endforeach
+                    @if (! empty($job['can_register_hours']) && ($job['hour_slots'] ?? []) !== [])
+                        <div class="border-t border-nicon-line pt-3">
+                            @include('vakman.partials.hours-form', [
+                                'date' => $detail['date']->toDateString(),
+                                'projectId' => $project?->id,
+                                'slots' => $job['hour_slots'],
+                                'prefillStandardDay' => $job['prefill_standard_day'] ?? false,
+                            ])
+                        </div>
                     @endif
                 </div>
             </article>

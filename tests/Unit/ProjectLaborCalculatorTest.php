@@ -19,6 +19,42 @@ class ProjectLaborCalculatorTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_overlapping_assignments_for_one_person_count_unique_hours(): void
+    {
+        [$project, $worker, $primer] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-21',
+            end: '2026-09-21',
+            startTime: '08:00:00',
+            endTime: '14:00:00',
+        );
+        $pvc = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC stroken',
+            'unit' => 'm2',
+            'ordered_quantity' => 40,
+            'status' => 'in_uitvoering',
+        ]);
+        $second = new WorkerAssignment([
+            'worker_id' => $worker->id,
+            'project_id' => $project->id,
+            'work_item_id' => $pvc->id,
+            'people_count' => 1,
+        ]);
+        $second->applySchedule(Carbon::parse('2026-09-21'), Carbon::parse('2026-09-21'), '12:00:00', '20:00:00');
+        $second->save();
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+        $byItem = collect($labor['items'])->keyBy('id');
+
+        $primerAssignment = WorkerAssignment::query()->where('work_item_id', $primer->id)->first();
+        $this->assertSame(6.0, $primerAssignment->hoursOnDate(Carbon::parse('2026-09-21')));
+        $this->assertSame(8.0, $second->fresh()->hoursOnDate(Carbon::parse('2026-09-21')));
+        $this->assertSame(6.0, $byItem[$primer->id]['planned_hours']);
+        $this->assertSame(6.0, $byItem[$pvc->id]['planned_hours']);
+        $this->assertSame(12.0, $labor['planned_hours']);
+    }
+
     public function test_two_people_for_three_days_cost_nine_euro_per_completed_square_meter(): void
     {
         [$project] = $this->makeScheduledProject(

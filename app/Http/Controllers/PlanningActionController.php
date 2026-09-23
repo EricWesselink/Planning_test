@@ -230,12 +230,14 @@ class PlanningActionController extends Controller
             }
         }
 
+        $independentClocks = ! $isProvisional && ! $start->isSameDay($end);
         if (! $isProvisional) {
             $times = PlanningHours::resolve(
                 $data['hours'] ?? null,
                 $data['slot'] ?? null,
                 $data['start_time'] ?? null,
                 $data['end_time'] ?? null,
+                $independentClocks,
             );
             foreach ($workers as $worker) {
                 $message = $fit->awayRejection(
@@ -254,7 +256,7 @@ class PlanningActionController extends Controller
             }
         }
 
-        $groups = $this->scheduleGroups($data, $crewIds, $teamId ? 1 : (int) ($data['people_count'] ?? 1));
+        $groups = $this->scheduleGroups($data, $crewIds, $teamId ? 1 : (int) ($data['people_count'] ?? 1), $independentClocks);
         if (! $isProvisional) {
             foreach ($groups as $group) {
                 $blocked = $this->firstConflict(
@@ -561,12 +563,14 @@ class PlanningActionController extends Controller
             $data['end_time'] = $data['end_time'] ?? PlanningHours::formatTime($defaultTimes['end_time']);
         }
 
+        $independentClocks = ! $isProvisional && ! $start->isSameDay($end);
         $groups = $this->scheduleGroups(
             $data,
             $crewIds,
             $crewIds !== []
                 ? count($crewIds)
                 : (array_key_exists('people_count', $data) ? (int) $data['people_count'] : $assignment->peopleCount()),
+            $independentClocks,
         );
         $first = array_shift($groups) ?? [
             'start_time' => $defaultTimes['start_time'],
@@ -1077,13 +1081,14 @@ class PlanningActionController extends Controller
      * @param  list<int>  $crewIds
      * @return list<array{start_time: string, end_time: string, people_count: int, crew_ids: list<int>}>
      */
-    private function scheduleGroups(array $data, array $crewIds, int $peopleCount): array
+    private function scheduleGroups(array $data, array $crewIds, int $peopleCount, bool $independentClocks = false): array
     {
         $default = PlanningHours::resolve(
             $data['hours'] ?? null,
             $data['slot'] ?? null,
             $data['start_time'] ?? null,
             $data['end_time'] ?? null,
+            $independentClocks,
         );
         $hoursById = [];
         foreach ($data['crew_hours'] ?? [] as $id => $hours) {

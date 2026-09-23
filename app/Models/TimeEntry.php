@@ -195,14 +195,9 @@ class TimeEntry extends Model
             ? $assignment->crewMembers->firstWhere('id', (int) $this->crew_member_id)
             : null;
 
-        if ($member instanceof CrewMember && ($member->pivot?->start_time || $member->pivot?->end_time)) {
-            return round(PlanningHours::hoursBetween(
-                PlanningHours::normalizeTime($member->pivot->start_time, $assignment->startTimeValue()),
-                PlanningHours::normalizeTime($member->pivot->end_time, $assignment->endTimeValue()),
-            ), 2);
-        }
+        $person = $member instanceof CrewMember ? $member : null;
 
-        return round($assignment->hoursOnDate($this->date), 2);
+        return round($assignment->claimedHoursOnDate($this->date, $person), 2);
     }
 
     public function differenceHours(): float

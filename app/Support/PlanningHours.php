@@ -112,7 +112,7 @@ class PlanningHours
     /**
      * @return array{start_time: string, end_time: string, hours: int}
      */
-    public static function resolve(mixed $hours, mixed $slot, mixed $startTime, mixed $endTime): array
+    public static function resolve(mixed $hours, mixed $slot, mixed $startTime, mixed $endTime, bool $independentClocks = false): array
     {
         $slotName = is_string($slot) && $slot !== '' ? $slot : null;
         $hasTimes = is_string($startTime) && trim($startTime) !== '' && is_string($endTime) && trim($endTime) !== '';
@@ -121,14 +121,14 @@ class PlanningHours
             $start = self::normalizeTime($startTime, self::DAY_START);
             $end = self::normalizeTime($endTime, self::DAY_END);
             $duration = self::hoursBetween($start, $end);
-            if ($duration < self::SNAP_HOURS) {
+            if (! $independentClocks && $duration < self::SNAP_HOURS) {
                 [$start, $end, $duration] = self::timesFromHours(self::SNAP_HOURS, $slotName ?: 'morning');
             }
 
             return [
                 'start_time' => $start,
                 'end_time' => $end,
-                'hours' => (int) round($duration),
+                'hours' => $independentClocks ? 0 : (int) round($duration),
             ];
         }
 
@@ -263,12 +263,31 @@ class PlanningHours
 
     public static function hoursLabel(float|int $hours): string
     {
-        $number = (float) $hours;
-        $text = fmod($number, 1.0) === 0.0
-            ? (string) (int) $number
-            : rtrim(rtrim(number_format($number, 1, ',', ''), '0'), ',');
+        return self::hourText($hours).'u';
+    }
 
-        return $text.'u';
+    public static function hourInput(float|int|null $hours): string
+    {
+        if ($hours === null) {
+            return '';
+        }
+
+        $number = round((float) $hours, 2);
+        if (abs($number - round($number)) < 0.001) {
+            return (string) (int) round($number);
+        }
+
+        return rtrim(rtrim(number_format($number, 2, '.', ''), '0'), '.');
+    }
+
+    public static function hourText(float|int $hours): string
+    {
+        $number = round((float) $hours, 2);
+        if (abs($number - round($number)) < 0.001) {
+            return (string) (int) round($number);
+        }
+
+        return rtrim(rtrim(number_format($number, 2, ',', ''), '0'), ',');
     }
 
     /**
@@ -299,7 +318,46 @@ class PlanningHours
             $seconds += max(0, $range[1] - $range[0]);
         }
 
-        return min(self::WORKDAY_HOURS, $seconds / 3600);
+        return round($seconds / 3600, 2);
+    }
+
+    /**
+     * Give each interval the hours not already covered by an earlier one.
+     * The earliest start keeps the overlap. The sum equals uniqueHours().
+     *
+     * @param  list<array{id: int|string, start: CarbonInterface, end: CarbonInterface}>  $intervals
+     * @return array<int|string, float>
+     */
+    public static function claimById(array $intervals): array
+    {
+        $order = $intervals;
+        usort($order, function (array $left, array $right): int {
+            $start = $left['start']->timestamp <=> $right['start']->timestamp;
+            if ($start !== 0) {
+                return $start;
+            }
+
+            $end = $left['end']->timestamp <=> $right['end']->timestamp;
+
+            return $end !== 0 ? $end : ((string) $left['id'] <=> (string) $right['id']);
+        });
+
+        $seconds = [];
+        $cursor = null;
+        foreach ($order as $interval) {
+            $start = $interval['start']->timestamp;
+            $end = $interval['end']->timestamp;
+            $from = $cursor === null ? $start : max($start, $cursor);
+            $seconds[$interval['id']] = ($seconds[$interval['id']] ?? 0) + max(0, $end - $from);
+            $cursor = $cursor === null ? $end : max($cursor, $end);
+        }
+
+        $claimed = [];
+        foreach ($seconds as $id => $span) {
+            $claimed[$id] = round($span / 3600, 2);
+        }
+
+        return $claimed;
     }
 
     public static function manDaysFromHours(float $hours): float

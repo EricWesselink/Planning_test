@@ -105,25 +105,15 @@
                     <span class="vakman-job-btn vakman-job-btn-ghost vakman-job-drawing is-disabled" aria-disabled="true" title="Geen tekening beschikbaar">Geen tekening</span>
                 @endif
             @endif
-            @if (! empty($job['can_register_hours']))
-                @foreach ($job['hour_slots'] ?? [] as $slot)
-                    <div class="vakman-hours-block">
-                        @if (count($job['hour_slots']) > 1)
-                            <p class="mb-2 text-xs text-nicon-muted">{{ $slot['work_title'] }} · gepland {{ \App\Support\PlanningHours::hoursLabel($slot['planned_hours']) }}</p>
-                        @endif
-                        @include('vakman.partials.hours-form', [
-                            'date' => $job['date'] ?? now()->toDateString(),
-                            'assignmentId' => $slot['assignment_id'],
-                            'projectId' => $slot['project_id'],
-                            'workItemId' => $slot['work_item_id'],
-                            'plannedHours' => $slot['planned_hours'],
-                            'plannedStart' => $slot['planned_start'] ?? null,
-                            'plannedEnd' => $slot['planned_end'] ?? null,
-                            'prefillStandardDay' => $slot['prefill_standard_day'] ?? false,
-                            'entry' => $slot['entry'],
-                        ])
-                    </div>
-                @endforeach
+            @if (! empty($job['can_register_hours']) && ($job['hour_slots'] ?? []) !== [])
+                <div class="vakman-hours-block">
+                    @include('vakman.partials.hours-form', [
+                        'date' => $job['date'] ?? now()->toDateString(),
+                        'projectId' => $job['project']?->id ?? ($job['hour_slots'][0]['project_id'] ?? null),
+                        'slots' => $job['hour_slots'],
+                        'prefillStandardDay' => $job['prefill_standard_day'] ?? false,
+                    ])
+                </div>
             @endif
         </div>
     @endif

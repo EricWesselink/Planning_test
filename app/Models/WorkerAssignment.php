@@ -412,6 +412,69 @@ class WorkerAssignment extends Model
         );
     }
 
+    public function claimedHoursOnDate(CarbonInterface $date, ?CrewMember $member = null): float
+    {
+        if ($this->isProvisional() || $this->isHoursOrigin()) {
+            return 0.0;
+        }
+
+        $own = $member instanceof CrewMember
+            ? $this->intervalOnDateForMember($date, $member)
+            : $this->intervalOnDate($date);
+        if ($own === null) {
+            return 0.0;
+        }
+
+        $siblings = self::query()
+            ->with('crewMembers')
+            ->where('worker_id', $this->worker_id)
+            ->whereDate('start_date', '<=', $date->toDateString())
+            ->whereDate('end_date', '>=', $date->toDateString())
+            ->get();
+
+        $rows = [];
+        foreach ($siblings as $assignment) {
+            if ($assignment->isProvisional() || $assignment->isHoursOrigin()) {
+                continue;
+            }
+
+            $interval = $assignment->intervalForPerson($date, $member);
+            if ($interval === null) {
+                continue;
+            }
+
+            $rows[] = [
+                'id' => $assignment->id,
+                'start' => $interval[0],
+                'end' => $interval[1],
+            ];
+        }
+
+        return (float) (PlanningHours::claimById($rows)[$this->id] ?? 0.0);
+    }
+
+    /**
+     * @return array{0: Carbon, 1: Carbon}|null
+     */
+    public function intervalForPerson(CarbonInterface $date, ?CrewMember $member): ?array
+    {
+        if (! $member instanceof CrewMember) {
+            return $this->intervalOnDate($date);
+        }
+
+        $this->loadMissing('crewMembers');
+        if ($this->crewMembers->isEmpty()) {
+            return $this->intervalOnDate($date);
+        }
+
+        $person = $this->crewMembers->firstWhere('id', (int) $member->id);
+        if (! $person instanceof CrewMember) {
+            return null;
+        }
+
+        return $this->intervalOnDateForMember($date, $person);
+    }
+
     public function hoursOnDate(CarbonInterface $date): float
     {
         if ($this->isProvisional()) {

@@ -52,6 +52,17 @@ class VakmanTimeEntryController extends Controller
             );
         }
 
+        if ($request->exists('allocations')) {
+            $data = $this->validatedDistribution($request);
+            $entries = $hours->submitDistribution($user, $data);
+            $total = round(array_sum(array_map(
+                fn ($entry): float => $entry->submittedHoursValue(),
+                $entries,
+            )), 2);
+
+            return back()->with('status', PlanningHours::hoursLabel($total).' ingediend');
+        }
+
         $data = $this->validated($request);
         $entry = $hours->submit($user, $data);
 
@@ -107,6 +118,59 @@ class VakmanTimeEntryController extends Controller
             'worker_assignment_id' => isset($data['worker_assignment_id']) ? (int) $data['worker_assignment_id'] : null,
             'project_id' => isset($data['project_id']) ? (int) $data['project_id'] : null,
             'work_item_id' => isset($data['work_item_id']) ? (int) $data['work_item_id'] : null,
+        ];
+    }
+
+    /**
+     * @return array{date: string, start_time: string, end_time: string, break_minutes: int, note: ?string, project_id: ?int, allocations: list<array{worker_assignment_id: int, work_item_id: ?int, hours: float}>}
+     */
+    private function validatedDistribution(Request $request): array
+    {
+        $allocations = $request->input('allocations', []);
+        if (is_array($allocations)) {
+            foreach ($allocations as $index => $row) {
+                if (is_array($row) && array_key_exists('hours', $row)) {
+                    $allocations[$index]['hours'] = str_replace(',', '.', (string) $row['hours']);
+                }
+                if (is_array($row) && ($row['work_item_id'] ?? '') === '') {
+                    $allocations[$index]['work_item_id'] = null;
+                }
+            }
+            $request->merge(['allocations' => $allocations]);
+        }
+
+        $data = $request->validate([
+            'date' => ['required', 'date'],
+            'start_time' => ['required', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'end_time' => ['required', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'break_minutes' => ['required', 'integer', 'min:0', 'max:1440'],
+            'note' => ['nullable', 'string', 'max:2000'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'allocations' => ['required', 'array', 'min:1'],
+            'allocations.*.worker_assignment_id' => ['required', 'integer', 'exists:worker_assignments,id'],
+            'allocations.*.work_item_id' => ['nullable', 'integer', 'exists:work_items,id'],
+            'allocations.*.hours' => ['required', 'numeric', 'min:0', 'max:24'],
+        ], [
+            'start_time.required' => 'Vul een begintijd in.',
+            'end_time.required' => 'Vul een eindtijd in.',
+            'break_minutes.required' => 'Vul de pauze in minuten in.',
+            'date.required' => 'Kies een datum.',
+            'allocations.*.hours.required' => 'Vul de uren per werkzaamheid in.',
+            'allocations.*.hours.min' => 'Uren moeten minimaal 0 zijn.',
+        ]);
+
+        return [
+            'date' => $data['date'],
+            'start_time' => PlanningHours::normalizeTime($data['start_time']),
+            'end_time' => PlanningHours::normalizeTime($data['end_time']),
+            'break_minutes' => (int) $data['break_minutes'],
+            'note' => $data['note'] ?? null,
+            'project_id' => isset($data['project_id']) ? (int) $data['project_id'] : null,
+            'allocations' => array_map(fn (array $row): array => [
+                'worker_assignment_id' => (int) $row['worker_assignment_id'],
+                'work_item_id' => isset($row['work_item_id']) ? (int) $row['work_item_id'] : null,
+                'hours' => round((float) $row['hours'], 2),
+            ], $data['allocations']),
         ];
     }
 

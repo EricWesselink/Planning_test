@@ -66,6 +66,43 @@ class PlanningHoursAssignmentTest extends TestCase
         $this->assertSame(2.0, $assignment->plannedHoursValue());
     }
 
+    public function test_resizing_a_multi_day_bar_keeps_a_later_start_when_the_end_clock_is_earlier(): void
+    {
+        $user = User::factory()->create();
+        [$assignment] = $this->makeFullDayAssignment();
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-07'),
+            Carbon::parse('2026-09-09'),
+            '08:00:00',
+            '10:00:00',
+        );
+        $assignment->save();
+        $this->assertSame(18.0, $assignment->plannedHoursValue());
+
+        $this->actingAs($user)
+            ->patchJson(route('planning.assignments.update', $assignment), [
+                'start_date' => '2026-09-07',
+                'end_date' => '2026-09-09',
+                'start_time' => '14:00',
+                'end_time' => '10:00',
+            ])
+            ->assertOk();
+
+        $assignment->refresh();
+        $this->assertSame('14:00:00', $assignment->startTimeValue());
+        $this->assertSame('10:00:00', $assignment->endTimeValue());
+        $this->assertSame(2.0, $assignment->hoursOnDate(Carbon::parse('2026-09-07')));
+        $this->assertSame(8.0, $assignment->hoursOnDate(Carbon::parse('2026-09-08')));
+        $this->assertSame(2.0, $assignment->hoursOnDate(Carbon::parse('2026-09-09')));
+        $this->assertSame(12.0, $assignment->plannedHoursValue());
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'weeks' => 1, 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
+            ->assertOk()
+            ->assertSee('12u')
+            ->assertDontSee('18u');
+    }
+
     public function test_resizes_a_two_hour_bar_to_four_hours(): void
     {
         $user = User::factory()->create();

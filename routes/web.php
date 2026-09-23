@@ -255,6 +255,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/personeel', [WorkerPersonnelController::class, 'index'])->name('personnel.index');
     Route::post('/personeel/uren/{timeEntry}/goedkeuren', [PersonnelHoursController::class, 'approve'])->name('personnel.hours.approve');
     Route::post('/personeel/uren/{timeEntry}/afwijzen', [PersonnelHoursController::class, 'reject'])->name('personnel.hours.reject');
+    Route::patch('/personeel/uren/verdeling', [PersonnelHoursController::class, 'updateDistribution'])->name('personnel.hours.distribution');
     Route::patch('/personeel/uren/{timeEntry}', [PersonnelHoursController::class, 'update'])->name('personnel.hours.update');
     Route::post('/personeel/uren/week-goedkeuren', [PersonnelHoursController::class, 'approveWeek'])->name('personnel.hours.approve-week');
     Route::patch('/personeel/{worker}/uren-registreren', [PersonnelHoursController::class, 'updateWorkerSetting'])->name('personnel.hours.setting');

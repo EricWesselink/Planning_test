@@ -1,9 +1,30 @@
 @php
     $detailDay = \Carbon\Carbon::parse($detailDate);
+    $reviewGroups = [];
+    foreach ($dayDetails as $detail) {
+        $entry = $detail['entry'];
+        $key = $entry->project_id.'|'.$entry->worker_id.'|'.($entry->crew_member_id ?? 0).'|'.$entry->date->toDateString();
+        $reviewGroups[$key][] = $detail;
+    }
 @endphp
 <div class="mt-4 max-w-xl border border-nicon-line bg-white p-4 text-sm">
     <h2 class="text-base font-semibold">{{ $detailDay->translatedFormat('l j F') }}</h2>
-    @foreach ($dayDetails as $detail)
+    @foreach ($reviewGroups as $group)
+        @php
+            $clocks = collect($group)->map(function (array $row): string {
+                $rowEntry = $row['entry'];
+                if (! $rowEntry->hasSubmittedTimes()) {
+                    return '';
+                }
+
+                return $rowEntry->startTimeLabel().'|'.$rowEntry->endTimeLabel().'|'.(int) $rowEntry->break_minutes;
+            })->filter()->unique();
+            $sharedDistribution = count($group) > 1 && $clocks->count() <= 1;
+        @endphp
+        @if ($sharedDistribution)
+            @include('personnel.partials.review-distribution', ['group' => $group, 'detailDay' => $detailDay, 'canReviewHours' => $canReviewHours])
+        @else
+            @foreach ($group as $detail)
         @php
             /** @var \App\Models\TimeEntry $entry */
             $entry = $detail['entry'];
@@ -125,6 +146,8 @@
                 </div>
             @endif
         </article>
+            @endforeach
+        @endif
     @endforeach
 </div>
 @once

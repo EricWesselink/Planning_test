@@ -5573,6 +5573,49 @@ button.plan-labor-toggle:hover {
     font-weight: 600;
 }
 
+.vakman-hours-split {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.vakman-hours-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 5.5rem auto;
+    gap: 0.4rem;
+    align-items: center;
+    font-size: 0.8rem;
+}
+
+.vakman-hours-plan {
+    display: block;
+    color: var(--color-nicon-muted);
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+.vakman-hours-line input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--color-nicon-line);
+    padding: 0.35rem 0.45rem;
+    background: white;
+}
+
+.vakman-hours-remainder {
+    min-height: 1rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.vakman-hours-remainder.is-ok {
+    color: var(--color-nicon-ok);
+}
+
+.vakman-hours-remainder.is-bad {
+    color: var(--color-nicon-danger);
+}
+
 .vakman-hours-field {
     display: grid;
     gap: 0.15rem;

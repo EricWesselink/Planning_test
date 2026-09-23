@@ -297,7 +297,152 @@ class VakmanPlanningService
             ];
         })->values()->all();
 
-        return $this->markStandardDayPrefill($jobs);
+        return $this->markStandardDayPrefill($this->applyClaimedSlotHours($this->groupJobsByProject($jobs)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $jobs
+     * @return list<array<string, mixed>>
+     */
+    private function groupJobsByProject(array $jobs): array
+    {
+        $grouped = [];
+        $indexByProject = [];
+        foreach ($jobs as $job) {
+            $projectId = $job['project']?->id ?? null;
+            if ($projectId === null || ! empty($job['is_internal'])) {
+                $grouped[] = $job;
+
+                continue;
+            }
+
+            if (! isset($indexByProject[$projectId])) {
+                $indexByProject[$projectId] = count($grouped);
+                $grouped[] = $job;
+
+                continue;
+            }
+
+            $grouped[$indexByProject[$projectId]] = $this->mergeJobCards($grouped[$indexByProject[$projectId]], $job);
+        }
+
+        return array_values($grouped);
+    }
+
+    /**
+     * @param  array<string, mixed>  $base
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function mergeJobCards(array $base, array $extra): array
+    {
+        $slots = array_merge($base['hour_slots'] ?? [], $extra['hour_slots'] ?? []);
+        $base['hour_slots'] = $slots;
+        $base['colleagues'] = array_values(array_unique(array_merge($base['colleagues'] ?? [], $extra['colleagues'] ?? [])));
+        $base['people'] = array_values(array_unique(array_merge($base['people'] ?? [], $extra['people'] ?? [])));
+        $base['can_register_hours'] = ! empty($base['can_register_hours']) || ! empty($extra['can_register_hours']);
+        $base['is_work_ticket_holder'] = ! empty($base['is_work_ticket_holder']) || ! empty($extra['is_work_ticket_holder']);
+        $base['work_ticket_holder'] = ($base['work_ticket_holder'] ?? null) ?: ($extra['work_ticket_holder'] ?? null);
+        $base['werkbon_url'] = $base['werkbon_url'] ?? ($extra['werkbon_url'] ?? null);
+        $base['opdrachtbon_url'] = $base['opdrachtbon_url'] ?? ($extra['opdrachtbon_url'] ?? null);
+        $base['drawing_url'] = $base['drawing_url'] ?? ($extra['drawing_url'] ?? null);
+        $base['foreman'] = $base['foreman'] ?? ($extra['foreman'] ?? null);
+        if (($base['summary'] ?? '') === '') {
+            $base['summary'] = $extra['summary'] ?? null;
+        }
+        if (isset($base['tickets'], $extra['tickets'])) {
+            $base['tickets'] = $base['tickets']->concat($extra['tickets'])->unique('id')->values();
+        }
+        foreach (['works', 'notes', 'drawings', 'floors', 'rooms'] as $key) {
+            if (! isset($base[$key], $extra[$key]) || ! is_array($base[$key]) || ! is_array($extra[$key])) {
+                continue;
+            }
+
+            $base[$key] = array_values(array_merge($base[$key], $extra[$key]));
+        }
+        if (isset($base['works']) && is_array($base['works'])) {
+            $works = [];
+            foreach ($base['works'] as $work) {
+                $works[$work['item']?->id ?? $work['title']] = $work;
+            }
+            $base['works'] = array_values($works);
+        }
+
+        $titles = [];
+        foreach ($slots as $slot) {
+            $title = trim((string) ($slot['work_title'] ?? ''));
+            if ($title !== '' && ! in_array($title, $titles, true)) {
+                $titles[] = $title;
+            }
+        }
+        if (count($titles) > 1) {
+            $base['headline'] = implode(' · ', $titles);
+        }
+        $base['time_label'] = $this->combinedTimeLabel($slots, (string) ($base['time_label'] ?? ''));
+
+        return $base;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $slots
+     */
+    private function combinedTimeLabel(array $slots, string $fallback): string
+    {
+        $starts = [];
+        $ends = [];
+        foreach ($slots as $slot) {
+            if (($slot['planned_start'] ?? '') !== '') {
+                $starts[] = (string) $slot['planned_start'];
+            }
+            if (($slot['planned_end'] ?? '') !== '') {
+                $ends[] = (string) $slot['planned_end'];
+            }
+        }
+        if ($starts === [] || $ends === []) {
+            return $fallback;
+        }
+
+        sort($starts);
+        rsort($ends);
+
+        return $starts[0].' – '.$ends[0];
+    }
+
+    /**
+     * Overlap of the same person on this day is counted once, on the earliest bar.
+     *
+     * @param  list<array<string, mixed>>  $jobs
+     * @return list<array<string, mixed>>
+     */
+    private function applyClaimedSlotHours(array $jobs): array
+    {
+        $rows = [];
+        foreach ($jobs as $jobIndex => $job) {
+            $date = (string) ($job['date'] ?? '');
+            foreach ($job['hour_slots'] ?? [] as $slotIndex => $slot) {
+                if ($date === '' || ($slot['planned_start'] ?? '') === '' || ($slot['planned_end'] ?? '') === '') {
+                    continue;
+                }
+                $start = Carbon::parse($date.' '.$slot['planned_start']);
+                $end = Carbon::parse($date.' '.$slot['planned_end']);
+                if ($end->lte($start)) {
+                    continue;
+                }
+                $rows[] = [
+                    'id' => $jobIndex.'-'.$slotIndex,
+                    'start' => $start,
+                    'end' => $end,
+                ];
+            }
+        }
+
+        $claimed = PlanningHours::claimById($rows);
+        foreach ($claimed as $id => $hours) {
+            [$jobIndex, $slotIndex] = array_map('intval', explode('-', (string) $id, 2));
+            $jobs[$jobIndex]['hour_slots'][$slotIndex]['planned_hours'] = $hours;
+        }
+
+        return $jobs;
     }
 
     /**
@@ -317,8 +462,16 @@ class VakmanPlanningService
 
         $prefill = $registrableSlots === 1;
         foreach ($jobs as $jobIndex => $job) {
+            $hasEntry = false;
+            foreach ($job['hour_slots'] ?? [] as $slot) {
+                if (($slot['entry'] ?? null) !== null) {
+                    $hasEntry = true;
+                }
+            }
+            $jobPrefill = $prefill && ! $hasEntry && ! empty($job['can_register_hours']);
+            $jobs[$jobIndex]['prefill_standard_day'] = $jobPrefill;
             foreach ($job['hour_slots'] ?? [] as $slotIndex => $slot) {
-                $jobs[$jobIndex]['hour_slots'][$slotIndex]['prefill_standard_day'] = $prefill && ($slot['entry'] ?? null) === null;
+                $jobs[$jobIndex]['hour_slots'][$slotIndex]['prefill_standard_day'] = $jobPrefill;
             }
         }
 

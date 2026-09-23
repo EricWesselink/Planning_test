@@ -376,9 +376,10 @@ class PlanningAvailabilityService
         float $absenceHours = 0.0,
         ?string $absenceHint = null,
     ): array {
-        $plannedHours = max(0.0, min(PlanningHours::WORKDAY_HOURS, round($plannedHours, 2)));
+        $plannedHours = max(0.0, round($plannedHours, 2));
         $absenceHours = max(0.0, min(PlanningHours::WORKDAY_HOURS, round($absenceHours, 2)));
-        $remaining = round(max(0.0, PlanningHours::WORKDAY_HOURS - $plannedHours - $absenceHours), 2);
+        $occupied = min($plannedHours, PlanningHours::WORKDAY_HOURS);
+        $remaining = round(max(0.0, PlanningHours::WORKDAY_HOURS - $occupied - $absenceHours), 2);
         if ($away !== null && $remaining <= 0.01) {
             return [
                 'id' => $id,

@@ -431,6 +431,242 @@ class TimeEntryTest extends TestCase
         $this->assertSame(2.5, $entries[1]->fresh()->submittedHoursValue());
     }
 
+    public function test_vakman_splits_one_clock_across_activities_of_the_same_job(): void
+    {
+        [$vakman, $first, $primer] = $this->plannedVakman('Peter');
+        $primer->update(['name' => 'Primen & Egaliseren']);
+        $pvc = WorkItem::query()->create([
+            'project_id' => $first->project_id,
+            'name' => 'PVC stroken',
+            'unit' => 'm2',
+            'ordered_quantity' => 40,
+            'status' => 'in_uitvoering',
+        ]);
+        $second = new WorkerAssignment([
+            'worker_id' => $first->worker_id,
+            'project_id' => $first->project_id,
+            'work_item_id' => $pvc->id,
+        ]);
+        $second->applySchedule(Carbon::parse('2026-09-21'), Carbon::parse('2026-09-21'), '12:00:00', '16:00:00');
+        $second->save();
+        $primer->refresh();
+        $pvc->refresh();
+
+        $html = $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-21'))
+            ->assertOk()
+            ->assertSee($primer->planningTitle())
+            ->assertSee($pvc->planningTitle())
+            ->assertSee('Uren indienen')
+            ->getContent();
+        $this->assertSame(1, substr_count($html, 'name="start_time"'));
+        $this->assertSame(2, substr_count($html, 'data-split-hours'));
+
+        $payload = [
+            'date' => '2026-09-21',
+            'project_id' => $first->project_id,
+            'start_time' => '07:30',
+            'end_time' => '16:30',
+            'break_minutes' => 60,
+            'allocations' => [
+                ['worker_assignment_id' => $first->id, 'work_item_id' => $primer->id, 'hours' => '3'],
+                ['worker_assignment_id' => $second->id, 'work_item_id' => $pvc->id, 'hours' => '5'],
+            ],
+        ];
+
+        $this->actingAs($vakman)->from(route('vakman.planning.day', '2026-09-21'))
+            ->post(route('vakman.hours.store'), [...$payload, 'allocations' => [
+                ['worker_assignment_id' => $first->id, 'work_item_id' => $primer->id, 'hours' => '3'],
+                ['worker_assignment_id' => $second->id, 'work_item_id' => $pvc->id, 'hours' => '4'],
+            ]])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['allocations' => 'Nog 1 uur verdelen']);
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [...$payload, 'allocations' => [
+            ['worker_assignment_id' => $first->id, 'work_item_id' => $primer->id, 'hours' => '5'],
+            ['worker_assignment_id' => $second->id, 'work_item_id' => $pvc->id, 'hours' => '5'],
+        ]])->assertSessionHasErrors(['allocations' => '2 uur te veel verdeeld']);
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [...$payload, 'allocations' => [
+            ['worker_assignment_id' => $first->id, 'work_item_id' => $primer->id, 'hours' => '3.1'],
+            ['worker_assignment_id' => $second->id, 'work_item_id' => $pvc->id, 'hours' => '4.9'],
+        ]])->assertSessionHasErrors(['allocations.0.hours' => 'Uren gaan in stappen van 0,25.']);
+        $this->assertSame(0, TimeEntry::query()->count());
+
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), $payload)
+            ->assertRedirect()
+            ->assertSessionHas('status', '8u ingediend');
+
+        $entries = TimeEntry::query()->orderBy('id')->get();
+        $this->assertCount(2, $entries);
+        $this->assertSame(3.0, $entries[0]->submittedHoursValue());
+        $this->assertSame(5.0, $entries[1]->submittedHoursValue());
+        $this->assertSame('07:30', $entries[0]->startTimeLabel());
+        $this->assertSame('16:30', $entries[0]->endTimeLabel());
+        $this->assertSame(60, (int) $entries[0]->break_minutes);
+        $this->assertSame('07:30', $entries[1]->startTimeLabel());
+        $this->assertSame(60, (int) $entries[1]->break_minutes);
+        $this->assertSame((int) $primer->id, (int) $entries[0]->work_item_id);
+        $this->assertSame((int) $pvc->id, (int) $entries[1]->work_item_id);
+
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [...$payload, 'allocations' => [
+            ['worker_assignment_id' => $first->id, 'work_item_id' => $primer->id, 'hours' => '3,25'],
+            ['worker_assignment_id' => $second->id, 'work_item_id' => $pvc->id, 'hours' => '4,75'],
+        ]])->assertSessionHas('status', '8u ingediend');
+        $this->assertSame(2, TimeEntry::query()->count());
+        $this->assertSame(3.25, $entries[0]->fresh()->submittedHoursValue());
+        $this->assertSame(4.75, $entries[1]->fresh()->submittedHoursValue());
+
+        $other = $this->makeProject('Tweede werk');
+        $otherItem = WorkItem::query()->create([
+            'project_id' => $other->id,
+            'name' => 'Plinten',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'in_uitvoering',
+        ]);
+        $otherAssignment = new WorkerAssignment([
+            'worker_id' => $first->worker_id,
+            'project_id' => $other->id,
+            'work_item_id' => $otherItem->id,
+        ]);
+        $otherAssignment->applySchedule(Carbon::parse('2026-09-21'), Carbon::parse('2026-09-21'), '16:30:00', '18:00:00');
+        $otherAssignment->save();
+
+        $html = $this->actingAs($vakman)->get(route('vakman.planning.day', '2026-09-21'))->assertOk()->getContent();
+        $this->assertSame(2, substr_count($html, 'name="start_time"'));
+
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-21',
+            'worker_assignment_id' => $otherAssignment->id,
+            'work_item_id' => $otherItem->id,
+            'start_time' => '10:00',
+            'end_time' => '12:00',
+            'break_minutes' => 0,
+        ])->assertSessionHasErrors(['start_time' => 'Deze tijden overlappen met een andere urenregel op deze dag.']);
+        $this->assertSame(2, TimeEntry::query()->count());
+    }
+
+    public function test_reviewer_corrects_distributed_hours_onto_each_activity(): void
+    {
+        [$vakman, $first, $primer] = $this->plannedVakman('Peter');
+        $pvc = WorkItem::query()->create([
+            'project_id' => $first->project_id,
+            'name' => 'PVC stroken',
+            'unit' => 'm2',
+            'ordered_quantity' => 40,
+            'status' => 'in_uitvoering',
+        ]);
+        $second = new WorkerAssignment([
+            'worker_id' => $first->worker_id,
+            'project_id' => $first->project_id,
+            'work_item_id' => $pvc->id,
+        ]);
+        $second->applySchedule(Carbon::parse('2026-09-21'), Carbon::parse('2026-09-21'), '12:00:00', '16:00:00');
+        $second->save();
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-21',
+            'project_id' => $first->project_id,
+            'start_time' => '07:30',
+            'end_time' => '16:30',
+            'break_minutes' => 60,
+            'allocations' => [
+                ['worker_assignment_id' => $first->id, 'work_item_id' => $primer->id, 'hours' => '3'],
+                ['worker_assignment_id' => $second->id, 'work_item_id' => $pvc->id, 'hours' => '5'],
+            ],
+        ])->assertSessionHas('status', '8u ingediend');
+
+        $entries = TimeEntry::query()->orderBy('id')->get();
+        $leader = User::factory()->projectleider()->create(['name' => 'Eric']);
+        $primer->refresh();
+        $pvc->refresh();
+
+        $this->actingAs($leader)
+            ->get($this->weekstaatDay($first))
+            ->assertOk()
+            ->assertSee('Ingediend totaal:')
+            ->assertSee('8u')
+            ->assertSee($primer->planningTitle())
+            ->assertSee($pvc->planningTitle())
+            ->assertSee('name="lines['.$entries[0]->id.']"', false)
+            ->assertSee('name="lines['.$entries[1]->id.']"', false)
+            ->assertDontSee('name="approved_start_time"', false);
+
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.distribution'), [
+                'lines' => [$entries[0]->id => '2.5', $entries[1]->id => '5.5'],
+            ])
+            ->assertSessionHasErrors('review_note');
+        $this->assertNull($entries[0]->fresh()->approved_hours);
+        $this->assertSame(3.0, $entries[0]->fresh()->submittedHoursValue());
+
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.distribution'), [
+                'lines' => [$entries[0]->id => '2,5', $entries[1]->id => '5,5'],
+                'review_note' => 'Verdeling gecorrigeerd',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', 'Verdeling goedgekeurd.');
+
+        $primerEntry = $entries[0]->fresh();
+        $pvcEntry = $entries[1]->fresh();
+        $this->assertSame(3.0, $primerEntry->submittedHoursValue());
+        $this->assertSame(5.0, $pvcEntry->submittedHoursValue());
+        $this->assertSame(2.5, $primerEntry->approvedHoursValue());
+        $this->assertSame(5.5, $pvcEntry->approvedHoursValue());
+        $this->assertSame('07:30', $primerEntry->startTimeLabel());
+        $this->assertSame('16:30', $primerEntry->endTimeLabel());
+        $this->assertSame(60, (int) $primerEntry->break_minutes);
+        $this->assertSame('Verdeling gecorrigeerd', $primerEntry->review_note);
+        $this->assertEqualsWithDelta(2.5, (float) WorkProgressEntry::query()->where('work_item_id', $primer->id)->value('worked_hours'), 0.001);
+        $this->assertEqualsWithDelta(5.5, (float) WorkProgressEntry::query()->where('work_item_id', $pvc->id)->value('worked_hours'), 0.001);
+
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.distribution'), [
+                'lines' => [$entries[0]->id => '0', $entries[1]->id => '8'],
+                'review_note' => 'Eerste onderdeel niet gedaan',
+            ])
+            ->assertRedirect();
+        $this->assertSame(0.0, $entries[0]->fresh()->approvedHoursValue());
+        $this->assertSame(8.0, $entries[1]->fresh()->approvedHoursValue());
+        $this->assertSame(3.0, $entries[0]->fresh()->submittedHoursValue());
+        $this->assertEqualsWithDelta(0.0, (float) WorkProgressEntry::query()->where('work_item_id', $primer->id)->value('worked_hours'), 0.001);
+        $this->assertEqualsWithDelta(8.0, (float) WorkProgressEntry::query()->where('work_item_id', $pvc->id)->value('worked_hours'), 0.001);
+    }
+
+    public function test_overlapping_planning_bars_stay_unchanged_and_registration_uses_unique_hours(): void
+    {
+        [$vakman, $first, $primer] = $this->plannedVakman('Willem');
+        $first->applySchedule(Carbon::parse('2026-09-21'), Carbon::parse('2026-09-21'), '08:00:00', '14:00:00');
+        $first->save();
+        $pvc = WorkItem::query()->create([
+            'project_id' => $first->project_id,
+            'name' => 'PVC stroken',
+            'unit' => 'm2',
+            'ordered_quantity' => 40,
+            'status' => 'in_uitvoering',
+        ]);
+        $second = new WorkerAssignment([
+            'worker_id' => $first->worker_id,
+            'project_id' => $first->project_id,
+            'work_item_id' => $pvc->id,
+            'people_count' => 1,
+        ]);
+        $second->applySchedule(Carbon::parse('2026-09-21'), Carbon::parse('2026-09-21'), '12:00:00', '20:00:00');
+        $second->save();
+
+        $this->assertSame(6.0, $first->fresh()->hoursOnDate(Carbon::parse('2026-09-21')));
+        $this->assertSame(8.0, $second->fresh()->hoursOnDate(Carbon::parse('2026-09-21')));
+        $this->assertStringContainsString('6u', $first->fresh()->planningLabel());
+        $this->assertStringContainsString('8u', $second->fresh()->planningLabel());
+
+        $html = $this->actingAs($vakman)
+            ->get(route('vakman.planning.day', '2026-09-21'))
+            ->assertOk()
+            ->getContent();
+        $this->assertSame(2, substr_count($html, 'gepland 6u'));
+        $this->assertStringNotContainsString('gepland 8u', $html);
+        $this->assertSame(1, substr_count($html, 'name="start_time"'));
+    }
+
     public function test_reviewer_corrects_clock_times_and_keeps_the_submitted_times(): void
     {
         [$vakman, $assignment, $item] = $this->plannedVakman('Peter');
@@ -497,7 +733,7 @@ class TimeEntryTest extends TestCase
         $this->assertSame('Na controle geen uren', $entry->review_note);
     }
 
-    public function test_approved_hours_show_on_project_and_planning_actual_view(): void
+    public function test_approved_hours_show_on_project_and_planning_board(): void
     {
         [$vakman, $assignment, $item] = $this->plannedVakman();
         $this->actingAs($vakman)->post(route('vakman.hours.store'), [
@@ -525,8 +761,8 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('Peter · 8u')
-            ->assertDontSee('Peter · 6u');
+            ->assertSee('Peter · 6u')
+            ->assertDontSee('Peter · 8u');
     }
 
     public function test_unplanned_approved_hours_appear_only_in_actual_planning(): void
@@ -1170,7 +1406,7 @@ class TimeEntryTest extends TestCase
         $this->assertSame('16:30', $entry->endTimeLabel());
     }
 
-    public function test_two_approved_days_on_one_bar_show_twelve_actual_hours_and_sixteen_planned(): void
+    public function test_two_approved_days_on_one_bar_show_twelve_hours_and_keep_sixteen_planned(): void
     {
         [$vakman, $assignment, $item] = $this->plannedVakman('Willem');
         $assignment->applySchedule(Carbon::parse('2026-09-24'), Carbon::parse('2026-09-25'), '08:00:00', '16:00:00');
@@ -1213,8 +1449,8 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('Willem · 16u')
-            ->assertDontSee('Willem · 12u');
+            ->assertSee('Willem · 12u')
+            ->assertDontSee('Willem · 16u');
 
         $this->actingAs($vakman)
             ->get(route('vakman.hours.index', ['week' => '2026-09-21']))
@@ -1270,8 +1506,8 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('Peter · 8u')
-            ->assertDontSee('Peter · 0u');
+            ->assertSee('Peter · 0u')
+            ->assertDontSee('Peter · 8u');
     }
 
     public function test_submitting_the_same_visit_does_not_create_a_second_time_entry(): void
@@ -1540,7 +1776,7 @@ class TimeEntryTest extends TestCase
         ];
     }
 
-    public function test_actual_board_follows_approved_hours_and_leaves_the_plan_intact(): void
+    public function test_planning_board_follows_approved_hours_and_leaves_the_stored_plan(): void
     {
         [$vakman, $assignment, $item] = $this->plannedVakman('Willem');
         $this->assertSame(8.0, (float) $assignment->hours_per_day);
@@ -1563,7 +1799,7 @@ class TimeEntryTest extends TestCase
 
         $this->actingAs($leader)->post(route('personnel.hours.approve', $entry))->assertRedirect();
         $this->actingAs($leader)->get($actual)->assertOk()->assertSee('Willem · 10u')->assertDontSee('Willem · 8u');
-        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('Willem · 8u')->assertDontSee('Willem · 10u');
+        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('Willem · 10u')->assertDontSee('Willem · 8u');
         $this->assertSame(10.0, (float) WorkProgressEntry::query()->value('worked_hours'));
         $this->assertPlanUntouched($assignment);
 
@@ -1575,7 +1811,7 @@ class TimeEntryTest extends TestCase
             'review_note' => 'Na controle 9 uur',
         ])->assertRedirect();
         $this->actingAs($leader)->get($actual)->assertOk()->assertSee('Willem · 9u')->assertDontSee('Willem · 10u');
-        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('Willem · 8u')->assertDontSee('Willem · 9u');
+        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('Willem · 9u')->assertDontSee('Willem · 8u');
         $this->assertSame(9.0, (float) WorkProgressEntry::query()->value('worked_hours'));
         $this->assertSame(10.0, $entry->fresh()->submittedHoursValue());
 
@@ -1597,7 +1833,7 @@ class TimeEntryTest extends TestCase
             'review_note' => 'Geen uren',
         ])->assertRedirect();
         $this->actingAs($leader)->get($actual)->assertOk()->assertSee('Willem · 0u')->assertDontSee('Willem · 8u');
-        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('Willem · 8u');
+        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('Willem · 0u')->assertDontSee('Willem · 8u');
         $this->assertSame(0.0, (float) WorkProgressEntry::query()->value('worked_hours'));
         $this->assertPlanUntouched($assignment);
 
@@ -1642,6 +1878,102 @@ class TimeEntryTest extends TestCase
         $this->assertSame(2, WorkerAssignment::query()->count());
         $this->assertSame(0, WorkerAssignment::query()->where('origin', 'hours')->count());
         $this->assertSame(8.0, (float) $secondAssignment->fresh()->hours_per_day);
+    }
+
+    public function test_one_approved_day_keeps_the_two_day_plan_at_sixteen_hours(): void
+    {
+        [$vakman, $assignment, $item] = $this->plannedVakman('Willem');
+        $assignment->applySchedule(
+            Carbon::parse('2026-09-28'),
+            Carbon::parse('2026-09-29'),
+            '08:00:00',
+            '16:00:00',
+        );
+        $assignment->save();
+
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-28',
+            'worker_assignment_id' => $assignment->id,
+            'work_item_id' => $item->id,
+            'hours' => '8',
+        ]);
+        $entry = TimeEntry::query()->firstOrFail();
+        $leader = User::factory()->projectleider()->create();
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.update', $entry), [
+                'approved_hours' => '6',
+                'review_note' => 'Maandag 6 uur',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(16.0, $assignment->fresh()->plannedHoursValue());
+        $this->actingAs($leader)
+            ->get(route('planning', [
+                'week' => '2026-09-28',
+                'weeks' => 1,
+                'hours_view' => 'planned',
+                'project_id' => $assignment->project_id,
+            ]))
+            ->assertOk()
+            ->assertSee('Willem · 16u')
+            ->assertDontSee('Willem · 6u');
+    }
+
+    public function test_two_overlapping_days_for_one_person_stay_within_sixteen_base_hours(): void
+    {
+        [$vakman, $primer, $item] = $this->plannedVakman('Willem');
+        $member = CrewMember::query()->create([
+            'worker_id' => $primer->worker_id,
+            'name' => 'Willem',
+            'sort_order' => 1,
+        ]);
+        $primer->applySchedule(Carbon::parse('2026-09-28'), Carbon::parse('2026-09-28'), '08:00:00', '16:00:00');
+        $primer->save();
+        $primer->syncPresentCrew([$member->id]);
+        $pvc = WorkItem::query()->create([
+            'project_id' => $primer->project_id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 40,
+            'status' => 'in_uitvoering',
+        ]);
+        $second = new WorkerAssignment([
+            'worker_id' => $primer->worker_id,
+            'project_id' => $primer->project_id,
+            'work_item_id' => $pvc->id,
+        ]);
+        $second->applySchedule(Carbon::parse('2026-09-28'), Carbon::parse('2026-09-29'), '08:00:00', '16:00:00');
+        $second->save();
+        $second->syncPresentCrew([$member->id]);
+        $this->assertSame(16.0, $second->plannedHoursValue());
+
+        $this->actingAs($vakman)->post(route('vakman.hours.store'), [
+            'date' => '2026-09-28',
+            'worker_assignment_id' => $primer->id,
+            'work_item_id' => $item->id,
+            'hours' => '8',
+        ]);
+        $entry = TimeEntry::query()->firstOrFail();
+        $leader = User::factory()->projectleider()->create();
+        $this->actingAs($leader)
+            ->patch(route('personnel.hours.update', $entry), [
+                'approved_hours' => '6',
+                'review_note' => 'Maandag 6 uur',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($leader)
+            ->get(route('planning', [
+                'week' => '2026-09-28',
+                'weeks' => 1,
+                'hours_view' => 'planned',
+                'project_id' => $primer->project_id,
+            ]))
+            ->assertOk()
+            ->assertSee('Willem · Willem · 6u')
+            ->assertSee('Willem · Willem · 8u')
+            ->assertDontSee('Willem · Willem · 16u');
+        $this->assertSame(16.0, $second->fresh()->plannedHoursValue());
     }
 
     private function assertPlanUntouched(WorkerAssignment $assignment): void
