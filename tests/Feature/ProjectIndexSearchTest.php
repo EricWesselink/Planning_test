@@ -6,6 +6,7 @@ use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\WorkActivity;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +69,35 @@ class ProjectIndexSearchTest extends TestCase
             ->assertSee('Karbouw v.o.f.')
             ->assertDontSee('Griftland college')
             ->assertDontSee('Hegeman');
+    }
+
+    public function test_search_by_shop_work_shows_only_matching_work(): void
+    {
+        $user = User::factory()->create();
+        $eding = $this->makeWinkel('Eding', 'Reeve');
+        $this->makeWinkel('Dussen', 'IJsselmuiden', 'W26090002');
+        $plinten = WorkActivity::query()->where('slug', 'plinten')->firstOrFail();
+        $eding->workActivities()->attach($plinten->id);
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['q' => 'Plinten']))
+            ->assertOk()
+            ->assertSee('Eding - Reeve')
+            ->assertSee('Plinten')
+            ->assertDontSee('Dussen - IJsselmuiden');
+    }
+
+    public function test_search_by_winkel_label_shows_only_winkelwerk(): void
+    {
+        $user = User::factory()->create();
+        $this->makeProject('11P251047 Griftland college', '251000077');
+        $this->makeWinkel('Eding', 'Reeve');
+
+        $this->actingAs($user)
+            ->get(route('projects.index', ['q' => 'WINKEL']))
+            ->assertOk()
+            ->assertSee('Eding - Reeve')
+            ->assertDontSee('Griftland college');
     }
 
     public function test_search_by_work_address_shows_only_matching_work(): void
@@ -298,12 +328,12 @@ class ProjectIndexSearchTest extends TestCase
         ]);
     }
 
-    private function makeWinkel(string $customerName, string $city): Project
+    private function makeWinkel(string $customerName, string $city, string $number = 'W26090001'): Project
     {
         $customer = Customer::query()->create(['name' => $customerName]);
 
         return Project::query()->create([
-            'project_number' => 'W26090001',
+            'project_number' => $number,
             'customer_id' => $customer->id,
             'name' => $customerName.' '.$city,
             'city' => $city,

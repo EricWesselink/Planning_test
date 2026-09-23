@@ -617,7 +617,7 @@ class PlanningBoardService
         return Project::query()
             ->accessibleBy($request->user())
             ->active()
-            ->with('workItems')
+            ->with(['workItems', 'customer', 'workActivities.category'])
             ->when($kindFilter !== null, fn (Builder $query) => $this->constrainKind($query, $kindFilter))
             ->orderBy('project_number')
             ->get();

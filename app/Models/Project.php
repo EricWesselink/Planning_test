@@ -77,7 +77,7 @@ class Project extends Model
         }
 
         $like = '%'.addcslashes($term, '%_\\').'%';
-        $query->where(function (Builder $inner) use ($like): void {
+        $query->where(function (Builder $inner) use ($like, $term): void {
             $inner->where('project_number', 'like', $like)
                 ->orWhere('name', 'like', $like)
                 ->orWhere('notes', 'like', $like)
@@ -88,7 +88,20 @@ class Project extends Model
                 ->orWhereHas(
                     'customer',
                     fn (Builder $customer) => $customer->where('name', 'like', $like),
-                );
+                )
+                ->orWhereHas('workActivities', function (Builder $activities) use ($like): void {
+                    $activities->where('work_activities.name', 'like', $like)
+                        ->orWhereHas(
+                            'category',
+                            fn (Builder $category) => $category->where('name', 'like', $like),
+                        );
+                });
+
+            foreach ([ProjectKind::Winkel, ProjectKind::Service, ProjectKind::Klein] as $kind) {
+                if (mb_strlen($term) >= 3 && str_contains(mb_strtolower($kind->badge()), mb_strtolower($term))) {
+                    $inner->orWhere('kind', $kind);
+                }
+            }
         });
     }
 
@@ -615,6 +628,20 @@ class Project extends Model
         }
 
         return $item->planned_end_date->lte(now()->addDays(2)) && $item->remainingQuantity() > 0;
+    }
+
+    /**
+     * Tekst uit de projectlijst die niet al in de plankeuze staat: opdrachtgever, adres, soort en winkelwerk.
+     */
+    public function listSearchText(): string
+    {
+        return collect([
+            $this->customer?->name,
+            $this->nawLine(),
+            $this->isWinkel() || $this->isSmallWork() ? $this->kind?->badge() : null,
+            $this->isWinkel() ? $this->shopWorkLine() : null,
+        ])->filter(fn (?string $part): bool => is_string($part) && trim($part) !== '')
+            ->implode(' ');
     }
 
     public function nawLine(): ?string

@@ -1,5 +1,5 @@
 /**
- * @typedef {{value: string, label: string}} PlanningSearchOption
+ * @typedef {{value: string, label: string, search?: string}} PlanningSearchOption
  */
 
 /**
@@ -29,13 +29,22 @@ export function planningSearchMatches(label, query) {
 }
 
 /**
+ * @param {PlanningSearchOption} option
+ */
+export function planningOptionHaystack(option) {
+    return [option?.label ?? "", option?.search ?? ""]
+        .filter((part) => part !== "")
+        .join(" ");
+}
+
+/**
  * @param {PlanningSearchOption[]} options
  * @param {string} query
  * @returns {PlanningSearchOption[]}
  */
 export function filterPlanningOptions(options, query) {
     return (Array.isArray(options) ? options : []).filter((option) =>
-        planningSearchMatches(option?.label ?? "", query),
+        planningSearchMatches(planningOptionHaystack(option), query),
     );
 }
 
@@ -62,6 +71,7 @@ function mountPlanningSearch(select) {
     const options = [...select.options].map((option) => ({
         value: option.value,
         label: option.textContent?.trim() ?? "",
+        search: option.dataset.search ?? "",
     }));
     const listId = `${select.name || "planning"}-search-list`;
     const wrap = document.createElement("div");
@@ -70,12 +80,15 @@ function mountPlanningSearch(select) {
     const input = document.createElement("input");
     input.type = "text";
     input.className = "planning-filter planning-search-input";
-    input.placeholder = "Zoek op naam of plaats";
+    const placeholder =
+        select.dataset.searchPlaceholder ||
+        "Zoek op projectnr., werk, opdrachtgever of adres";
+    input.placeholder = placeholder;
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
     input.setAttribute("aria-expanded", "false");
     input.setAttribute("aria-controls", listId);
-    input.setAttribute("aria-label", "Zoek op naam of plaats");
+    input.setAttribute("aria-label", placeholder);
     input.autocomplete = "off";
     input.spellcheck = false;
 

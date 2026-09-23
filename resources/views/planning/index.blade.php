@@ -127,10 +127,10 @@
                     <option value="{{ \App\Enums\ProjectKind::Winkel->value }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::Winkel->value)>Winkelwerk</option>
                     <option value="{{ \App\Enums\ProjectKind::KLEINE_FILTER }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::KLEINE_FILTER)>Kleine werken</option>
                 </select>
-                <select name="project_id" class="planning-filter" data-planning-search onchange="this.form.submit()" aria-label="Werk">
+                <select name="project_id" class="planning-filter" data-planning-search data-search-placeholder="Zoek op projectnr., werk, opdrachtgever of adres" onchange="this.form.submit()" aria-label="Werk">
                     <option value="">Alle</option>
                     @foreach ($projects as $project)
-                        <option value="{{ $project->id }}" @selected(($filters['project_id'] ?? '') == $project->id)>{{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}</option>
+                        <option value="{{ $project->id }}" data-search="{{ $project->listSearchText() }}" @selected(($filters['project_id'] ?? '') == $project->id)>{{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}</option>
                     @endforeach
                 </select>
                 @if ($canManagePlanning)

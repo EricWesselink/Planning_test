@@ -28,3 +28,19 @@ test('keeps every option when the query is empty and drops text that is not in t
     assert.deepEqual(filterPlanningOptions(options, 'ijsselmuiden').map((option) => option.value), []);
     assert.deepEqual(filterPlanningOptions(options, 'groningen feringa').map((option) => option.value), ['2']);
 });
+
+test('matches opdrachtgever, adres and winkelwerk that are not in the visible label', () => {
+    const withSearch = [
+        ...options,
+        {
+            value: '4',
+            label: 'Werk 2026-008 — Dussen - IJsselmuiden',
+            search: 'Dussen Scheepswerf 25, 8271 VD IJsselmuiden WINKEL Vloeren · Plinten',
+        },
+    ];
+
+    assert.deepEqual(filterPlanningOptions(withSearch, 'scheepswerf').map((option) => option.value), ['4']);
+    assert.deepEqual(filterPlanningOptions(withSearch, '8271 VD').map((option) => option.value), ['4']);
+    assert.deepEqual(filterPlanningOptions(withSearch, 'plinten').map((option) => option.value), ['4']);
+    assert.deepEqual(filterPlanningOptions(withSearch, 'winkel').map((option) => option.value), ['4']);
+});

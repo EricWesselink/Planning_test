@@ -164,12 +164,22 @@ class PlanningKindFilterTest extends TestCase
     public function test_work_filter_lists_the_visible_project_text_for_search(): void
     {
         $user = User::factory()->create();
-        $this->createConstruction('Laakse Tuinen');
+        $project = $this->createConstruction('Laakse Tuinen');
+        $project->update([
+            'address' => 'Cuijkstraat 2',
+            'postal_code' => '3826 KL',
+            'city' => 'Amersfoort',
+        ]);
+        $this->createWinkel($user, 'Eding', 'Reeve', 'plinten');
 
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertOk()
+            ->assertSee('data-search-placeholder="Zoek op projectnr., werk, opdrachtgever of adres"', false)
             ->assertSee('name="project_id" class="planning-filter" data-planning-search', false)
-            ->assertSee('Laakse Tuinen</option>', false);
+            ->assertSee('Laakse Tuinen</option>', false)
+            ->assertSee('data-search="Gemeente Cuijkstraat 2, 3826 KL Amersfoort"', false)
+            ->assertSee('WINKEL Vloeren · Plinten', false);
     }
 
     private function createConstruction(string $name): Project
