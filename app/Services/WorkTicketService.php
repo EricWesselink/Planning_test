@@ -680,60 +680,57 @@ class WorkTicketService
     }
 
     /**
-     * Planned project work that is not on the drawing and not already listed as extra work.
+     * Same groups as the planning board: one row per werkzaamheid, not each product line.
      *
-     * @return list<array{id: int, name: string, qty_label: string}>
+     * @return list<array{id: int, key: string, name: string, qty_label: string, member_ids: list<int>, type_key: string}>
      */
-    private function plannedLooseWorkOptions(Project $project): array
-    {
-        $ids = array_flip($this->plannedLooseWorkItemIds($project));
-
-        return $project->workItems
-            ->filter(fn (WorkItem $item): bool => isset($ids[(int) $item->id]))
-            ->sortBy('sort_order')
-            ->map(function (WorkItem $item): array {
-                $total = $this->extraWorkTotal($item, 1.0);
-
-                return [
-                    'id' => (int) $item->id,
-                    'name' => $item->name,
-                    'qty_label' => $this->extraWorkQtyLabel($total),
-                ];
-            })
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function plannedLooseWorkItemIds(Project $project): array
+    private function planningChoiceRows(Project $project): array
     {
         if ($project->isWinkel()) {
             return [];
         }
 
-        $onRooms = array_flip($this->workItemIdsOnAreas($project));
-        $plannedIds = array_flip($this->plannedWorkItemIds($project));
+        $project->loadMissing('workItems');
+        $rows = [];
+        foreach ($this->planning->plannableWorkChoices($project) as $choice) {
+            $items = $project->workItems
+                ->filter(fn (WorkItem $item): bool => in_array((int) $item->id, $choice['member_ids'], true))
+                ->values();
+            if ($items->isEmpty() || $items->contains(fn (WorkItem $item): bool => $item->isExtraWork())) {
+                continue;
+            }
 
-        return $project->workItems
-            ->filter(fn (WorkItem $item): bool => isset($plannedIds[(int) $item->id]))
-            ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
-            ->reject(fn (WorkItem $item): bool => isset($onRooms[(int) $item->id]))
-            ->map(fn (WorkItem $item): int => (int) $item->id)
-            ->values()
-            ->all();
+            $primary = $items->firstWhere('id', $choice['id']) ?? $items->first();
+            $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
+            $memberIds = $items
+                ->filter(fn (WorkItem $item): bool => (float) $item->ordered_quantity > 0.0001)
+                ->map(fn (WorkItem $item): int => (int) $item->id)
+                ->values()
+                ->all();
+            $decimals = fmod($ordered, 1.0) !== 0.0 ? 2 : 0;
+
+            $rows[] = [
+                'id' => (int) $choice['id'],
+                'key' => 'plan:'.$choice['id'],
+                'name' => $choice['name'],
+                'qty_label' => Format::qty($ordered, $decimals).' '.$primary->unit->label(),
+                'member_ids' => $memberIds,
+                'type_key' => (string) $choice['type_key'],
+            ];
+        }
+
+        return $rows;
     }
 
     /**
      * @return list<int>
      */
-    private function plannedWorkItemIds(Project $project): array
+    private function planningMemberIds(Project $project): array
     {
         $ids = [];
-        foreach ($this->planning->plannableWorkChoices($project) as $choice) {
+        foreach ($this->planningChoiceRows($project) as $choice) {
             foreach ($choice['member_ids'] as $id) {
-                $ids[] = (int) $id;
+                $ids[] = $id;
             }
         }
 
@@ -741,21 +738,115 @@ class WorkTicketService
     }
 
     /**
-     * @return list<int>
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
      */
-    private function workItemIdsOnAreas(Project $project): array
+    public function restrictBoardToPlannedWorks(Project $project, array $payload): array
     {
-        $ids = [];
-        foreach ($project->areas as $area) {
-            foreach ($area->tasks as $task) {
-                $id = (int) $task->work_item_id;
-                if ($id > 0) {
-                    $ids[] = $id;
+        $choices = $this->planningChoiceRows($project);
+        $keyByItem = [];
+        $labelByKey = [];
+        $ondergrondKey = null;
+        foreach ($choices as $choice) {
+            $labelByKey[$choice['key']] = $choice['name'];
+            if ($choice['type_key'] === 'ondergrond') {
+                $ondergrondKey = $choice['key'];
+            }
+            foreach ($this->choiceMapIds($project, $choice['id']) as $id) {
+                $keyByItem[$id] = $choice['key'];
+            }
+        }
+
+        $payload['work_filters'] = array_map(fn (array $choice): array => [
+            'key' => $choice['key'],
+            'label' => $choice['name'],
+            'color_key' => $choice['type_key'] === 'ondergrond' ? 'ondergrond' : $choice['type_key'],
+        ], $choices);
+
+        $areas = [];
+        foreach ($payload['areas'] ?? [] as $area) {
+            if (! is_array($area)) {
+                continue;
+            }
+            $merged = [];
+            foreach ($area['works'] ?? [] as $work) {
+                if (! is_array($work)) {
+                    continue;
+                }
+                $sourceKey = (string) ($work['key'] ?? '');
+                $planKey = $sourceKey === 'ondergrond'
+                    ? $ondergrondKey
+                    : ($keyByItem[$this->boardKeyWorkItemId($sourceKey)] ?? null);
+                if ($planKey === null) {
+                    continue;
+                }
+                if (! isset($merged[$planKey])) {
+                    $work['key'] = $planKey;
+                    $work['label'] = $labelByKey[$planKey] ?? $planKey;
+                    $merged[$planKey] = $work;
+
+                    continue;
+                }
+                foreach (['quantity', 'remaining', 'completed'] as $field) {
+                    $merged[$planKey][$field] = round((float) ($merged[$planKey][$field] ?? 0) + (float) ($work[$field] ?? 0), 2);
                 }
             }
+            $area['works'] = array_values($merged);
+            $areas[] = $area;
+        }
+        $payload['areas'] = $areas;
+
+        return $payload;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function choiceMapIds(Project $project, int $choiceId): array
+    {
+        foreach ($this->planning->plannableWorkChoices($project) as $choice) {
+            if ((int) $choice['id'] !== $choiceId) {
+                continue;
+            }
+
+            return array_values(array_unique(array_map(
+                static fn (mixed $id): int => (int) $id,
+                $choice['member_ids'],
+            )));
         }
 
-        return array_values(array_unique($ids));
+        return [];
+    }
+
+    private function boardKeyWorkItemId(string $key): int
+    {
+        $separator = strpos($key, '|');
+        if ($separator === false) {
+            return 0;
+        }
+
+        return (int) substr($key, $separator + 1);
+    }
+
+    /**
+     * @return array<string, list<int>>
+     */
+    private function planKeyMembers(Project $project): array
+    {
+        $map = [];
+        foreach ($this->planning->plannableWorkChoices($project) as $choice) {
+            $items = $project->workItems
+                ->filter(fn (WorkItem $item): bool => in_array((int) $item->id, $choice['member_ids'], true));
+            if ($items->contains(fn (WorkItem $item): bool => $item->isExtraWork())) {
+                continue;
+            }
+            $map['plan:'.$choice['id']] = array_map(
+                static fn (mixed $id): int => (int) $id,
+                $choice['member_ids'],
+            );
+        }
+
+        return $map;
     }
 
     /**
@@ -956,16 +1047,25 @@ class WorkTicketService
     private function workItemIdsForKeys(Project $project, array $areaIds, array $keys): array
     {
         $wanted = array_flip($keys);
+        $planMembers = $this->planKeyMembers($project);
         $ids = [];
         foreach ($project->areas as $area) {
             if (! in_array((int) $area->id, $areaIds, true)) {
                 continue;
             }
             foreach ($area->tasks as $task) {
-                if (! isset($wanted[$this->taskBoardKey($task)])) {
+                $itemId = (int) $task->work_item_id;
+                if (isset($wanted[$this->taskBoardKey($task)])) {
+                    $ids[] = $itemId;
+
                     continue;
                 }
-                $ids[] = (int) $task->work_item_id;
+                foreach ($planMembers as $planKey => $memberIds) {
+                    if (! isset($wanted[$planKey]) || ! in_array($itemId, $memberIds, true)) {
+                        continue;
+                    }
+                    $ids[] = $itemId;
+                }
             }
         }
 

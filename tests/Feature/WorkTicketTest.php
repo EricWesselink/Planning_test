@@ -154,14 +154,45 @@ class WorkTicketTest extends TestCase
             ->assertSee('Algemeen werk')
             ->assertSee('Algemeen werk zonder ruimtes (nacalculatie)')
             ->assertSee('In de planning')
+            ->assertSee('Primen &amp; Egaliseren', false)
+            ->assertSee('PVC')
             ->assertSee('Tapijt')
-            ->assertSee('data-ticket-extra value="'.$seed['extra']->id.'"', false)
+            ->assertSee('Plinten')
+            ->assertSee('data-member-ids="'.$seed['extra']->id.'"', false)
             ->assertDontSee('Winkelwerk')
             ->assertDontSee('Screens')
             ->assertDontSee('Gordijnen')
             ->assertDontSee('data-ticket-shop-activity', false)
             ->assertDontSee('Werkzaamheden bijwerken')
             ->assertDontSee('id="complete-form"', false);
+    }
+
+    public function test_ticket_mode_lists_planning_groups_instead_of_product_lines(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $product = 'Plint, wit, Plinten 3267.00 cm 3430.40 cm';
+        WorkItem::query()->create([
+            'project_id' => $seed['project']->id,
+            'name' => $product,
+            'unit' => WorkUnit::LinearMeter,
+            'ordered_quantity' => 12,
+            'status' => 'gepland',
+            'sort_order' => 30,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Plinten')
+            ->assertSee('Primen &amp; Egaliseren', false)
+            ->assertSee('PVC')
+            ->assertSee('Tapijt')
+            ->assertDontSee($product.' ·', false)
+            ->assertDontSee('1u · nacalculatie');
     }
 
     public function test_ticket_mode_collapses_project_info_so_the_bon_panel_stays_visible(): void
@@ -818,7 +849,7 @@ class WorkTicketTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('Vloer aanhelen / herstel')
-            ->assertSee('data-ticket-extra value="'.$item->id.'"', false)
+            ->assertSee('data-member-ids="'.$item->id.'"', false)
             ->assertDontSee('Screens')
             ->assertDontSee('Gordijnen');
 
@@ -853,7 +884,7 @@ class WorkTicketTest extends TestCase
                 'bon' => $seed['assignment']->id,
             ]))
             ->assertOk()
-            ->assertDontSee('data-ticket-extra value="'.$item->id.'"', false);
+            ->assertDontSee('data-member-ids="'.$item->id.'"', false);
     }
 
     public function test_winkel_ticket_mode_lists_shop_activities(): void
