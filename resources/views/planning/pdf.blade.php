@@ -220,8 +220,8 @@
         .foot { margin-top: 18px; color: var(--muted); font-size: 11px; }
         @media print {
             .no-print { display: none !important; }
-            body { margin: 0; }
-            @page { size: landscape; margin: 10mm; }
+            @page { size: landscape; margin: 0; }
+            body { margin: 0; padding: 10mm; }
         }
     </style>
 </head>
@@ -284,7 +284,7 @@
     @endphp
 
     <p class="toolbar no-print">
-        <button type="button" class="primary" onclick="window.print()">Opslaan als PDF</button>
+        <button type="button" class="primary" onclick="niconPrintPlanning()">Opslaan als PDF</button>
         <a href="{{ route('planning.export', $query) }}" @class(['is-on' => ! $showNames])>Opdrachtgever</a>
         <a href="{{ route('planning.export', array_merge($query, ['intern' => 1])) }}" @class(['is-on' => $showNames])>Intern</a>
         <a href="{{ route('planning.export', $periodQuery('week')) }}" @class(['is-on' => $period === 'week'])>Week</a>
@@ -520,12 +520,20 @@
     @endif
 
     <p class="foot">Planning onder voorbehoud van voortgang op de bouw. Nicon Vloeren</p>
-    @if ($autoPrint ?? false)
-        <script>
-            window.addEventListener('load', function () {
-                window.print();
-            });
-        </script>
-    @endif
+    <script>
+        function niconPrintPlanning() {
+            const title = document.title;
+            document.title = '';
+            const restore = () => {
+                document.title = title;
+                window.removeEventListener('afterprint', restore);
+            };
+            window.addEventListener('afterprint', restore);
+            window.print();
+        }
+        @if ($autoPrint ?? false)
+        window.addEventListener('load', niconPrintPlanning);
+        @endif
+    </script>
 </body>
 </html>

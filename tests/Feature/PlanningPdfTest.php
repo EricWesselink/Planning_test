@@ -76,6 +76,8 @@ class PlanningPdfTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('data-autoprint="1"', false)
+            ->assertSee('document.title = \'\'', false)
+            ->assertSee('@page { size: landscape; margin: 0; }', false)
             ->assertSee('Laakse Tuinen Amersfoort')
             ->assertSee('Albert')
             ->assertDontSee('School Zwolle');
