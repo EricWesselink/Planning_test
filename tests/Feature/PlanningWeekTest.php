@@ -311,6 +311,14 @@ class PlanningWeekTest extends TestCase
             $css
         );
         $this->assertMatchesRegularExpression(
+            '/\.plan-line--small \.plan-project-title\s*\{[^}]*display:\s*block;[^}]*line-clamp:\s*none/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-line--small \.plan-project-meta > a\s*\{[^}]*display:\s*flex/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
             '/\.plan-cell--werk \.plan-project-numbers\s*\{[^}]*white-space:\s*nowrap/s',
             $css
         );

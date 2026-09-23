@@ -1922,6 +1922,52 @@ class DrawingBoardTest extends TestCase
             ->assertSee('0.07 groepsruimte');
     }
 
+    public function test_project_without_a_drawing_keeps_the_file_picker_above_the_canvas(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->projectleider()->create();
+        $customer = Customer::query()->create(['name' => 'Nicon vloeren']);
+        $project = Project::query()->create([
+            'project_number' => '260200091',
+            'customer_id' => $customer->id,
+            'name' => 'Zonder tekening',
+            'status' => 'gepland',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 0,
+            'status' => 'gepland',
+            'sort_order' => 1,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Nog geen tekening. Upload een plattegrond (PDF of foto).')
+            ->assertSee('class="draw-stage is-empty"', false)
+            ->assertSee('id="draw-world" hidden', false)
+            ->assertSee('name="plattegrond"', false);
+
+        $this->actingAs($user)
+            ->from(route('projects.show', $project))
+            ->post(route('projects.plattegrond.store', $project), [
+                'plattegrond' => UploadedFile::fake()->image('plattegrond.jpg', 40, 30),
+            ])
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHas('status', 'Plattegrond opgeslagen.');
+
+        $this->assertNotNull($project->fresh()->plattegrond());
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertDontSee('Nog geen tekening. Upload een plattegrond (PDF of foto).')
+            ->assertDontSee('class="draw-stage is-empty"', false)
+            ->assertDontSee('id="draw-world" hidden', false);
+    }
+
     /** @return array{0: User, 1: Project, 2: Worker} */
     private function makeProject(array $extraRooms = []): array
     {

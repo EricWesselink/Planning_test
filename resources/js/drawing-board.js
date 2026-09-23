@@ -3418,7 +3418,7 @@ function boot() {
     });
 
     stage.addEventListener('pointerdown', (event) => {
-        if (event.button !== 0) {
+        if (stage.classList.contains('is-empty') || event.button !== 0) {
             return;
         }
         if (event.target.closest('.snag-pin, .snag-popup, .snag-photo-preview, button, select, a, input, textarea, label')) {
@@ -3533,6 +3533,9 @@ function boot() {
         stage.classList.remove('is-grabbing');
     });
     stage.addEventListener('wheel', (event) => {
+        if (stage.classList.contains('is-empty')) {
+            return;
+        }
         event.preventDefault();
         const next = event.deltaY > 0 ? scale - 0.08 : scale + 0.08;
         scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next));
@@ -3541,6 +3544,9 @@ function boot() {
     }, { passive: false });
 
     world.addEventListener('click', (event) => {
+        if (stage.classList.contains('is-empty')) {
+            return;
+        }
         event.preventDefault();
     });
 

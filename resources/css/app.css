@@ -982,13 +982,43 @@ a.plan-missing-craftsman:hover {
     box-shadow: inset 4px 0 0 #e8b931;
 }
 
-.plan-line--small .plan-project-title {
-    -webkit-line-clamp: 1;
-    line-clamp: 1;
-    white-space: nowrap;
-    display: inline;
+.plan-line--small .plan-frozen,
+.plan-board--labor .plan-line--small .plan-frozen:not(.plan-frozen--head) {
+    grid-template-rows: auto;
+}
+
+.plan-line--small .plan-project-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+    max-width: 100%;
+}
+
+.plan-line--small .plan-project-meta > a {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    max-width: 100%;
     overflow: hidden;
+}
+
+.plan-line--small .plan-small-badge,
+.plan-line--small .plan-project-hours {
+    flex: none;
+    white-space: nowrap;
+}
+
+.plan-line--small .plan-project-title {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
     text-overflow: ellipsis;
+    -webkit-box-orient: initial;
+    -webkit-line-clamp: none;
+    line-clamp: none;
 }
 
 .plan-cell--werk .plan-project-numbers {
@@ -2767,6 +2797,16 @@ button.plan-labor-toggle:hover {
     touch-action: none;
 }
 
+.draw-stage.is-empty {
+    cursor: auto;
+    touch-action: auto;
+}
+
+.draw-empty {
+    position: relative;
+    z-index: 6;
+}
+
 .draw-stage.is-grab {
     cursor: grab;
 }
@@ -2785,6 +2825,11 @@ button.plan-labor-toggle:hover {
     top: 0;
     transform-origin: 0 0;
     overflow: hidden;
+}
+
+.draw-stage.is-empty #draw-world {
+    display: none;
+    pointer-events: none;
 }
 
 #draw-canvas,

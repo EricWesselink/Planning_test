@@ -527,7 +527,10 @@
                                             @if (! $isCompact && ! empty($projectRow['numbers_short']))
                                                 <span class="plan-project-numbers">{{ $projectRow['numbers_short'] }}</span>
                                             @endif
-                                            <span class="plan-project-title">{{ $projectRow['title'] }}@if ($isCompact && ! empty($projectRow['hours_label'])) | {{ $projectRow['hours_label'] }}@endif</span>
+                                            <span class="plan-project-title">{{ $projectRow['title'] }}</span>
+                                            @if ($isCompact && ! empty($projectRow['hours_label']))
+                                                <span class="plan-project-hours">| {{ $projectRow['hours_label'] }}</span>
+                                            @endif
                                         </a>
                                         @if ($showCustomer)
                                             <div class="text-xs font-normal text-nicon-muted">{{ $customerName }}</div>

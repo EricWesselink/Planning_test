@@ -332,9 +332,9 @@
                     <button type="button" id="draw-snag" class="bg-nicon-ink text-white px-2 py-1 text-xs{{ auth()->user()?->canCreateSnags() && ! $ticketMode ? '' : ' hidden' }}">+ Opleverpunt</button>
                 </div>
             </div>
-            <div id="draw-stage" class="draw-stage">
+            <div id="draw-stage" class="draw-stage{{ $board['drawing'] ? '' : ' is-empty' }}">
                 @if (! $board['drawing'])
-                    <div class="p-6 text-sm text-nicon-muted space-y-4">
+                    <div class="draw-empty p-6 text-sm text-nicon-muted space-y-4">
                         @if ($project->workItems->isNotEmpty())
                             <div>
                                 <div class="text-xs uppercase tracking-wide">Opdrachtregels</div>
@@ -370,7 +370,7 @@
                         @endcan
                     </div>
                 @endif
-                <div id="draw-world">
+                <div id="draw-world" {{ $board['drawing'] ? '' : 'hidden' }}>
                     <canvas id="draw-canvas"></canvas>
                     <img id="draw-image" alt="" class="hidden max-w-none">
                     <svg id="draw-hit" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
