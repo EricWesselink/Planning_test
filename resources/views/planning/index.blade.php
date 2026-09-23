@@ -405,7 +405,7 @@
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Ingepland via het planbord">Gepland</div>
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Geregistreerde uren">Gemaakt</div>
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Begroot minus gemaakt">Rest</div>
-                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Begrote arbeidsprijs per eenheid">Begroot €/m²</div>
+                                        <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Gecalculeerde arbeidsprijs: uren × uurprijs uit de calculatie, gedeeld door de productie-m² of m¹">Begroot €/m²</div>
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Werkelijke arbeidsprijs per eenheid">Werkelijk €/m²</div>
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Verwachte arbeidsprijs per eenheid op basis van gemaakt plus nog gepland">Prognose €/m²</div>
                                         <div class="plan-cell plan-cell--num plan-cell--labor-head" title="Prognose minus begroot">Verschil</div>

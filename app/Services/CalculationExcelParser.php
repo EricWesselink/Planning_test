@@ -159,7 +159,8 @@ class CalculationExcelParser
         $quantity = $this->number($this->cell($row, $columns['quantity'] ?? null));
         $unitCost = $this->number($this->cell($row, $columns['unit_cost'] ?? null));
         $totalCost = $this->number($this->cell($row, $columns['total_cost'] ?? null));
-        $isLabor = $this->isLaborRow($mu, $unit);
+        $km = mb_strtoupper($this->cell($row, $columns['km'] ?? null));
+        $isLabor = $this->isLaborRow($km, $mu, $unit);
         $hours = $isLabor ? $quantity : null;
         $hourlyRate = $isLabor ? $unitCost : null;
         $laborCost = $isLabor
@@ -169,7 +170,7 @@ class CalculationExcelParser
         $mapped = [
             'row_number' => $rowNumber,
             'source_filename' => $filename,
-            'km' => $this->cell($row, $columns['km'] ?? null) ?: null,
+            'km' => $km !== '' ? $km : null,
             'group_code' => $this->cell($row, $columns['group'] ?? null) ?: null,
             'mu' => $mu !== '' ? $mu : null,
             'article_number' => $this->cell($row, $columns['article_number'] ?? null) ?: null,
@@ -194,12 +195,42 @@ class CalculationExcelParser
             $mapped['unit'] = 'm2';
             $mapped['quantity_unit'] = 'm2';
         }
+        if ($mapped['unit'] === null && $this->impliesLinearMeters($mapped)) {
+            $mapped['unit'] = 'm1';
+            $mapped['quantity_unit'] = 'm1';
+        }
 
         return $mapped;
     }
 
-    private function isLaborRow(string $mu, string $unit): bool
+    /**
+     * Koppel opgeslagen regels opnieuw aan hun productie-m²/m¹.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @return list<array<string, mixed>>
+     */
+    public function relink(array $lines): array
     {
+        foreach ($lines as $index => $line) {
+            if ($line['is_labor'] ?? false) {
+                continue;
+            }
+            if (($line['unit'] ?? null) !== null || ! $this->impliesLinearMeters($line)) {
+                continue;
+            }
+            $lines[$index]['unit'] = 'm1';
+            $lines[$index]['quantity_unit'] = 'm1';
+        }
+
+        return $this->attachLaborQuantities($lines);
+    }
+
+    private function isLaborRow(string $km, string $mu, string $unit): bool
+    {
+        if ($km !== '' && $km !== 'L') {
+            return false;
+        }
+
         return $mu === 'U' && $this->isHoursUnit($unit);
     }
 
@@ -410,10 +441,7 @@ class CalculationExcelParser
             if ($line['quantity'] === null || (float) $line['quantity'] <= 0.0001) {
                 continue;
             }
-            if (
-                ! WorkType::requiresPrimingLeveling((string) ($line['production_description'] ?? ''))
-                && ! WorkType::requiresPrimingLeveling((string) ($line['article_description'] ?? ''))
-            ) {
+            if (! $this->countsAsPrimedFloor($line)) {
                 continue;
             }
 
@@ -441,6 +469,23 @@ class CalculationExcelParser
         }
 
         return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function countsAsPrimedFloor(array $line): bool
+    {
+        $production = mb_strtolower(trim((string) ($line['production_description'] ?? '')));
+        if (preg_match('/corkment|kurk|profiel|plint/u', $production) === 1) {
+            return false;
+        }
+
+        return WorkType::requiresPrimingLeveling((string) ($line['production_description'] ?? ''))
+            || WorkType::requiresPrimingLeveling((string) ($line['article_description'] ?? ''));
     }
 
     /**
@@ -600,6 +645,30 @@ class CalculationExcelParser
     /**
      * @param  array<string, mixed>  $line
      */
+    private function impliesLinearMeters(array $line): bool
+    {
+        if ($line['is_labor'] ?? false) {
+            return false;
+        }
+        $unit = rtrim(mb_strtolower(trim((string) ($line['unit'] ?? ''))), '.');
+        if ($unit !== '') {
+            return false;
+        }
+        $quantity = $line['quantity'] ?? null;
+        if ($quantity === null || (float) $quantity <= 0.0001) {
+            return false;
+        }
+
+        $text = mb_strtolower(trim(
+            (string) ($line['production_description'] ?? '').' '.(string) ($line['article_description'] ?? '')
+        ));
+
+        return preg_match('/overgangsprofiel|\bprofiel\b|\bplint\b|\bdorpel\b/u', $text) === 1;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
     private function impliesFloorSquareMeters(array $line): bool
     {
         if ($line['is_labor'] ?? false) {
@@ -617,7 +686,7 @@ class CalculationExcelParser
         $text = mb_strtolower(trim(
             (string) ($line['production_description'] ?? '').' '.(string) ($line['article_description'] ?? '')
         ));
-        if ($text === '' || str_contains($text, 'plint')) {
+        if ($text === '' || str_contains($text, 'plint') || str_contains($text, 'profiel')) {
             return false;
         }
         if (preg_match('/\b(toeslag|termijn|extra laag)\b/u', $text) === 1) {

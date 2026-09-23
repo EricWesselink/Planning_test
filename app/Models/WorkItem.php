@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'project_id', 'work_activity_id', 'name', 'display_color', 'unit', 'ordered_quantity',
-    'begrote_uren', 'begrote_hoeveelheid', 'uurtarief',
+    'begrote_uren', 'begrote_hoeveelheid', 'uurtarief', 'labor_unit_price',
     'planned_start_date', 'planned_end_date', 'status', 'sort_order', 'notes',
     'is_extra_work', 'small_work_type', 'extra_lines',
 ])]
@@ -38,6 +38,7 @@ class WorkItem extends Model
             'begrote_uren' => 'decimal:2',
             'begrote_hoeveelheid' => 'decimal:2',
             'uurtarief' => 'decimal:2',
+            'labor_unit_price' => 'decimal:2',
             'planned_start_date' => 'date',
             'planned_end_date' => 'date',
             'is_extra_work' => 'boolean',
@@ -49,6 +50,25 @@ class WorkItem extends Model
     public function isExtraWork(): bool
     {
         return (bool) $this->is_extra_work;
+    }
+
+    /**
+     * Arbeidsprijs per m²/m¹ uit gecalculeerde uren × uurprijs ÷ productieaantal.
+     */
+    public function calculatedLaborUnitPrice(): ?float
+    {
+        if (! in_array($this->unit, [WorkUnit::SquareMeter, WorkUnit::LinearMeter], true)) {
+            return null;
+        }
+
+        $hours = $this->begrote_uren === null ? 0.0 : (float) $this->begrote_uren;
+        $quantity = $this->begrote_hoeveelheid === null ? 0.0 : (float) $this->begrote_hoeveelheid;
+        $rate = $this->uurtarief === null ? 0.0 : (float) $this->uurtarief;
+        if ($hours <= 0.0001 || $quantity <= 0.0001 || $rate <= 0.0001) {
+            return null;
+        }
+
+        return round($hours * $rate / $quantity, 2);
     }
 
     /**

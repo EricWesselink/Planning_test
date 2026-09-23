@@ -31,6 +31,10 @@ class CalculationWorkMatcher
             return $this->result('matched', RoomWorkSetup::PRIMEN_EGALISEREN, [RoomWorkSetup::PRIMEN_EGALISEREN]);
         }
 
+        if (str_contains($combined, 'overgangsprofiel')) {
+            return $this->result('matched', 'Overgangsprofielen', ['Overgangsprofielen']);
+        }
+
         $fromNeedles = $this->uniqueFromNeedles($needles, $this->identityCatalog($catalog));
         if ($fromNeedles !== null) {
             return $this->result('matched', $fromNeedles, [$fromNeedles]);
@@ -131,6 +135,10 @@ class CalculationWorkMatcher
     public function suggestType(string $description): ?string
     {
         $flat = mb_strtolower($description);
+        if (str_contains($flat, 'overgangsprofiel')) {
+            return 'Overgangsprofielen';
+        }
+
         $known = WorkType::knownType($description);
 
         if ($this->isPreparation($flat) && ! $this->isFloorCovering($flat)) {

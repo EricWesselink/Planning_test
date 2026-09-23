@@ -204,6 +204,116 @@ class CalculationImportService
         $this->applyBudgets($project);
     }
 
+    /**
+     * Koppel arbeidsregels die nog op uren staan aan hun productie-m²/m¹
+     * en vul de arbeidsprijs per eenheid aan.
+     */
+    public function linkOpenLaborQuantities(Project $project): void
+    {
+        $project->load(['calculationLines', 'workItems']);
+        $lines = $project->calculationLines->sortBy('row_number')->values();
+        if ($lines->isEmpty()) {
+            return;
+        }
+
+        $openIds = $lines
+            ->filter(fn (ProjectCalculationLine $line): bool => $line->is_labor && $line->normalizedUnit() === WorkUnit::Hours)
+            ->pluck('id')
+            ->all();
+        $payload = [];
+        foreach ($lines as $line) {
+            $payload[] = $this->storedLinePayload($line);
+        }
+        $linked = $this->parser->relink($payload);
+        $byId = [];
+        foreach ($linked as $line) {
+            if (isset($line['id'])) {
+                $byId[(int) $line['id']] = $line;
+            }
+        }
+
+        $touchedItemIds = [];
+        foreach ($lines as $line) {
+            if (! in_array($line->id, $openIds, true)) {
+                continue;
+            }
+            $fresh = $byId[$line->id] ?? null;
+            if ($fresh === null || ($fresh['quantity_status'] ?? '') !== 'linked') {
+                continue;
+            }
+            $unit = (string) ($fresh['quantity_unit'] ?? '');
+            if (! in_array($unit, ['m2', 'm1'], true)) {
+                continue;
+            }
+
+            if ($line->work_item_id === null) {
+                $matched = $this->matcher->match($this->lineDescription($fresh), $project->workItems->pluck('name')->all(), [
+                    'line' => $fresh,
+                    'materials' => $fresh['context_materials'] ?? [],
+                ]);
+                if (! in_array($matched['status'] ?? '', ['matched', 'warning'], true) || ! filled($matched['work_name'] ?? null)) {
+                    continue;
+                }
+                $workName = (string) $matched['work_name'];
+                $workItem = $this->workItemFor($project, $workName, $fresh);
+                $line->work_item_id = $workItem->id;
+                $line->work_match_key = $matched['work_key'] ?? mb_strtolower($workName);
+                $line->work_match_label = $workName;
+                $line->match_status = $matched['status'];
+            }
+
+            $line->unit = $unit;
+            $line->quantity = $fresh['quantity'];
+            $line->save();
+            if ($line->work_item_id !== null) {
+                $touchedItemIds[] = (int) $line->work_item_id;
+            }
+        }
+
+        $project->unsetRelation('calculationLines');
+        $project->unsetRelation('workItems');
+        $project->load(['calculationLines', 'workItems']);
+
+        foreach ($project->workItems as $item) {
+            $price = $item->calculatedLaborUnitPrice();
+            $shouldFillQuantity = in_array($item->id, $touchedItemIds, true) && $item->begrote_hoeveelheid === null;
+            if ($shouldFillQuantity) {
+                $quantity = $this->linkedQuantityFor($project, $item);
+                if ($quantity !== null) {
+                    $item->begrote_hoeveelheid = $quantity;
+                }
+                if ($item->begrote_uren === null) {
+                    $item->begrote_uren = round((float) $project->calculationLines
+                        ->where('work_item_id', $item->id)
+                        ->where('is_labor', true)
+                        ->sum('hours'), 2);
+                }
+                if ($item->uurtarief === null) {
+                    $rate = $project->calculationLines
+                        ->where('work_item_id', $item->id)
+                        ->where('is_labor', true)
+                        ->pluck('hourly_rate')
+                        ->filter(fn ($rate) => $rate !== null)
+                        ->map(fn ($rate) => (float) $rate)
+                        ->unique()
+                        ->values();
+                    if ($rate->count() === 1) {
+                        $item->uurtarief = (float) $rate->first();
+                    }
+                }
+                $price = $item->calculatedLaborUnitPrice();
+            }
+            if ($item->labor_unit_price === null && $price !== null) {
+                $item->labor_unit_price = $price;
+            } elseif ($shouldFillQuantity) {
+                $item->labor_unit_price = $price;
+            }
+            if ($item->isDirty()) {
+                $item->save();
+            }
+        }
+    }
+
     public function persist(Project $project, array $preview): int
     {
         $calculation = $preview['calculation'] ?? [];
@@ -518,6 +628,51 @@ class CalculationImportService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function storedLinePayload(ProjectCalculationLine $line): array
+    {
+        $unit = $line->unit !== null ? (string) $line->unit : null;
+        $isLabor = (bool) $line->is_labor;
+        $linked = $isLabor && in_array(rtrim(mb_strtolower(trim((string) $unit)), '.'), ['m2', 'm²', 'm1', 'm¹', 'lm'], true);
+
+        return [
+            'id' => $line->id,
+            'row_number' => $line->row_number,
+            'group_code' => $line->group_code,
+            'km' => $line->km,
+            'mu' => $line->mu,
+            'article_number' => $line->article_number,
+            'production_description' => $line->production_description,
+            'article_description' => $line->article_description,
+            'unit' => $unit,
+            'quantity' => $line->quantity !== null ? (float) $line->quantity : null,
+            'quantity_unit' => $unit,
+            'hours' => $line->hours !== null ? (float) $line->hours : null,
+            'hourly_rate' => $line->hourly_rate !== null ? (float) $line->hourly_rate : null,
+            'labor_cost' => $line->labor_cost !== null ? (float) $line->labor_cost : null,
+            'is_labor' => $isLabor,
+            'quantity_status' => $linked ? 'linked' : ($isLabor ? 'missing' : 'ignored'),
+            'context_materials' => [],
+        ];
+    }
+
+    private function linkedQuantityFor(Project $project, WorkItem $item): ?float
+    {
+        $quantity = round((float) $project->calculationLines
+            ->where('work_item_id', $item->id)
+            ->where('is_labor', true)
+            ->filter(function (ProjectCalculationLine $line): bool {
+                $unit = rtrim(mb_strtolower(trim((string) $line->unit)), '.');
+
+                return in_array($unit, ['m2', 'm²', 'm1', 'm¹', 'lm'], true);
+            })
+            ->sum('quantity'), 2);
+
+        return $quantity > 0.0001 ? $quantity : null;
+    }
+
+    /**
      * @param  array<string, mixed>  $line
      */
     private function workItemFor(Project $project, string $workName, array $line): WorkItem
@@ -571,11 +726,11 @@ class CalculationImportService
                 ? (float) $lineRates->first()
                 : ($hours > 0.0001 ? round($cost / $hours, 2) : null);
 
-            $item->forceFill([
-                'begrote_uren' => $hours,
-                'begrote_hoeveelheid' => $quantity > 0.0001 ? $quantity : $item->begrote_hoeveelheid,
-                'uurtarief' => $rate,
-            ])->save();
+            $item->begrote_uren = $hours;
+            $item->begrote_hoeveelheid = $quantity > 0.0001 ? $quantity : $item->begrote_hoeveelheid;
+            $item->uurtarief = $rate;
+            $item->labor_unit_price = $item->calculatedLaborUnitPrice();
+            $item->save();
 
             if ($rate !== null) {
                 $rates[] = $rate;

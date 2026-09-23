@@ -210,9 +210,16 @@ class PlanningBoardService
             } else {
                 foreach ($this->quantityWorkGroups($project) as $packageKey => $items) {
                     $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
-                    if ($ordered <= 0.0001) {
+                    $linkedQty = (float) $items->sum(
+                        fn (WorkItem $item): float => $item->begrote_hoeveelheid === null ? 0.0 : (float) $item->begrote_hoeveelheid
+                    );
+                    $budgetHours = (float) $items->sum(
+                        fn (WorkItem $item): float => $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren
+                    );
+                    if ($ordered <= 0.0001 && $budgetHours <= 0.0001) {
                         continue;
                     }
+                    $shownQty = $ordered > 0.0001 ? $ordered : $linkedQty;
                     $isOndergrond = $packageKey === 'ondergrond';
                     ['primary' => $primary, 'title' => $title] = $this->boardGroupHeading($isOndergrond, $items);
                     $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->all();
@@ -252,9 +259,7 @@ class PlanningBoardService
                         }
                     }
 
-                    $budgetHours = round((float) $items->sum(
-                        fn (WorkItem $item): float => $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren
-                    ), 2);
+                    $budgetHours = round($budgetHours, 2);
                     $personBars = $this->decorateBarsWithBudget(
                         $personBars,
                         $projectAssignments,
@@ -278,7 +283,8 @@ class PlanningBoardService
                         'steps' => $steps,
                         'is_ondergrond' => $isOndergrond,
                         'unit' => $primary->unit->label(),
-                        'ordered' => $ordered,
+                        'ordered' => $shownQty,
+                        'ordered_decimals' => $ordered <= 0.0001 && fmod($shownQty, 1.0) !== 0.0 ? 2 : 0,
                         'completed' => $done,
                         'remaining' => $rest,
                         'percent' => $this->progressPercent($done, $ordered),

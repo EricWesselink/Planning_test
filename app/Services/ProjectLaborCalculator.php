@@ -14,6 +14,8 @@ use Illuminate\Support\Collection;
 
 class ProjectLaborCalculator
 {
+    public function __construct(private CalculationImportService $imports) {}
+
     /**
      * @return array{
      *     hourly_rate: ?float,
@@ -44,6 +46,9 @@ class ProjectLaborCalculator
      */
     public function for(Project $project): array
     {
+        $this->imports->linkOpenLaborQuantities($project);
+        $project->unsetRelation('workItems');
+        $project->unsetRelation('calculationLines');
         $project->loadMissing(['assignments.crewMembers', 'workItems.progressEntries.crewMember', 'workItems.progressEntries.worker', 'workOrders']);
 
         $hoursByItem = $project->assignments->groupBy(
@@ -109,17 +114,19 @@ class ProjectLaborCalculator
                 ->sum('completed_qty'),
             2,
         );
-        $orderedM2 = round(
-            (float) $originalItems
-                ->filter(fn (array $row): bool => ($row['unit_value'] ?? '') === WorkUnit::SquareMeter->value)
-                ->sum('budget_qty'),
-            2,
+        $pricedFloors = $originalItems->filter(
+            fn (array $row): bool => ($row['type_key'] ?? '') !== 'ondergrond'
+                && ($row['unit_value'] ?? '') === WorkUnit::SquareMeter->value
+                && ($row['labor_qty'] ?? null) !== null
         );
+        $orderedM2 = round((float) $pricedFloors->sum('labor_qty'), 2);
+        $pricedFloorCost = round((float) $pricedFloors->sum('budget_labor_cost'), 2);
+        $pricedFloorHours = round((float) $pricedFloors->sum('budget_hours'), 2);
         $prices = $this->priceFields(
-            $budgetHours,
+            $pricedFloorHours,
             $actualHours,
             $hourlyRate,
-            $budgetLaborCost,
+            $pricedFloorCost,
             $actualLaborCost,
             $forecastHours,
             $forecastLaborCost,
@@ -306,6 +313,9 @@ class ProjectLaborCalculator
         $budgetQty = $item->begrote_hoeveelheid === null
             ? round((float) $item->ordered_quantity, 2)
             : round((float) $item->begrote_hoeveelheid, 2);
+        $laborQty = $item->begrote_hoeveelheid !== null && (float) $item->begrote_hoeveelheid > 0.0001
+            ? round((float) $item->begrote_hoeveelheid, 2)
+            : null;
         $completedQty = round($item->completedQuantity(), 2);
         $actualLaborCost = $hourlyRate === null ? 0.0 : round($actualHours * $hourlyRate, 2);
         $budgetLaborCost = $hourlyRate === null ? 0.0 : round($budgetHours * $hourlyRate, 2);
@@ -319,14 +329,14 @@ class ProjectLaborCalculator
         $laborCost = $actualHours > 0.0001 ? $actualLaborCost : $plannedLaborCost;
         $unitLabel = $item->unit?->label() ?? '';
         $prices = $this->priceFields(
-            $budgetHours,
+            $laborQty === null ? 0.0 : $budgetHours,
             $actualHours,
             $hourlyRate,
-            $budgetLaborCost,
+            $laborQty === null ? 0.0 : $budgetLaborCost,
             $actualLaborCost,
             $forecastHours,
             $forecastLaborCost,
-            $budgetQty,
+            $laborQty ?? 0.0,
             $completedQty,
             $item->unit?->value,
             $unitLabel,
@@ -369,6 +379,7 @@ class ProjectLaborCalculator
             'warnings' => $status['warnings'],
             'overrun_label' => $this->overrunLabel($status, $item->planningTitle()),
             'budget_qty' => $budgetQty,
+            'labor_qty' => $laborQty,
             'completed_qty' => $completedQty,
             'labor_cost' => $laborCost,
             'actual_labor_cost' => $actualLaborCost,
@@ -411,19 +422,27 @@ class ProjectLaborCalculator
         $laborCost = $actualHours > 0.0001 ? $actualLaborCost : round((float) collect($rows)->sum('labor_cost'), 2);
         $completedQty = round((float) collect($rows)->sum('completed_qty'), 2);
         $budgetQty = round((float) collect($rows)->sum('budget_qty'), 2);
+        $linked = collect($rows)->filter(fn (array $row): bool => ($row['labor_qty'] ?? null) !== null);
+        $laborQty = round((float) $linked->sum('labor_qty'), 2);
+        $linkedCost = round((float) $linked->sum('budget_labor_cost'), 2);
+        $linkedHours = round((float) $linked->sum('budget_hours'), 2);
+        $linkedForecastCost = round((float) $linked->sum('forecast_labor_cost'), 2);
+        $linkedForecastHours = round((float) $linked->sum('forecast_hours'), 2);
+        $linkedRates = $linked->pluck('hourly_rate')->filter(fn ($rate) => $rate !== null)->unique()->values();
+        $linkedRate = $linkedRates->count() === 1 ? (float) $linkedRates->first() : $hourlyRate;
         $units = collect($rows)->pluck('unit')->unique()->values();
         $unitLabel = $units->count() === 1 ? (string) $units->first() : '';
         $unitValue = collect($rows)->pluck('unit_value')->unique()->values();
         $unitValueKey = $unitValue->count() === 1 ? (string) $unitValue->first() : '';
         $prices = $this->priceFields(
-            $budgetHours,
+            $linkedHours,
             $actualHours,
-            $hourlyRate,
-            $budgetLaborCost,
+            $linkedRate,
+            $linkedCost,
             $actualLaborCost,
-            $forecastHours,
-            $forecastLaborCost,
-            $budgetQty,
+            $linkedForecastHours,
+            $linkedForecastCost,
+            $laborQty,
             $completedQty,
             $unitValueKey !== '' ? $unitValueKey : null,
             $unitLabel,

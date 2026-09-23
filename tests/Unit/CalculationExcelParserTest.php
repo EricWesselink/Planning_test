@@ -197,6 +197,63 @@ class CalculationExcelParserTest extends TestCase
         $this->assertNull($plint['unit']);
     }
 
+    public function test_prices_labor_per_production_quantity_and_ignores_auxiliary_materials(): void
+    {
+        $parsed = $this->parser()->parse([
+            ['KM', 'Groep', 'M/U', 'Productie Eenheid Omschrijving', 'Artikel Omschrijving', 'Aantal', 'EH', 'Kostprijs', 'Kostprijs Tot.'],
+            ['L', '100', 'U', 'Schuren, primeren en egaliseren', 'Schuren, primeren en egaliseren', '112.5', 'uur', '48', '5400'],
+            ['M', '100', 'M', 'Schuren, primeren en egaliseren', 'ALM500 egalisatiemortel', '300.665', 'zak', '15', '4509.98'],
+            ['L', '100', 'U', 'Leveren en leggen Gerflor Marmorette 0045', 'Elastische vloerbedekking', '246.76', 'uur', '48', '11844.48'],
+            ['M', '100', 'M', 'Leveren en leggen Gerflor Marmorette 0045', 'Marmorette 0045', '1409.774', 'm2', '10.75', '15155.07'],
+            ['M', '100', 'M', 'Leveren en leggen Gerflor Marmorette 0045', 'UZIN LE 43 linoleum lijm', '460.619', 'kg', '4.16', '1915.43'],
+            ['L', '100', 'U', 'Leveren en leggen Gerflor Lino Art Urban', 'Elastische vloerbedekking', '191.751', 'uur', '48', '9204.05'],
+            ['M', '100', 'M', 'Leveren en leggen Gerflor Lino Art Urban', 'Lino Art Urban', '1095.649', 'm2', '13', '14243.44'],
+            ['L', '100', 'U', 'Corkment onder Gerflor Lino Art Urban', 'Corkment', '14.855', 'uur', '48', '713.04'],
+            ['M', '100', 'M', 'Corkment onder Gerflor Lino Art Urban', 'Corkment', '142.608', 'm2', '9.61', '1370.46'],
+            ['L', '100', 'U', 'Leveren en leggen Gerflor Mipolam Planet', 'Elastische vloerbedekking', '30.133', 'uur', '48', '1446.38'],
+            ['M', '100', 'M', 'Leveren en leggen Gerflor Mipolam Planet', 'Gerflor Mipolam Planet', '164.726', 'm2', '21', '3459.25'],
+            ['L', '100', 'U', 'Holle hoek profielen bekleed met Gerflor Mipolam', 'Elastische vloerbedekking', '75.549', 'uur', '48', '3626.35'],
+            ['M', '100', 'M', 'Holle hoek profielen bekleed met Gerflor Mipolam', 'Gerflor Mipolam Planet', '55', 'm2', '21', '1155'],
+            ['L', '100', 'U', 'Forbo surestep kleur n.t.b.', 'Forbo surestep', '45', 'uur', '48', '2160'],
+            ['M', '100', 'M', 'Forbo surestep kleur n.t.b.', 'Forbo surestep', '50', 'm2', '20.95', '1047.5'],
+            ['L', '100', 'U', 'Leveren en leggen schoonloopmat Coral Classic', 'Coral Classic', '6.394', 'uur', '48', '306.91'],
+            ['M', '100', 'M', 'Leveren en leggen schoonloopmat Coral Classic', 'Coral Classic', '61.275', 'm2', '48', '2941.2'],
+            ['L', '100', 'U', 'Overgangsprofielen tussen verschillende vloerafwerkingen', 'plaatsen profielen', '1.654', 'uur', '48', '79.39'],
+            ['O', '100', 'O', 'Overgangsprofielen tussen verschillende vloerafwerkingen', 'overgangsprofielen', '32.09', '', '5.22', '167.51'],
+        ], '11-ericwesselink2.xlsx');
+
+        $prep = collect($parsed['labor'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'egaliseren')
+        );
+        $linoleum = collect($parsed['labor'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'Marmorette')
+        );
+        $profiles = collect($parsed['labor'])->first(
+            fn (array $line): bool => str_contains((string) $line['production_description'], 'Overgangsprofielen')
+        );
+
+        $this->assertNotNull($prep);
+        $this->assertSame('linked', $prep['quantity_status']);
+        $this->assertSame('m2', $prep['quantity_unit']);
+        $this->assertEqualsWithDelta(1409.774 + 1095.649 + 164.726 + 50, (float) $prep['quantity'], 0.02);
+        $this->assertEqualsWithDelta(112.5, (float) $prep['hours'], 0.01);
+        $this->assertSame(48.0, $prep['hourly_rate']);
+
+        $this->assertNotNull($linoleum);
+        $this->assertSame('linked', $linoleum['quantity_status']);
+        $this->assertSame('m2', $linoleum['quantity_unit']);
+        $this->assertEqualsWithDelta(1409.774, (float) $linoleum['quantity'], 0.01);
+        $this->assertEqualsWithDelta(11844.48, (float) $linoleum['labor_cost'], 0.01);
+        $this->assertEqualsWithDelta(8.40, round((float) $linoleum['labor_cost'] / (float) $linoleum['quantity'], 2), 0.001);
+
+        $this->assertNotNull($profiles);
+        $this->assertSame('linked', $profiles['quantity_status']);
+        $this->assertSame('m1', $profiles['quantity_unit']);
+        $this->assertEqualsWithDelta(32.09, (float) $profiles['quantity'], 0.01);
+        $this->assertEqualsWithDelta(1.654, (float) $profiles['hours'], 0.001);
+        $this->assertEqualsWithDelta(2.47, round((float) $profiles['labor_cost'] / (float) $profiles['quantity'], 2), 0.001);
+    }
+
     private function parser(): CalculationExcelParser
     {
         return app(CalculationExcelParser::class);

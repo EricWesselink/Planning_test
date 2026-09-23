@@ -19,6 +19,7 @@
         ? $forecastTone
         : $actualTone;
     $priceTitle = $labor['unit_price_title'] ?? null;
+    $priceSuffix = ($row['unit'] ?? '') === 'm¹' ? '/m¹' : '';
     $actualClass = match ($actualTone) {
         'over' => ' plan-cell--labor-over text-nicon-danger font-semibold',
         'ok' => ' plan-cell--labor-ok text-nicon-ok font-semibold',
@@ -92,7 +93,7 @@
                     {{ $forecast['rest_label'] }}
                 @endif
             </div>
-            <div class="plan-cell plan-cell--num plan-cell--labor"@if ($priceTitle && $budgetM2 !== null) title="{{ $priceTitle }}"@endif>{{ $budgetM2 === null ? '—' : \App\Support\Format::euro($budgetM2, 2) }}</div>
+            <div class="plan-cell plan-cell--num plan-cell--labor"@if ($priceTitle && $budgetM2 !== null) title="{{ $priceTitle }}"@endif>{{ $budgetM2 === null ? '—' : \App\Support\Format::euro($budgetM2, 2).$priceSuffix }}</div>
             <div class="plan-cell plan-cell--num plan-cell--labor{{ $actualM2 === null ? '' : $actualClass }}"@if ($priceTitle) title="{{ $priceTitle }}"@endif>{{ $actualM2 === null ? '—' : \App\Support\Format::euro($actualM2, 2) }}</div>
             <div class="plan-cell plan-cell--num plan-cell--labor{{ $forecastM2 === null ? '' : $forecastClass }}{{ $forecastPercent ? ' plan-cell--labor-stack' : '' }}"@if ($priceTitle) title="{{ $priceTitle }}"@endif>
                 @if ($forecastM2 === null)

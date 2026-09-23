@@ -116,6 +116,7 @@ TXT),
         $this->assertNotNull($prep);
         $this->assertSame('48.00', $prep->uurtarief);
         $this->assertEqualsWithDelta(30.06, (float) $prep->begrote_uren, 0.02);
+        $this->assertEqualsWithDelta(3.68, (float) $prep->labor_unit_price, 0.02);
 
         $prepLine = $project->calculationLines()
             ->where('is_labor', true)

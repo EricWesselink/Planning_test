@@ -648,10 +648,17 @@ class ProjectController extends Controller
                 continue;
             }
 
-            WorkItem::query()
+            $item = WorkItem::query()
                 ->whereKey($itemId)
                 ->where('project_id', $project->id)
-                ->update($update);
+                ->first();
+            if ($item === null) {
+                continue;
+            }
+
+            $item->fill($update);
+            $item->labor_unit_price = $item->calculatedLaborUnitPrice();
+            $item->save();
         }
     }
 }

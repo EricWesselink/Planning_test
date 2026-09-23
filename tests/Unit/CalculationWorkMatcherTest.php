@@ -27,6 +27,14 @@ class CalculationWorkMatcherTest extends TestCase
         $plinth = $matcher->match('Leveren en aanbrengen hardschuimplinten 60/15', ['Plinten']);
         $this->assertSame('matched', $plinth['status']);
         $this->assertSame('Plinten', $plinth['work_name']);
+
+        $profiles = $matcher->match('Overgangsprofielen tussen verschillende vloerafwerkingen', [], [
+            'materials' => [
+                ['label' => 'overgangsprofielen'],
+            ],
+        ]);
+        $this->assertSame('matched', $profiles['status']);
+        $this->assertSame('Overgangsprofielen', $profiles['work_name']);
     }
 
     public function test_maps_generic_elastic_covering_from_neighboring_marmoleum_material(): void

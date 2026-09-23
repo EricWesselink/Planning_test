@@ -718,6 +718,53 @@ class ProjectLaborCalculatorTest extends TestCase
         $this->assertSame('+100%', $item['forecast_over_percent_label']);
     }
 
+    public function test_group_labor_price_uses_calculated_quantity_not_sibling_order_quantity(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-07',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+            orderedM2: 1314.75,
+        );
+        $project->workItems()->update([
+            'name' => 'Marmorette, Linoleum',
+            'begrote_uren' => 246.76,
+            'begrote_hoeveelheid' => 1409.77,
+            'uurtarief' => 48,
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Lino Art, Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 871.71,
+            'status' => 'gepland',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Primen & Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 2484.21,
+            'begrote_uren' => 112.5,
+            'uurtarief' => 48,
+            'status' => 'gepland',
+        ]);
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+        $linoleum = $labor['groups']['linoleum|m2'] ?? null;
+        $priming = collect($labor['items'])->first(
+            fn (array $item): bool => $item['name'] === 'Primen & Egaliseren'
+        );
+
+        $this->assertNotNull($linoleum);
+        $this->assertEqualsWithDelta(246.76, $linoleum['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(11844.48, $linoleum['budget_labor_cost'], 0.02);
+        $this->assertEqualsWithDelta(8.40, $linoleum['budget_unit_price'], 0.001);
+        $this->assertNotNull($priming);
+        $this->assertNull($priming['budget_unit_price']);
+    }
+
     /**
      * @return array{0: Project, 1: Worker, 2: WorkItem}
      */
