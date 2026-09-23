@@ -486,10 +486,10 @@ class PlanningWeekTest extends TestCase
         $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
             ->firstWhere('id', $project->id);
 
-        $this->assertSame(2200.0, $row['ordered']);
-        $this->assertSame(170.0, $row['completed']);
-        $this->assertSame(2030.0, $row['remaining']);
-        $this->assertSame(8, $row['percent']);
+        $this->assertSame(1100.0, $row['ordered']);
+        $this->assertSame(117.0, $row['completed']);
+        $this->assertSame(983.0, $row['remaining']);
+        $this->assertSame(11, $row['percent']);
         $this->assertSame('m²', $row['unit']);
 
         $byTitle = collect($row['children'])->keyBy('title');
@@ -502,10 +502,9 @@ class PlanningWeekTest extends TestCase
             ->assertOk()
             ->assertSee('11%')
             ->assertSee('5%')
-            ->assertSee('8%')
             ->assertSee('0%')
-            ->assertSee('2.200 m²')
-            ->assertSee('1.100 m²');
+            ->assertSee('1.100 m²')
+            ->assertDontSee('2.200 m²');
     }
 
     public function test_planning_shows_whole_square_meters_for_every_work(): void
@@ -558,6 +557,7 @@ class PlanningWeekTest extends TestCase
             ->assertSee('2.307 m²')
             ->assertSee('45 m²')
             ->assertSee('177 m²')
+            ->assertDontSee('5.014')
             ->assertDontSee('2.484,21')
             ->assertDontSee('2.306,85')
             ->assertDontSee('45,33')

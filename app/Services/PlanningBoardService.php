@@ -276,6 +276,7 @@ class PlanningBoardService
                         'project_id' => $project->id,
                         'title' => $title,
                         'steps' => $steps,
+                        'is_ondergrond' => $isOndergrond,
                         'unit' => $primary->unit->label(),
                         'ordered' => $ordered,
                         'completed' => $done,
@@ -1044,7 +1045,12 @@ class PlanningBoardService
         $squareMeters = $rows->filter(
             fn (array $row): bool => ($row['unit'] ?? '') === WorkUnit::SquareMeter->label()
         );
-        $source = $squareMeters->isNotEmpty() ? $squareMeters : $rows;
+        $priming = $squareMeters->first(
+            fn (array $row): bool => ($row['is_ondergrond'] ?? false) === true
+        );
+        $source = $priming !== null
+            ? collect([$priming])
+            : ($squareMeters->isNotEmpty() ? $squareMeters : $rows);
         $unit = (string) ($source->first()['unit'] ?? '');
         $source = $source->filter(fn (array $row): bool => ($row['unit'] ?? '') === $unit);
 
