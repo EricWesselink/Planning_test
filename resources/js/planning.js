@@ -32,6 +32,7 @@ import {
     planningProjectWorkItems,
     planningWorkChoices,
 } from "./planning-work-choices.js";
+import { bindPlanningFilterSearch } from "./planning-filter-search.js";
 import {
     candidatesFetchInit,
     datesForExactMode,
@@ -855,6 +856,19 @@ if (board) {
         whoSelect.disabled = false;
         projectInput.value = projectId;
         fillWorkItems(projectId, workItemId);
+        if (
+            workList &&
+            !workList.querySelector('input[type="checkbox"]:checked')
+        ) {
+            const first = workList.querySelector('input[type="checkbox"]');
+            if (first) {
+                first.checked = true;
+                workSelect.value = selectedWorkIds()[0]
+                    ? String(selectedWorkIds()[0])
+                    : "";
+                syncProjectFromWork();
+            }
+        }
         whoSelect
             .querySelectorAll('option[value^="team:"]')
             .forEach((option) => {
@@ -1848,3 +1862,5 @@ function bindWeekplanningExport() {
         }, 0);
     });
 }
+
+bindPlanningFilterSearch(document);

@@ -218,7 +218,7 @@ class PlanningBoardService
                     $budgetHours = (float) $items->sum(
                         fn (WorkItem $item): float => $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren
                     );
-                    if ($ordered <= 0.0001 && $budgetHours <= 0.0001) {
+                    if (! $this->groupIsOnTheBoard($items)) {
                         continue;
                     }
                     $shownQty = $ordered > 0.0001 ? $ordered : $linkedQty;
@@ -289,6 +289,8 @@ class PlanningBoardService
                         'unit' => $primary->unit->label(),
                         'ordered' => $shownQty,
                         'ordered_decimals' => $ordered <= 0.0001 && fmod($shownQty, 1.0) !== 0.0 ? 2 : 0,
+                        'empty_quantity' => $shownQty <= 0.0001,
+                        'planning_included' => $this->planningIncluded($items),
                         'completed' => $done,
                         'remaining' => $rest,
                         'percent' => $this->progressPercent($done, $ordered),
@@ -1039,7 +1041,9 @@ class PlanningBoardService
     private function projectQuantities(array $workRows): array
     {
         $rows = collect($workRows)->filter(
-            fn (array $row): bool => $row['ordered'] !== null && $row['completed'] !== null
+            fn (array $row): bool => ($row['planning_included'] ?? true)
+                && $row['ordered'] !== null
+                && $row['completed'] !== null
         );
 
         if ($rows->isEmpty()) {
@@ -1101,8 +1105,7 @@ class PlanningBoardService
 
         $choices = [];
         foreach ($this->quantityWorkGroups($project) as $packageKey => $items) {
-            $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
-            if ($ordered <= 0.0001) {
+            if (! $this->groupIsOnTheBoard($items)) {
                 continue;
             }
             $isOndergrond = $packageKey === 'ondergrond';
@@ -1152,6 +1155,27 @@ class PlanningBoardService
             'default_title' => $defaultTitle,
             'planning_work_activity_id' => $chosen['id'],
         ];
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     */
+    private function groupIsOnTheBoard(Collection $items): bool
+    {
+        $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
+        $budgetHours = (float) $items->sum(
+            fn (WorkItem $item): float => $item->begrote_uren === null ? 0.0 : (float) $item->begrote_uren
+        );
+
+        return $ordered > 0.0001 || $budgetHours > 0.0001;
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     */
+    private function planningIncluded(Collection $items): bool
+    {
+        return $items->every(fn (WorkItem $item): bool => (bool) $item->planning_included);
     }
 
     /**
@@ -2072,9 +2096,11 @@ class PlanningBoardService
             'default_title' => $defaultTitle,
             'planning_work_activity_id' => $chosen['id'],
             'steps' => $this->activitySteps($items),
-            'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
+            'unit' => $primary->unit?->label() ?? '',
             'ordered' => $hasQuantity ? $ordered : null,
             'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
+            'empty_quantity' => ! $hasQuantity,
+            'planning_included' => $this->planningIncluded($items),
             'completed' => $completed,
             'remaining' => $remaining,
             'percent' => $hasQuantity ? $this->progressPercent($completed, $ordered) : null,
@@ -2209,9 +2235,11 @@ class PlanningBoardService
             'default_title' => $defaultTitle,
             'planning_work_activity_id' => $chosen['id'],
             'steps' => $steps,
-            'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
+            'unit' => $primary->unit?->label() ?? '',
             'ordered' => $hasQuantity ? $ordered : null,
             'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
+            'empty_quantity' => ! $hasQuantity,
+            'planning_included' => $this->planningIncluded($items),
             'completed' => null,
             'remaining' => null,
             'percent' => null,

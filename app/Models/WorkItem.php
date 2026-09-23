@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'project_id', 'work_activity_id', 'planning_work_activity_id', 'name', 'display_color', 'unit', 'ordered_quantity',
+    'project_id', 'work_activity_id', 'planning_work_activity_id', 'planning_included', 'name', 'display_color', 'unit', 'ordered_quantity',
     'begrote_uren', 'begrote_hoeveelheid', 'uurtarief', 'labor_unit_price',
     'planned_start_date', 'planned_end_date', 'status', 'sort_order', 'notes',
     'is_extra_work', 'small_work_type', 'extra_lines',
@@ -28,6 +28,7 @@ class WorkItem extends Model
      */
     protected $attributes = [
         'is_extra_work' => false,
+        'planning_included' => true,
     ];
 
     protected function casts(): array
@@ -42,6 +43,7 @@ class WorkItem extends Model
             'planned_start_date' => 'date',
             'planned_end_date' => 'date',
             'is_extra_work' => 'boolean',
+            'planning_included' => 'boolean',
             'small_work_type' => SmallWorkType::class,
             'extra_lines' => 'array',
         ];
@@ -205,7 +207,11 @@ class WorkItem extends Model
 
         $this->loadMissing('project');
 
-        return (bool) ($this->project?->isSmallWork() || $this->project?->isWinkel());
+        if ($this->project?->isSmallWork() || $this->project?->isWinkel()) {
+            return true;
+        }
+
+        return $this->recognizedSpecialty() === null;
     }
 
     public function project(): BelongsTo
@@ -359,6 +365,24 @@ class WorkItem extends Model
      */
     public function requiredSpecialty(): array
     {
+        $matched = $this->recognizedSpecialty();
+        if ($matched !== null) {
+            return $matched;
+        }
+
+        $fallback = $this->planningTitle();
+
+        return [
+            'key' => mb_strtolower($fallback),
+            'label' => $fallback,
+        ];
+    }
+
+    /**
+     * @return array{key: string, label: string}|null
+     */
+    private function recognizedSpecialty(): ?array
+    {
         $labels = $this->specialtyLabels();
         $matched = FlooringSpecialty::matchFromLabels($labels);
         if ($matched !== null) {
@@ -381,12 +405,7 @@ class WorkItem extends Model
             }
         }
 
-        $fallback = $this->planningTitle();
-
-        return [
-            'key' => mb_strtolower($fallback),
-            'label' => $fallback,
-        ];
+        return null;
     }
 
     /**
@@ -394,6 +413,7 @@ class WorkItem extends Model
      */
     private function specialtyLabels(): array
     {
+        $this->loadMissing(['workActivity', 'planningActivity']);
         $labels = [
             (string) $this->name,
             $this->cardLabel(),
@@ -402,7 +422,10 @@ class WorkItem extends Model
             (string) $this->productLabel(),
             $this->phase()->groupLabel(),
         ];
-        if ($this->relationLoaded('workActivity') && $this->workActivity) {
+        if ($this->planningActivity) {
+            array_unshift($labels, (string) $this->planningActivity->name);
+        }
+        if ($this->workActivity) {
             $labels[] = (string) $this->workActivity->name;
         }
 

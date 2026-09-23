@@ -300,6 +300,56 @@ input[type="file"]::-webkit-file-upload-button:hover {
     text-align: center;
 }
 
+.planning-search {
+    position: relative;
+    min-width: 0;
+    width: 100%;
+}
+
+.planning-search.is-open {
+    z-index: 50;
+}
+
+.planning-search-input {
+    width: 100%;
+}
+
+.planning-search-list {
+    position: absolute;
+    z-index: 1;
+    top: calc(100% - 1px);
+    left: 0;
+    width: max(100%, 32rem);
+    max-width: calc(100vw - 2rem);
+    max-height: 18rem;
+    margin: 0;
+    padding: 0.15rem 0;
+    overflow: auto;
+    list-style: none;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.planning-search-option,
+.planning-search-empty {
+    padding: 0.35rem 0.65rem;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.planning-search-option {
+    cursor: pointer;
+}
+
+.planning-search-option.is-active {
+    background: var(--color-nicon-sand);
+}
+
+.planning-search-empty {
+    color: var(--color-nicon-muted);
+}
+
 .planning-warnings {
     margin-top: 0.45rem;
     border: 2px solid var(--color-nicon-danger);
@@ -897,6 +947,47 @@ button.planning-avail-part {
 .plan-work-label:focus {
     outline: 1px solid var(--color-nicon-line);
     background: #fff;
+}
+
+.plan-empty-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.15rem;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+.plan-empty-check,
+.plan-empty-qty {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.plan-empty-qty input {
+    width: 4.5rem;
+    padding: 1px 4px;
+    border: 1px solid var(--color-nicon-line);
+    background: #fff;
+    color: inherit;
+    font: inherit;
+}
+
+.plan-empty-delete {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-nicon-danger, #9f1239);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.plan-line--off {
+    opacity: 0.55;
 }
 
 .plan-cell--werk.has-missing-craftsman {

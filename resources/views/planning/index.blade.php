@@ -127,7 +127,7 @@
                     <option value="{{ \App\Enums\ProjectKind::Winkel->value }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::Winkel->value)>Winkelwerk</option>
                     <option value="{{ \App\Enums\ProjectKind::KLEINE_FILTER }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::KLEINE_FILTER)>Kleine werken</option>
                 </select>
-                <select name="project_id" class="planning-filter" onchange="this.form.submit()" aria-label="Werk">
+                <select name="project_id" class="planning-filter" data-planning-search onchange="this.form.submit()" aria-label="Werk">
                     <option value="">Alle</option>
                     @foreach ($projects as $project)
                         <option value="{{ $project->id }}" @selected(($filters['project_id'] ?? '') == $project->id)>{{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}</option>
@@ -595,9 +595,10 @@
                         @foreach ($projectRow['children'] as $work)
                             @php
                                 $workOver = $canViewLaborCosts && ! empty($work['labor']['hours_over']);
-                                $workHeight = max(28, 6 + ($work['bar_count'] * 24));
+                                $emptyQuantity = ! empty($work['empty_quantity']);
+                                $workHeight = max($emptyQuantity && $canManagePlanning ? 64 : 28, 6 + ($work['bar_count'] * 24));
                             @endphp
-                            <div class="plan-line plan-line--work{{ count($work['warnings']) ? ' plan-line--warn' : '' }}{{ $workOver ? ' plan-line--hour-over' : '' }}" style="min-height: {{ $workHeight }}px">
+                            <div class="plan-line plan-line--work{{ count($work['warnings']) ? ' plan-line--warn' : '' }}{{ $workOver ? ' plan-line--hour-over' : '' }}{{ $emptyQuantity && ($work['planning_included'] ?? true) === false ? ' plan-line--off' : '' }}" style="min-height: {{ $workHeight }}px">
                                 <div class="plan-frozen">
                                     <div class="plan-cell plan-cell--werk plan-cell--indent">
                                         <div>
@@ -620,6 +621,26 @@
                                                 </form>
                                             @else
                                                 <div>{{ $work['title'] }}</div>
+                                            @endif
+                                            @if ($emptyQuantity && $canManagePlanning)
+                                                <form method="POST" action="{{ route('planning.work-line.update', $work['id']) }}" class="plan-empty-line" onsubmit="window.niconRememberPlanningScroll && window.niconRememberPlanningScroll()">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <label class="plan-empty-check">
+                                                        <input type="hidden" name="included" value="0">
+                                                        <input type="checkbox" name="included" value="1" @checked($work['planning_included'] ?? true) onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
+                                                        Aan
+                                                    </label>
+                                                    <label class="plan-empty-qty">
+                                                        <input name="quantity" value="{{ \App\Support\Format::qtyInput($work['ordered'] ?? 0) }}" inputmode="decimal" aria-label="Hoeveelheid {{ $work['title'] }}" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
+                                                        {{ ($work['unit'] ?? '') !== '' ? $work['unit'] : 'm²' }}
+                                                    </label>
+                                                </form>
+                                                <form method="POST" action="{{ route('planning.work-line.destroy', $work['id']) }}" class="plan-empty-line" onsubmit="if (!confirm('Deze regel verwijderen?')) { return false; } window.niconRememberPlanningScroll && window.niconRememberPlanningScroll();">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="plan-empty-delete">Verwijder</button>
+                                                </form>
                                             @endif
                                             @if (! empty($work['steps']))
                                                 <div class="text-[10px] font-normal text-nicon-muted">{{ implode(' · ', $work['steps']) }}</div>

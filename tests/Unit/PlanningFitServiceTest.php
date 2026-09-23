@@ -74,6 +74,19 @@ class PlanningFitServiceTest extends TestCase
         $this->assertSame('Rails plaatsen', $item->requiredSpecialty()['label']);
     }
 
+    public function test_unknown_floor_work_still_lists_a_free_vakman(): void
+    {
+        $kees = $this->makeWorker('Kees Jansen', 'Linoleum');
+        $item = $this->makeWorkItem('Vloer verwijderen');
+
+        $this->assertTrue($item->fresh('project')->skipsSkillMatch());
+
+        $candidate = $this->candidateNamed($item, 'Kees Jansen', $kees);
+
+        $this->assertTrue($candidate['selectable']);
+        $this->assertSame('Beschikbaar', $candidate['status_label']);
+    }
+
     public function test_lists_available_when_the_person_has_vakkennis_and_is_free(): void
     {
         $kees = $this->makeWorker('Kees Jansen', 'Linoleum');

@@ -161,6 +161,17 @@ class PlanningKindFilterTest extends TestCase
         $this->assertDatabaseHas('projects', ['id' => $winkel->id, 'kind' => ProjectKind::Winkel->value]);
     }
 
+    public function test_work_filter_lists_the_visible_project_text_for_search(): void
+    {
+        $user = User::factory()->create();
+        $this->createConstruction('Laakse Tuinen');
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07']))
+            ->assertSee('name="project_id" class="planning-filter" data-planning-search', false)
+            ->assertSee('Laakse Tuinen</option>', false);
+    }
+
     private function createConstruction(string $name): Project
     {
         $customer = Customer::query()->create(['name' => 'Gemeente']);

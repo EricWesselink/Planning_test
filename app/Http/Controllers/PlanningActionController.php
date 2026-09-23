@@ -7,11 +7,15 @@ use App\Enums\InternalBusinessUnit;
 use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\Team;
+use App\Models\TimeEntry;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
+use App\Models\WorkTicket;
+use App\Models\WorkTicketLine;
 use App\Services\ConflictService;
 use App\Services\PlanningFitService;
+use App\Support\DutchNumber;
 use App\Support\PlanningHours;
 use App\Support\PlanningWeek;
 use Carbon\Carbon;
@@ -831,6 +835,101 @@ class PlanningActionController extends Controller
         }
 
         return back();
+    }
+
+    public function updateWorkLine(Request $request, WorkItem $workItem): RedirectResponse
+    {
+        Gate::authorize('manage-planning');
+        $workItem->loadMissing('project');
+        Gate::authorize('view', $workItem->project);
+
+        $data = $request->validate([
+            'included' => ['required', 'boolean'],
+            'quantity' => ['required', 'string', 'max:32'],
+        ], [
+            'quantity.required' => 'Vul een hoeveelheid in.',
+        ]);
+        $quantity = DutchNumber::parse($data['quantity']);
+        if ($quantity === null || $quantity < 0 || $quantity > 1000000) {
+            return back()->withErrors(['work_line' => 'Vul een hoeveelheid in.']);
+        }
+
+        $items = $this->planningLineItems($workItem);
+        if ($this->lineShowsQuantity($items)) {
+            return back()->withErrors(['work_line' => 'Een regel met m² pas je hier niet aan.']);
+        }
+
+        $included = $quantity > 0.0001 || $request->boolean('included');
+        foreach ($items as $item) {
+            $item->forceFill([
+                'planning_included' => $included,
+                'ordered_quantity' => (int) $item->id === (int) $workItem->id ? $quantity : 0,
+            ])->save();
+        }
+
+        return back();
+    }
+
+    public function destroyWorkLine(WorkItem $workItem): RedirectResponse
+    {
+        Gate::authorize('manage-planning');
+        $workItem->loadMissing('project');
+        Gate::authorize('view', $workItem->project);
+
+        $items = $this->planningLineItems($workItem);
+        if ($this->lineShowsQuantity($items)) {
+            return back()->withErrors(['work_line' => 'Een regel met m² kan hier niet worden verwijderd.']);
+        }
+        if ($this->lineIsInUse($items)) {
+            return back()->withErrors(['work_line' => 'Deze regel heeft al inzet of uren en kan niet worden verwijderd.']);
+        }
+
+        WorkItem::query()->whereIn('id', $items->pluck('id'))->delete();
+
+        return back();
+    }
+
+    /**
+     * @return Collection<int, WorkItem>
+     */
+    private function planningLineItems(WorkItem $workItem): Collection
+    {
+        $workItem->loadMissing('project.workItems');
+        $ids = $this->draggedLineIds($workItem->project, $workItem);
+
+        return WorkItem::query()->whereIn('id', $ids)->orderBy('id')->get();
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     */
+    private function lineShowsQuantity(Collection $items): bool
+    {
+        $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
+        if ($ordered > 0.0001) {
+            return true;
+        }
+
+        $linked = (float) $items->sum(
+            fn (WorkItem $item): float => $item->begrote_hoeveelheid === null ? 0.0 : (float) $item->begrote_hoeveelheid
+        );
+
+        return $linked > 0.0001;
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     */
+    private function lineIsInUse(Collection $items): bool
+    {
+        $ids = $items->pluck('id')->all();
+
+        return WorkerAssignment::query()->whereIn('work_item_id', $ids)->exists()
+            || WorkerAssignment::query()->whereHas('workItems', fn ($query) => $query->whereIn('work_items.id', $ids))->exists()
+            || TimeEntry::query()->whereIn('work_item_id', $ids)->exists()
+            || WorkTicket::query()->whereIn('work_item_id', $ids)->exists()
+            || WorkTicketLine::query()->whereIn('work_item_id', $ids)->exists()
+            || $items->contains(fn (WorkItem $item): bool => $item->progressEntries()->exists() || $item->workOrders()->exists());
     }
 
     /**
