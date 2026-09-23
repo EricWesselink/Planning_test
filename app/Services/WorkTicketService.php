@@ -717,7 +717,7 @@ class WorkTicketService
     /**
      * Same groups as the planning board: one row per werkzaamheid, not each product line.
      *
-     * @return list<array{id: int, key: string, name: string, quantity: float, unit_label: string, qty_label: string, member_ids: list<int>, type_key: string}>
+     * @return list<array{id: int, key: string, name: string, quantity: float, unit: string, unit_label: string, qty_label: string, member_ids: list<int>, type_key: string}>
      */
     private function planningChoiceRows(Project $project): array
     {
@@ -749,6 +749,7 @@ class WorkTicketService
                 'key' => 'plan:'.$choice['id'],
                 'name' => $choice['name'],
                 'quantity' => $ordered,
+                'unit' => $primary->unit->value,
                 'unit_label' => $primary->unit->label(),
                 'qty_label' => Format::qty($ordered, $decimals).' '.$primary->unit->label(),
                 'member_ids' => $memberIds,

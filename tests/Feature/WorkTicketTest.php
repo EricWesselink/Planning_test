@@ -225,6 +225,76 @@ class WorkTicketTest extends TestCase
         $this->assertSame(WorkUnit::SquareMeter, $line->unit);
     }
 
+    public function test_opdrachtbon_stores_dutch_quantity_and_unit_price_as_one_line(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('data-ticket-plan-price', false)
+            ->assertSee('aria-label="Prijs Primen &amp; Egaliseren"', false);
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'extra_work_item_ids' => [$seed['primer']->id],
+                'planned_quantities' => [$seed['primer']->id => '1.468,44'],
+                'unit_prices' => [$seed['primer']->id => '1,90'],
+                'billing_method' => 'unit',
+            ])
+            ->assertRedirect();
+
+        $ticket = WorkTicket::query()->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(1, $ticket->lines()->count());
+        $line = $ticket->lines->first();
+        $this->assertSame((int) $seed['primer']->id, (int) $line->work_item_id);
+        $this->assertSame('1468.44', $line->quantity);
+        $this->assertSame('1.90', $line->unit_price);
+        $this->assertSame('2790.04', $line->amount);
+        $this->assertSame(WorkUnit::SquareMeter, $line->unit);
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('Primen & Egaliseren')
+            ->assertSee('1.468,44 m²')
+            ->assertSee('€ 1,90')
+            ->assertSee('€ 2.790,04');
+    }
+
+    public function test_opdrachtbon_rejects_a_unit_price_that_is_not_a_number(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+        $form = route('projects.show', [
+            'project' => $seed['project'],
+            'bon' => $seed['assignment']->id,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->from($form)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'extra_work_item_ids' => [$seed['primer']->id],
+                'planned_quantities' => [$seed['primer']->id => '1.468,44'],
+                'unit_prices' => [$seed['primer']->id => 'geen'],
+                'billing_method' => 'unit',
+            ]);
+
+        $response
+            ->assertRedirect($form)
+            ->assertSessionHasErrors(['unit_prices.'.$seed['primer']->id]);
+        $this->followRedirects($response)
+            ->assertSee('value="1.468,44"', false)
+            ->assertSee('value="geen"', false);
+
+        $this->assertSame(0, WorkTicket::query()->count());
+    }
+
     public function test_ticket_mode_collapses_project_info_so_the_bon_panel_stays_visible(): void
     {
         $user = User::factory()->create();

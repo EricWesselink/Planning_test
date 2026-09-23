@@ -181,6 +181,26 @@ class RoomWorkSetupPrimingTest extends TestCase
         $this->assertEqualsWithDelta(150.00, (float) $primen->ordered_quantity, 0.001);
     }
 
+    public function test_sluisbuurt_priming_uses_hard_floor_areas_and_skips_the_entrance_mat(): void
+    {
+        [$project, $area] = $this->makeArea(squareMeters: 2529.56);
+        $this->addFlooringTask($project, $area, 'Marmorette R854-0045, sand beige, Linoleum', 1314.76);
+        $this->addFlooringTask($project, $area, 'Lino Art Urban R893-0555, flashy street grey, Linoleum', 871.73);
+        $this->addFlooringTask($project, $area, 'Lino Art Urban R893-0555 op kurk, flashy street grey, Linoleum', 120.39);
+        $this->addFlooringTask($project, $area, 'Coral Classic (kleur n.t.b.), n.t.b., Entreemat Banen', 45.32);
+        $this->addFlooringTask($project, $area, 'Mipolam Planet, 5438, PVC / Vinyl', 148.40);
+        $this->addFlooringTask($project, $area, 'Forbo Surestep , kleur n.t.b., PVC / Vinyl', 28.96);
+
+        app(RoomWorkSetup::class)->ensureProject($project->fresh(['areas.tasks.workItem', 'workItems']));
+
+        $primen = $project->fresh('workItems')->workItems
+            ->first(fn (WorkItem $item) => $item->name === RoomWorkSetup::PRIMEN_EGALISEREN);
+
+        $this->assertNotNull($primen);
+        $this->assertSame(WorkUnit::SquareMeter, $primen->unit);
+        $this->assertEqualsWithDelta(2484.24, (float) $primen->ordered_quantity, 0.001);
+    }
+
     public function test_coating_work_item_without_area_tasks_is_not_added_to_project_priming(): void
     {
         [$project, $area] = $this->makeArea(squareMeters: 140.0);

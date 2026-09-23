@@ -4,6 +4,10 @@ import {
     areaMatchesWorkKeys,
     buildOutsourceSelection,
     formatBoardQty,
+    parseBoardNumber,
+    plannedTicketLine,
+    formatBoardMoney,
+    boardLineAmount,
     groupedWorkFilters,
     measureSelectedWorks,
     measureSelectedRooms,
@@ -630,4 +634,40 @@ test('hele werk without a material filter takes every work key on the picked roo
     assert.ok(picked.length >= 4);
     assert.ok(keys.includes('ondergrond'));
     assert.ok(keys.includes('vloer|1'));
+});
+
+test('dutch quantity and unit price become one bon line', () => {
+    assert.equal(parseBoardNumber('1,90'), 1.9);
+    assert.equal(parseBoardNumber('1.90'), 1.9);
+    assert.equal(parseBoardNumber('1.468,44'), 1468.44);
+    assert.equal(parseBoardNumber('€ 1,90'), 1.9);
+    assert.equal(boardLineAmount(1468.44, 1.9), 2790.04);
+    assert.equal(formatBoardMoney(1.9), '€ 1,90');
+
+    const line = plannedTicketLine({
+        id: 4,
+        name: 'Primen & Egaliseren',
+        quantity: '1.468,44',
+        unit: 'm2',
+        unitPrice: '1,90',
+        billing: 'unit',
+    });
+
+    assert.equal(line.ok, true);
+    assert.equal(line.line.quantity, 1468.44);
+    assert.equal(line.line.unit_price, 1.9);
+    assert.equal(line.line.amount, 2790.04);
+    assert.equal(line.line.qty_label, '1.468,44 m²');
+    assert.equal(line.line.price_label, '€ 1,90');
+    assert.equal(line.line.amount_label, '€ 2.790,04');
+
+    const missingPrice = plannedTicketLine({
+        id: 4,
+        name: 'Primen & Egaliseren',
+        quantity: '1.468,44',
+        unit: 'm2',
+        unitPrice: '',
+        billing: 'unit',
+    });
+    assert.equal(missingPrice.ok, false);
 });

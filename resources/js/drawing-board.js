@@ -56,6 +56,7 @@ import {
     shortWorkLabel,
     ticketStorePayload,
     ticketHasGeneralWork,
+    plannedTicketLine,
     workFilterSummaryLabel,
     workKeysOnRooms,
     ticketRoomsToPick,
@@ -209,6 +210,7 @@ function boot() {
     let pickedIds = new Set(selectedId ? [selectedId] : []);
     let roomMeasureMode = false;
     let ticketChunks = [];
+    let ticketPlannedLines = [];
     let selectToken = 0;
     let pickedToken = 0;
     let savingWork = false;
@@ -5005,20 +5007,33 @@ function boot() {
         if (!list) {
             return;
         }
-        if (ticketChunks.length === 0) {
+        const chunksHtml = ticketChunks.map((chunk, index) => {
+            const lines = (chunk.lines || [])
+                .map((line) => `<div class="ticket-chunk-line">${escapeHtml(line.label)} – ${escapeHtml(line.qty_label)}</div>`)
+                .join('');
+            const rooms = chunk.entire
+                ? 'Hele verdieping'
+                : (chunk.rooms_label ? `Ruimtes: ${chunk.rooms_label}` : 'Ruimtes geselecteerd');
+            return `<article class="ticket-chunk" data-index="${index}"><div class="ticket-chunk-head"><span>${escapeHtml(chunk.floor || 'Verdieping')}</span><button type="button" class="ticket-chunk-remove" data-ticket-remove="${index}" aria-label="Selectie verwijderen">×</button></div>${lines}<div class="ticket-chunk-rooms">${escapeHtml(rooms)}</div></article>`;
+        }).join('');
+        const plannedHtml = ticketPlannedLines.map((line) => {
+            return `<article class="ticket-chunk" data-plan-line="${line.id}"><div class="ticket-chunk-head"><span>${escapeHtml(plannedLineText(line))}</span><button type="button" class="ticket-chunk-remove" data-ticket-remove-plan="${line.id}" aria-label="Selectie verwijderen">×</button></div></article>`;
+        }).join('');
+        if (ticketChunks.length === 0 && ticketPlannedLines.length === 0) {
             list.innerHTML = '<p class="ticket-empty">Kies materialen of winkelwerk, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>';
         } else {
-            list.innerHTML = ticketChunks.map((chunk, index) => {
-                const lines = (chunk.lines || [])
-                    .map((line) => `<div class="ticket-chunk-line">${escapeHtml(line.label)} – ${escapeHtml(line.qty_label)}</div>`)
-                    .join('');
-                const rooms = chunk.entire
-                    ? 'Hele verdieping'
-                    : (chunk.rooms_label ? `Ruimtes: ${chunk.rooms_label}` : 'Ruimtes geselecteerd');
-                return `<article class="ticket-chunk" data-index="${index}"><div class="ticket-chunk-head"><span>${escapeHtml(chunk.floor || 'Verdieping')}</span><button type="button" class="ticket-chunk-remove" data-ticket-remove="${index}" aria-label="Selectie verwijderen">×</button></div>${lines}<div class="ticket-chunk-rooms">${escapeHtml(rooms)}</div></article>`;
-            }).join('');
+            list.innerHTML = chunksHtml + plannedHtml;
         }
         fillTicketPreview();
+    }
+
+    function plannedLineText(line) {
+        const showPrice = Boolean(ticketMode?.is_external) && ticketBillingMethod() === 'unit' && line.price_label;
+        if (!showPrice) {
+            return `${line.name} | ${line.qty_label}`;
+        }
+
+        return `${line.name} | ${line.qty_label} | ${line.price_label} | ${line.amount_label}`;
     }
 
     function fillTicketPreview() {
@@ -5026,17 +5041,21 @@ function boot() {
         if (!preview) {
             return;
         }
-        if (ticketChunks.length === 0) {
+        if (ticketChunks.length === 0 && ticketPlannedLines.length === 0) {
             preview.innerHTML = 'Nog geen selectie op de bon.';
             return;
         }
-        preview.innerHTML = ticketChunks.map((chunk) => {
+        const planned = ticketPlannedLines
+            .map((line) => escapeHtml(plannedLineText(line)))
+            .join('<br>');
+        const chunks = ticketChunks.map((chunk) => {
             const lines = (chunk.lines || [])
                 .map((line) => `${escapeHtml(line.label)} – ${escapeHtml(line.qty_label)}`)
                 .join('<br>');
             const rooms = chunk.entire ? 'Hele verdieping' : `Ruimtes: ${escapeHtml(chunk.rooms_label || '—')}`;
             return `<div><strong>${escapeHtml(chunk.floor || 'Verdieping')}</strong><br>${lines}<br>${rooms}</div>`;
         }).join('<hr class="ticket-preview-split">');
+        preview.innerHTML = [chunks, planned].filter(Boolean).join('<hr class="ticket-preview-split">');
     }
 
     function ticketGeneralWorkState() {
@@ -5069,10 +5088,59 @@ function boot() {
         };
     }
 
+    function checkedPlannedRows() {
+        return [...document.querySelectorAll('[data-ticket-plan]:checked')].map((input) => {
+            const row = input.closest('.ticket-plan-row');
+            const id = Number(input.value);
+
+            return {
+                id,
+                name: row?.querySelector('label span')?.textContent?.trim() || 'Werkzaamheid',
+                quantity: row?.querySelector('[data-ticket-plan-qty]')?.value ?? '',
+                unit: row?.dataset.planUnit || 'm2',
+                unitPrice: row?.querySelector('[data-ticket-plan-price]')?.value ?? '',
+                input,
+            };
+        }).filter((row) => Number.isFinite(row.id) && row.id > 0);
+    }
+
+    function commitCheckedPlannedLines() {
+        const billing = ticketMode?.is_external ? ticketBillingMethod() : '';
+        for (const row of checkedPlannedRows()) {
+            const result = plannedTicketLine({
+                id: row.id,
+                name: row.name,
+                quantity: row.quantity,
+                unit: row.unit,
+                unitPrice: row.unitPrice,
+                billing,
+            });
+            if (!result.ok) {
+                ticketError(result.message);
+                return false;
+            }
+            ticketPlannedLines = ticketPlannedLines.filter((line) => line.id !== result.line.id);
+            ticketPlannedLines.push(result.line);
+            row.input.checked = false;
+        }
+
+        return true;
+    }
+
     function addTicketSelection() {
         ticketError('');
+        if (!commitCheckedPlannedLines()) {
+            return;
+        }
         const rooms = pickedList().map((id) => areaById(id)).filter(Boolean);
         if (rooms.length === 0) {
+            if (ticketPlannedLines.length > 0) {
+                renderTicketPanel();
+                document.querySelector('.board-right')?.classList.add('is-open');
+                document.querySelector('.board-left')?.classList.remove('is-open');
+                setHint('Selectie toegevoegd. Controleer de regel en sla de bon op.');
+                return;
+            }
             if (ticketHasGeneralWork(ticketGeneralWorkState())) {
                 setHint('Algemeen werk is aangevinkt. Sla de bon op, of selecteer ruimtes voor Meetstaat-werk.');
                 return;
@@ -5132,15 +5200,19 @@ function boot() {
             return;
         }
         ticketError('');
+        if (!commitCheckedPlannedLines()) {
+            return;
+        }
         const general = ticketGeneralWorkState();
-        if (ticketChunks.length === 0 && !ticketHasGeneralWork(general)) {
+        const plannedIds = ticketPlannedLines.map((line) => line.id);
+        if (ticketChunks.length === 0 && plannedIds.length === 0 && !ticketHasGeneralWork(general)) {
             ticketError('Voeg eerst een selectie toe, of vink algemeen werk aan.');
             return;
         }
         const payload = ticketStorePayload(ticketChunks, {
             notes: document.getElementById('ticket-notes')?.value || '',
             document_ids: ticketMode.document_id ? [ticketMode.document_id] : [],
-            extra_work_item_ids: general.extraIds,
+            extra_work_item_ids: [...general.extraIds, ...plannedIds],
             shop_work_activity_ids: general.shopActivityIds,
             general_work: general.general,
         });
@@ -5161,9 +5233,20 @@ function boot() {
         (payload.extra_work_item_ids || []).forEach((id) => {
             appendTicketField(form, 'extra_work_item_ids[]', id);
         });
-        Object.entries(general.plannedQuantities || {}).forEach(([id, qty]) => {
+        const plannedQuantities = { ...(general.plannedQuantities || {}) };
+        ticketPlannedLines.forEach((line) => {
+            plannedQuantities[line.id] = line.quantity;
+        });
+        Object.entries(plannedQuantities).forEach(([id, qty]) => {
             appendTicketField(form, `planned_quantities[${id}]`, qty);
         });
+        if (ticketMode.is_external && ticketBillingMethod() === 'unit') {
+            ticketPlannedLines.forEach((line) => {
+                if (line.unit_price != null) {
+                    appendTicketField(form, `unit_prices[${line.id}]`, line.unit_price);
+                }
+            });
+        }
         (payload.shop_work_activity_ids || []).forEach((id) => {
             appendTicketField(form, 'shop_work_activity_ids[]', id);
         });
@@ -5218,11 +5301,27 @@ function boot() {
             document.getElementById('ticket-preview')?.setAttribute('aria-expanded', open ? 'true' : 'false');
         });
         document.getElementById('ticket-chunks')?.addEventListener('click', (event) => {
+            const planButton = event.target.closest('[data-ticket-remove-plan]');
+            if (planButton) {
+                const id = Number(planButton.dataset.ticketRemovePlan);
+                ticketPlannedLines = ticketPlannedLines.filter((line) => line.id !== id);
+                renderTicketPanel();
+                return;
+            }
             const button = event.target.closest('[data-ticket-remove]');
             if (!button) {
                 return;
             }
             removeTicketChunk(Number(button.dataset.ticketRemove));
+        });
+        document.querySelectorAll('input[name="ticket-billing"]').forEach((input) => {
+            input.addEventListener('change', () => {
+                const panel = document.getElementById('ticket-panel');
+                const billing = ticketBillingMethod();
+                panel?.classList.toggle('is-hourly-billing', billing === 'hourly');
+                panel?.classList.toggle('is-fixed-billing', billing === 'fixed');
+                renderTicketPanel();
+            });
         });
         renderTicketPanel();
         document.querySelector('.board-right')?.classList.add('is-open');

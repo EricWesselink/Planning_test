@@ -2459,13 +2459,23 @@ button.plan-labor-toggle:hover {
     min-width: 0;
 }
 
-.ticket-plan-qty {
+.ticket-plan-qty,
+.ticket-plan-price {
     width: 6.5rem;
     border: 1px solid var(--color-nicon-line);
     background: white;
     padding: 0.15rem 0.35rem;
     font-size: 12px;
     text-align: right;
+}
+
+.ticket-plan-price {
+    width: 5.75rem;
+}
+
+#ticket-panel.is-hourly-billing .ticket-plan-price,
+#ticket-panel.is-fixed-billing .ticket-plan-price {
+    display: none;
 }
 
 .ticket-plan-unit {

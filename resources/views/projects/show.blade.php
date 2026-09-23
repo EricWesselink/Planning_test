@@ -459,7 +459,11 @@
 
         <aside class="board-right{{ $ticketMode ? ' is-ticket' : '' }}" id="side-panel">
             @if ($ticketMode)
-                <div id="ticket-panel" class="ticket-panel">
+                <div id="ticket-panel" @class([
+                    'ticket-panel',
+                    'is-hourly-billing' => $ticketMode['is_external'] && old('billing_method', 'unit') === 'hourly',
+                    'is-fixed-billing' => $ticketMode['is_external'] && old('billing_method', 'unit') === 'fixed',
+                ])>
                     <div class="ticket-panel-head">
                         <div class="ticket-kicker">Bonselectie</div>
                         <div class="text-[11px] font-semibold uppercase tracking-wide">{{ $ticketMode['kind_label'] }}</div>
@@ -489,20 +493,47 @@
                     <div class="ticket-extra">
                         @if (! empty($ticketMode['planned_works']))
                             <div class="ticket-billing-label">In de planning</div>
+                            @php
+                                $selectedPlanIds = array_map(intval(...), (array) old('extra_work_item_ids', []));
+                            @endphp
                             @foreach ($ticketMode['planned_works'] as $plannedWork)
-                                <div class="ticket-plan-row">
+                                @php
+                                    $postedQuantity = old('planned_quantities.'.$plannedWork['id'], $plannedWork['quantity']);
+                                    $quantityValue = \App\Support\Format::qtyInput($postedQuantity);
+                                    if ($quantityValue === '' && is_scalar($postedQuantity) && trim((string) $postedQuantity) !== '') {
+                                        $quantityValue = (string) $postedQuantity;
+                                    }
+                                    $postedPrice = old('unit_prices.'.$plannedWork['id']);
+                                    $priceValue = \App\Support\Format::qtyInput($postedPrice);
+                                    if ($priceValue === '' && is_scalar($postedPrice) && trim((string) $postedPrice) !== '') {
+                                        $priceValue = (string) $postedPrice;
+                                    }
+                                @endphp
+                                <div class="ticket-plan-row" data-plan-unit="{{ $plannedWork['unit'] }}">
                                     <label>
-                                        <input type="checkbox" data-ticket-plan value="{{ $plannedWork['id'] }}" data-member-ids="{{ implode(',', $plannedWork['member_ids']) }}">
+                                        <input type="checkbox" data-ticket-plan value="{{ $plannedWork['id'] }}" data-member-ids="{{ implode(',', $plannedWork['member_ids']) }}" @checked(in_array((int) $plannedWork['id'], $selectedPlanIds, true))>
                                         <span>{{ $plannedWork['name'] }}</span>
                                     </label>
                                     <input
                                         class="ticket-plan-qty"
                                         data-ticket-plan-qty
                                         inputmode="decimal"
-                                        value="{{ \App\Support\Format::qty($plannedWork['quantity'], 2) }}"
+                                        autocomplete="off"
+                                        value="{{ $quantityValue }}"
                                         aria-label="Hoeveelheid {{ $plannedWork['name'] }}"
                                     >
                                     <span class="ticket-plan-unit">{{ $plannedWork['unit_label'] }}</span>
+                                    @if ($ticketMode['is_external'])
+                                        <input
+                                            class="ticket-plan-price"
+                                            data-ticket-plan-price
+                                            inputmode="decimal"
+                                            autocomplete="off"
+                                            placeholder="€ / {{ $plannedWork['unit_label'] }}"
+                                            aria-label="Prijs {{ $plannedWork['name'] }}"
+                                            value="{{ $priceValue }}"
+                                        >
+                                    @endif
                                 </div>
                             @endforeach
                         @endif

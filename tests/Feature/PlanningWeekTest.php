@@ -507,4 +507,60 @@ class PlanningWeekTest extends TestCase
             ->assertSee('2.200 m²')
             ->assertSee('1.100 m²');
     }
+
+    public function test_planning_shows_whole_square_meters_for_every_work(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'Nicon vloeren']);
+        $project = Project::query()->create([
+            'project_number' => '250500046',
+            'customer_id' => $customer->id,
+            'name' => 'IKC Sluisbuurt Amsterdam',
+            'city' => 'Amsterdam',
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Primen & Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 2484.21,
+            'begrote_uren' => 112.5,
+            'status' => 'gepland',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 2306.85,
+            'status' => 'gepland',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Entreemat',
+            'unit' => 'm2',
+            'ordered_quantity' => 45.33,
+            'status' => 'gepland',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 177.36,
+            'status' => 'gepland',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('2.484 m²')
+            ->assertSee('2.307 m²')
+            ->assertSee('45 m²')
+            ->assertSee('177 m²')
+            ->assertDontSee('2.484,21')
+            ->assertDontSee('2.306,85')
+            ->assertDontSee('45,33')
+            ->assertDontSee('177,36');
+    }
 }

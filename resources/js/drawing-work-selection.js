@@ -11,6 +11,115 @@ export function formatBoardQty(value) {
     return `${negative ? '-' : ''}${grouped},${decimals}`;
 }
 
+/**
+ * Dutch input: "1,90" is 1.9 and "1.468,44" is 1468.44.
+ */
+export function parseBoardNumber(value) {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+    if (value == null) {
+        return null;
+    }
+
+    let raw = String(value).trim().replace(/\u00a0/g, '').replace(/€/g, '').trim();
+    raw = raw.replace(/m²|m2|m¹|m1|lm/gi, '').replace(/\s/g, '');
+    if (raw === '' || raw === '-' || raw === '+') {
+        return null;
+    }
+
+    const negative = raw.startsWith('-');
+    raw = raw.replace(/^[+-]/, '').replace(/[^0-9,.-]/g, '');
+    if (raw === '' || raw === '-' || raw === ',' || raw === '.') {
+        return null;
+    }
+
+    const comma = raw.lastIndexOf(',');
+    const dot = raw.lastIndexOf('.');
+    if (comma !== -1 && dot !== -1) {
+        raw = comma > dot
+            ? raw.replace(/\./g, '').replace(',', '.')
+            : raw.replace(/,/g, '');
+    } else if (comma !== -1) {
+        const decimals = raw.length - comma - 1;
+        raw = decimals <= 2 ? raw.replace(',', '.') : raw.replace(/,/g, '');
+    } else if (dot !== -1 && /^\d{1,3}(\.\d{3})+$/.test(raw)) {
+        raw = raw.replace(/\./g, '');
+    }
+
+    const number = Number(raw);
+    if (!Number.isFinite(number)) {
+        return null;
+    }
+
+    return negative ? -number : number;
+}
+
+export function formatBoardMoney(value) {
+    return `€ ${formatBoardQty(value)}`;
+}
+
+export function boardLineAmount(quantity, unitPrice) {
+    const qty = Math.round(Number(quantity) * 100);
+    const price = Math.round(Number(unitPrice) * 100);
+    if (!Number.isFinite(qty) || !Number.isFinite(price)) {
+        return null;
+    }
+
+    return Math.round((qty * price) / 100) / 100;
+}
+
+/**
+ * One planned activity as a bon line. Quantity and price stay decimal, never integer.
+ *
+ * @returns {{ok: true, line: object}|{ok: false, message: string}}
+ */
+export function plannedTicketLine({
+    id,
+    name,
+    quantity,
+    unit = 'm2',
+    unitPrice = '',
+    billing = '',
+} = {}) {
+    const label = String(name || '').trim() || 'Werkzaamheid';
+    const qty = parseBoardNumber(quantity);
+    if (qty === null || qty <= 0) {
+        return {
+            ok: false,
+            message: `Vul een hoeveelheid groter dan 0 in voor ${label}, bijvoorbeeld 1.468,44.`,
+        };
+    }
+
+    let price = null;
+    if (billing === 'unit') {
+        price = parseBoardNumber(unitPrice);
+        if (price === null || price < 0) {
+            return {
+                ok: false,
+                message: `Vul de prijs per ${workUnitLabel(unit)} in voor ${label}, bijvoorbeeld 1,90.`,
+            };
+        }
+    }
+
+    const amount = price === null ? null : boardLineAmount(qty, price);
+
+    return {
+        ok: true,
+        line: {
+            id: Number(id),
+            name: label,
+            quantity: qty,
+            unit,
+            unit_price: price,
+            amount,
+            qty_label: `${formatBoardQty(qty)} ${workUnitLabel(unit)}`,
+            price_label: price === null ? '' : formatBoardMoney(price),
+            amount_label: amount === null ? '' : formatBoardMoney(amount),
+        },
+    };
+}
+
 export function workUnitLabel(unit) {
     if (unit === 'm1') {
         return 'm¹';

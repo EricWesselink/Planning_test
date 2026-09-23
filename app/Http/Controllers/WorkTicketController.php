@@ -10,6 +10,7 @@ use App\Services\MeasurementFormService;
 use App\Services\WorkTicketHoursNotifier;
 use App\Services\WorkTicketPdfService;
 use App\Services\WorkTicketService;
+use App\Support\DutchNumber;
 use App\Support\Format;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
@@ -282,8 +283,10 @@ class WorkTicketController extends Controller
             'floors.required' => 'Kies minstens één verdieping of ruimte.',
             'work_item_ids.required' => 'Kies minstens één werkzaamheid.',
             'work_item_ids.min' => 'Kies minstens één werkzaamheid.',
-            'planned_quantities.*.numeric' => 'Vul de hoeveelheid als getal in.',
+            'planned_quantities.*.numeric' => 'Vul de hoeveelheid als getal in, bijvoorbeeld 1.468,44.',
             'planned_quantities.*.min' => 'Vul een hoeveelheid groter dan 0 in.',
+            'unit_prices.*.numeric' => 'Vul de prijs als getal in, bijvoorbeeld 1,90.',
+            'unit_prices.*.min' => 'De prijs kan niet lager zijn dan 0.',
             'billing_method.required' => 'Kies hoe deze opdracht wordt afgerekend.',
             'hourly_rate.required' => 'Vul het afgesproken uurtarief in.',
             'fixed_price.required' => 'Vul de afgesproken vaste prijs in.',
@@ -312,20 +315,41 @@ class WorkTicketController extends Controller
         }
         $prices = $request->input('unit_prices', []);
         if (is_array($prices)) {
-            foreach ($prices as $key => $value) {
-                $prices[$key] = Format::decimalInput($value);
-            }
-            $merge['unit_prices'] = $prices;
+            $merge['unit_prices'] = $this->normalizeDecimalMap($prices);
         }
         $plannedQuantities = $request->input('planned_quantities', []);
         if (is_array($plannedQuantities)) {
-            foreach ($plannedQuantities as $key => $value) {
-                $plannedQuantities[$key] = Format::decimalInput($value);
-            }
-            $merge['planned_quantities'] = $plannedQuantities;
+            $merge['planned_quantities'] = $this->normalizeDecimalMap($plannedQuantities);
         }
         if ($merge !== []) {
             $request->merge($merge);
         }
+    }
+
+    /**
+     * Keep Dutch amounts as decimals. Invalid text stays unchanged so validation can reject it.
+     *
+     * @param  array<mixed, mixed>  $values
+     * @return array<mixed, mixed>
+     */
+    private function normalizeDecimalMap(array $values): array
+    {
+        foreach ($values as $key => $value) {
+            if (! is_string($value)) {
+                continue;
+            }
+            $trimmed = trim($value);
+            if ($trimmed === '') {
+                $values[$key] = '';
+
+                continue;
+            }
+            $parsed = DutchNumber::parse($trimmed);
+            if ($parsed !== null) {
+                $values[$key] = $parsed;
+            }
+        }
+
+        return $values;
     }
 }
