@@ -276,6 +276,25 @@ export function viewerRenderScale(pageWidth, pageHeight, preferred = 3, minimum 
     return Math.max(minimum, Math.min(preferred, capped));
 }
 
+/**
+ * CAD-tekeningen zetten de plattegrond vaak in een laag die op het scherm uit staat
+ * en alleen het stramien aan laat. Zet elke optionele laag aan.
+ */
+export function revealOptionalLayers(config) {
+    if (!config || typeof config.setVisibility !== 'function' || typeof config[Symbol.iterator] !== 'function') {
+        return null;
+    }
+
+    for (const entry of config) {
+        const id = Array.isArray(entry) ? entry[0] : null;
+        if (id) {
+            config.setVisibility(id, true, false);
+        }
+    }
+
+    return config;
+}
+
 export function labelBox(marker) {
     if (!marker) {
         return null;

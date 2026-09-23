@@ -20,6 +20,7 @@ import {
     storedJumpTarget,
     focusViewport,
     fitDrawingViewport,
+    revealOptionalLayers,
     pinchTransform,
     exactRoomHitForArea,
     hitTestContours,
@@ -1361,7 +1362,15 @@ function boot() {
         context.imageSmoothingQuality = 'high';
         context.fillStyle = '#ffffff';
         context.fillRect(0, 0, canvas.width, canvas.height);
-        const task = pdfPage.render({ canvasContext: context, viewport: renderViewport });
+        const layerConfig = await drawingLayerConfig();
+        if (generation !== pdfRenderGeneration) {
+            return;
+        }
+        const task = pdfPage.render({
+            canvasContext: context,
+            viewport: renderViewport,
+            optionalContentConfigPromise: layerConfig ? Promise.resolve(layerConfig) : undefined,
+        });
         pdfRenderTask = task;
         try {
             await task.promise;
@@ -1638,6 +1647,17 @@ function boot() {
                 `Handmatig nodig: ${payload.counts?.manual ?? 0}`,
             ].join(' · ');
             unmatchedEl.classList.toggle('hidden', false);
+        }
+    }
+
+    async function drawingLayerConfig() {
+        if (!pdfDoc?.getOptionalContentConfig) {
+            return null;
+        }
+        try {
+            return revealOptionalLayers(await pdfDoc.getOptionalContentConfig());
+        } catch {
+            return null;
         }
     }
 

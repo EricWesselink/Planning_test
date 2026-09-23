@@ -14,6 +14,7 @@ import {
     roomNumbersIn,
     uniqueAreasOnPage,
     viewerRenderScale,
+    revealOptionalLayers,
     displayBox,
     selectionBarBox,
     layerShowsRooms,
@@ -312,6 +313,27 @@ test('renders at least 2x and prefers 3x', () => {
     assert.equal(viewerRenderScale(1191, 842), 3);
     assert.ok(viewerRenderScale(5000, 5000) >= 2);
     assert.ok(viewerRenderScale(5000, 5000) <= 3);
+});
+
+test('turns hidden drawing layers on', () => {
+    const visible = new Map([
+        ['grid', true],
+        ['plattegrond', false],
+    ]);
+    const config = {
+        setVisibility(id, on) {
+            visible.set(id, on);
+        },
+        *[Symbol.iterator]() {
+            yield ['grid', { visible: true }];
+            yield ['plattegrond', { visible: false }];
+        },
+    };
+
+    assert.equal(revealOptionalLayers(config), config);
+    assert.equal(visible.get('grid'), true);
+    assert.equal(visible.get('plattegrond'), true);
+    assert.equal(revealOptionalLayers(null), null);
 });
 
 test('hides opleverpunten on the voortgang layer', () => {
