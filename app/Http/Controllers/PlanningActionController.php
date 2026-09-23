@@ -11,7 +11,6 @@ use App\Models\TimeEntry;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
-use App\Models\WorkTicket;
 use App\Models\WorkTicketLine;
 use App\Services\ConflictService;
 use App\Services\PlanningFitService;
@@ -927,7 +926,6 @@ class PlanningActionController extends Controller
         return WorkerAssignment::query()->whereIn('work_item_id', $ids)->exists()
             || WorkerAssignment::query()->whereHas('workItems', fn ($query) => $query->whereIn('work_items.id', $ids))->exists()
             || TimeEntry::query()->whereIn('work_item_id', $ids)->exists()
-            || WorkTicket::query()->whereIn('work_item_id', $ids)->exists()
             || WorkTicketLine::query()->whereIn('work_item_id', $ids)->exists()
             || $items->contains(fn (WorkItem $item): bool => $item->progressEntries()->exists() || $item->workOrders()->exists());
     }

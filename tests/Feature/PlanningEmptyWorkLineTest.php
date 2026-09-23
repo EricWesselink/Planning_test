@@ -10,6 +10,7 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class PlanningEmptyWorkLineTest extends TestCase
@@ -64,10 +65,18 @@ class PlanningEmptyWorkLineTest extends TestCase
             ->assertDontSee('plan-empty-line', false);
 
         $spare = $this->emptyLine($project, 'Overig vloerwerk');
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
         $this->actingAs($user)
             ->from($planningUrl)
             ->delete(route('planning.work-line.destroy', $spare))
             ->assertRedirect($planningUrl);
+
+        $this->assertFalse(collect($queries)->contains(
+            fn (string $sql): bool => str_contains($sql, 'work_tickets') && str_contains($sql, 'work_item_id'),
+        ));
 
         $this->assertNull(WorkItem::query()->find($spare->id));
         $this->actingAs($user)
