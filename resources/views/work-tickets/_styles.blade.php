@@ -206,6 +206,12 @@
     }
     .hours-form label { display: block; font-size: 11px; color: #5b6570; margin-bottom: 4px; }
     .hours-form input { width: 7rem; padding: 6px 8px; border: 1px solid #d5dde5; }
+    .hours-form .hours-days { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 12px; }
+    .hours-form .hours-days label { margin: 0; font-size: 13px; color: #1a1a1a; }
+    .hours-form .hours-days span { display: block; }
+    .hours-form .hours-plan { font-size: 11px; color: #5b6570; margin-bottom: 4px; }
+    .hours-form .hours-days input { width: 5.5rem; }
+    .hours-form button { margin-top: 4px; }
     .status { color: #3f6212; font-size: 13px; margin: 0 0 12px; }
     .error { color: #b91c1c; font-size: 13px; margin: 0 0 12px; }
     .measurement-note { font-size: 13px; margin: 0 0 12px; color: #163a5f; }

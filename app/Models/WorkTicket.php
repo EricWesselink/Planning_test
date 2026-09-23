@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Support\Format;
+use App\Support\PlanningHours;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'number', 'kind', 'worker_assignment_id', 'project_id', 'worker_id', 'team_id',
-    'created_by', 'billing_method', 'hourly_rate', 'fixed_price', 'worked_hours',
+    'created_by', 'billing_method', 'hourly_rate', 'fixed_price', 'worked_hours', 'day_hours',
     'notes', 'include_measurement_form', 'start_date', 'end_date',
 ])]
 class WorkTicket extends Model
@@ -33,6 +35,7 @@ class WorkTicket extends Model
             'hourly_rate' => 'decimal:2',
             'fixed_price' => 'decimal:2',
             'worked_hours' => 'decimal:2',
+            'day_hours' => 'array',
             'include_measurement_form' => 'boolean',
             'start_date' => 'date',
             'end_date' => 'date',
@@ -95,6 +98,88 @@ class WorkTicket extends Model
     public function isOpdrachtbon(): bool
     {
         return $this->kind === WorkTicketKind::Opdrachtbon;
+    }
+
+    /**
+     * Werkdagen waarop uren op deze bon ingevuld kunnen worden.
+     *
+     * @return list<CarbonInterface>
+     */
+    public function hourDays(): array
+    {
+        if ($this->start_date === null || $this->end_date === null) {
+            return [];
+        }
+
+        $this->loadMissing('assignment');
+        $includeSaturday = $this->assignment?->includesSaturday() ?? false;
+        $includeSunday = $this->assignment?->includesSunday() ?? false;
+        $last = $this->end_date->copy()->startOfDay();
+        $days = [];
+        $day = $this->start_date->copy()->startOfDay();
+        while ($day->lte($last)) {
+            if (PlanningHours::countsOnDate($day, $includeSaturday, $includeSunday)) {
+                $days[] = $day->copy();
+            }
+            $day->addDay();
+        }
+
+        if ($days !== []) {
+            return $days;
+        }
+
+        $day = $this->start_date->copy()->startOfDay();
+        while ($day->lte($last)) {
+            $days[] = $day->copy();
+            $day->addDay();
+        }
+
+        return $days;
+    }
+
+    /**
+     * @return list<array{date: string, label: string, value: string, planned: string}>
+     */
+    public function hourDayFields(): array
+    {
+        $stored = is_array($this->day_hours) ? $this->day_hours : [];
+        $this->loadMissing('assignment');
+        $rows = [];
+        foreach ($this->hourDays() as $day) {
+            $key = $day->toDateString();
+            $planned = $this->assignment?->hoursOnDate($day) ?? 0.0;
+            $rows[] = [
+                'date' => $key,
+                'label' => Format::date($day),
+                'value' => array_key_exists($key, $stored)
+                    ? PlanningHours::hourInput((float) $stored[$key])
+                    : '',
+                'planned' => $planned > 0 ? PlanningHours::hoursLabel($planned) : '',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<array{label: string, hours: float}>
+     */
+    public function recordedDayHours(): array
+    {
+        $stored = is_array($this->day_hours) ? $this->day_hours : [];
+        $rows = [];
+        foreach ($this->hourDays() as $day) {
+            $hours = round((float) ($stored[$day->toDateString()] ?? 0), 2);
+            if ($hours <= 0) {
+                continue;
+            }
+            $rows[] = [
+                'label' => Format::date($day),
+                'hours' => $hours,
+            ];
+        }
+
+        return $rows;
     }
 
     public function dateRangeLabel(): string

@@ -230,6 +230,9 @@
         <div class="section">
             <div class="section-title">Prijsafspraak</div>
             <p>Uurprijs {{ \App\Support\Format::money($ticket->hourly_rate) }} / uur</p>
+            @foreach ($ticket->recordedDayHours() as $day)
+                <p>{{ $day['label'] }} {{ \App\Support\Format::hours($day['hours']) }}</p>
+            @endforeach
             @if ($ticket->worked_hours !== null)
                 <p>{{ \App\Support\Format::hours($ticket->worked_hours) }} × {{ \App\Support\Format::money($ticket->hourly_rate) }} = <strong>{{ \App\Support\Format::money($ticket->totalAmount()) }}</strong></p>
             @else

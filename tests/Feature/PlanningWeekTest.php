@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
@@ -373,6 +374,59 @@ class PlanningWeekTest extends TestCase
             ->assertSee('plan-project-numbers', false)
             ->assertSee('plan-project-title', false)
             ->assertSee('11P240897 · 251100081', false);
+    }
+
+    public function test_planning_board_shows_the_opdrachtgever_under_the_project_name(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'Hegeman Bouwgroep']);
+        $project = Project::query()->create([
+            'project_number' => '251000077',
+            'customer_id' => $customer->id,
+            'name' => 'Griftland college',
+            'work_address' => 'Praamgracht 3, 3791LA Soest',
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 100,
+            'status' => 'gepland',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Griftland college',
+                'Hegeman Bouwgroep',
+                'Praamgracht 3, 3791 LA Soest',
+            ]);
+    }
+
+    public function test_planning_board_does_not_repeat_an_opdrachtgever_already_in_the_title(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'Hegeman Bouwgroep']);
+        $project = Project::query()->create([
+            'project_number' => '260200092',
+            'customer_id' => $customer->id,
+            'kind' => ProjectKind::Klein,
+            'name' => 'plinten vervangen',
+            'city' => 'Soest',
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('Hegeman Bouwgroep · Soest')
+            ->assertDontSee('text-nicon-muted">Hegeman Bouwgroep', false);
     }
 
     public function test_planning_shows_percent_complete_per_part_and_for_the_whole_work(): void

@@ -107,16 +107,36 @@ class WorkTicketController extends Controller
         Gate::authorize('recordHours', $workTicket);
         $this->normalizeDecimals($request);
 
-        $data = $request->validate([
-            'worked_hours' => ['required', 'numeric', 'min:0', 'max:10000'],
-        ], [
-            'worked_hours.required' => 'Vul de bestede uren in.',
-            'worked_hours.min' => 'Uren kunnen niet lager zijn dan 0.',
-        ]);
+        if ($request->exists('days')) {
+            $data = $request->validate($this->dayHourRules($workTicket), [
+                'days.*.numeric' => 'Vul de uren per dag als getal in.',
+                'days.*.min' => 'Uren kunnen niet lager zijn dan 0.',
+                'days.*.max' => 'Uren per dag kunnen niet hoger zijn dan 10000.',
+            ]);
+            $dayHours = [];
+            foreach ($workTicket->hourDays() as $day) {
+                $key = $day->toDateString();
+                $value = round((float) ($data['days'][$key] ?? 0), 2);
+                if ($value > 0) {
+                    $dayHours[$key] = $value;
+                }
+            }
+            $workTicket->forceFill([
+                'day_hours' => $dayHours === [] ? null : $dayHours,
+                'worked_hours' => $dayHours === [] ? null : round(array_sum($dayHours), 2),
+            ])->save();
+        } else {
+            $data = $request->validate([
+                'worked_hours' => ['required', 'numeric', 'min:0', 'max:10000'],
+            ], [
+                'worked_hours.required' => 'Vul de bestede uren in.',
+                'worked_hours.min' => 'Uren kunnen niet lager zijn dan 0.',
+            ]);
 
-        $workTicket->forceFill([
-            'worked_hours' => round((float) $data['worked_hours'], 2),
-        ])->save();
+            $workTicket->forceFill([
+                'worked_hours' => round((float) $data['worked_hours'], 2),
+            ])->save();
+        }
 
         $fromVakman = $request->user()?->isVakman() ?? false;
         if ($fromVakman && $workTicket->wasChanged('worked_hours')) {
@@ -176,6 +196,21 @@ class WorkTicketController extends Controller
         }
 
         return (bool) $ticket->include_measurement_form;
+    }
+
+    /**
+     * @return array<string, list<mixed>>
+     */
+    private function dayHourRules(WorkTicket $ticket): array
+    {
+        $rules = [
+            'days' => ['required', 'array'],
+        ];
+        foreach ($ticket->hourDays() as $day) {
+            $rules['days.'.$day->toDateString()] = ['nullable', 'numeric', 'min:0', 'max:10000'];
+        }
+
+        return $rules;
     }
 
     /**
@@ -263,6 +298,13 @@ class WorkTicketController extends Controller
             if ($request->exists($field)) {
                 $merge[$field] = Format::decimalInput($request->input($field));
             }
+        }
+        if ($request->exists('days') && is_array($request->input('days'))) {
+            $days = $request->input('days');
+            foreach ($days as $key => $value) {
+                $days[$key] = Format::decimalInput($value);
+            }
+            $merge['days'] = $days;
         }
         $prices = $request->input('unit_prices', []);
         if (is_array($prices)) {

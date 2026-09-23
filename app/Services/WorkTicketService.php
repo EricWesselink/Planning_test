@@ -29,6 +29,7 @@ class WorkTicketService
     public function __construct(
         private VoucherPriceResolver $prices,
         private FloorLabel $floors,
+        private PlanningBoardService $planning,
     ) {}
 
     /**
@@ -113,6 +114,7 @@ class WorkTicketService
             'document_id' => $project->plattegrond()?->id,
             'work_items' => $draft['workItems'],
             'extra_works' => $this->extraWorkOptions($project),
+            'planned_works' => $this->plannedLooseWorkOptions($project),
             'shop_works' => $this->shopWorkOptions($project, $assignment),
             'has_measurement_form' => $project->measurementForm?->isFilled() ?? false,
             'include_measurement_form' => $project->measurementForm?->isFilled() ?? false,
@@ -495,8 +497,9 @@ class WorkTicketService
      */
     private function extraWorkItemIds(Project $project, array $input, ?WorkerAssignment $assignment): array
     {
+        $looseIds = array_flip($this->plannedLooseWorkItemIds($project));
         $extraIds = $project->workItems
-            ->filter(fn (WorkItem $item): bool => $item->isExtraWork() || (int) $item->work_activity_id > 0)
+            ->filter(fn (WorkItem $item): bool => $item->isExtraWork() || isset($looseIds[(int) $item->id]))
             ->pluck('id')
             ->map(fn (mixed $id): int => (int) $id)
             ->all();
@@ -650,9 +653,6 @@ class WorkTicketService
     private function shopWorkOptions(Project $project, WorkerAssignment $assignment): array
     {
         $fallbackHours = max(1.0, $assignment->plannedHoursValue());
-        $byActivity = $project->workItems
-            ->filter(fn (WorkItem $item): bool => (int) $item->work_activity_id > 0)
-            ->keyBy(fn (WorkItem $item): int => (int) $item->work_activity_id);
 
         if ($project->isWinkel()) {
             return $project->workItems
@@ -676,26 +676,86 @@ class WorkTicketService
                 ->all();
         }
 
-        return WorkActivity::query()
-            ->active()
-            ->ordered()
-            ->with('category')
-            ->get()
-            ->map(function (WorkActivity $activity) use ($byActivity, $fallbackHours): array {
-                $item = $byActivity->get($activity->id);
-                $total = $item !== null
-                    ? $this->extraWorkTotal($item, $fallbackHours)
-                    : ['name' => $activity->name, 'quantity' => $fallbackHours, 'unit' => WorkUnit::Hours];
+        return [];
+    }
 
-                return $this->shopWorkOption(
-                    (int) $activity->id,
-                    $activity->name,
-                    $total,
-                    $item !== null ? (int) $item->id : null,
-                );
+    /**
+     * Planned project work that is not on the drawing and not already listed as extra work.
+     *
+     * @return list<array{id: int, name: string, qty_label: string}>
+     */
+    private function plannedLooseWorkOptions(Project $project): array
+    {
+        $ids = array_flip($this->plannedLooseWorkItemIds($project));
+
+        return $project->workItems
+            ->filter(fn (WorkItem $item): bool => isset($ids[(int) $item->id]))
+            ->sortBy('sort_order')
+            ->map(function (WorkItem $item): array {
+                $total = $this->extraWorkTotal($item, 1.0);
+
+                return [
+                    'id' => (int) $item->id,
+                    'name' => $item->name,
+                    'qty_label' => $this->extraWorkQtyLabel($total),
+                ];
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function plannedLooseWorkItemIds(Project $project): array
+    {
+        if ($project->isWinkel()) {
+            return [];
+        }
+
+        $onRooms = array_flip($this->workItemIdsOnAreas($project));
+        $plannedIds = array_flip($this->plannedWorkItemIds($project));
+
+        return $project->workItems
+            ->filter(fn (WorkItem $item): bool => isset($plannedIds[(int) $item->id]))
+            ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
+            ->reject(fn (WorkItem $item): bool => isset($onRooms[(int) $item->id]))
+            ->map(fn (WorkItem $item): int => (int) $item->id)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function plannedWorkItemIds(Project $project): array
+    {
+        $ids = [];
+        foreach ($this->planning->plannableWorkChoices($project) as $choice) {
+            foreach ($choice['member_ids'] as $id) {
+                $ids[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function workItemIdsOnAreas(Project $project): array
+    {
+        $ids = [];
+        foreach ($project->areas as $area) {
+            foreach ($area->tasks as $task) {
+                $id = (int) $task->work_item_id;
+                if ($id > 0) {
+                    $ids[] = $id;
+                }
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /**
@@ -725,12 +785,24 @@ class WorkTicketService
             return [];
         }
 
+        $allowed = collect($this->shopWorkOptions($project, $assignment))
+            ->pluck('activity_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        if (array_diff($activityIds, $allowed) !== []) {
+            throw ValidationException::withMessages([
+                'shop_work_activity_ids' => 'Kies alleen werkzaamheden die in de planning van dit project staan.',
+            ]);
+        }
+
         $activities = WorkActivity::query()->whereIn('id', $activityIds)->get()->keyBy('id');
         $ids = [];
         foreach ($activityIds as $activityId) {
             $activity = $activities->get($activityId);
             if ($activity === null) {
-                continue;
+                throw ValidationException::withMessages([
+                    'shop_work_activity_ids' => 'Kies alleen werkzaamheden die in de planning van dit project staan.',
+                ]);
             }
             $ids[] = (int) $this->ensureShopWorkItem($project, $activity, $assignment)->id;
         }

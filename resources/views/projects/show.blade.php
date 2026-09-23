@@ -482,6 +482,15 @@
                     </div>
                     <div id="ticket-preview-body" class="ticket-preview hidden" hidden></div>
                     <div class="ticket-extra">
+                        @if (! empty($ticketMode['planned_works']))
+                            <div class="ticket-billing-label">In de planning</div>
+                            @foreach ($ticketMode['planned_works'] as $plannedWork)
+                                <label>
+                                    <input type="checkbox" data-ticket-extra value="{{ $plannedWork['id'] }}">
+                                    {{ $plannedWork['name'] }} · {{ $plannedWork['qty_label'] }}
+                                </label>
+                            @endforeach
+                        @endif
                         <div class="ticket-billing-label">Algemeen werk</div>
                         @forelse ($ticketMode['extra_works'] ?? [] as $extraWork)
                             <label>

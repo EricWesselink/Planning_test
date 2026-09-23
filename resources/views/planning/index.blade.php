@@ -512,6 +512,9 @@
                             $projectBarOffset = $projectHasPeriod ? ($pairedPeriod ? 30 : 16) : 4;
                             $projectHeight = max(28, $projectBarOffset + 4 + ($projectRow['bar_count'] * 24));
                             $projectOver = $canViewLaborCosts && ! empty($projectRow['labor']['hours_over']);
+                            $customerName = trim((string) ($projectRow['customer'] ?? ''));
+                            $showCustomer = $customerName !== ''
+                                && ! str_contains(mb_strtolower((string) $projectRow['title']), mb_strtolower($customerName));
                         @endphp
                         <div class="plan-line plan-line--project{{ $isCompact ? ' plan-line--small' : '' }}{{ $projectOver ? ' plan-line--hour-over' : '' }}" style="min-height: {{ $projectHeight }}px">
                             <div class="plan-frozen">
@@ -526,6 +529,9 @@
                                             @endif
                                             <span class="plan-project-title">{{ $projectRow['title'] }}@if ($isCompact && ! empty($projectRow['hours_label'])) | {{ $projectRow['hours_label'] }}@endif</span>
                                         </a>
+                                        @if ($showCustomer)
+                                            <div class="text-xs font-normal text-nicon-muted">{{ $customerName }}</div>
+                                        @endif
                                         @if (! $isCompact && ! empty($projectRow['labor']['extra_summary']))
                                             <div class="text-xs font-normal text-nicon-muted">{{ $projectRow['labor']['extra_summary'] }}</div>
                                         @endif

@@ -47,14 +47,32 @@
             <h2 style="margin:0 0 6px;font-size:15px">Bestede uren</h2>
             <p style="margin:0 0 10px;color:#5b6570">
                 @if (auth()->user()?->isVakman())
-                    Uurtarief {{ \App\Support\Format::money($ticket->hourly_rate) }}/uur. Vul de uren in en stuur ze terug. De planner maakt daarna een bon om te factureren.
+                    Uurtarief {{ \App\Support\Format::money($ticket->hourly_rate) }}/uur. Vul de uren per dag in en stuur ze terug. De planner maakt daarna een bon om te factureren.
                 @else
-                    Uurtarief {{ \App\Support\Format::money($ticket->hourly_rate) }}/uur. Uren later op deze bon bijwerken.
+                    Uurtarief {{ \App\Support\Format::money($ticket->hourly_rate) }}/uur. Vul de uren per dag in.
                 @endif
             </p>
-            <label for="worked_hours">Uren</label>
-            <input id="worked_hours" type="text" inputmode="decimal" name="worked_hours" value="{{ old('worked_hours', $ticket->worked_hours) }}">
-            <button type="submit" class="primary" style="margin-left:8px">{{ auth()->user()?->isVakman() ? 'Uren terugsturen' : 'Opslaan' }}</button>
+            @php $hourDays = $ticket->hourDayFields(); @endphp
+            @if ($hourDays !== [])
+                @if ($ticket->worked_hours !== null && ! is_array($ticket->day_hours))
+                    <p style="margin:0 0 10px">Opgeslagen totaal {{ \App\Support\Format::hours($ticket->worked_hours) }}. Vul de dagen in; het totaal wordt de som van de dagen.</p>
+                @endif
+                <div class="hours-days">
+                    @foreach ($hourDays as $day)
+                        <label>
+                            <span>{{ $day['label'] }}</span>
+                            @if ($day['planned'] !== '')
+                                <span class="hours-plan">gepland {{ $day['planned'] }}</span>
+                            @endif
+                            <input type="text" inputmode="decimal" name="days[{{ $day['date'] }}]" value="{{ old('days.'.$day['date'], $day['value']) }}" autocomplete="off">
+                        </label>
+                    @endforeach
+                </div>
+            @else
+                <label for="worked_hours">Uren</label>
+                <input id="worked_hours" type="text" inputmode="decimal" name="worked_hours" value="{{ old('worked_hours', $ticket->worked_hours) }}">
+            @endif
+            <button type="submit" class="primary">{{ auth()->user()?->isVakman() ? 'Uren terugsturen' : 'Opslaan' }}</button>
             @if ($showPrices && $ticket->worked_hours !== null)
                 <p style="margin:10px 0 0">Totaal {{ \App\Support\Format::money($ticket->totalAmount()) }}</p>
             @endif
