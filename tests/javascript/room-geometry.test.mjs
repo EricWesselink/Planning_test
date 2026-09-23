@@ -140,6 +140,47 @@ test('room name overlay sits in the room center unless it was dragged', () => {
     assert.equal(dragged.manual, true);
     assert.equal(dragged.x, 0.18);
     assert.equal(dragged.y, 0.27);
+
+    const missing = nameOverlayPoint({
+        marker: { ...area.marker, label_x: null, label_y: null },
+    });
+    assert.equal(missing.manual, false);
+    assert.ok(Math.abs(missing.x - 0.20) < 0.0001);
+    assert.ok(Math.abs(missing.y - 0.30) < 0.0001);
+
+    const corner = nameOverlayPoint({
+        marker: { ...area.marker, label_x: 0, label_y: 0 },
+    });
+    assert.equal(corner.manual, true);
+    assert.equal(corner.x, 0);
+    assert.equal(corner.y, 0);
+});
+
+test('room name overlay is omitted without a position on the drawing', () => {
+    assert.equal(nameOverlayPoint({ name: 'Leer en meer 5', marker: { label_x: null, label_y: null } }), null);
+    assert.equal(nameOverlayPoint({ marker: { label_x: '', label_y: 0.4 } }), null);
+    assert.equal(nameOverlayPoint({
+        marker: {
+            label_x: 1.4,
+            label_y: -0.2,
+        },
+    }), null);
+
+    const recovered = nameOverlayPoint({
+        marker: {
+            label_x: 1.4,
+            label_y: -0.2,
+            polygon: [
+                { x: 0.40, y: 0.50 },
+                { x: 0.60, y: 0.50 },
+                { x: 0.60, y: 0.70 },
+                { x: 0.40, y: 0.70 },
+            ],
+        },
+    });
+    assert.equal(recovered.manual, false);
+    assert.ok(Math.abs(recovered.x - 0.50) < 0.0001);
+    assert.ok(Math.abs(recovered.y - 0.60) < 0.0001);
 });
 
 test('status dots sit under the room name, not at the wide click box', () => {

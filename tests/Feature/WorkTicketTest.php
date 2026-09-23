@@ -195,6 +195,36 @@ class WorkTicketTest extends TestCase
             ->assertDontSee('1u · nacalculatie');
     }
 
+    public function test_opdrachtbon_stores_an_adjusted_planned_quantity(): void
+    {
+        $user = User::factory()->create();
+        $seed = $this->seedJob(zzp: true);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', [
+                'project' => $seed['project'],
+                'bon' => $seed['assignment']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('data-ticket-plan-qty', false)
+            ->assertSee('value="84,00"', false)
+            ->assertSee('m²');
+
+        $this->actingAs($user)
+            ->post(route('work-tickets.store', $seed['assignment']), [
+                'extra_work_item_ids' => [$seed['pvc']->id],
+                'planned_quantities' => [$seed['pvc']->id => '125,50'],
+                'billing_method' => 'hourly',
+                'hourly_rate' => '42.50',
+            ])
+            ->assertRedirect();
+
+        $line = WorkTicket::query()->first()?->lines->first();
+        $this->assertNotNull($line);
+        $this->assertSame(125.5, (float) $line->quantity);
+        $this->assertSame(WorkUnit::SquareMeter, $line->unit);
+    }
+
     public function test_ticket_mode_collapses_project_info_so_the_bon_panel_stays_visible(): void
     {
         $user = User::factory()->create();

@@ -210,6 +210,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::post('/projecten/{project}/opdrachtlijst', [ScreenExcelImportController::class, 'storeOnProject'])->name('projects.screens.store');
     Route::post('/projecten/{project}/plattegrond', [ProjectController::class, 'storePlattegrond'])->name('projects.plattegrond.store');
     Route::get('/projecten/{project}/documenten/{document}', [ProjectController::class, 'document'])->name('projects.documents.show');
+    Route::get('/projecten/{project}/tekening/download', [ProjectController::class, 'downloadDrawing'])->name('projects.drawings.download');
     Route::post('/projecten/{project}/opdrachten', [ProjectController::class, 'storeOrder'])->name('projects.orders.store');
     Route::post('/projecten/{project}/taken/{areaTask}/gereed', [AreaTaskController::class, 'complete'])->name('projects.tasks.complete');
     Route::post('/projecten/{project}/ruimtes/details', [DrawingController::class, 'details'])->name('projects.areas.details');

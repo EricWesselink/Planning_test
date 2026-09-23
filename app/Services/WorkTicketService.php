@@ -359,7 +359,11 @@ class WorkTicketService
                     is_array($input['document_ids'] ?? null) ? $input['document_ids'] : [],
                     $project->documents->pluck('id')->all(),
                 ),
-                'totals' => $this->extraWorkTotals($project, $extraIds, $assignment, $input),
+                'totals' => $this->applyPlannedQuantities(
+                    $this->extraWorkTotals($project, $extraIds, $assignment, $input),
+                    $project,
+                    $input,
+                ),
             ];
         }
         $selectedFloors = [];
@@ -542,7 +546,11 @@ class WorkTicketService
             $base = $this->totalsFor($project, $resolved['area_ids'], $resolved['work_item_ids']);
         }
 
-        $resolved['totals'] = ($base ?? []) + $this->extraWorkTotals($project, $extraIds, $assignment, $input);
+        $resolved['totals'] = $this->applyPlannedQuantities(
+            ($base ?? []) + $this->extraWorkTotals($project, $extraIds, $assignment, $input),
+            $project,
+            $input,
+        );
 
         return $resolved;
     }
@@ -576,6 +584,33 @@ class WorkTicketService
             }
 
             $totals[$itemId] = $this->extraWorkTotal($item, $fallbackHours);
+        }
+
+        return $totals;
+    }
+
+    /**
+     * @param  array<int, array{name: string, quantity: float, unit: WorkUnit}>  $totals
+     * @param  array<string, mixed>  $input
+     * @return array<int, array{name: string, quantity: float, unit: WorkUnit}>
+     */
+    private function applyPlannedQuantities(array $totals, Project $project, array $input): array
+    {
+        $posted = is_array($input['planned_quantities'] ?? null) ? $input['planned_quantities'] : [];
+        foreach ($posted as $itemId => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $itemId = (int) $itemId;
+            if (! isset($totals[$itemId])) {
+                continue;
+            }
+            $item = $project->workItems->firstWhere('id', $itemId);
+            if ($item === null) {
+                continue;
+            }
+            $totals[$itemId]['quantity'] = round((float) $value, 2);
+            $totals[$itemId]['unit'] = $item->isExtraWork() ? WorkUnit::Hours : $item->unit;
         }
 
         return $totals;
@@ -682,7 +717,7 @@ class WorkTicketService
     /**
      * Same groups as the planning board: one row per werkzaamheid, not each product line.
      *
-     * @return list<array{id: int, key: string, name: string, qty_label: string, member_ids: list<int>, type_key: string}>
+     * @return list<array{id: int, key: string, name: string, quantity: float, unit_label: string, qty_label: string, member_ids: list<int>, type_key: string}>
      */
     private function planningChoiceRows(Project $project): array
     {
@@ -713,6 +748,8 @@ class WorkTicketService
                 'id' => (int) $choice['id'],
                 'key' => 'plan:'.$choice['id'],
                 'name' => $choice['name'],
+                'quantity' => $ordered,
+                'unit_label' => $primary->unit->label(),
                 'qty_label' => Format::qty($ordered, $decimals).' '.$primary->unit->label(),
                 'member_ids' => $memberIds,
                 'type_key' => (string) $choice['type_key'],

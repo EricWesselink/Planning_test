@@ -243,11 +243,16 @@
                         <span>{{ $ticketMode['worker_name'] }}</span>
                     </div>
                 @endif
-                <div id="draw-toolbar-extra" class="draw-toolbar-extra">
-                <div class="flex items-center gap-1 min-w-0 overflow-visible">
+                <div class="draw-page-bar">
                     <select id="draw-page" class="border border-nicon-line px-2 py-1 text-sm bg-white min-w-40">
                         <option value="1">Pagina 1</option>
                     </select>
+                    @if (filled($board['drawing']['download_url'] ?? null) && (auth()->user()?->canViewFiles() ?? false))
+                        <a id="draw-download" class="draw-download" href="{{ $board['drawing']['download_url'] }}" download>⬇ Tekening downloaden</a>
+                    @endif
+                </div>
+                <div id="draw-toolbar-extra" class="draw-toolbar-extra">
+                <div class="flex items-center gap-1 min-w-0 overflow-visible">
                     <div id="draw-work" class="draw-work-menu">
                         <button type="button" id="draw-work-toggle" class="draw-work-summary" aria-expanded="false" aria-haspopup="true" aria-controls="draw-work-panel">
                             <span id="draw-work-label">Materialen kiezen</span>
@@ -485,10 +490,20 @@
                         @if (! empty($ticketMode['planned_works']))
                             <div class="ticket-billing-label">In de planning</div>
                             @foreach ($ticketMode['planned_works'] as $plannedWork)
-                                <label>
-                                    <input type="checkbox" data-ticket-plan value="{{ $plannedWork['id'] }}" data-member-ids="{{ implode(',', $plannedWork['member_ids']) }}">
-                                    {{ $plannedWork['name'] }} · {{ $plannedWork['qty_label'] }}
-                                </label>
+                                <div class="ticket-plan-row">
+                                    <label>
+                                        <input type="checkbox" data-ticket-plan value="{{ $plannedWork['id'] }}" data-member-ids="{{ implode(',', $plannedWork['member_ids']) }}">
+                                        <span>{{ $plannedWork['name'] }}</span>
+                                    </label>
+                                    <input
+                                        class="ticket-plan-qty"
+                                        data-ticket-plan-qty
+                                        inputmode="decimal"
+                                        value="{{ \App\Support\Format::qty($plannedWork['quantity'], 2) }}"
+                                        aria-label="Hoeveelheid {{ $plannedWork['name'] }}"
+                                    >
+                                    <span class="ticket-plan-unit">{{ $plannedWork['unit_label'] }}</span>
+                                </div>
                             @endforeach
                         @endif
                         <div class="ticket-billing-label">Algemeen werk</div>

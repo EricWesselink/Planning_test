@@ -239,6 +239,8 @@ class WorkTicketController extends Controller
             'work_item_ids.*' => ['integer'],
             'extra_work_item_ids' => ['nullable', 'array'],
             'extra_work_item_ids.*' => ['integer'],
+            'planned_quantities' => ['nullable', 'array'],
+            'planned_quantities.*' => ['nullable', 'numeric', 'min:0.01'],
             'shop_work_activity_ids' => ['nullable', 'array'],
             'shop_work_activity_ids.*' => ['integer'],
             'general_work' => ['nullable', 'boolean'],
@@ -280,6 +282,8 @@ class WorkTicketController extends Controller
             'floors.required' => 'Kies minstens één verdieping of ruimte.',
             'work_item_ids.required' => 'Kies minstens één werkzaamheid.',
             'work_item_ids.min' => 'Kies minstens één werkzaamheid.',
+            'planned_quantities.*.numeric' => 'Vul de hoeveelheid als getal in.',
+            'planned_quantities.*.min' => 'Vul een hoeveelheid groter dan 0 in.',
             'billing_method.required' => 'Kies hoe deze opdracht wordt afgerekend.',
             'hourly_rate.required' => 'Vul het afgesproken uurtarief in.',
             'fixed_price.required' => 'Vul de afgesproken vaste prijs in.',
@@ -312,6 +316,13 @@ class WorkTicketController extends Controller
                 $prices[$key] = Format::decimalInput($value);
             }
             $merge['unit_prices'] = $prices;
+        }
+        $plannedQuantities = $request->input('planned_quantities', []);
+        if (is_array($plannedQuantities)) {
+            foreach ($plannedQuantities as $key => $value) {
+                $plannedQuantities[$key] = Format::decimalInput($value);
+            }
+            $merge['planned_quantities'] = $plannedQuantities;
         }
         if ($merge !== []) {
             $request->merge($merge);

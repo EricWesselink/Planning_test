@@ -665,10 +665,36 @@ function boot() {
         markersEl.append(mark);
     }
 
+    function overlayAnchor(point) {
+        const x = Number(point?.x);
+        const y = Number(point?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
+            return null;
+        }
+
+        return { x, y };
+    }
+
+    function boxAnchor(box) {
+        const x = Number(box?.x);
+        const y = Number(box?.y);
+        const w = Number(box?.w);
+        const h = Number(box?.h);
+        if (![x, y, w, h].every(Number.isFinite) || !(w > 0) || !(h > 0)) {
+            return null;
+        }
+        if (!(x < 1 && y < 1 && (x + w) > 0 && (y + h) > 0)) {
+            return null;
+        }
+
+        return overlayAnchor({
+            x: Math.min(1, Math.max(0, x + (w / 2))),
+            y: Math.min(1, Math.max(0, y + (h / 2))),
+        });
+    }
+
     function appendNameOverlay(area, box) {
-        const point = nameOverlayPoint(area) || (box
-            ? { x: Number(box.x) + (Number(box.w) / 2), y: Number(box.y) + (Number(box.h) / 2), manual: false }
-            : null);
+        const point = overlayAnchor(nameOverlayPoint(area)) || boxAnchor(box);
         if (!point) {
             return;
         }
@@ -5014,14 +5040,19 @@ function boot() {
     }
 
     function ticketGeneralWorkState() {
-        const extraIds = [
-            ...[...document.querySelectorAll('[data-ticket-extra]:checked')]
-                .map((input) => Number(input.value)),
-            ...[...document.querySelectorAll('[data-ticket-plan]:checked')]
-                .flatMap((input) => String(input.dataset.memberIds || input.value).split(',')),
-        ]
-            .map((id) => Number(id))
+        const extraIds = [...document.querySelectorAll('[data-ticket-extra]:checked')]
+            .map((input) => Number(input.value))
             .filter((id) => Number.isFinite(id) && id > 0);
+        const plannedQuantities = {};
+        document.querySelectorAll('[data-ticket-plan]:checked').forEach((input) => {
+            const id = Number(input.value);
+            if (!Number.isFinite(id) || id <= 0) {
+                return;
+            }
+            extraIds.push(id);
+            const qty = input.closest('.ticket-plan-row')?.querySelector('[data-ticket-plan-qty]')?.value ?? '';
+            plannedQuantities[id] = qty;
+        });
         const shopActivityIds = [
             ...document.querySelectorAll('[data-ticket-shop-activity]:checked'),
         ]
@@ -5034,6 +5065,7 @@ function boot() {
             extraIds,
             shopActivityIds: [...new Set([...shopActivityIds, ...fromFilter])],
             general,
+            plannedQuantities,
         };
     }
 
@@ -5128,6 +5160,9 @@ function boot() {
         });
         (payload.extra_work_item_ids || []).forEach((id) => {
             appendTicketField(form, 'extra_work_item_ids[]', id);
+        });
+        Object.entries(general.plannedQuantities || {}).forEach(([id, qty]) => {
+            appendTicketField(form, `planned_quantities[${id}]`, qty);
         });
         (payload.shop_work_activity_ids || []).forEach((id) => {
             appendTicketField(form, 'shop_work_activity_ids[]', id);

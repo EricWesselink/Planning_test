@@ -634,23 +634,53 @@ export function unionBoxes(boxes) {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
-export function nameOverlayPoint(area) {
-    const marker = area?.marker || {};
-    const labelX = Number(marker.label_x);
-    const labelY = Number(marker.label_y);
-    if (Number.isFinite(labelX) && Number.isFinite(labelY)) {
-        return { x: clamp(labelX), y: clamp(labelY), manual: true };
-    }
-    const box = contourBox(roomVisualContour(area)) || storedJumpTarget(area)?.box;
-    if (!box || !(Number(box.w) > 0) || !(Number(box.h) > 0)) {
+function drawingPoint(x, y) {
+    const px = Number(x);
+    const py = Number(y);
+    if (!Number.isFinite(px) || !Number.isFinite(py) || px < 0 || px > 1 || py < 0 || py > 1) {
         return null;
     }
 
-    return {
-        x: Number(box.x) + (Number(box.w) / 2),
-        y: Number(box.y) + (Number(box.h) / 2),
-        manual: false,
-    };
+    return { x: px, y: py };
+}
+
+function manualLabelPoint(marker) {
+    if (marker?.label_x == null || marker?.label_y == null || marker.label_x === '' || marker.label_y === '') {
+        return null;
+    }
+
+    return drawingPoint(marker.label_x, marker.label_y);
+}
+
+function centerInsideDrawing(box) {
+    const x = Number(box?.x);
+    const y = Number(box?.y);
+    const w = Number(box?.w);
+    const h = Number(box?.h);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) {
+        return null;
+    }
+    if (!(x < 1 && y < 1 && (x + w) > 0 && (y + h) > 0)) {
+        return null;
+    }
+
+    return drawingPoint(
+        Math.min(1, Math.max(0, x + (w / 2))),
+        Math.min(1, Math.max(0, y + (h / 2))),
+    );
+}
+
+export function nameOverlayPoint(area) {
+    const manual = manualLabelPoint(area?.marker);
+    if (manual) {
+        return { ...manual, manual: true };
+    }
+    const center = centerInsideDrawing(contourBox(roomVisualContour(area)) || storedJumpTarget(area)?.box);
+    if (!center) {
+        return null;
+    }
+
+    return { ...center, manual: false };
 }
 
 export function contourBox(contour) {

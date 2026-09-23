@@ -17,6 +17,7 @@ use App\Support\MaterialColor;
 use App\Support\RoomUniqueName;
 use App\Support\WorkColor;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 
 class ProjectBoardService
 {
@@ -54,6 +55,7 @@ class ProjectBoardService
             'drawing' => $drawing ? [
                 'id' => $drawing->id,
                 'url' => route('projects.documents.show', [$project, $drawing]),
+                'download_url' => $this->drawingDownloadUrl($project, $drawing),
                 'name' => $drawing->original_filename,
                 'pdf' => $drawing->isPdf(),
                 'image' => $drawing->isImage(),
@@ -64,6 +66,16 @@ class ProjectBoardService
             'next_snag_number' => (int) $project->snags->max('number') + 1,
             'production' => $this->production($project),
         ];
+    }
+
+    private function drawingDownloadUrl(Project $project, ProjectDocument $drawing): ?string
+    {
+        $path = (string) $drawing->file_path;
+        if ($path === '' || ! Storage::disk('local')->exists($path)) {
+            return null;
+        }
+
+        return route('projects.drawings.download', $project);
     }
 
     public function areaDetail(ProjectArea $area): array

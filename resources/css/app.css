@@ -2445,6 +2445,34 @@ button.plan-labor-toggle:hover {
     font-size: 12px;
 }
 
+.ticket-plan-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.ticket-plan-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.ticket-plan-qty {
+    width: 6.5rem;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    padding: 0.15rem 0.35rem;
+    font-size: 12px;
+    text-align: right;
+}
+
+.ticket-plan-unit {
+    color: var(--color-nicon-muted);
+    white-space: nowrap;
+}
+
 .ticket-extra-hint {
     color: var(--color-nicon-muted);
     font-size: 11px;
@@ -2522,10 +2550,30 @@ button.plan-labor-toggle:hover {
 }
 
 .draw-toolbar-extra,
+.draw-page-bar,
 .draw-pan-tools,
 .draw-zoom-group,
 .draw-legend-items {
     display: contents;
+}
+
+.draw-download {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid var(--color-nicon-line);
+    background: white;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--color-nicon-ink);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.draw-download:hover {
+    background: var(--color-nicon-sand);
 }
 
 .draw-work-qty {
@@ -2726,6 +2774,7 @@ button.plan-labor-toggle:hover {
     left: 0;
     top: 0;
     transform-origin: 0 0;
+    overflow: hidden;
 }
 
 #draw-canvas,
@@ -4755,6 +4804,30 @@ button.plan-labor-toggle:hover {
     #project-board .ticket-mode-bar {
         grid-column: 1 / -1;
         order: 0;
+    }
+
+    #project-board .draw-page-bar {
+        display: flex;
+        flex-wrap: wrap;
+        grid-column: 1 / -1;
+        order: 0;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    #project-board .draw-page-bar #draw-page {
+        flex: 1 1 9rem;
+        min-width: 0;
+        min-height: 44px;
+    }
+
+    #project-board .draw-download {
+        flex: 1 1 auto;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0.45rem 0.7rem;
     }
 
     #project-board .draw-layers {

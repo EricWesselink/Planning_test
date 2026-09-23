@@ -527,6 +527,30 @@ class ProjectController extends Controller
         );
     }
 
+    public function downloadDrawing(Request $request, Project $project): StreamedResponse
+    {
+        Gate::authorize('view', $project);
+        abort_unless($request->user()?->canViewFiles() ?? false, 403);
+
+        $document = $project->plattegrond();
+        $path = (string) $document?->file_path;
+        abort_unless($document instanceof ProjectDocument && $path !== '' && Storage::disk('local')->exists($path), 404);
+
+        return Storage::disk('local')->download(
+            $document->file_path,
+            $this->drawingDownloadName($document),
+            ['Content-Type' => $document->mime_type ?: 'application/octet-stream'],
+        );
+    }
+
+    private function drawingDownloadName(ProjectDocument $document): string
+    {
+        $name = basename(str_replace('\\', '/', (string) $document->original_filename));
+        $name = str_replace(['"', "\r", "\n"], '', $name);
+
+        return $name !== '' ? $name : 'tekening';
+    }
+
     public function template(): StreamedResponse
     {
         Gate::authorize('create', Project::class);
