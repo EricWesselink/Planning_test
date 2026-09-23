@@ -56,8 +56,44 @@ class WorkType
         return $product;
     }
 
+    /**
+     * Activiteit uit de productieomschrijving. Die gaat vóór materiaalsoort
+     * (PVC/Vinyl/Linoleum), zodat profielen en een complete ruimteafwerking
+     * niet bij het vloerleggen worden geboekt.
+     */
+    public static function distinctActivity(string $value): ?string
+    {
+        $flat = mb_strtolower($value);
+        if ($flat === '') {
+            return null;
+        }
+        if (preg_match('/holle hoek|hoekprofiel/u', $flat) === 1) {
+            return 'Holle hoekprofielen';
+        }
+        if (str_contains($flat, 'overgangsprofiel')) {
+            return 'Overgangsprofielen';
+        }
+        if (str_contains($flat, 'corkment')) {
+            return 'Corkment';
+        }
+        if (
+            preg_match('/\boat\b/u', $flat) === 1
+            || str_contains($flat, 'vloer- en wandafwerking')
+            || str_contains($flat, 'vloer en wandafwerking')
+        ) {
+            return 'OAT-ruimte';
+        }
+
+        return null;
+    }
+
     public static function knownType(string $value): ?string
     {
+        $activity = self::distinctActivity($value);
+        if ($activity !== null) {
+            return $activity;
+        }
+
         $flat = mb_strtolower($value);
         if (str_contains($flat, 'gietvloer')) {
             return 'Gietvloer';

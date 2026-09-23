@@ -173,7 +173,11 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/projecten/winkel/beschikbare-vakmannen', [ShopProjectController::class, 'availableWorkers'])->name('projects.winkel.available-workers');
     Route::post('/projecten/winkel', [ShopProjectController::class, 'store'])->name('projects.winkel.store');
     Route::get('/projecten/klein/nieuw', [SmallWorkController::class, 'create'])->name('projects.small.create');
+    Route::match(['post', 'patch'], '/projecten/klein/voorbeeld', [SmallWorkController::class, 'preview'])->name('projects.small.preview');
+    Route::match(['post', 'patch'], '/projecten/klein/voorbeeld.pdf', [SmallWorkController::class, 'previewPdf'])->name('projects.small.preview.pdf');
     Route::post('/projecten/klein', [SmallWorkController::class, 'store'])->name('projects.small.store');
+    Route::match(['post', 'patch'], '/projecten/{project}/klein/voorbeeld', [SmallWorkController::class, 'previewSaved'])->name('projects.small.preview.saved');
+    Route::match(['post', 'patch'], '/projecten/{project}/klein/voorbeeld.pdf', [SmallWorkController::class, 'previewSavedPdf'])->name('projects.small.preview.saved.pdf');
     Route::patch('/projecten/klein/{project}', [SmallWorkController::class, 'update'])->name('projects.small.update');
     Route::post('/projecten/{project}/klein/bijlagen', [SmallWorkController::class, 'storeAttachments'])->name('projects.small.attachments.store');
     Route::delete('/projecten/{project}/klein/bijlagen/{document}', [SmallWorkController::class, 'destroyAttachment'])->name('projects.small.attachments.destroy')->scopeBindings();

@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
+use App\Models\ProjectCalculationLine;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
@@ -763,6 +764,176 @@ class ProjectLaborCalculatorTest extends TestCase
         $this->assertEqualsWithDelta(8.40, $linoleum['budget_unit_price'], 0.001);
         $this->assertNotNull($priming);
         $this->assertNull($priming['budget_unit_price']);
+    }
+
+    public function test_excel_labor_lines_stay_on_their_activity_without_losing_hours(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-07',
+            end: '2026-09-07',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+        );
+        $linoleum = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Marmorette, Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 1314.75,
+            'begrote_uren' => 246.76,
+            'begrote_hoeveelheid' => 1409.77,
+            'uurtarief' => 48,
+            'labor_unit_price' => 8.40,
+            'status' => 'gepland',
+        ]);
+        $linoArt = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Lino Art Urban, Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 0,
+            'begrote_uren' => 191.75,
+            'begrote_hoeveelheid' => 1095.65,
+            'uurtarief' => 48,
+            'labor_unit_price' => 8.40,
+            'status' => 'gepland',
+        ]);
+        $cork = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Corkment',
+            'unit' => 'm2',
+            'ordered_quantity' => 0,
+            'begrote_uren' => 14.86,
+            'begrote_hoeveelheid' => 142.61,
+            'uurtarief' => 48,
+            'labor_unit_price' => 5.00,
+            'status' => 'gepland',
+        ]);
+        $pvc = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Mipolam Planet, 5438, PVC / Vinyl',
+            'unit' => 'm2',
+            'ordered_quantity' => 148.40,
+            'begrote_uren' => 30.13,
+            'begrote_hoeveelheid' => 164.73,
+            'uurtarief' => 48,
+            'labor_unit_price' => 8.78,
+            'status' => 'gepland',
+        ]);
+        $cornerOnVinyl = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Gerflor Mipolam Planet',
+            'unit' => 'm2',
+            'ordered_quantity' => 0,
+            'begrote_uren' => 75.55,
+            'begrote_hoeveelheid' => 55,
+            'uurtarief' => 48,
+            'labor_unit_price' => 65.93,
+            'status' => 'gepland',
+        ]);
+        $oatOnPvc = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Forbo Surestep , kleur n.t.b., PVC / Vinyl',
+            'unit' => 'm2',
+            'ordered_quantity' => 28.96,
+            'begrote_uren' => 45,
+            'begrote_hoeveelheid' => 50,
+            'uurtarief' => 48,
+            'labor_unit_price' => 43.20,
+            'status' => 'gepland',
+        ]);
+        $mat = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Coral Classic, Entreemat',
+            'unit' => 'm2',
+            'ordered_quantity' => 45.33,
+            'begrote_uren' => 6.39,
+            'begrote_hoeveelheid' => 61.28,
+            'uurtarief' => 48,
+            'labor_unit_price' => 5.01,
+            'status' => 'gepland',
+        ]);
+        $profiles = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Overgangsprofielen',
+            'unit' => 'm1',
+            'ordered_quantity' => 0,
+            'begrote_uren' => 1.65,
+            'begrote_hoeveelheid' => 32.09,
+            'uurtarief' => 48,
+            'labor_unit_price' => 2.47,
+            'status' => 'gepland',
+        ]);
+        $priming = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Primen & Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 2484.21,
+            'begrote_uren' => 112.5,
+            'begrote_hoeveelheid' => 2720.15,
+            'uurtarief' => 48,
+            'labor_unit_price' => 1.99,
+            'status' => 'gepland',
+        ]);
+
+        $lines = [
+            [$linoleum, 'Leveren en leggen Gerflor Marmorette 0045', 'm2', 1409.774, 246.76],
+            [$linoArt, 'Leveren en leggen Gerflor Lino Art Urban 0555', 'm2', 1095.649, 191.751],
+            [$cork, 'Corkment onder Gerflor Lino Art Urban 0555 t.p.v. het speellokaal', 'm2', 142.608, 14.855],
+            [$pvc, 'Leveren en leggen Gerflor Mipolam Planet 5438', 'm2', 164.726, 30.133],
+            [$cornerOnVinyl, 'Holle hoek profielen bekleed met Gerflor Mipolam Planet', 'm2', 55, 75.549],
+            [$oatOnPvc, 'leveren en aan brengen complete vloer- en wandafwerking t.p.v. de OAT ruimte', 'm2', 50, 45],
+            [$mat, 'Leveren en leggen schoonloopmat Coral Classic', 'm2', 61.275, 6.394],
+            [$profiles, 'Overgangsprofielen tussen verschillende vloerafwerkingen', 'm1', 32.09, 1.654],
+            [$priming, 'Schuren, primeren en egaliseren', 'm2', 2720.15, 112.5],
+        ];
+        foreach ($lines as $index => [$item, $production, $unit, $quantity, $hours]) {
+            ProjectCalculationLine::query()->create([
+                'project_id' => $project->id,
+                'work_item_id' => $item->id,
+                'row_number' => $index + 1,
+                'source_hash' => 'sluisbuurt',
+                'source_filename' => '11-ericwesselink2.xlsx',
+                'km' => 'L',
+                'mu' => 'U',
+                'production_description' => $production,
+                'unit' => $unit,
+                'quantity' => $quantity,
+                'hours' => $hours,
+                'hourly_rate' => 48,
+                'labor_cost' => round($hours * 48, 2),
+                'is_labor' => true,
+                'match_status' => 'matched',
+            ]);
+        }
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+        $groups = $labor['groups'];
+        $lineHours = round(collect($lines)->sum(fn (array $line): float => round($line[4], 2)), 2);
+
+        $this->assertEqualsWithDelta(438.51, $groups['linoleum|m2']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(8.40, $groups['linoleum|m2']['budget_unit_price'], 0.001);
+        $this->assertEqualsWithDelta(14.86, $groups['corkment|m2']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(5.00, $groups['corkment|m2']['budget_unit_price'], 0.001);
+        $this->assertEqualsWithDelta(30.13, $groups['pvc|m2']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(8.78, $groups['pvc|m2']['budget_unit_price'], 0.001);
+        $this->assertEqualsWithDelta(75.55, $groups['holle hoekprofielen|m2']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(65.93, $groups['holle hoekprofielen|m2']['budget_unit_price'], 0.001);
+        $this->assertEqualsWithDelta(45.0, $groups['oat-ruimte|m2']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(43.20, $groups['oat-ruimte|m2']['budget_unit_price'], 0.001);
+        $this->assertEqualsWithDelta(6.39, $groups['entreemat|m2']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(1.65, $groups['overgangsprofielen|m1']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(2.47, $groups['overgangsprofielen|m1']['budget_unit_price'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $groups['vinyl|m2']['budget_hours'] ?? 0.0, 0.01);
+        $this->assertEqualsWithDelta($lineHours, $labor['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(28.96, (float) $oatOnPvc->fresh()->ordered_quantity, 0.001);
+        $this->assertNull($oatOnPvc->fresh()->begrote_uren);
+        $this->assertNull($cornerOnVinyl->fresh()->begrote_uren);
+
+        $again = app(ProjectLaborCalculator::class)->for($project->fresh());
+        $this->assertEqualsWithDelta($labor['budget_hours'], $again['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(30.13, $again['groups']['pvc|m2']['budget_hours'], 0.01);
+        $this->assertEqualsWithDelta(8.40, (float) $linoleum->fresh()->labor_unit_price, 0.001);
+        $this->assertEqualsWithDelta(2.47, (float) $profiles->fresh()->labor_unit_price, 0.001);
     }
 
     /**

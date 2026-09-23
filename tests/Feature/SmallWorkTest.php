@@ -15,6 +15,7 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkProgressEntry;
+use App\Models\WorkTicket;
 use App\Services\PlanningBoardService;
 use App\Services\SmallWorkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,6 +37,10 @@ class SmallWorkTest extends TestCase
         $this->patch(route('projects.small.update', $this->makeService()), [])->assertRedirect(route('login'));
         $this->get(route('projects.small.werkbon', 1))->assertRedirect(route('login'));
         $this->get(route('projects.small.werkbon.pdf', 1))->assertRedirect(route('login'));
+        $this->post(route('projects.small.preview'), [])->assertRedirect(route('login'));
+        $this->post(route('projects.small.preview.pdf'), [])->assertRedirect(route('login'));
+        $this->post(route('projects.small.preview.saved', 1), [])->assertRedirect(route('login'));
+        $this->post(route('projects.small.preview.saved.pdf', 1))->assertRedirect(route('login'));
         $this->post(route('projects.small.attachments.store', 1))->assertRedirect(route('login'));
         $this->delete(route('projects.small.attachments.destroy', [1, 1]))->assertRedirect(route('login'));
     }
@@ -55,6 +60,14 @@ class SmallWorkTest extends TestCase
             'hours' => 4,
         ])->assertForbidden();
         $this->actingAs($user)->post(route('projects.small.attachments.store', $project))->assertForbidden();
+        $this->actingAs($user)->post(route('projects.small.preview'), $this->payload())->assertForbidden();
+        $this->actingAs($user)->post(route('projects.small.preview.saved', $project), [
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-11',
+            'hours' => 4,
+        ])->assertForbidden();
     }
 
     public function test_planner_creates_a_compact_service_row_on_the_planning_board(): void
@@ -2173,6 +2186,14 @@ class SmallWorkTest extends TestCase
 
         $this->actingAs($user)->get(route('projects.small.werkbon', $project))->assertNotFound();
         $this->actingAs($user)->get(route('projects.small.werkbon.pdf', $project))->assertNotFound();
+        $this->actingAs($user)->post(route('projects.small.preview.saved', $project), [
+            'customer_name' => 'Gemeente',
+            'description' => 'plint herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+        ])->assertNotFound();
+        $this->assertSame('Nieuwbouw', $project->fresh()->name);
     }
 
     #[DataProvider('rolesThatMayCreate')]
@@ -2200,6 +2221,290 @@ class SmallWorkTest extends TestCase
             'service' => [SmallWorkType::Service, ProjectKind::Service],
             'klein' => [SmallWorkType::Klein, ProjectKind::Klein],
         ];
+    }
+
+    public function test_preview_of_unsaved_klein_werk_shows_the_bon_without_creating_records(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-banen');
+        $plinten = $this->floorActivity('plinten');
+        $instruction = 'PVC leggen in de woonkamer, hal en keuken. Plinten wit RAL 9010, naden dichtzetten.';
+        $payload = [
+            'type' => SmallWorkType::Klein->value,
+            'customer_name' => 'Gemeente Deventer',
+            'contact_name' => 'Jan de Vries',
+            'contact_phone' => '06 12345678',
+            'contact_role' => ContactRole::Uitvoerder->value,
+            'description' => 'plint <script>alert(1)</script>',
+            'work_address' => 'Keizerstraat 12, 7411 HD Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+            'work_number' => '2026-041',
+            'work_activity_ids' => [$pvc->id, $plinten->id],
+            'activity_quantities' => [
+                $pvc->id => '35',
+                $plinten->id => '22',
+            ],
+            'activity_notes' => [
+                $pvc->id => $instruction,
+                $plinten->id => 'wit RAL 9010',
+            ],
+        ];
+        $projects = Project::query()->count();
+        $customers = Customer::query()->count();
+        $assignments = WorkerAssignment::query()->count();
+
+        $this->actingAs($user)
+            ->get(route('projects.small.create'))
+            ->assertOk()
+            ->assertSee('Bon bekijken')
+            ->assertSee(route('projects.small.preview'), false);
+
+        $preview = $this->actingAs($user)
+            ->post(route('projects.small.preview'), $payload);
+
+        $preview->assertOk()
+            ->assertViewIs('work-tickets.small')
+            ->assertSee('WERKBON')
+            ->assertSee('Werknummer 2026-041')
+            ->assertSee('Klant Gemeente Deventer')
+            ->assertSee('Uitvoerder Jan de Vries')
+            ->assertSee('Tel. 06 12345678')
+            ->assertSee('Keizerstraat 12, 7411 HD Deventer')
+            ->assertSee('plint')
+            ->assertSee('PVC banen — '.$instruction)
+            ->assertSee('35 m²')
+            ->assertSee('Plinten — wit RAL 9010')
+            ->assertSee('22 m¹')
+            ->assertSee('4 u')
+            ->assertSee('Albert')
+            ->assertSee('08-09-2026')
+            ->assertSee('← Terug', false)
+            ->assertSee('Download PDF')
+            ->assertSee('Afdrukken')
+            ->assertSee(route('projects.small.preview.pdf'), false)
+            ->assertDontSee('<script>alert(1)</script>', false);
+        $this->assertSame($projects, Project::query()->count());
+        $this->assertSame($customers, Customer::query()->count());
+        $this->assertSame($assignments, WorkerAssignment::query()->count());
+        $this->assertSame(0, WorkTicket::query()->count());
+
+        $pdf = $this->actingAs($user)->post(route('projects.small.preview.pdf'), $payload);
+        $pdf->assertOk();
+        $this->assertSame('%PDF', substr($pdf->getContent(), 0, 4));
+        $this->assertSame($projects, Project::query()->count());
+        $this->assertSame(0, WorkTicket::query()->count());
+    }
+
+    public function test_saved_klein_werk_preview_matches_the_planning_werkbon(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-banen');
+        $egaliseren = $this->floorActivity('egaliseren');
+        $plinten = $this->floorActivity('plinten');
+        $instruction = 'PVC leggen in woonkamer en hal, inclusief ondervloer.';
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Griftland college',
+            'contact_name' => 'Piet Jansen',
+            'contact_phone' => '0570 123456',
+            'description' => 'vloer herstellen',
+            'work_address' => 'Straat 12, 7411 HD Soest',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'worker_id' => $worker->id,
+            'work_number' => '2026-088',
+            'work_activity_ids' => [$pvc->id, $egaliseren->id, $plinten->id],
+            'activity_quantities' => [
+                $pvc->id => '35',
+                $egaliseren->id => '35',
+                $plinten->id => '22',
+            ],
+            'activity_notes' => [
+                $pvc->id => $instruction,
+                $egaliseren->id => 'ondergrond voor PVC',
+                $plinten->id => 'wit RAL 9010',
+            ],
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Service)->first();
+        $this->assertNotNull($project);
+        $assignment = WorkerAssignment::query()->where('project_id', $project->id)->first();
+        $this->assertNotNull($assignment);
+
+        $this->actingAs($user)
+            ->get(route('projects.show', $project))
+            ->assertOk()
+            ->assertSee('Bon bekijken')
+            ->assertSee(route('projects.small.preview.saved', $project), false);
+
+        $this->actingAs($user)
+            ->get(route('work-tickets.create', $assignment))
+            ->assertRedirect(route('projects.small.werkbon', $project));
+
+        $planning = $this->actingAs($user)->get(route('projects.small.werkbon', $project));
+        $preview = $this->actingAs($user)->post(
+            route('projects.small.preview.saved', $project),
+            $this->savedPreviewPayload($project),
+        );
+
+        $planning->assertOk()->assertViewIs('work-tickets.small');
+        $preview->assertOk()
+            ->assertViewIs('work-tickets.small')
+            ->assertSee('← Terug', false)
+            ->assertSee('Download PDF')
+            ->assertSee('Afdrukken');
+        $this->assertSame($this->ticketPage($planning->getContent()), $this->ticketPage($preview->getContent()));
+        $this->assertSame(1, Project::query()->where('kind', ProjectKind::Service)->count());
+    }
+
+    public function test_preview_shows_a_changed_work_instruction_before_it_is_saved(): void
+    {
+        $user = User::factory()->create();
+        $pvc = $this->floorActivity('pvc-banen');
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Klein->value,
+            'customer_name' => 'Gemeente Deventer',
+            'description' => 'vloer herstellen',
+            'work_address' => 'Keizerstraat 12, 7411 HD Deventer',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'work_number' => '2026-090',
+            'work_activity_ids' => [$pvc->id],
+            'activity_quantities' => [$pvc->id => '18'],
+            'activity_notes' => [$pvc->id => 'oude instructie'],
+        ])->assertRedirect();
+        $project = Project::query()->where('kind', ProjectKind::Klein)->first();
+        $this->assertNotNull($project);
+        $replacement = 'Nieuwe werkinstructie: eerst stofvrij maken, daarna PVC in de hal leggen.';
+
+        $this->actingAs($user)
+            ->post(route('projects.small.preview.saved', $project), [
+                ...$this->savedPreviewPayload($project),
+                'activity_notes' => [$pvc->id => $replacement],
+            ])
+            ->assertOk()
+            ->assertSee('PVC banen — '.$replacement)
+            ->assertDontSee('oude instructie');
+
+        $this->assertSame('oude instructie', $project->workItems()->where('name', 'PVC banen')->value('notes'));
+        $this->actingAs($user)
+            ->get(route('projects.small.werkbon', $project))
+            ->assertOk()
+            ->assertSee('PVC banen — oude instructie')
+            ->assertDontSee($replacement);
+
+        $this->actingAs($user)
+            ->patch(route('projects.small.update', $project), [
+                ...$this->savedPreviewPayload($project),
+                'activity_notes' => [$pvc->id => $replacement],
+            ])
+            ->assertRedirect();
+
+        $saved = $this->actingAs($user)->get(route('projects.small.werkbon', $project->fresh()));
+        $preview = $this->actingAs($user)->post(
+            route('projects.small.preview.saved', $project),
+            $this->savedPreviewPayload($project->fresh()),
+        );
+        $saved->assertOk()->assertSee('PVC banen — '.$replacement);
+        $preview->assertOk()->assertSee('PVC banen — '.$replacement);
+        $this->assertSame($this->ticketPage($saved->getContent()), $this->ticketPage($preview->getContent()));
+    }
+
+    public function test_extra_work_preview_shows_the_job_without_saving_it(): void
+    {
+        $user = User::factory()->create();
+        $parent = $this->makeConstruction('Gezondheidscentrum Laren');
+        $items = $parent->workItems()->count();
+
+        $this->actingAs($user)
+            ->post(route('projects.small.preview'), [
+                'type' => SmallWorkType::Extra->value,
+                'project_id' => $parent->id,
+                'description' => 'extra egaliseren',
+                'date' => '2026-09-09',
+                'hours' => 4,
+                'lines' => [
+                    ['name' => 'Egaliseren', 'quantity' => '12'],
+                ],
+            ])
+            ->assertOk()
+            ->assertViewIs('work-tickets.small')
+            ->assertSee('extra egaliseren')
+            ->assertSee('Egaliseren')
+            ->assertSee('12 m²')
+            ->assertSee('4 u')
+            ->assertSee('Gemeente');
+
+        $this->assertSame($items, $parent->workItems()->count());
+        $this->assertSame(0, $parent->workItems()->where('is_extra_work', true)->count());
+        $this->assertSame(1, Project::query()->count());
+    }
+
+    public function test_back_from_the_bon_preview_restores_the_form(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post(route('projects.small.preview'), [
+                'type' => SmallWorkType::Service->value,
+                'customer_name' => 'Gemeente Deventer',
+                'description' => 'plint herstellen',
+                'work_address' => 'Keizerstraat 12, 7411 HD Deventer',
+                'date' => '2026-09-08',
+                'hours' => 4,
+                'work_number' => '2026-041',
+            ])
+            ->assertOk()
+            ->assertSee(route('projects.small.create', ['terug' => 1]), false);
+
+        $this->actingAs($user)
+            ->get(route('projects.small.create', ['terug' => 1]))
+            ->assertOk()
+            ->assertSee('value="Gemeente Deventer"', false)
+            ->assertSee('value="plint herstellen"', false)
+            ->assertSee('value="Keizerstraat 12, 7411 HD Deventer"', false)
+            ->assertSee('value="2026-041"', false);
+
+        $this->assertSame(0, Project::query()->count());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function savedPreviewPayload(Project $project): array
+    {
+        $project->loadMissing(['customer', 'workActivities', 'workItems']);
+        $hoursItem = $project->workItems->first(fn (WorkItem $item): bool => $item->work_activity_id === null);
+        $hours = $hoursItem?->begrote_uren !== null ? (int) round((float) $hoursItem->begrote_uren) : 4;
+
+        return [
+            'customer_name' => $project->customer?->name,
+            'contact_name' => $project->contact_name,
+            'contact_phone' => $project->contact_phone,
+            'contact_role' => $project->contact_role,
+            'description' => $project->name,
+            'work_address' => $project->nawLine(),
+            'date' => $project->planned_start_date?->toDateString(),
+            'hours' => $hours,
+            'work_number' => $project->project_number,
+            'work_activity_ids' => $project->workActivities->pluck('id')->all(),
+            'activity_quantities' => $project->workActivities->mapWithKeys(
+                fn (WorkActivity $activity): array => [$activity->id => $activity->pivot?->quantity]
+            )->all(),
+            'activity_notes' => $project->workActivities->mapWithKeys(
+                fn (WorkActivity $activity): array => [$activity->id => $activity->pivot?->notes]
+            )->all(),
+        ];
+    }
+
+    private function ticketPage(string $html): string
+    {
+        $this->assertSame(1, preg_match('/<div class="ticket-page">[\s\S]*<div class="foot">[\s\S]*?<\/div>\s*<\/div>/', $html, $match));
+
+        return preg_replace('/\s+/', ' ', $match[0]) ?? $match[0];
     }
 
     /**

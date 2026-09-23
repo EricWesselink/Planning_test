@@ -249,7 +249,7 @@ class ProjectController extends Controller
             ->with('warnings', $result['warnings']);
     }
 
-    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, ShopOrderFinance $orderFinance, WorkTicketService $tickets, PlanningFitService $fit, SourceDocumentService $sourceDocuments, MeasurementFormService $measurements): View
+    public function show(Request $request, Project $project, ProjectBoardService $board, RoomWorkSetup $setup, ProjectLaborCalculator $labor, ShopOrderFinance $orderFinance, WorkTicketService $tickets, PlanningFitService $fit, SourceDocumentService $sourceDocuments, MeasurementFormService $measurements, SmallWorkService $smallWork): View
     {
         Gate::authorize('view', $project);
 
@@ -289,6 +289,7 @@ class ProjectController extends Controller
         }
 
         if ($project->isSmallWork()) {
+            $smallWork->restoreReturnedForm($request);
             $project->load(['customer', 'workItems', 'assignments.worker', 'documents', 'workActivities']);
             $keepIds = $project->workActivities
                 ->pluck('id')

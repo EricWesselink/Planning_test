@@ -9,6 +9,7 @@ use App\Models\ProjectDocument;
 use App\Models\User;
 use App\Models\WorkItem;
 use App\Services\Meetstaat\MaterialIdentity;
+use App\Support\WorkType;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -210,6 +211,10 @@ class CalculationImportService
      */
     public function linkOpenLaborQuantities(Project $project): void
     {
+        $project->load(['calculationLines', 'workItems']);
+        $this->alignDistinctLaborActivities($project);
+        $project->unsetRelation('calculationLines');
+        $project->unsetRelation('workItems');
         $project->load(['calculationLines', 'workItems']);
         $lines = $project->calculationLines->sortBy('row_number')->values();
         if ($lines->isEmpty()) {
@@ -627,6 +632,93 @@ class CalculationImportService
         return $created;
     }
 
+    private function alignDistinctLaborActivities(Project $project): void
+    {
+        $touched = [];
+        foreach ($project->calculationLines as $line) {
+            if (! $line->is_labor) {
+                continue;
+            }
+            $activity = WorkType::distinctActivity((string) $line->production_description);
+            if ($activity === null) {
+                continue;
+            }
+            $current = $line->work_item_id === null
+                ? null
+                : $project->workItems->firstWhere('id', $line->work_item_id);
+            if ($current instanceof WorkItem && $this->itemRepresentsActivity($current, $activity)) {
+                continue;
+            }
+
+            $target = $this->workItemFor($project, $activity, $this->storedLinePayload($line), exactOnly: true);
+            if ($current instanceof WorkItem) {
+                $touched[] = (int) $current->id;
+            }
+            $line->work_item_id = $target->id;
+            $line->work_match_key = mb_strtolower($activity);
+            $line->work_match_label = $activity;
+            $line->match_status = 'matched';
+            $line->save();
+            $touched[] = (int) $target->id;
+        }
+
+        if ($touched === []) {
+            return;
+        }
+
+        $this->rebuildBudgetsFromLaborLines($project, array_values(array_unique($touched)));
+    }
+
+    private function itemRepresentsActivity(WorkItem $item, string $activity): bool
+    {
+        if (strcasecmp(trim($item->name), $activity) === 0) {
+            return true;
+        }
+
+        $known = WorkType::knownType($item->name);
+
+        return $known !== null && strcasecmp($known, $activity) === 0;
+    }
+
+    /**
+     * @param  list<int>  $itemIds
+     */
+    private function rebuildBudgetsFromLaborLines(Project $project, array $itemIds): void
+    {
+        $project->load(['calculationLines', 'workItems']);
+        foreach ($itemIds as $itemId) {
+            $item = $project->workItems->firstWhere('id', $itemId);
+            if (! $item instanceof WorkItem) {
+                continue;
+            }
+            $lines = $project->calculationLines
+                ->where('work_item_id', $item->id)
+                ->where('is_labor', true);
+            if ($lines->isEmpty()) {
+                $item->forceFill([
+                    'begrote_uren' => null,
+                    'begrote_hoeveelheid' => null,
+                    'labor_unit_price' => null,
+                ])->save();
+
+                continue;
+            }
+
+            $hours = round((float) $lines->sum('hours'), 2);
+            $quantity = $this->linkedQuantityFor($project, $item);
+            $rates = $lines->pluck('hourly_rate')->filter(fn ($rate) => $rate !== null)->map(fn ($rate) => (float) $rate)->unique()->values();
+            $item->begrote_uren = $hours;
+            if ($quantity !== null) {
+                $item->begrote_hoeveelheid = $quantity;
+            }
+            if ($item->uurtarief === null && $rates->count() === 1) {
+                $item->uurtarief = (float) $rates->first();
+            }
+            $item->labor_unit_price = $item->calculatedLaborUnitPrice();
+            $item->save();
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -675,12 +767,17 @@ class CalculationImportService
     /**
      * @param  array<string, mixed>  $line
      */
-    private function workItemFor(Project $project, string $workName, array $line): WorkItem
+    private function workItemFor(Project $project, string $workName, array $line, bool $exactOnly = false): WorkItem
     {
         $project->loadMissing('workItems');
         foreach ($project->workItems as $item) {
-            if (strcasecmp($item->name, $workName) === 0
-                || $this->identity->sharesIdentity($item->name, $workName)
+            if (strcasecmp($item->name, $workName) === 0) {
+                return $item;
+            }
+            if ($exactOnly) {
+                continue;
+            }
+            if ($this->identity->sharesIdentity($item->name, $workName)
                 || $this->identity->sharesIdentity($workName, $item->name)) {
                 return $item;
             }

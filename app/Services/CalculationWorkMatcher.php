@@ -24,15 +24,20 @@ class CalculationWorkMatcher
         $catalog = $this->catalogNames($names, $context['source_products'] ?? []);
         $materials = $this->materialLabels($context['materials'] ?? $context['line']['context_materials'] ?? []);
         $line = $context['line'] ?? [];
+        $production = trim((string) ($line['production_description'] ?? ''));
+        if ($production === '') {
+            $production = $description;
+        }
+        $activity = WorkType::distinctActivity($production);
+        if ($activity !== null) {
+            return $this->result('matched', $activity, [$activity]);
+        }
+
         $needles = $this->explicitNeedles($description, $line, $materials);
         $combined = mb_strtolower(trim($description.' '.implode(' ', $needles).' '.implode(' ', $materials)));
 
         if ($this->isPreparation($combined) && ! $this->isFloorCovering($combined)) {
             return $this->result('matched', RoomWorkSetup::PRIMEN_EGALISEREN, [RoomWorkSetup::PRIMEN_EGALISEREN]);
-        }
-
-        if (str_contains($combined, 'overgangsprofiel')) {
-            return $this->result('matched', 'Overgangsprofielen', ['Overgangsprofielen']);
         }
 
         $fromNeedles = $this->uniqueFromNeedles($needles, $this->identityCatalog($catalog));
@@ -108,7 +113,11 @@ class CalculationWorkMatcher
                 return $this->result('matched', $suggested, [$suggested]);
             }
             if (count($candidates) > 1) {
-                return $this->result('review', null, $candidates);
+                $specific = $this->uniqueProductHit($description, $candidates);
+
+                return $specific !== null
+                    ? $this->result('matched', $specific, [$specific])
+                    : $this->result('review', null, $candidates);
             }
         }
 
@@ -126,7 +135,11 @@ class CalculationWorkMatcher
             return $this->result('matched', $candidates[0], $candidates);
         }
         if (count($candidates) > 1) {
-            return $this->result('review', null, $candidates);
+            $specific = $this->uniqueProductHit($description, $candidates);
+
+            return $specific !== null
+                ? $this->result('matched', $specific, [$specific])
+                : $this->result('review', null, $candidates);
         }
 
         return $this->result('review', null, []);
@@ -207,6 +220,33 @@ class CalculationWorkMatcher
         }
 
         return array_values(array_unique($typeMatches));
+    }
+
+    /**
+     * @param  list<string>  $candidates
+     */
+    private function uniqueProductHit(string $description, array $candidates): ?string
+    {
+        $flat = mb_strtolower($description);
+        $tokens = ['marmorette', 'marmoleum', 'lino art', 'mipolam planet', 'mipolam', 'surestep', 'coral classic', 'coral', 'corkment'];
+        $present = array_values(array_filter($tokens, fn (string $token): bool => str_contains($flat, $token)));
+        if ($present === []) {
+            return null;
+        }
+
+        $hits = [];
+        foreach ($candidates as $candidate) {
+            $candidateFlat = mb_strtolower($candidate);
+            foreach ($present as $token) {
+                if (str_contains($candidateFlat, $token)) {
+                    $hits[] = $candidate;
+                    break;
+                }
+            }
+        }
+        $hits = array_values(array_unique($hits));
+
+        return count($hits) === 1 ? $hits[0] : null;
     }
 
     private function sameWork(string $name, string $suggested): bool

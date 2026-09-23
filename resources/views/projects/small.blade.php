@@ -98,6 +98,9 @@
         <div class="flex flex-wrap gap-2">
             @if ($canUpdate)
                 <button type="submit" class="bg-nicon-orange px-4 py-2 text-white">Opslaan</button>
+                <button type="submit" formaction="{{ route('projects.small.preview.saved', $project) }}" class="border border-nicon-line bg-white px-4 py-2">Bon bekijken</button>
+            @else
+                <a href="{{ route('projects.small.werkbon', $project) }}" class="border border-nicon-line px-4 py-2">Bon bekijken</a>
             @endif
             <a href="{{ route('planning', ['week' => $project->planned_start_date?->startOfWeek(\Carbon\Carbon::MONDAY)?->toDateString(), 'project_id' => $project->id]) }}" class="{{ $canUpdate ? 'border border-nicon-line px-4 py-2' : 'inline-block bg-nicon-orange px-4 py-2 text-white' }}">Open planning</a>
         </div>

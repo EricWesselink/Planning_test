@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\CalculationWorkMatcher;
 use App\Services\RoomWorkSetup;
+use App\Support\WorkType;
 use Tests\TestCase;
 
 class CalculationWorkMatcherTest extends TestCase
@@ -142,5 +143,45 @@ class CalculationWorkMatcherTest extends TestCase
 
         $this->assertSame('matched', $matched['status']);
         $this->assertSame('Marmoleum Real, 3120 rosato, Linoleum', $matched['work_name']);
+    }
+
+    public function test_links_sluisbuurt_labor_lines_by_production_description(): void
+    {
+        $matcher = app(CalculationWorkMatcher::class);
+        $catalog = [
+            'Marmorette, Linoleum',
+            'Lino Art Urban, Linoleum',
+            'Mipolam Planet, 5438, PVC / Vinyl',
+            'Forbo Surestep , kleur n.t.b., PVC / Vinyl',
+            'Coral Classic, Entreemat',
+        ];
+        $mipolam = [['label' => 'Gerflor Mipolam Planet']];
+        $surestep = [['label' => 'Forbo surestep']];
+
+        $marmorette = $matcher->match('Leveren en leggen Gerflor Marmorette 0045', $catalog);
+        $lino = $matcher->match('Leveren en leggen Gerflor Lino Art Urban 0555', $catalog);
+        $cork = $matcher->match('Corkment onder Gerflor Lino Art Urban 0555 t.p.v. het speellokaal', $catalog, [
+            'materials' => [['label' => 'Lino Art Urban, Linoleum']],
+        ]);
+        $floor = $matcher->match('Leveren en leggen Gerflor Mipolam Planet 5438', $catalog, [
+            'materials' => $mipolam,
+        ]);
+        $corner = $matcher->match('Holle hoek profielen bekleed met Gerflor Mipolam Planet', $catalog, [
+            'materials' => $mipolam,
+        ]);
+        $oat = $matcher->match('leveren en aan brengen complete vloer- en wandafwerking t.p.v. de OAT ruimte', $catalog, [
+            'materials' => $surestep,
+        ]);
+        $mat = $matcher->match('Leveren en leggen schoonloopmat Coral Classic', $catalog);
+
+        $this->assertSame('Linoleum', WorkType::knownType((string) $marmorette['work_name']));
+        $this->assertSame('Linoleum', WorkType::knownType((string) $lino['work_name']));
+        $this->assertSame('Linoleum', WorkType::knownType('Lino Art Urban op kurk, Linoleum'));
+        $this->assertSame('Corkment', $cork['work_name']);
+        $this->assertSame('PVC', WorkType::knownType((string) $floor['work_name']));
+        $this->assertNotSame('Holle hoekprofielen', $floor['work_name']);
+        $this->assertSame('Holle hoekprofielen', $corner['work_name']);
+        $this->assertSame('OAT-ruimte', $oat['work_name']);
+        $this->assertSame('Entreemat', WorkType::knownType((string) $mat['work_name']));
     }
 }

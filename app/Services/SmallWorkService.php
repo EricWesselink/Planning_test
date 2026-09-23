@@ -20,6 +20,8 @@ use App\Models\WorkProgressEntry;
 use App\Support\PlanningHours;
 use App\Support\WorkAddress;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -183,6 +185,376 @@ class SmallWorkService
 
             return $project->fresh(['customer', 'workItems', 'assignments', 'documents', 'workActivities']) ?? $project;
         });
+    }
+
+    /**
+     * In-memory project for a bon preview. Nothing is inserted or updated.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function draft(array $data, ?Project $existing = null): Project
+    {
+        if ($existing instanceof Project) {
+            abort_unless($existing->isSmallWork(), 404);
+
+            return $this->draftFromSaved($existing, $data);
+        }
+
+        $type = SmallWorkType::from($data['type']);
+        if ($type->attachesToExistingProject()) {
+            return $this->draftAttached($data);
+        }
+
+        return $this->draftStandalone($type, $data);
+    }
+
+    public function rememberReturnedForm(Request $request): void
+    {
+        session([
+            'small_work_form_return' => $request->except(['_token', '_method', 'attachments']),
+        ]);
+    }
+
+    public function restoreReturnedForm(Request $request): void
+    {
+        if (! $request->boolean('terug')) {
+            return;
+        }
+
+        $input = session()->pull('small_work_form_return');
+        if (is_array($input)) {
+            session()->flashInput($input);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function draftStandalone(SmallWorkType $type, array $data): Project
+    {
+        $hours = PlanningHours::snapHours((float) $data['hours']);
+        $date = Carbon::parse($data['date'])->toDateString();
+        $address = $this->addressAttributes($data);
+        $description = trim((string) $data['description']);
+        $workNumber = trim((string) ($data['work_number'] ?? ''));
+        $project = new Project([
+            'project_number' => $workNumber !== '' ? $workNumber : $this->intake->nextProjectNumber(),
+            'name' => $description,
+            ...$address,
+            'planned_start_date' => $date,
+            'planned_end_date' => $date,
+            'status' => ProjectStatus::Gepland,
+            'kind' => $type->projectKind(),
+            'basis_uurtarief' => SmallWorkType::HOURLY_RATE,
+            ...$this->contactAttributes($data),
+        ]);
+        $customer = new Customer([
+            'name' => trim((string) $data['customer_name']),
+            'city' => $address['city'] ?? null,
+        ]);
+
+        return $this->presentDraft(
+            $project,
+            $customer,
+            $this->draftWorkItems($project, $data, $description, $hours, $date),
+            $this->draftAssignments($project, $data, $date, $hours),
+            new EloquentCollection,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function draftFromSaved(Project $existing, array $data): Project
+    {
+        $existing->loadMissing(['customer', 'documents']);
+        $hours = PlanningHours::snapHours((float) $data['hours']);
+        $date = Carbon::parse($data['date'])->toDateString();
+        $address = $this->addressAttributes($data);
+        $description = trim((string) $data['description']);
+        $workNumber = trim((string) ($data['work_number'] ?? ''));
+        $project = $existing->replicate();
+        $project->id = $existing->id;
+        $project->fill([
+            'name' => $description,
+            ...$address,
+            'planned_start_date' => $date,
+            'planned_end_date' => $date,
+            'project_number' => $workNumber !== '' ? $workNumber : $existing->project_number,
+            'basis_uurtarief' => SmallWorkType::HOURLY_RATE,
+            ...$this->contactAttributes($data),
+        ]);
+        $customer = new Customer([
+            'name' => trim((string) $data['customer_name']),
+            'city' => $address['city'] ?? null,
+        ]);
+        if ($existing->customer !== null) {
+            $customer->id = $existing->customer->id;
+        }
+
+        return $this->presentDraft(
+            $project,
+            $customer,
+            $this->draftWorkItems($project, $data, $description, $hours, $date),
+            $this->copiedAssignments($existing, $date, $hours),
+            $existing->documents,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function draftAttached(array $data): Project
+    {
+        $parent = Project::query()->with(['customer', 'documents'])->findOrFail($data['project_id']);
+        $hours = PlanningHours::snapHours((float) $data['hours']);
+        $date = Carbon::parse($data['date'])->toDateString();
+        $klaar = filled($data['klaar_date'] ?? null)
+            ? Carbon::parse((string) $data['klaar_date'])->toDateString()
+            : $date;
+        $description = trim((string) $data['description']);
+        $project = new Project([
+            'project_number' => $parent->project_number,
+            'name' => $description,
+            'address' => $parent->address,
+            'postal_code' => $parent->postal_code,
+            'city' => $parent->city,
+            'work_address' => $parent->work_address,
+            'contact_name' => $parent->contact_name,
+            'contact_phone' => $parent->contact_phone,
+            'contact_role' => $parent->contact_role,
+            'planned_start_date' => $date,
+            'planned_end_date' => $klaar,
+            'status' => ProjectStatus::Gepland,
+            'kind' => $parent->kind,
+            'basis_uurtarief' => SmallWorkType::HOURLY_RATE,
+        ]);
+        $project->id = $parent->id;
+        $items = new EloquentCollection([
+            $this->makeHoursItem($project, $description, $hours),
+        ]);
+        $sort = 2;
+        foreach ($this->extraLinesFrom($data) as $line) {
+            $items->push(new WorkItem([
+                'name' => $line['name'],
+                'unit' => WorkUnit::SquareMeter,
+                'ordered_quantity' => $line['quantity'],
+                'work_activity_id' => $sort,
+                'sort_order' => $sort,
+                'status' => 'gepland',
+                'planned_start_date' => $date,
+                'planned_end_date' => $klaar,
+            ]));
+            $sort++;
+        }
+
+        return $this->presentDraft(
+            $project,
+            $parent->customer ?? new Customer(['name' => '']),
+            $items,
+            $this->draftAssignments($project, $data, $date, $hours),
+            $parent->documents,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function draftWorkItems(Project $project, array $data, string $description, int $hours, string $date): EloquentCollection
+    {
+        $project->planned_start_date = $date;
+        $project->planned_end_date = $date;
+        $items = new EloquentCollection([
+            $this->makeHoursItem($project, $description, $hours),
+        ]);
+        foreach ($this->draftActivityWorkItems($project, $data) as $item) {
+            $items->push($item);
+        }
+
+        return $items;
+    }
+
+    private function makeHoursItem(Project $project, string $description, int $hours): WorkItem
+    {
+        return new WorkItem([
+            'name' => $description,
+            'unit' => WorkUnit::Hours,
+            'ordered_quantity' => $hours,
+            'begrote_uren' => $hours,
+            'uurtarief' => SmallWorkType::HOURLY_RATE,
+            'planned_start_date' => $project->planned_start_date,
+            'planned_end_date' => $project->planned_end_date,
+            'status' => 'gepland',
+            'sort_order' => 1,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function draftActivityWorkItems(Project $project, array $data): EloquentCollection
+    {
+        $ids = collect($data['work_activity_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+        $quantities = is_array($data['activity_quantities'] ?? null) ? $data['activity_quantities'] : [];
+        $notes = is_array($data['activity_notes'] ?? null) ? $data['activity_notes'] : [];
+        [$ids, $quantities, $notes] = $this->expandOndergrondSelection($ids, $quantities, $notes);
+        $activities = WorkActivity::query()
+            ->with('category')
+            ->whereIn('id', $ids)
+            ->get()
+            ->sortBy(fn (WorkActivity $activity): array => [
+                $activity->category?->sort_order ?? 0,
+                $activity->sort_order,
+                $activity->id,
+            ])
+            ->values();
+        $items = new EloquentCollection;
+        $sort = 2;
+        $primary = null;
+        $prep = $activities->filter(fn (WorkActivity $activity): bool => $activity->isOndergrondPrep());
+        $rest = $activities
+            ->reject(fn (WorkActivity $activity): bool => $activity->isOndergrondPrep())
+            ->values();
+
+        if ($prep->isNotEmpty()) {
+            $primary = $prep->first(fn (WorkActivity $activity): bool => $activity->slug === 'egaliseren')
+                ?? $prep->first();
+            if (! $primary instanceof WorkActivity) {
+                $prep = new EloquentCollection;
+            }
+        }
+
+        if ($prep->isNotEmpty() && $primary instanceof WorkActivity) {
+            $quantity = $prep
+                ->map(fn (WorkActivity $activity): ?float => $this->parseQuantity($quantities[$activity->id] ?? null))
+                ->filter()
+                ->max();
+            $note = $this->noteFrom($notes, $primary?->id)
+                ?? $prep
+                    ->map(fn (WorkActivity $activity): ?string => $this->noteFrom($notes, $activity->id))
+                    ->filter()
+                    ->first();
+            $items->push($this->makeActivityItem(
+                $project,
+                $primary,
+                WorkPhase::Egaliseren->groupLabel(),
+                is_numeric($quantity) ? (float) $quantity : null,
+                $sort,
+                $note,
+            ));
+            $sort++;
+        }
+
+        foreach ($rest as $activity) {
+            $items->push($this->makeActivityItem(
+                $project,
+                $activity,
+                $activity->name,
+                $this->parseQuantity($quantities[$activity->id] ?? null),
+                $sort,
+                $this->noteFrom($notes, $activity->id),
+            ));
+            $sort++;
+        }
+
+        return $items;
+    }
+
+    private function makeActivityItem(
+        Project $project,
+        WorkActivity $activity,
+        string $name,
+        ?float $quantity,
+        int $sort,
+        ?string $note,
+    ): WorkItem {
+        return new WorkItem([
+            'name' => $name,
+            'unit' => $activity->defaultShopUnit(),
+            'ordered_quantity' => $quantity ?? 0,
+            'uurtarief' => $project->basis_uurtarief,
+            'status' => 'gepland',
+            'sort_order' => $sort,
+            'notes' => $note,
+            'work_activity_id' => $activity->id,
+            'planned_start_date' => $project->planned_start_date,
+            'planned_end_date' => $project->planned_end_date,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function draftAssignments(Project $project, array $data, string $date, int $hours): EloquentCollection
+    {
+        $workers = $this->workersFor($data);
+        if ($workers->isEmpty()) {
+            return new EloquentCollection;
+        }
+
+        $times = PlanningHours::resolve($hours, null, null, null);
+        $start = Carbon::parse($date);
+        $teamId = isset($data['team_id']) ? (int) $data['team_id'] : null;
+
+        return new EloquentCollection($workers->map(function (Worker $worker) use ($project, $start, $times, $teamId): WorkerAssignment {
+            $assignment = new WorkerAssignment([
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'team_id' => $teamId > 0 ? $teamId : null,
+                'people_count' => 1,
+            ]);
+            $assignment->applySchedule($start, $start, $times['start_time'], $times['end_time']);
+            $assignment->setRelation('worker', $worker);
+            $assignment->setRelation('crewMembers', collect());
+            $assignment->setRelation('foreman', null);
+            $assignment->setRelation('workTicketHolder', null);
+
+            return $assignment;
+        })->all());
+    }
+
+    private function copiedAssignments(Project $existing, string $date, int $hours): EloquentCollection
+    {
+        $existing->loadMissing([
+            'assignments.worker',
+            'assignments.crewMembers',
+            'assignments.foreman',
+            'assignments.workTicketHolder',
+        ]);
+        $times = PlanningHours::resolve($hours, null, null, null);
+        $start = Carbon::parse($date);
+
+        return new EloquentCollection($existing->assignments->map(function (WorkerAssignment $assignment) use ($start, $times): WorkerAssignment {
+            $copy = $assignment->replicate();
+            $copy->id = $assignment->id;
+            $copy->applySchedule($start, $start, $times['start_time'], $times['end_time']);
+            $copy->setRelation('worker', $assignment->worker);
+            $copy->setRelation('crewMembers', $assignment->crewMembers);
+            $copy->setRelation('foreman', $assignment->foreman);
+            $copy->setRelation('workTicketHolder', $assignment->workTicketHolder);
+
+            return $copy;
+        })->all());
+    }
+
+    private function presentDraft(
+        Project $project,
+        Customer $customer,
+        EloquentCollection $workItems,
+        EloquentCollection $assignments,
+        EloquentCollection $documents,
+    ): Project {
+        $project->setRelation('customer', $customer);
+        $project->setRelation('workItems', $workItems);
+        $project->setRelation('workActivities', new EloquentCollection);
+        $project->setRelation('documents', $documents);
+        $project->setRelation('assignments', $assignments);
+
+        return $project;
     }
 
     /**

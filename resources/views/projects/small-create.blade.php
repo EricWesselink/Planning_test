@@ -127,7 +127,10 @@
             <input id="work_number" name="work_number" value="{{ old('work_number') }}" class="mt-1 w-full border border-nicon-line px-3 py-2">
         </div>
 
-        <button class="bg-nicon-orange px-5 py-3 font-medium text-white">Inplannen</button>
+        <div class="flex flex-wrap gap-2">
+            <button class="bg-nicon-orange px-5 py-3 font-medium text-white">Inplannen</button>
+            <button type="submit" formaction="{{ route('projects.small.preview') }}" class="border border-nicon-line bg-white px-5 py-3 font-medium">Bon bekijken</button>
+        </div>
     </form>
 @endsection
 

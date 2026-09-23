@@ -27,9 +27,10 @@ use Illuminate\View\View;
 
 class SmallWorkController extends Controller
 {
-    public function create(Request $request): View
+    public function create(Request $request, SmallWorkService $smallWork): View
     {
         Gate::authorize('create', Project::class);
+        $smallWork->restoreReturnedForm($request);
 
         return view('projects.small-create', $this->formData($request));
     }
@@ -96,6 +97,60 @@ class SmallWorkController extends Controller
         return back()->with('status', 'Tekening verwijderd.');
     }
 
+    public function preview(Request $request, SmallWorkService $smallWork, WorkTicketPdfService $pdfs): View
+    {
+        Gate::authorize('create', Project::class);
+        $data = $this->validated($request);
+        $this->authorizeLinkedProject($data);
+
+        return $this->renderPreview(
+            $smallWork,
+            $request,
+            $smallWork->draft($data),
+            $pdfs,
+            route('projects.small.preview.pdf'),
+            $data,
+            route('projects.small.create', ['terug' => 1]),
+        );
+    }
+
+    public function previewPdf(Request $request, SmallWorkService $smallWork, WorkTicketPdfService $pdfs): Response
+    {
+        Gate::authorize('create', Project::class);
+        $data = $this->validated($request);
+        $this->authorizeLinkedProject($data);
+        $smallWork->rememberReturnedForm($request);
+
+        return $this->pdfResponse($pdfs->buildForSmallWork($smallWork->draft($data)));
+    }
+
+    public function previewSaved(Request $request, Project $project, SmallWorkService $smallWork, WorkTicketPdfService $pdfs): View
+    {
+        Gate::authorize('update', $project);
+        abort_unless($project->isSmallWork(), 404);
+        $data = $this->validatedUpdate($request, $project);
+
+        return $this->renderPreview(
+            $smallWork,
+            $request,
+            $smallWork->draft($data, $project),
+            $pdfs,
+            route('projects.small.preview.saved.pdf', $project),
+            $data,
+            route('projects.show', ['project' => $project, 'terug' => 1]),
+        );
+    }
+
+    public function previewSavedPdf(Request $request, Project $project, SmallWorkService $smallWork, WorkTicketPdfService $pdfs): Response
+    {
+        Gate::authorize('update', $project);
+        abort_unless($project->isSmallWork(), 404);
+        $data = $this->validatedUpdate($request, $project);
+        $smallWork->rememberReturnedForm($request);
+
+        return $this->pdfResponse($pdfs->buildForSmallWork($smallWork->draft($data, $project)));
+    }
+
     public function werkbon(Project $project, WorkTicketPdfService $pdfs): View
     {
         Gate::authorize('view', $project);
@@ -111,17 +166,8 @@ class SmallWorkController extends Controller
     {
         Gate::authorize('view', $project);
         abort_unless($project->isSmallWork(), 404);
-        $data = $pdfs->buildForSmallWork($project);
 
-        $pdf = Pdf::loadView('work-tickets.pdf', $data)
-            ->setPaper('a4', 'portrait')
-            ->setOption('defaultFont', 'DejaVu Sans');
-        $pdf->addInfo([
-            'Title' => $data['documentTitle'].' '.$data['number'],
-            'Author' => $data['companyName'],
-        ]);
-
-        return $pdf->download($data['filename']);
+        return $this->pdfResponse($pdfs->buildForSmallWork($project));
     }
 
     public function editExtra(Project $project, WorkItem $extraWerk): View
@@ -170,6 +216,85 @@ class SmallWorkController extends Controller
                 'project_id' => $project->id,
             ])
             ->with('status', 'Extra werk opgeslagen.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function authorizeLinkedProject(array $data): void
+    {
+        $type = SmallWorkType::tryFrom((string) ($data['type'] ?? ''));
+        if ($type?->attachesToExistingProject()) {
+            Gate::authorize('update', Project::query()->findOrFail($data['project_id']));
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function renderPreview(
+        SmallWorkService $smallWork,
+        Request $request,
+        Project $project,
+        WorkTicketPdfService $pdfs,
+        string $pdfAction,
+        array $data,
+        string $backUrl,
+    ): View {
+        $smallWork->rememberReturnedForm($request);
+
+        return view('work-tickets.small', [
+            ...$pdfs->buildForSmallWork($project, embedDrawings: false),
+            'project' => $project,
+            'preview' => true,
+            'backUrl' => $backUrl,
+            'pdfAction' => $pdfAction,
+            'pdfFields' => $this->previewFields($data),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function pdfResponse(array $data): Response
+    {
+        $pdf = Pdf::loadView('work-tickets.pdf', $data)
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['documentTitle'].' '.$data['number'],
+            'Author' => $data['companyName'],
+        ]);
+
+        return $pdf->download($data['filename']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<array{name: string, value: string}>
+     */
+    private function previewFields(array $data): array
+    {
+        $fields = [];
+        $walk = function (mixed $value, string $name) use (&$walk, &$fields): void {
+            if (is_array($value)) {
+                foreach ($value as $key => $item) {
+                    $child = $name === '' ? (string) $key : $name.'['.$key.']';
+                    $walk($item, $child);
+                }
+
+                return;
+            }
+            if ($value === null || is_object($value)) {
+                return;
+            }
+            $fields[] = ['name' => $name, 'value' => (string) $value];
+        };
+        foreach ($data as $key => $value) {
+            $walk($value, (string) $key);
+        }
+
+        return $fields;
     }
 
     /**
