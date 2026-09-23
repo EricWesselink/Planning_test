@@ -540,11 +540,16 @@ input[type="file"]::-webkit-file-upload-button:hover {
 }
 
 .planning-available-title {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
     font-size: 0.6875rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    line-height: 1.2;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-overflow: ellipsis;
     text-transform: uppercase;
+    white-space: nowrap;
     color: var(--color-nicon-ok);
 }
 
@@ -557,18 +562,24 @@ input[type="file"]::-webkit-file-upload-button:hover {
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
-    padding: 0.08rem 0.32rem;
+    padding: 0 0.28rem;
     border-radius: 2px;
     background: var(--chip-color, var(--color-nicon-ink));
     color: #fff;
-    font-size: 0.6875rem;
+    font-size: 11px;
     font-weight: 650;
+    line-height: 16px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .plan-line--avail {
-    min-height: 1.65rem;
+    min-height: 22px;
+}
+
+.plan-line--avail .plan-cell {
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .plan-frozen--avail,
@@ -606,11 +617,12 @@ input[type="file"]::-webkit-file-upload-button:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.12rem 0.28rem;
+    padding: 0 0.2rem;
     background: var(--color-nicon-paper, #f7f6f2);
-    font-size: 0.6875rem;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
+    line-height: 1;
     text-transform: uppercase;
     color: var(--color-nicon-muted);
 }
@@ -631,17 +643,20 @@ input[type="file"]::-webkit-file-upload-button:hover {
     align-items: center;
     justify-content: center;
     width: 100%;
-    min-height: 1.65rem;
-    padding: 0.1rem 0.12rem;
+    height: 100%;
+    min-height: 0;
+    padding: 0 2px;
     border: 0;
     background: transparent;
     font: inherit;
-    font-size: 0.6875rem;
+    font-size: 10px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    line-height: 1.15;
+    line-height: 1;
     text-align: center;
-    white-space: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     cursor: pointer;
 }
 
@@ -651,7 +666,7 @@ input[type="file"]::-webkit-file-upload-button:hover {
     justify-content: stretch;
     padding: 0;
     background: transparent;
-    min-height: 1.65rem;
+    min-height: 0;
     cursor: default;
 }
 
@@ -661,13 +676,13 @@ input[type="file"]::-webkit-file-upload-button:hover {
     align-items: center;
     justify-content: center;
     min-width: 0;
-    padding: 0.08rem 0.16rem;
+    padding: 0 2px;
     border: 0;
     background: transparent;
     font: inherit;
-    font-size: 0.625rem;
+    font-size: 10px;
     font-weight: 650;
-    line-height: 1.15;
+    line-height: 1;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -784,8 +799,8 @@ button.planning-avail-part {
 
 @media (min-width: 640px) {
     .planning-avail-part {
-        font-size: 0.6875rem;
-        padding: 0.1rem 0.2rem;
+        font-size: 10px;
+        padding: 0 3px;
     }
 }
 
@@ -994,6 +1009,15 @@ button.planning-avail-part {
     transition: grid-template-columns 0.28s ease;
 }
 
+.plan-line.plan-line--avail {
+    min-height: 22px;
+}
+
+.plan-sticky-top > .planning-available,
+.plan-sticky-top > .plan-line--head {
+    margin: 0;
+}
+
 .plan-line--project {
     background: var(--color-nicon-sand);
 }
@@ -1005,6 +1029,40 @@ button.planning-avail-part {
 
 .plan-line--work {
     font-size: 0.75rem;
+}
+
+.plan-line--work .plan-cell--werk {
+    align-items: center;
+    padding-top: 1px;
+    padding-bottom: 1px;
+}
+
+.plan-line--internal .plan-cell--werk {
+    align-items: center;
+    padding-top: 1px;
+    padding-bottom: 1px;
+}
+
+.plan-line--internal .plan-project-meta {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+
+.plan-line--internal .plan-small-badge {
+    margin-bottom: 0;
+}
+
+.plan-line--internal .plan-project-title {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
 }
 
 .plan-line--warn {
@@ -1096,19 +1154,26 @@ button.planning-avail-part {
 .plan-cell--werk {
     position: relative;
     align-items: flex-start;
-    line-height: 1.15;
+    line-height: 1.08;
+}
+
+.plan-line--project .plan-cell--werk {
+    padding-top: 1px;
+    padding-bottom: 1px;
 }
 
 .plan-work-label {
+    box-sizing: border-box;
     width: 100%;
     max-width: 100%;
+    height: 24px;
     margin: 0;
     padding: 0 1rem 0 0;
     border: 0;
     background: transparent;
     color: inherit;
     font: inherit;
-    line-height: inherit;
+    line-height: 24px;
     cursor: pointer;
 }
 
@@ -1166,6 +1231,32 @@ button.planning-avail-part {
 .plan-project-meta {
     min-width: 0;
     flex: 1;
+    line-height: 1.08;
+}
+
+.plan-line--project .plan-project-numbers {
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.1;
+}
+
+.plan-line--project .plan-project-title {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.plan-project-meta > .text-nicon-muted {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 1.1;
+    color: #8b909a;
+}
+
+.plan-project-meta .text-nicon-orange-dark {
+    font-size: 10px;
+    font-weight: 650;
     line-height: 1.15;
 }
 
@@ -1425,7 +1516,7 @@ a.plan-missing-craftsman:hover {
     justify-content: flex-end;
     overflow: hidden;
     white-space: normal;
-    line-height: 1.15;
+    line-height: 1.05;
     letter-spacing: 0;
     text-transform: none;
     font-size: 10px;
@@ -1545,7 +1636,7 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-days--head {
-    grid-template-rows: 22px auto;
+    grid-template-rows: 16px auto;
 }
 
 .plan-days--head .plan-week {
@@ -1559,11 +1650,11 @@ button.plan-labor-toggle:hover {
 .plan-week,
 .plan-frozen--head .plan-week-gutter {
     box-sizing: border-box;
-    height: 22px;
-    min-height: 22px;
+    height: 16px;
+    min-height: 16px;
     padding: 0 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-    line-height: 22px;
+    line-height: 16px;
 }
 
 .plan-week {
@@ -1587,7 +1678,7 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-frozen--head {
-    grid-template-rows: 22px 1fr;
+    grid-template-rows: 16px 1fr;
 }
 
 .plan-frozen--head .plan-week-gutter {
@@ -1615,9 +1706,9 @@ button.plan-labor-toggle:hover {
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    gap: 1px;
-    min-height: 54px;
-    padding: 5px 6px 4px;
+    gap: 0;
+    min-height: 0;
+    padding: 1px 6px;
     border-left: 1px solid transparent;
     white-space: nowrap;
 }
@@ -1628,21 +1719,21 @@ button.plan-labor-toggle:hover {
 
 .plan-day-weekday {
     display: block;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
-    letter-spacing: 0.07em;
-    line-height: 1.15;
+    letter-spacing: 0.05em;
+    line-height: 1.05;
     text-transform: uppercase;
     color: #fff;
 }
 
 .plan-day-date {
     display: block;
-    margin-top: 1px;
-    font-size: 11px;
+    margin-top: 0;
+    font-size: 10px;
     font-weight: 650;
-    letter-spacing: 0.05em;
-    line-height: 1.2;
+    letter-spacing: 0.04em;
+    line-height: 1.05;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.88);
 }
@@ -1651,7 +1742,7 @@ button.plan-labor-toggle:hover {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
-    margin-top: 3px;
+    margin-top: 1px;
     font-size: 9px;
     font-weight: 600;
     letter-spacing: 0.01em;
@@ -1679,8 +1770,8 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-days--multi .plan-day {
-    min-height: 48px;
-    padding: 4px 5px 3px;
+    min-height: 0;
+    padding: 1px 5px;
 }
 
 .plan-days--multi .plan-day-weekday {
@@ -1693,7 +1784,7 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-days--multi .plan-day-times {
-    margin-top: 2px;
+    margin-top: 1px;
     font-size: 8px;
 }
 
@@ -2192,13 +2283,13 @@ button.plan-labor-toggle:hover {
 }
 
 .sticky-head .plan-cell {
-    padding-top: 5px;
-    padding-bottom: 5px;
+    padding-top: 2px;
+    padding-bottom: 2px;
 }
 
 .sticky-head .plan-day {
-    padding-top: 5px;
-    padding-bottom: 4px;
+    padding-top: 1px;
+    padding-bottom: 1px;
 }
 
 .phase-check {
@@ -7751,6 +7842,26 @@ img.calc-print-canvas {
     .plan-cell--werk,
     .plan-project-title {
         font-size: 13px;
+    }
+
+    .plan-work-label {
+        height: auto;
+        min-height: 28px;
+        line-height: 1.2;
+    }
+
+    .plan-day-weekday {
+        font-size: 13px;
+    }
+
+    .plan-day-date {
+        font-size: 11px;
+    }
+
+    .plan-line--project .plan-project-numbers,
+    .plan-project-meta > .text-nicon-muted,
+    .plan-project-meta .text-nicon-orange-dark {
+        font-size: 12px;
     }
 
     .person-bar,

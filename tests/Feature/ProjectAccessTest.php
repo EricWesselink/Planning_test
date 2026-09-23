@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ProjectAccessTest extends TestCase
@@ -139,6 +140,29 @@ class ProjectAccessTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_document_from_another_project_is_not_returned(): void
+    {
+        Storage::fake('local');
+        $projectA = $this->makeProject('Project A');
+        $projectB = $this->makeProject('Project B');
+        $user = User::factory()->limitedAccess()->uitvoerder()->create();
+        $user->projects()->attach($projectA);
+        Storage::disk('local')->put('projects/a.pdf', 'tekening-van-a');
+        Storage::disk('local')->put('projects/b.pdf', 'tekening-van-b');
+        $documentA = $this->makeDocument($projectA, 'projects/a.pdf', 'tekening-a.pdf');
+        $documentB = $this->makeDocument($projectB, 'projects/b.pdf', 'tekening-b.pdf');
+
+        $this->actingAs($user)
+            ->get(route('projects.documents.show', [$projectA, $documentB]))
+            ->assertNotFound();
+
+        $opened = $this->actingAs($user)
+            ->get(route('projects.documents.show', [$projectA, $documentA]));
+
+        $opened->assertOk();
+        $this->assertSame('tekening-van-a', $opened->streamedContent());
+    }
+
     public function test_assigned_user_can_open_an_assigned_project(): void
     {
         $project = $this->makeProject('Project A');
@@ -182,6 +206,17 @@ class ProjectAccessTest extends TestCase
             'description' => 'Kim niet recht',
             'assigned_worker_id' => $worker->id,
         ])->assertCreated();
+    }
+
+    private function makeDocument(Project $project, string $path, string $filename): ProjectDocument
+    {
+        return ProjectDocument::query()->create([
+            'project_id' => $project->id,
+            'document_type' => 'plattegrond',
+            'original_filename' => $filename,
+            'file_path' => $path,
+            'mime_type' => 'application/pdf',
+        ]);
     }
 
     private function makeProject(string $name): Project

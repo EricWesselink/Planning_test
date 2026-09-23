@@ -2235,7 +2235,7 @@ class PlanningBoardService
             'default_title' => $defaultTitle,
             'planning_work_activity_id' => $chosen['id'],
             'steps' => $steps,
-            'unit' => $primary->unit?->label() ?? '',
+            'unit' => $primary->isIntakeTask() ? '' : ($primary->unit?->label() ?? ''),
             'ordered' => $hasQuantity ? $ordered : null,
             'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
             'empty_quantity' => ! $hasQuantity,

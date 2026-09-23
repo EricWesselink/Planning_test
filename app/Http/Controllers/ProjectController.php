@@ -514,6 +514,7 @@ class ProjectController extends Controller
 
     public function document(Request $request, Project $project, ProjectDocument $document): StreamedResponse
     {
+        abort_unless((int) $document->project_id === (int) $project->id, 404);
         Gate::authorize('view', $project);
         abort_unless($request->user()?->canViewFiles() ?? false, 403);
         abort_unless(Storage::disk('local')->exists($document->file_path), 404);
