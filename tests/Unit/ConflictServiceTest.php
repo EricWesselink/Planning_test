@@ -45,7 +45,7 @@ class ConflictServiceTest extends TestCase
         $this->assertSame(3, $map[$worker->id]['2026-09-07']['used']);
     }
 
-    public function test_a_single_person_on_two_onderdelen_of_the_same_work_is_not_double_booked(): void
+    public function test_a_single_person_on_two_overlapping_onderdelen_of_the_same_work_is_double_booked(): void
     {
         [$worker, $egaliseren, $linoleum] = $this->makeTeamWithTwoWorkItems(1);
         $this->assign($worker, $egaliseren, 1);
@@ -56,7 +56,7 @@ class ConflictServiceTest extends TestCase
             $this->days(),
         );
 
-        $this->assertSame([], $map);
+        $this->assertSame(2, $map[$worker->id]['2026-09-07']['used']);
     }
 
     public function test_capacity_conflict_is_null_when_the_second_person_fits(): void
@@ -108,7 +108,7 @@ class ConflictServiceTest extends TestCase
         $this->assertSame([], $map);
     }
 
-    public function test_the_same_named_person_on_two_onderdelen_of_the_same_work_is_not_double_booked(): void
+    public function test_the_same_named_person_on_two_overlapping_onderdelen_of_the_same_work_is_double_booked(): void
     {
         [$worker, $egaliseren, $linoleum] = $this->makeTeamWithTwoWorkItems(3, ['Piet', 'Kees', 'Jan']);
         $piet = $worker->crewPeople()->where('name', 'Piet')->first();
@@ -121,7 +121,7 @@ class ConflictServiceTest extends TestCase
             $this->days(),
         );
 
-        $this->assertSame([], $map);
+        $this->assertSame(['Piet'], $map[$worker->id]['2026-09-07']['person_names']);
     }
 
     public function test_the_same_named_person_on_two_works_is_double_booked(): void

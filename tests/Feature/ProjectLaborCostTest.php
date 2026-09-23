@@ -528,7 +528,7 @@ class ProjectLaborCostTest extends TestCase
             ->assertDontSee('background: var(--color-nicon-danger)', false)
             ->assertSee('plan-cell--labor-over', false);
 
-        $this->actingAs($user)
+        $pdf = $this->actingAs($user)
             ->get(route('planning.export', [
                 'week' => '2026-09-07',
                 'project_id' => $project->id,
@@ -537,7 +537,15 @@ class ProjectLaborCostTest extends TestCase
             ->assertOk()
             ->assertSee('bar-overrun', false)
             ->assertSee('left: 75.25%', false)
-            ->assertSee('background: '.$color, false);
+            ->assertDontSee('linear-gradient(to right,', false)
+            ->getContent();
+        $this->assertSame(1, preg_match('/class="bar is-over"\s+style="background:\s*(#[0-9a-fA-F]{6});/', $pdf, $barColor));
+        $printColor = strtolower($barColor[1]);
+        $this->assertContains($printColor, ['#9f1239', '#b91c1c', '#7f1d1d', '#be123c', '#881337', '#a1122a']);
+        $this->assertNotSame(strtolower($color), $printColor);
+        $this->assertStringContainsString('class="swatch" style="background: '.$printColor.'"', $pdf);
+        $this->assertStringContainsString('class="bar-overrun" style="left: 75.25%"', $pdf);
+        $this->assertDoesNotMatchRegularExpression('/class="bar is-over"[^>]*style="[^"]*repeating-linear-gradient/', $pdf);
 
         $css = file_get_contents(resource_path('css/app.css'));
         $this->assertIsString($css);

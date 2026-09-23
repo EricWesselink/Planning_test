@@ -328,8 +328,13 @@ class SmallWorkTest extends TestCase
             fn (string $line): bool => str_contains($line, 'class="bar-label"'),
         ));
         $this->assertCount(1, $linesWithBar);
-        $this->assertStringContainsString('PVC stroken', $linesWithBar[0]);
-        $this->assertStringNotContainsString('Primen', $linesWithBar[0]);
+        $this->assertSame('PVC stroken', $this->planningWorkLineTitle($linesWithBar[0]));
+        foreach ($works[0] as $line) {
+            if ($this->planningWorkLineTitle($line) === 'PVC stroken') {
+                continue;
+            }
+            $this->assertStringNotContainsString('class="bar-label"', $line);
+        }
     }
 
     public function test_checking_two_activities_shows_the_person_on_both_rows(): void
@@ -400,16 +405,91 @@ class SmallWorkTest extends TestCase
         ));
         $this->assertCount(2, $linesWithBar);
         $titles = array_map(
-            fn (string $line): string => str_contains($line, 'PVC stroken') ? 'PVC stroken' : (str_contains($line, 'Tapijt') ? 'Tapijt' : ''),
+            fn (string $line): string => $this->planningWorkLineTitle($line),
             $linesWithBar,
         );
         sort($titles);
         $this->assertSame(['PVC stroken', 'Tapijt'], $titles);
         foreach ($works[0] as $line) {
-            if (str_contains($line, 'Plinten')) {
+            if ($this->planningWorkLineTitle($line) === 'Plinten') {
                 $this->assertStringNotContainsString('class="bar-label"', $line);
             }
         }
+    }
+
+    public function test_checking_three_activities_keeps_each_name_quantity_and_bar(): void
+    {
+        $user = User::factory()->create();
+        $worker = $this->makeWorker();
+        $pvc = $this->floorActivity('pvc-stroken');
+        $tapijt = $this->floorActivity('tapijt');
+        $plinten = $this->floorActivity('plinten');
+        $aanhelen = $this->floorActivity('vloer-aanhelen-herstel');
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Service->value,
+            'customer_name' => 'Hegeman Bouwgroep',
+            'description' => 'vloer herstellen',
+            'location' => 'Deventer',
+            'date' => '2026-09-08',
+            'hours' => 8,
+            'work_activity_ids' => [$pvc->id, $tapijt->id, $plinten->id, $aanhelen->id],
+            'activity_quantities' => [
+                $pvc->id => '18',
+                $tapijt->id => '12',
+                $plinten->id => '9',
+                $aanhelen->id => '4',
+            ],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('kind', ProjectKind::Service)->firstOrFail();
+        $selected = $project->workItems()->whereIn('name', ['PVC stroken', 'Tapijt', 'Plinten'])->get();
+        $this->assertCount(3, $selected);
+
+        $this->actingAs($user)
+            ->postJson(route('planning.assignments.store'), [
+                'worker_id' => $worker->id,
+                'project_id' => $project->id,
+                'work_item_id' => $selected->firstWhere('name', 'PVC stroken')->id,
+                'work_item_ids' => $selected->pluck('id')->all(),
+                'start_date' => '2026-09-08',
+                'end_date' => '2026-09-08',
+                'people_count' => 1,
+                'hours' => 8,
+            ])
+            ->assertOk();
+
+        $request = Request::create('/planning', 'GET', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]);
+        $request->setUserResolver(fn () => $user);
+        $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
+            ->firstWhere('id', $project->id);
+
+        $this->assertNotNull($row);
+        $children = collect($row['children'])->keyBy('title');
+        $this->assertEqualsCanonicalizing(
+            ['PVC stroken', 'Tapijt', 'Plinten', 'Vloer aanhelen / herstel'],
+            $children->keys()->all(),
+        );
+        $this->assertSame($children->count(), $children->keys()->unique()->count());
+        $this->assertSame('m²', $children['PVC stroken']['unit']);
+        $this->assertSame(18.0, $children['PVC stroken']['ordered']);
+        $this->assertSame('m²', $children['Tapijt']['unit']);
+        $this->assertSame(12.0, $children['Tapijt']['ordered']);
+        $this->assertSame('m¹', $children['Plinten']['unit']);
+        $this->assertSame(9.0, $children['Plinten']['ordered']);
+        $this->assertSame('m²', $children['Vloer aanhelen / herstel']['unit']);
+        $this->assertSame(4.0, $children['Vloer aanhelen / herstel']['ordered']);
+
+        foreach (['PVC stroken', 'Tapijt', 'Plinten'] as $title) {
+            $bars = $children[$title]['person_bars'];
+            $this->assertCount(1, $bars);
+            $this->assertStringStartsWith('Albert', $bars[0]['label']);
+            $this->assertSame($children[$title]['id'], $bars[0]['work_item_id']);
+        }
+        $this->assertSame([], $children['Vloer aanhelen / herstel']['person_bars']);
     }
 
     public function test_shifting_one_checked_activity_leaves_the_other_in_place(): void
@@ -2568,6 +2648,15 @@ class SmallWorkTest extends TestCase
                 'active' => true,
             ])->id,
         ];
+    }
+
+    private function planningWorkLineTitle(string $line): string
+    {
+        if (preg_match('/aria-label="Werkzaamheid ([^"]+)"/', $line, $match) !== 1) {
+            return '';
+        }
+
+        return html_entity_decode($match[1], ENT_QUOTES);
     }
 
     /**

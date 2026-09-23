@@ -59,11 +59,15 @@ class VakmanHoursTest extends TestCase
         $this->assertLessThan($leave, $password);
         $this->assertLessThan($logout, $leave);
 
+        $this->actingAs($vakman)
+            ->get(route('vakman.hours.index'))
+            ->assertOk()
+            ->assertSee('Mijn uren')
+            ->assertSee(route('vakman.planning'), false);
+
         $css = file_get_contents(resource_path('css/app.css'));
         $this->assertIsString($css);
-        $start = strpos($css, '@media (max-width: 899px)');
-        $this->assertNotFalse($start);
-        $mobile = substr($css, $start, 1800);
+        $mobile = $this->cssMediaBlocks($css, 899);
         $this->assertStringContainsString('.nicon-topbar--vakman .nicon-topbar-menu', $mobile);
         $this->assertStringContainsString('grid-template-columns: repeat(3, minmax(0, 1fr))', $mobile);
         $this->assertStringContainsString('overflow: hidden', $mobile);
@@ -344,6 +348,43 @@ class VakmanHoursTest extends TestCase
             'ordered_quantity' => 10,
             'status' => 'in_uitvoering',
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function cssMediaBlocks(string $css, int $maxWidth): string
+    {
+        $blocks = '';
+        $offset = 0;
+        $needle = '@media (max-width: '.$maxWidth.'px)';
+        while (($start = strpos($css, $needle, $offset)) !== false) {
+            $open = strpos($css, '{', $start);
+            $this->assertNotFalse($open);
+            $blocks .= $this->cssBraceBlock($css, $open);
+            $offset = $open + 1;
+        }
+        $this->assertNotSame('', $blocks);
+
+        return $blocks;
+    }
+
+    private function cssBraceBlock(string $css, int $open): string
+    {
+        $depth = 0;
+        $length = strlen($css);
+        for ($index = $open; $index < $length; $index++) {
+            if ($css[$index] === '{') {
+                $depth++;
+            } elseif ($css[$index] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($css, $open, $index - $open + 1);
+                }
+            }
+        }
+
+        $this->fail('Unclosed CSS block.');
     }
 
     /**

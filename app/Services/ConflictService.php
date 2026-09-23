@@ -91,7 +91,7 @@ class ConflictService
         $from = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
 
-        $personConflict = $this->firstPersonConflict($existing, $start, $end, $from, $to, $addingIds, $worker, $includeSaturday, $includeSunday, $projectId);
+        $personConflict = $this->firstPersonConflict($existing, $start, $end, $from, $to, $addingIds, $worker, $includeSaturday, $includeSunday);
         if ($personConflict !== null) {
             return $personConflict;
         }
@@ -156,7 +156,6 @@ class ConflictService
         Worker $worker,
         bool $includeSaturday = false,
         bool $includeSunday = false,
-        ?int $projectId = null,
     ): ?array {
         if ($addingIds === []) {
             return null;
@@ -173,9 +172,6 @@ class ConflictService
             }
 
             foreach ($existing as $assignment) {
-                if ($projectId !== null && (int) $assignment->project_id === $projectId) {
-                    continue;
-                }
                 foreach ($assignment->crewMembers as $member) {
                     if (! in_array((int) $member->id, $addingIds, true)) {
                         continue;
@@ -241,9 +237,6 @@ class ConflictService
                     if (! PlanningHours::intervalsOverlap($slots[$i]['start'], $slots[$i]['end'], $slots[$j]['start'], $slots[$j]['end'])) {
                         continue;
                     }
-                    if ($slots[$i]['project_id'] > 0 && $slots[$i]['project_id'] === $slots[$j]['project_id']) {
-                        continue;
-                    }
                     $ids[$slots[$i]['assignment_id']] = true;
                     $ids[$slots[$j]['assignment_id']] = true;
                 }
@@ -298,9 +291,9 @@ class ConflictService
     }
 
     /**
-     * Onderdelen of the same project share one crew. Headcount is the distinct
-     * people on that job, or the largest unnamed group, not the sum of the parts.
-     * A second project still adds people.
+     * Named people count once per project. Unnamed places on different
+     * activities add up, so one person cannot cover two overlapping activities.
+     * A second project still adds people. Adjacent times do not overlap.
      *
      * @param  list<array{start: int, end: int, people: int, group: string, assignment: int, member: int}>  $intervals
      * @return array{peak: int, over_ids: list<int>}
@@ -346,7 +339,7 @@ class ConflictService
             foreach ($byGroup as $bucket) {
                 $onThisWork = 0;
                 foreach ($bucket['items'] ?? [] as $itemBucket) {
-                    $onThisWork = max($onThisWork, max(count($itemBucket['members'] ?? []), $itemBucket['unnamed'] ?? 0));
+                    $onThisWork += max(count($itemBucket['members'] ?? []), (int) ($itemBucket['unnamed'] ?? 0));
                 }
                 $total += $onThisWork;
                 foreach (array_keys($bucket['assignments']) as $assignmentId) {

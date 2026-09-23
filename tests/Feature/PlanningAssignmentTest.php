@@ -546,7 +546,7 @@ class PlanningAssignmentTest extends TestCase
         $this->assertSame(1, WorkerAssignment::query()->where('worker_id', $assignment->worker_id)->count());
     }
 
-    public function test_plans_a_single_person_on_two_onderdelen_of_the_same_work(): void
+    public function test_returns_409_when_one_person_overlaps_two_onderdelen_of_the_same_work(): void
     {
         $user = User::factory()->create();
         [$assignment, , $coating] = $this->makeAssignmentOnTwoWorkItems(people: 1);
@@ -560,10 +560,13 @@ class PlanningAssignmentTest extends TestCase
                 'end_date' => '2026-09-08',
                 'people_count' => 1,
             ])
-            ->assertOk()
-            ->assertJson(['ok' => true]);
+            ->assertConflict()
+            ->assertJson([
+                'ok' => false,
+                'conflict' => true,
+            ]);
 
-        $this->assertSame(2, WorkerAssignment::query()->where('worker_id', $assignment->worker_id)->count());
+        $this->assertSame(1, WorkerAssignment::query()->where('worker_id', $assignment->worker_id)->count());
     }
 
     public function test_planning_board_does_not_warn_when_a_two_person_team_is_split(): void

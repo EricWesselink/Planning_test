@@ -316,6 +316,10 @@ class ProjectLaborCalculator
         $laborQty = $item->begrote_hoeveelheid !== null && (float) $item->begrote_hoeveelheid > 0.0001
             ? round((float) $item->begrote_hoeveelheid, 2)
             : null;
+        if ($laborQty === null && $project->isWinkel() && $this->isPricedUnit($item->unit?->value)) {
+            $ordered = round((float) $item->ordered_quantity, 2);
+            $laborQty = $ordered > 0.0001 ? $ordered : null;
+        }
         $completedQty = round($item->completedQuantity(), 2);
         $actualLaborCost = $hourlyRate === null ? 0.0 : round($actualHours * $hourlyRate, 2);
         $budgetLaborCost = $hourlyRate === null ? 0.0 : round($budgetHours * $hourlyRate, 2);

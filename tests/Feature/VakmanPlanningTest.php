@@ -946,12 +946,7 @@ class VakmanPlanningTest extends TestCase
     {
         $css = file_get_contents(resource_path('css/app.css'));
         $this->assertIsString($css);
-
-        $mobileStart = strpos($css, '@media (max-width: 899px)');
-        $mobileEnd = strpos($css, '.vakman-month {');
-        $this->assertNotFalse($mobileStart);
-        $this->assertNotFalse($mobileEnd);
-        $mobile = substr($css, $mobileStart, $mobileEnd - $mobileStart);
+        $mobile = $this->cssMediaBlocks($css, 899);
 
         $this->assertStringNotContainsString('.vakman-job-card-actions > .vakman-job-route', $mobile);
         $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-title', $mobile);
@@ -960,31 +955,33 @@ class VakmanPlanningTest extends TestCase
         $this->assertStringContainsString('.vakman-job-card-actions > .vakman-hours-block', $mobile);
         $this->assertStringContainsString('grid-column: 1 / -1', $mobile);
         $this->assertStringContainsString('min-width: 0', $mobile);
+        $this->assertStringContainsString('max-width: 100%', $mobile);
         $this->assertStringContainsString('width: 100%', $mobile);
         $this->assertStringContainsString('overflow-x: hidden', $mobile);
 
-        $narrowStart = strpos($css, '@media (max-width: 360px)');
-        $this->assertNotFalse($narrowStart);
-        $this->assertGreaterThan($mobileStart, $narrowStart);
-        $narrow = substr($css, $narrowStart, 280);
+        $narrow = $this->cssMediaBlocks($css, 360);
         $this->assertStringContainsString('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);', $narrow);
         $this->assertStringContainsString('.vakman-hours-times > .vakman-hours-field:nth-child(3)', $narrow);
+        $this->assertStringContainsString('grid-column: 1 / -1', $narrow);
+        $this->assertStringNotContainsString('minmax(0, 5.5rem)', $narrow);
 
-        $desktopTimes = strpos($css, 'grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 5.5rem);');
-        $this->assertNotFalse($desktopTimes);
-        $this->assertLessThan($mobileStart, $desktopTimes);
+        $this->assertStringContainsString(
+            'grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 5.5rem);',
+            $css,
+        );
     }
 
     public function test_mobile_vakman_header_is_shorter_than_on_desktop(): void
     {
         $css = file_get_contents(resource_path('css/app.css'));
         $this->assertIsString($css);
-        $mobileStart = strpos($css, '@media (max-width: 899px)');
-        $desktopStart = strpos($css, '@media (min-width: 900px)');
-        $this->assertNotFalse($mobileStart);
-        $this->assertNotFalse($desktopStart);
-        $mobile = substr($css, $mobileStart, $desktopStart > $mobileStart ? $desktopStart - $mobileStart : 8000);
+        $mobile = $this->cssMediaBlocks($css, 899);
+        $desktop = $this->cssMediaBlocks($css, 900, 'min');
 
+        $this->assertStringContainsString('.nicon-logo {', $css);
+        $this->assertMatchesRegularExpression('/\.nicon-logo\s*\{[^}]*height:\s*1\.35rem;/s', $css);
+        $this->assertStringContainsString('.nicon-topbar--vakman .nicon-logo', $mobile);
+        $this->assertMatchesRegularExpression('/\.nicon-topbar--vakman \.nicon-logo\s*\{[^}]*height:\s*1\.25rem;/s', $mobile);
         $this->assertStringContainsString('.nicon-impersonate button', $mobile);
         $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-title', $mobile);
         $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-leave-row', $mobile);
@@ -1000,10 +997,10 @@ class VakmanPlanningTest extends TestCase
         $this->assertStringContainsString('.vakman-agenda--split .vakman-agenda-nav a:first-of-type', $mobile);
         $this->assertStringContainsString('min-height: 2.35rem', $mobile);
 
-        $desktop = substr($css, $desktopStart, 2500);
         $this->assertStringNotContainsString('.nicon-topbar--vakman .nicon-topbar-menu a', $desktop);
         $this->assertStringNotContainsString('content: "|";', $desktop);
         $this->assertStringNotContainsString('min-height: 2.2rem', $desktop);
+        $this->assertStringNotContainsString('height: 1.25rem', $desktop);
     }
 
     /**
@@ -1059,5 +1056,39 @@ class VakmanPlanningTest extends TestCase
             'city' => 'Amersfoort',
             'status' => 'gepland',
         ], $attributes));
+    }
+
+    private function cssMediaBlocks(string $css, int $width, string $bound = 'max'): string
+    {
+        $blocks = '';
+        $offset = 0;
+        $needle = '@media ('.$bound.'-width: '.$width.'px)';
+        while (($start = strpos($css, $needle, $offset)) !== false) {
+            $open = strpos($css, '{', $start);
+            $this->assertNotFalse($open);
+            $blocks .= $this->cssBraceBlock($css, $open);
+            $offset = $open + 1;
+        }
+        $this->assertNotSame('', $blocks);
+
+        return $blocks;
+    }
+
+    private function cssBraceBlock(string $css, int $open): string
+    {
+        $depth = 0;
+        $length = strlen($css);
+        for ($index = $open; $index < $length; $index++) {
+            if ($css[$index] === '{') {
+                $depth++;
+            } elseif ($css[$index] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($css, $open, $index - $open + 1);
+                }
+            }
+        }
+
+        $this->fail('Unclosed CSS block.');
     }
 }

@@ -538,9 +538,10 @@ class PersonnelWeekOverviewTest extends TestCase
         $this->assertMatchesRegularExpression('/<tbody>\s*<tr class="keep">/u', $html);
         $this->assertSame(2, substr_count($html, 'class="keep is-split"'));
         $this->assertMatchesRegularExpression(
-            '/tr\.keep\.is-split > td\.wrap\s*\{[^}]*padding-top:\s*3\.5mm;[^}]*border-top:\s*1\.6pt solid #163a5f;/u',
+            '/tr\.keep\.is-split > td\.wrap\s*\{[^}]*padding-top:\s*3\.5mm;[^}]*border-top:\s*1\.6pt solid #c41623;/u',
             $html,
         );
+        $this->assertStringContainsString('page-break-inside: avoid', $html);
 
         $primenAt = strpos($html, 'class="work-name">Primen &amp; Egaliseren</div>');
         $linoleumAt = strpos($html, 'class="work-name">Linoleum</div>');
