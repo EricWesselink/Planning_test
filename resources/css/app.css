@@ -418,9 +418,9 @@ input[type="file"]::-webkit-file-upload-button:hover {
 }
 
 .planning-search-list {
-    position: absolute;
-    z-index: 2;
-    top: calc(100% - 1px);
+    position: fixed;
+    z-index: 1200;
+    top: 0;
     left: 0;
     width: max(100%, 32rem);
     max-width: calc(100vw - 2rem);

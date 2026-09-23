@@ -42,6 +42,35 @@ export function planningOptionHaystack(option) {
  * @param {string} query
  * @returns {PlanningSearchOption[]}
  */
+/**
+ * Plaats de keuzelijst vast over het planbord, direct onder het zoekveld.
+ *
+ * @param {{left: number, bottom: number, width: number}} anchor
+ * @param {{width: number, height: number}} viewport
+ * @returns {{top: number, left: number, width: number, maxHeight: number}}
+ */
+export function planningSearchListBox(anchor, viewport) {
+    const margin = 8;
+    const minWidth = 32 * 16;
+    const width = Math.min(
+        Math.max(anchor.width, minWidth),
+        Math.max(anchor.width, viewport.width - margin * 2),
+    );
+    let left = anchor.left;
+    if (left + width > viewport.width - margin) {
+        left = Math.max(margin, viewport.width - margin - width);
+    }
+    const top = anchor.bottom - 1;
+    const room = viewport.height - top - margin;
+
+    return {
+        top,
+        left,
+        width,
+        maxHeight: Math.max(160, Math.min(400, room)),
+    };
+}
+
 export function filterPlanningOptions(options, query) {
     const list = Array.isArray(options) ? options : [];
     const browsing = normalizePlanningSearch(query).trim() === "";
@@ -148,17 +177,24 @@ function mountPlanningSearch(select) {
     };
 
     const placeList = () => {
-        list.style.left = "0";
+        const box = planningSearchListBox(field.getBoundingClientRect(), {
+            width: window.innerWidth,
+            height: window.innerHeight,
+        });
+        list.style.top = `${box.top}px`;
+        list.style.left = `${box.left}px`;
         list.style.right = "auto";
-        list.style.maxHeight = "400px";
-        const rect = list.getBoundingClientRect();
-        if (rect.right > window.innerWidth - 8) {
-            list.style.left = "auto";
-            list.style.right = "0";
-        }
-        const room = window.innerHeight - list.getBoundingClientRect().top - 8;
-        list.style.maxHeight = `${Math.max(160, Math.min(400, room))}px`;
+        list.style.width = `${box.width}px`;
+        list.style.maxHeight = `${box.maxHeight}px`;
     };
+
+    const followList = () => {
+        if (!list.hidden) {
+            placeList();
+        }
+    };
+    window.addEventListener("resize", followList);
+    window.addEventListener("scroll", followList, true);
 
     const items = () => [...list.querySelectorAll(".planning-search-option")];
 

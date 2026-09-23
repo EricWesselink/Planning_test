@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { filterPlanningOptions, planningSearchMatches } from '../../resources/js/planning-filter-search.js';
+import { filterPlanningOptions, planningSearchListBox, planningSearchMatches } from '../../resources/js/planning-filter-search.js';
 
 const zeewolde = 'Projectnr.\u00a011P260521\u00a0·\u00a0Werk\u00a02026-001 — Zeewolde, Bouw Havenkwartier Zuyd';
 const groningen = 'Projectnr. 11P250925 · Werk 2026-002 — Groningen, Feringa Building';
@@ -12,6 +12,29 @@ const options = [
     { value: '2', label: groningen },
     { value: '3', label: eding },
 ];
+
+test('places the open list over the board, directly under the search field', () => {
+    const box = planningSearchListBox(
+        { left: 40, bottom: 120, width: 180 },
+        { width: 1400, height: 900 },
+    );
+
+    assert.equal(box.top, 119);
+    assert.equal(box.left, 40);
+    assert.equal(box.width, 512);
+    assert.equal(box.maxHeight, 400);
+});
+
+test('keeps the open list inside the window when the field sits on the right', () => {
+    const box = planningSearchListBox(
+        { left: 1100, bottom: 80, width: 180 },
+        { width: 1280, height: 200 },
+    );
+
+    assert.equal(box.left, 760);
+    assert.equal(box.width, 512);
+    assert.equal(box.maxHeight, 160);
+});
 
 test('matches a place, a name, or any other part of the option text', () => {
     assert.equal(planningSearchMatches(zeewolde, 'zeewolde'), true);
