@@ -12,11 +12,11 @@
     <style>
         :root {
             --ink: #1c1917;
-            --muted: #78716c;
-            --line: #e7e0d4;
-            --sand: #f4efe6;
-            --paper: #fbf8f3;
-            --orange: #e4572e;
+            --muted: #57534e;
+            --line: #e5e5e5;
+            --head: #f3f4f6;
+            --project: #fdf2f2;
+            --red: #c41623;
             --days: {{ (int) $dayCount }};
         }
         * { box-sizing: border-box; }
@@ -24,14 +24,51 @@
             font-family: "Segoe UI", system-ui, sans-serif;
             color: var(--ink);
             background: white;
-            margin: 18px;
-            font-size: 12px;
+            margin: 16px auto;
+            max-width: 297mm;
+            font-size: 11px;
         }
-        h1 { font-size: 22px; margin: 2px 0 0; font-weight: 650; }
-        h2 { font-size: 13px; margin: 22px 0 8px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-        .brand { color: var(--orange); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; font-weight: 700; }
+        body.paper-a3 { max-width: 420mm; }
+        body.is-dense { font-size: 10px; }
+        body.is-dense .mast { margin-bottom: 6px; padding-bottom: 4px; }
+        body.is-dense .logo { height: 36px; }
+        body.is-dense h1 { font-size: 14px; }
+        body.is-dense h1 .project-title { font-size: 13px; }
+        body.is-dense h2 { margin: 8px 0 4px; }
+        body.is-dense .col-werk,
+        body.is-dense .col-num { padding-top: 3px; padding-bottom: 3px; }
+        body.is-dense .list th,
+        body.is-dense .list td { padding: 4px 8px; }
+        body.is-dense .foot { margin-top: 8px; }
+        body.is-dense .company-foot { margin-top: 4px; padding-top: 4px; }
+        body.is-dense .week-band { min-height: 22px; }
+        h1 { font-size: 16px; margin: 0; font-weight: 650; line-height: 1.25; }
+        h1 .project-title { display: block; font-size: 15px; font-weight: 600; margin-top: 2px; }
+        h2 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            margin: 16px 0 8px;
+            text-transform: uppercase;
+            letter-spacing: .12em;
+            color: var(--ink);
+            font-weight: 700;
+        }
+        h2::before {
+            content: "";
+            width: 3px;
+            height: 14px;
+            background: var(--red);
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
+        .mast { display: flex; align-items: flex-start; gap: 16px; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 3px solid var(--red); }
+        .logo { height: 48px; width: auto; display: block; flex: 0 0 auto; }
+        .mast-copy { min-width: 0; }
+        .brand { margin: 0 0 4px; color: var(--red); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
         .muted { color: var(--muted); }
-        .meta { margin: 6px 0 0; line-height: 1.45; }
+        .meta { margin: 4px 0 0; line-height: 1.4; font-size: 10px; }
         .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
         .toolbar button, .toolbar a {
             border: 1px solid var(--line);
@@ -42,12 +79,11 @@
             text-decoration: none;
             cursor: pointer;
         }
-        .toolbar .primary { background: var(--orange); border-color: var(--orange); color: white; }
-        .toolbar .is-on { background: var(--ink); border-color: var(--ink); color: white; }
+        .toolbar .primary { background: var(--red); border-color: var(--red); color: white; }
+        .toolbar .is-on { background: var(--red); border-color: var(--red); color: white; }
         .hint { font-size: 11px; }
 
         .board {
-            border: 1px solid var(--line);
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
@@ -57,70 +93,107 @@
             vertical-align: middle;
         }
         .board thead th {
-            background: var(--ink);
-            color: white;
-            font-size: 10px;
+            background: var(--head);
+            color: #44403c;
+            font-size: 9px;
             letter-spacing: .04em;
             text-transform: uppercase;
-            font-weight: 600;
+            font-weight: 650;
             padding: 0;
         }
-        .head-weeks { display: grid; grid-template-columns: 1fr; }
         .week-band {
             display: grid;
             grid-template-columns: repeat(var(--days), minmax(0, 1fr));
-            background: #2a2623;
-            color: var(--orange);
-            font-size: 9px;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            font-weight: 700;
-            height: 20px;
+            background: var(--head);
+            min-height: 28px;
         }
-        .week-band span {
+        .week-cell {
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            border-left: 1px solid rgba(255,255,255,.12);
-            gap: 6px;
+            gap: 1px;
+            min-width: 0;
+            padding: 3px 1px 4px;
+            border-left: 1px solid #e5e5e5;
+            overflow: hidden;
         }
-        .week-band .month { color: rgba(255,255,255,.7); font-weight: 600; }
+        .week-no, .week-date {
+            display: block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            line-height: 1.15;
+        }
+        .week-no {
+            color: var(--red);
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: .03em;
+            text-transform: uppercase;
+        }
+        .week-band.is-roomy .week-no { font-size: 11px; }
+        .week-band.is-roomy .week-date { font-size: 10px; }
+        .week-band.is-roomy + .day-row span { font-size: 9px; padding: 4px 2px 5px; }
+        .board thead th .week-date,
+        .board thead th .day-row span {
+            letter-spacing: 0;
+            text-transform: none;
+        }
+        .week-date {
+            color: #44403c;
+            font-size: 8px;
+            font-weight: 600;
+        }
         .day-row {
             display: grid;
             grid-template-columns: repeat(var(--days), minmax(0, 1fr));
+            background: #fafafa;
         }
         .day-row span {
-            padding: 7px 4px;
+            min-width: 0;
+            padding: 3px 1px 4px;
             text-align: center;
-            border-left: 1px solid rgba(255,255,255,.12);
+            border-left: 1px solid #ececec;
+            overflow: hidden;
+            text-overflow: clip;
             white-space: nowrap;
+            color: #57534e;
+            font-size: 7px;
+            letter-spacing: 0;
+            text-transform: none;
+            font-weight: 600;
         }
-        .col-werk { width: 28%; text-align: left; padding: 7px 10px; }
-        .col-num { width: 7%; text-align: right; padding: 7px 8px; font-variant-numeric: tabular-nums; }
-        .col-num.over { color: #b42318; font-weight: 700; }
-        .col-num.warn { color: #b45309; font-weight: 650; }
+        .day-row.is-quiet { height: 4px; }
+        .day-row.is-quiet span { padding: 0; font-size: 0; }
+        .col-werk { width: 24%; text-align: left; padding: 6px 8px; }
+        .col-num { width: 6.2%; text-align: right; padding: 6px 4px; font-variant-numeric: tabular-nums; }
+        .col-num.over { color: #b91c1c; font-weight: 700; }
+        .col-num.warn { color: #9f1239; font-weight: 650; }
         .col-num.ok { color: #3f6212; font-weight: 650; }
-        .col-days { width: auto; }
-        .project-row td { background: var(--sand); font-weight: 600; }
+        .col-days { width: auto; padding: 0; }
+        .project-row td { background: var(--project); font-weight: 600; }
         .section-row td {
-            background: var(--ink);
-            color: white;
+            background: var(--head);
+            color: var(--ink);
             font-size: 10px;
             font-weight: 700;
-            letter-spacing: .16em;
+            letter-spacing: .12em;
             text-transform: uppercase;
             padding: 6px 8px;
+            box-shadow: inset 3px 0 0 var(--red);
         }
-        .work-row td { font-size: 11px; }
-        .indent { padding-left: 22px; }
-        .city { font-weight: 400; color: var(--muted); font-size: 11px; }
+        .work-row td { font-size: 11px; background: white; }
+        .indent { padding-left: 18px; }
+        .city { font-weight: 400; color: var(--muted); font-size: 10px; }
         .plan-labor { margin-top: 2px; font-size: 10px; font-weight: 500; color: var(--muted); }
         .plan-labor--over { color: #b91c1c; font-weight: 700; }
-        .plan-labor--warn { color: #b45309; }
+        .plan-labor--warn { color: #9f1239; }
         .plan-hour-bar { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
         .plan-hour-bar-track { display: block; flex: 1; height: 4px; background: var(--line); overflow: hidden; }
         .plan-hour-bar-fill { display: block; height: 100%; background: #3f6212; }
-        .plan-hour-bar--warn .plan-hour-bar-fill { background: #b45309; }
+        .plan-hour-bar--warn .plan-hour-bar-fill { background: #9f1239; }
         .plan-hour-bar--over .plan-hour-bar-fill { background: #b91c1c; }
         .plan-hour-bar-label { font-size: 9px; color: var(--muted); white-space: nowrap; }
         .badge { display: inline-block; background: var(--ink); color: white; font-size: 9px; letter-spacing: .12em; font-weight: 700; padding: 1px 6px; margin-bottom: 2px; }
@@ -137,20 +210,22 @@
             inset: 0;
         }
         .day-grid i {
-            border-left: 1px solid var(--line);
+            border-left: 1px solid #efefef;
             display: block;
         }
+        .day-grid i.is-week { border-left-color: #d6d3d1; }
         .bars { position: relative; min-height: 28px; padding: 3px 0; }
         .bar {
             position: absolute;
-            height: 18px;
+            height: 16px;
             border-radius: 2px;
             color: white;
-            font-size: 10px;
-            line-height: 18px;
+            font-size: 9px;
+            line-height: 16px;
             padding: 0;
             overflow: hidden;
             white-space: nowrap;
+            box-shadow: none;
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
         }
@@ -173,19 +248,19 @@
         }
         .period-band {
             position: absolute;
-            top: 2px;
-            bottom: 2px;
+            top: 3px;
+            bottom: 3px;
             border-radius: 2px;
-            background: repeating-linear-gradient(-62deg, rgba(180, 83, 9, 0.08), rgba(180, 83, 9, 0.08) 6px, rgba(180, 83, 9, 0.16) 6px, rgba(180, 83, 9, 0.16) 12px);
-            box-shadow: inset 0 0 0 1px rgba(180, 83, 9, 0.22);
+            background: repeating-linear-gradient(-62deg, rgba(185, 28, 28, 0.05), rgba(185, 28, 28, 0.05) 6px, rgba(185, 28, 28, 0.13) 6px, rgba(185, 28, 28, 0.13) 12px);
+            box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.55);
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
         }
         .period-marker {
             position: absolute;
             top: 3px;
-            color: #b91c1c;
-            font-size: 9px;
+            color: #9f1239;
+            font-size: 8px;
             font-weight: 800;
             line-height: 1.15;
             letter-spacing: .04em;
@@ -206,28 +281,74 @@
             font-weight: 700;
             line-height: 1;
         }
-        .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 14px; }
+        .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; }
         .legend span { display: inline-flex; align-items: center; gap: 6px; }
         .swatch {
             width: 12px; height: 12px; border-radius: 2px;
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
         }
-        .list { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        .list th, .list td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; }
-        .list th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+        .list { width: 100%; border-collapse: collapse; margin-top: 0; }
+        .list th, .list td { border: none; border-bottom: 1px solid #ececec; padding: 8px 10px; text-align: left; }
+        .list th { background: var(--head); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: #44403c; font-weight: 650; }
         .empty { color: var(--muted); padding: 16px; }
-        .foot { margin-top: 18px; color: var(--muted); font-size: 11px; }
+        .foot { margin: 14px 0 0; color: var(--muted); font-size: 10px; }
+        .company-foot {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+            margin: 8px 0 0;
+            padding-top: 8px;
+            border-top: 2px solid var(--red);
+            color: var(--ink);
+            font-size: 10px;
+        }
         @media print {
             .no-print { display: none !important; }
-            @page { size: landscape; margin: 0; }
-            body { margin: 0; padding: 10mm; }
+            @page { size: A4 landscape; margin: 0; }
+            @page planning-a3 { size: A3 landscape; margin: 0; }
+            body { margin: 0; padding: 8mm; max-width: none; }
+            body.paper-a3 { page: planning-a3; }
+            .sheet { width: auto !important; zoom: var(--print-zoom, 1); }
         }
     </style>
 </head>
-<body @if ($autoPrint ?? false) data-autoprint="1" @endif>
+@php
+    $sheetRows = 0;
+    foreach ($rows as $projectRow) {
+        $sheetRows++;
+        if (($projectRow['type'] ?? '') === 'section') {
+            continue;
+        }
+        $sheetRows += count($projectRow['children'] ?? []);
+        $sheetRows += count($projectRow['person_bars'] ?? []);
+        foreach ($projectRow['children'] ?? [] as $work) {
+            $sheetRows += count($work['person_bars'] ?? []);
+        }
+    }
+    $useA3 = $sheetRows > 16 || (int) $dayCount > 35;
+@endphp
+<body @class(['paper-a3 is-dense' => $useA3]) @if ($autoPrint ?? false) data-autoprint="1" @endif>
     @php
         $showNames = (bool) ($showNames ?? false);
+        $printPalette = ['#9f1239', '#b91c1c', '#7f1d1d', '#be123c', '#881337', '#a1122a'];
+        $printShade = function (array $bar) use ($printPalette): string {
+            if (! empty($bar['is_internal'])) {
+                return '#4c0519';
+            }
+
+            return $printPalette[((int) ($bar['worker_id'] ?? 0)) % count($printPalette)];
+        };
+        $assignmentProject = function (array $projectRow): string {
+            $title = (string) ($projectRow['title'] ?? '');
+            if (! array_key_exists('numbers_label', $projectRow) && ! array_key_exists('number', $projectRow)) {
+                return $title;
+            }
+
+            $numbers = $projectRow['numbers_label'] ?? ($projectRow['number'] ?? '');
+
+            return trim($numbers.' — '.$title);
+        };
         $query = array_filter($filters, fn ($value) => $value !== null && $value !== '');
         $assignments = [];
         $legend = [];
@@ -238,13 +359,13 @@
             foreach (array_merge($projectRow['person_bars'] ?? [], ...array_map(fn ($work) => $work['person_bars'] ?? [], $projectRow['children'] ?? [])) as $bar) {
                 $legend[$bar['worker_id']] = [
                     'label' => $bar['label'],
-                    'color' => $bar['color'],
+                    'color' => $printShade($bar),
                 ];
             }
             foreach ($projectRow['children'] as $work) {
                 foreach ($work['person_bars'] as $bar) {
                     $assignments[] = [
-                        'project' => trim(($projectRow['numbers_label'] ?? $projectRow['number']).' — '.$projectRow['title']),
+                        'project' => $assignmentProject($projectRow),
                         'work' => $work['title'],
                         'who' => $bar['label'],
                         'start' => $bar['start_date'],
@@ -254,7 +375,7 @@
             }
             foreach ($projectRow['person_bars'] as $bar) {
                 $assignments[] = [
-                    'project' => trim(($projectRow['numbers_label'] ?? $projectRow['number']).' — '.$projectRow['title']),
+                    'project' => $assignmentProject($projectRow),
                     'work' => 'Inzet',
                     'who' => $bar['label'],
                     'start' => $bar['start_date'],
@@ -299,31 +420,40 @@
             @else
                 Voor de opdrachtgever: zonder namen.
             @endif
-            Kies in het printvenster de printer <strong>Opslaan als PDF</strong> of <strong>Microsoft Print to PDF</strong>. Liggend papier geeft het beste resultaat.
+            Kies in het printvenster de printer <strong>Opslaan als PDF</strong> of <strong>Microsoft Print to PDF</strong>.
+            <span id="planning-paper">Past op één pagina, {{ $useA3 ? 'A3' : 'A4' }} liggend.</span>
         </span>
     </p>
 
-    <div class="brand">Nicon Vloeren{{ $showNames ? ' · Intern' : '' }}</div>
-    <h1>
-        @if ($clientProject)
-            {{ $clientProject->labeledNumbersLine() }}
-            <span style="display:block; font-size:18px; font-weight:600; margin-top:4px;">{{ $clientProject->displayTitle() }}</span>
-        @else
-            Planning
-        @endif
-    </h1>
-    <p class="meta muted">
-        {{ $weekRangeLabel }} · {{ $days->first()->translatedFormat('d M') }} – {{ $days->last()->translatedFormat('d M Y') }}
-        @if ($clientProject)
-            @if ($clientProject->customer)
-                · Opdrachtgever: {{ $clientProject->customer->name }}
+    <div class="sheet" id="planning-sheet">
+    <header class="mast">
+        <img class="logo" src="{{ asset(config('company.logo')) }}" alt="{{ config('company.name') }}">
+        <div class="mast-copy">
+            @if ($showNames)
+                <p class="brand">Nicon Vloeren · Intern</p>
             @endif
-            @if ($clientProject->nawLine())
-                · {{ $clientProject->nawLine() }}
-            @endif
-        @endif
-        · Afgedrukt {{ now()->translatedFormat('d M Y') }}
-    </p>
+            <h1>
+                @if ($clientProject)
+                    {{ $clientProject->labeledNumbersLine() }}
+                    <span class="project-title">{{ $clientProject->displayTitle() }}</span>
+                @else
+                    Planning
+                @endif
+            </h1>
+            <p class="meta muted">
+                {{ $weekRangeLabel }} · {{ $days->first()->translatedFormat('d M') }} – {{ $days->last()->translatedFormat('d M Y') }}
+                @if ($clientProject)
+                    @if ($clientProject->customer)
+                        · Opdrachtgever: {{ $clientProject->customer->name }}
+                    @endif
+                    @if ($clientProject->nawLine())
+                        · {{ $clientProject->nawLine() }}
+                    @endif
+                @endif
+                · Afgedrukt: {{ now()->translatedFormat('d M Y') }}
+            </p>
+        </div>
+    </header>
 
     @if (! count($rows))
         <p class="empty">Geen werken in deze periode.</p>
@@ -348,17 +478,32 @@
                         <th class="col-num">Verschil €/m²</th>
                     @endif
                     <th class="col-days">
-                        <div class="week-band">
+                        @php
+                            $dayList = collect($days)->values();
+                            $bandOffset = 0;
+                            $showDayLabels = $dayList->count() <= 16;
+                        @endphp
+                        <div @class(['week-band', 'is-roomy' => $showDayLabels])>
                             @foreach ($weekBands as $band)
-                                <span style="grid-column: span {{ $band['span'] }}">
-                                    Week {{ $band['number'] }}
-                                    <span class="month">{{ $band['month'] }}</span>
+                                @php
+                                    $bandStart = $dayList->get($bandOffset);
+                                    $bandOffset += (int) $band['span'];
+                                @endphp
+                                <span class="week-cell" style="grid-column: span {{ $band['span'] }}">
+                                    <span class="week-no">Week {{ $band['number'] }}</span>
+                                    @if ($bandStart)
+                                        <span class="week-date">{{ $bandStart->translatedFormat('j M') }}</span>
+                                    @endif
                                 </span>
                             @endforeach
                         </div>
-                        <div class="day-row">
-                            @foreach ($days as $day)
-                                <span>{{ $weeks > 1 ? $day->translatedFormat('D j') : $day->translatedFormat('D j M') }}</span>
+                        <div @class(['day-row', 'is-quiet' => ! $showDayLabels])>
+                            @foreach ($dayList as $day)
+                                <span>
+                                    @if ($showDayLabels)
+                                        {{ $weeks > 1 ? $day->translatedFormat('D j') : $day->translatedFormat('D j M') }}
+                                    @endif
+                                </span>
                             @endforeach
                         </div>
                     </th>
@@ -395,9 +540,9 @@
                             <div>{{ $projectRow['title'] }}@if (! empty($projectRow['hours_label'])) | {{ $projectRow['hours_label'] }}@endif</div>
                             @if (! empty($projectRow['subtitle']))
                                 <div class="city">{{ $projectRow['subtitle'] }}</div>
-                            @elseif (! $clientProject && ($projectRow['customer'] || $projectRow['city']))
-                                <div class="city">{{ $projectRow['customer'] }}{{ $projectRow['customer'] && $projectRow['city'] ? ' · ' : '' }}{{ $projectRow['city'] }}</div>
-                            @elseif ($projectRow['city'] && $clientProject)
+                            @elseif (! $clientProject && (($projectRow['customer'] ?? null) || ($projectRow['city'] ?? null)))
+                                <div class="city">{{ $projectRow['customer'] ?? '' }}{{ ($projectRow['customer'] ?? null) && ($projectRow['city'] ?? null) ? ' · ' : '' }}{{ $projectRow['city'] ?? '' }}</div>
+                            @elseif (($projectRow['city'] ?? null) && $clientProject)
                                 <div class="city">{{ $projectRow['city'] }}</div>
                             @endif
                         </td>
@@ -520,8 +665,46 @@
     @endif
 
     <p class="foot">Planning onder voorbehoud van voortgang op de bouw. Nicon Vloeren</p>
+    <p class="company-foot">
+        <span>{{ config('company.name') }}</span>
+        <span>{{ config('company.address') }}, {{ config('company.postal_code') }} {{ config('company.city') }}</span>
+        <span>{{ config('company.phone') }}</span>
+        <span>{{ config('company.email') }}</span>
+    </p>
+    </div>
     <script>
+        function niconFitPlanningPage() {
+            const sheet = document.getElementById('planning-sheet');
+            if (!sheet) {
+                return;
+            }
+            const mm = 96 / 25.4;
+            const pad = 16 * mm;
+            const a4Height = (210 * mm) - pad;
+            const a3Height = (297 * mm) - pad;
+            sheet.style.zoom = '1';
+            document.body.classList.remove('paper-a3');
+            sheet.style.width = ((297 * mm) - pad) + 'px';
+            let height = sheet.offsetHeight;
+            const useA3 = height > a4Height + 1;
+            document.body.classList.toggle('paper-a3', useA3);
+            document.body.classList.toggle('is-dense', useA3);
+            if (useA3) {
+                sheet.style.width = ((420 * mm) - pad) + 'px';
+                height = sheet.offsetHeight;
+            }
+            const limit = useA3 ? a3Height : a4Height;
+            const zoom = Math.min(1, limit / Math.max(height, 1));
+            sheet.style.setProperty('--print-zoom', String(zoom));
+            sheet.style.zoom = String(zoom);
+            sheet.style.width = '';
+            const note = document.getElementById('planning-paper');
+            if (note) {
+                note.textContent = 'Past op één pagina, ' + (useA3 ? 'A3' : 'A4') + ' liggend. Kies dat formaat in het printvenster.';
+            }
+        }
         function niconPrintPlanning() {
+            niconFitPlanningPage();
             const title = document.title;
             document.title = '';
             const restore = () => {
@@ -531,6 +714,7 @@
             window.addEventListener('afterprint', restore);
             window.print();
         }
+        window.addEventListener('load', niconFitPlanningPage);
         @if ($autoPrint ?? false)
         window.addEventListener('load', niconPrintPlanning);
         @endif

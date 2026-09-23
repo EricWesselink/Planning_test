@@ -15,7 +15,7 @@
         table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
         .brand-cell {
             border: none;
-            border-bottom: 0.6pt solid #163a5f;
+            border-bottom: 0.6pt solid #c41623;
             padding: 0 0 6px;
             vertical-align: middle;
         }
@@ -37,32 +37,33 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.3;
             padding: 0 0 3px;
         }
         .brand-title {
             font-size: 12pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.25;
             padding: 3px 0;
         }
         .brand-week {
             font-size: 8pt;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.3;
             padding: 3px 0 0;
         }
         .day-head th {
-            background: #163a5f;
-            color: #fff;
+            background: #f4f4f5;
+            color: #1a1a1a;
             font-size: 7pt;
             text-transform: uppercase;
             letter-spacing: 0.03em;
             padding: 3px 3px;
             text-align: center;
-            border: 0.4pt solid #163a5f;
+            border: 0.4pt solid #e5e5e5;
+            border-bottom: 1.5pt solid #c41623;
         }
         .col-werk, .day-head .werk, td.werk { width: 20%; }
         .day-head .werk { text-align: left; padding-left: 6px; }
@@ -70,9 +71,9 @@
         .day-date { display: block; font-weight: 500; font-size: 6.5pt; text-transform: none; letter-spacing: 0; }
         td.werk {
             border: 0.4pt solid #d5dde5;
-            border-left: 2.2pt solid #163a5f;
+            border-left: 2.2pt solid #c41623;
             padding: 3px 5px 3px 6px;
-            background: #f4efe6;
+            background: #f4f4f5;
             vertical-align: top;
             overflow-wrap: anywhere;
             word-wrap: break-word;
@@ -103,7 +104,7 @@
         .title {
             font-size: 9pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.25;
             padding: 0 0 1px;
         }
@@ -124,7 +125,7 @@
         .work-name {
             font-size: 7pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
             padding-top: 2px;
             line-height: 1.25;
         }
@@ -163,7 +164,7 @@
         td.wrap { padding: 0; border: none; }
         tr.keep.is-split > td.wrap {
             padding-top: 3.5mm;
-            border-top: 1.6pt solid #163a5f;
+            border-top: 1.6pt solid #c41623;
         }
         table.project {
             width: 100%;

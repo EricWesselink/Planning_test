@@ -14,7 +14,7 @@
             gap: 24px;
             align-items: flex-start;
             padding-bottom: 16px;
-            border-bottom: 2px solid #e4572e;
+            border-bottom: 2px solid #c41623;
             margin-bottom: 20px;
         }
         .logo { display: block; height: 56px; width: auto; }
@@ -23,19 +23,19 @@
         .company a { color: #1c1917; text-decoration: none; }
         .head { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e7e0d4; vertical-align: top; }
+        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
         th { color: #78716c; font-weight: 600; }
         td.num, th.num { text-align: right; white-space: nowrap; }
         .activity td { padding: 8px 6px; }
         .activity.has-rooms td { border-bottom: none; }
         .room td { padding: 2px 6px 2px 18px; font-size: 12px; color: #78716c; height: 22px; border-bottom: none; }
         .room td.num { color: #78716c; }
-        .room-last td { border-bottom: 1px solid #e7e0d4; }
+        .room-last td { border-bottom: 1px solid #e5e5e5; }
         .total td { font-weight: 700; border-top: 2px solid #1c1917; }
         .notes { margin-top: 18px; font-size: 13px; }
         .sign { display: flex; gap: 48px; margin-top: 48px; }
-        .sign div { flex: 1; border-top: 1px solid #e7e0d4; padding-top: 8px; font-size: 12px; color: #78716c; }
-        .foot { margin-top: 36px; font-size: 11px; color: #78716c; border-top: 1px solid #e7e0d4; padding-top: 10px; }
+        .sign div { flex: 1; border-top: 1px solid #e5e5e5; padding-top: 8px; font-size: 12px; color: #78716c; }
+        .foot { margin-top: 36px; font-size: 11px; color: #78716c; border-top: 1px solid #e5e5e5; padding-top: 10px; }
         @media print { .no-print { display: none; } }
     </style>
 </head>
@@ -46,7 +46,7 @@
         @else
             <a href="{{ route('production.index', array_filter(['worker_id' => $voucher->worker_id, 'project_id' => $voucher->project_id])) }}">Terug naar productie</a>
         @endif
-        <a href="{{ route('vouchers.pdf', $voucher) }}" style="margin-left:12px;background:#e4572e;color:#fff;padding:8px 14px;text-decoration:none;">Download PDF</a>
+        <a href="{{ route('vouchers.pdf', $voucher) }}" style="margin-left:12px;background:#c41623;color:#fff;padding:8px 14px;text-decoration:none;">Download PDF</a>
         <button onclick="window.print()" style="margin-left:12px">Afdrukken</button>
         @if ($canEdit ?? false)
             <a href="{{ route('vouchers.edit', $voucher) }}" style="margin-left:12px">Aanpassen</a>

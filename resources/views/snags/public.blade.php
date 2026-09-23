@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Opleverpunt #{{ $snag->number }}</title>
     <style>
-        body { font-family: sans-serif; margin: 0; color: #1c1917; background: #fbf8f3; }
+        body { font-family: sans-serif; margin: 0; color: #1c1917; background: #f6f6f7; }
         main { max-width: 32rem; margin: 0 auto; padding: 16px 16px 32px; }
-        .card { background: #fff; border: 1px solid #e7e0d4; padding: 16px; }
+        .card { background: #fff; border: 1px solid #e5e5e5; padding: 16px; }
         img { max-width: 100%; display: block; }
         .thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
         .thumbs img { width: 100%; max-height: 220px; object-fit: cover; }
         label { display: block; margin-top: 12px; font-size: 13px; color: #78716c; }
-        textarea, input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 10px; border: 1px solid #e7e0d4; font: inherit; }
+        textarea, input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 10px; border: 1px solid #e5e5e5; font: inherit; }
         button { margin-top: 12px; width: 100%; background: #1c1917; color: white; border: 0; padding: 14px; font-size: 16px; }
         button.light { background: #fff; color: #1c1917; border: 1px solid #1c1917; }
         .ok { background: #ecfccb; color: #3f6212; padding: 10px; margin-bottom: 12px; }

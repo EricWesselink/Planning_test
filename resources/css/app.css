@@ -8,20 +8,31 @@
 
 @theme {
     --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-    --color-nicon-ink: #1c1917;
-    --color-nicon-steel: #44403c;
-    --color-nicon-muted: #78716c;
-    --color-nicon-sand: #f4efe6;
-    --color-nicon-paper: #fbf8f3;
-    --color-nicon-line: #e7e0d4;
-    --color-nicon-orange: #e4572e;
-    --color-nicon-orange-dark: #c2410c;
+    --color-nicon-ink: #1a1a1a;
+    --color-nicon-steel: #3f3f46;
+    --color-nicon-muted: #6b7280;
+    --color-nicon-sand: #f4f4f5;
+    --color-nicon-paper: #f6f6f7;
+    --color-nicon-line: #e5e5e5;
+    /* Bestaande class-naam; de waarde is het Nicon-rood uit het logo. */
+    --color-nicon-orange: #c41623;
+    --color-nicon-orange-dark: #9e101b;
+    --color-nicon-red-light: #fdecee;
     --color-nicon-warn: #b45309;
     --color-nicon-danger: #b91c1c;
     --color-nicon-ok: #3f6212;
 }
 
 :root {
+    --nicon-red: #c41623;
+    --nicon-red-dark: #9e101b;
+    --nicon-red-light: #fdecee;
+    --nicon-black: #1a1a1a;
+    --nicon-text: #1a1a1a;
+    --nicon-muted: #6b7280;
+    --nicon-border: #e5e5e5;
+    --nicon-bg: #ffffff;
+    --nicon-bg-soft: #f4f4f5;
     --nicon-topbar-height: 64px;
     --planning-sidebar-width: 360px;
 }
@@ -102,6 +113,23 @@ input[type="file"]::-webkit-file-upload-button:hover {
     position: sticky;
     top: 0;
     z-index: 1000;
+    background: #fff;
+    color: var(--color-nicon-ink);
+    border-bottom: 1px solid var(--color-nicon-line);
+}
+
+.nicon-logo {
+    display: block;
+    height: 1.35rem;
+    width: auto;
+}
+
+.nicon-topbar a:not(.active) {
+    color: var(--color-nicon-ink);
+}
+
+.nicon-topbar a:not(.active):hover {
+    background: var(--color-nicon-red-light);
 }
 
 .nicon-topbar a.active {
@@ -142,7 +170,7 @@ input[type="file"]::-webkit-file-upload-button:hover {
 
 .planning-controls {
     flex: 0 0 auto;
-    padding: 0.55rem 1rem 0.4rem;
+    padding: 0.3rem 1rem 0.25rem;
     background: var(--color-nicon-paper);
     border-bottom: 1px solid var(--color-nicon-line);
 }
@@ -156,10 +184,30 @@ input[type="file"]::-webkit-file-upload-button:hover {
 
 .planning-controls-row {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    gap: 0.75rem 1rem;
+    gap: 0.4rem 0.75rem;
     flex-wrap: wrap;
+}
+
+.planning-controls-title {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: baseline;
+    gap: 0.45rem;
+    flex: 0 0 auto;
+    min-width: max-content;
+}
+
+.planning-controls-title > .mt-1 {
+    margin-top: 0;
+}
+
+@media (max-width: 899px) {
+    .planning-controls-title {
+        flex-wrap: wrap;
+        min-width: 0;
+    }
 }
 
 .planning-eyebrow {
@@ -171,16 +219,16 @@ input[type="file"]::-webkit-file-upload-button:hover {
 }
 
 .planning-heading {
-    margin-top: 0.1rem;
-    font-size: 1.15rem;
+    margin-top: 0;
+    font-size: 1rem;
     font-weight: 650;
-    line-height: 1.15;
+    line-height: 1.1;
 }
 
 .planning-week-label {
-    margin-top: 0.1rem;
-    font-size: 0.75rem;
-    line-height: 1.2;
+    margin-top: 0;
+    font-size: 0.7rem;
+    line-height: 1.15;
     color: var(--color-nicon-muted);
 }
 
@@ -198,8 +246,8 @@ input[type="file"]::-webkit-file-upload-button:hover {
     border: 1px solid var(--color-nicon-line);
     background: white;
     color: var(--color-nicon-ink);
-    padding: 0.28rem 0.6rem;
-    line-height: 1.25;
+    padding: 0.15rem 0.5rem;
+    line-height: 1.2;
 }
 
 .planning-btn--accent {
@@ -212,7 +260,7 @@ input[type="file"]::-webkit-file-upload-button:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.28rem 0.45rem;
+    padding: 0.15rem 0.4rem;
     line-height: 0;
 }
 
@@ -235,14 +283,14 @@ input[type="file"]::-webkit-file-upload-button:hover {
 }
 
 .planning-week-jump-label {
-    padding: 0.28rem 0.35rem 0.28rem 0.55rem;
+    padding: 0.15rem 0.35rem 0.15rem 0.45rem;
     color: var(--color-nicon-muted);
     white-space: nowrap;
 }
 
 .planning-week-jump-input {
     width: 2.75rem;
-    padding: 0.28rem 0.45rem 0.28rem 0;
+    padding: 0.15rem 0.4rem 0.15rem 0;
     background: transparent;
     outline: none;
     appearance: textfield;
@@ -255,8 +303,8 @@ input[type="file"]::-webkit-file-upload-button:hover {
 
 .planning-week-jump-submit {
     border-left: 1px solid var(--color-nicon-line);
-    padding: 0.28rem 0.6rem;
-    line-height: 1.25;
+    padding: 0.15rem 0.5rem;
+    line-height: 1.2;
 }
 
 .planning-week-jump-submit:hover {
@@ -265,8 +313,8 @@ input[type="file"]::-webkit-file-upload-button:hover {
 
 .planning-filters {
     display: grid;
-    gap: 0.35rem;
-    margin-top: 0.45rem;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
     font-size: 0.8125rem;
 }
 
@@ -742,10 +790,130 @@ button.planning-avail-part {
 }
 
 .planning-hint {
-    margin-top: 0.3rem;
+    margin-top: 0.15rem;
     font-size: 0.6875rem;
-    line-height: 1.3;
+    line-height: 1.2;
     color: var(--color-nicon-muted);
+}
+
+@media (min-width: 900px) {
+    .nicon-topbar:not(.nicon-topbar--vakman) .nicon-topbar-bar {
+        box-sizing: border-box;
+        height: 52px;
+        min-height: 52px;
+        max-height: 52px;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+
+    .nicon-topbar:not(.nicon-topbar--vakman) .nicon-logo {
+        height: 26px;
+    }
+
+    .nicon-topbar:not(.nicon-topbar--vakman) nav a,
+    .nicon-topbar:not(.nicon-topbar--vakman) .nicon-topbar-logout button {
+        padding-top: 0.28rem;
+        padding-bottom: 0.28rem;
+        line-height: 1.15;
+    }
+}
+
+@media (min-width: 1100px) {
+    .planning-controls {
+        padding: 6px 12px;
+    }
+
+    .planning-controls-row {
+        align-items: center;
+        gap: 8px;
+    }
+
+    .planning-controls-title {
+        display: flex;
+        flex-flow: row nowrap;
+        align-items: baseline;
+        gap: 8px;
+        flex: 0 0 auto;
+        min-width: max-content;
+    }
+
+    .planning-eyebrow,
+    .planning-heading,
+    .planning-week-label {
+        margin: 0;
+        line-height: 1.1;
+        white-space: nowrap;
+    }
+
+    .planning-heading {
+        font-size: 0.95rem;
+    }
+
+    .planning-toolbar {
+        flex: 1 1 auto;
+        justify-content: flex-end;
+        gap: 4px;
+    }
+
+    .planning-btn,
+    .planning-filter,
+    .planning-select,
+    .planning-week-jump,
+    .planning-btn--icon {
+        box-sizing: border-box;
+        height: 32px;
+        min-height: 32px;
+        padding-top: 0;
+        padding-bottom: 0;
+        font-size: 12px;
+        line-height: 30px;
+    }
+
+    .planning-btn--icon {
+        width: 32px;
+        padding-left: 0;
+        padding-right: 0;
+        line-height: 0;
+    }
+
+    .planning-btn--icon svg {
+        width: 0.85rem;
+        height: 0.85rem;
+    }
+
+    .planning-week-jump-label,
+    .planning-week-jump-input,
+    .planning-week-jump-submit {
+        height: 30px;
+        padding-top: 0;
+        padding-bottom: 0;
+        line-height: 30px;
+    }
+
+    .planning-filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+    }
+
+    .planning-filters .planning-filter,
+    .planning-filters .planning-search {
+        flex: 1 1 8.5rem;
+        width: auto;
+        min-width: 0;
+        max-width: 18rem;
+    }
+
+    .planning-hint {
+        margin-top: 6px;
+    }
+
+    .planning-warnings,
+    .planning-doubles-banner {
+        margin-top: 6px;
+    }
 }
 
 .planning-scroll-area {
@@ -845,14 +1013,15 @@ button.planning-avail-part {
 
 .plan-line--section {
     min-height: 22px;
-    background: var(--color-nicon-ink);
-    color: white;
-    border-bottom: 1px solid var(--color-nicon-ink);
+    background: var(--color-nicon-sand);
+    color: var(--color-nicon-ink);
+    border-bottom: 1px solid var(--color-nicon-line);
+    box-shadow: inset 3px 0 0 var(--color-nicon-orange);
 }
 
 .plan-line--section .plan-frozen {
-    background: var(--color-nicon-ink);
-    border-right-color: rgba(255, 255, 255, 0.2);
+    background: var(--color-nicon-sand);
+    border-right-color: var(--color-nicon-line);
 }
 
 .plan-line--section .plan-cell--num {
@@ -867,12 +1036,12 @@ button.planning-avail-part {
 }
 
 .plan-days--section {
-    background: var(--color-nicon-ink);
+    background: var(--color-nicon-sand);
     pointer-events: none;
 }
 
 .plan-days--section .drop-day {
-    border-color: rgba(255, 255, 255, 0.08);
+    border-color: var(--color-nicon-line);
 }
 
 .plan-frozen {
@@ -1043,7 +1212,7 @@ a.plan-missing-craftsman:hover {
     display: inline-block;
     margin-bottom: 2px;
     padding: 1px 6px;
-    background: var(--color-nicon-ink);
+    background: var(--color-nicon-orange);
     color: white;
     font-size: 10px;
     font-weight: 700;
@@ -1052,7 +1221,7 @@ a.plan-missing-craftsman:hover {
 
 .plan-line--small {
     font-size: 0.75rem;
-    background: #f7f4ee;
+    background: var(--color-nicon-paper);
 }
 
 .plan-line--small .plan-frozen {
@@ -1402,7 +1571,7 @@ button.plan-labor-toggle:hover {
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
-    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    border-left: 1px solid var(--color-nicon-line);
     color: var(--color-nicon-orange);
     font-size: 10px;
     font-weight: 700;
@@ -1412,7 +1581,7 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-week-month {
-    color: rgba(255, 255, 255, 0.72);
+    color: var(--color-nicon-muted);
     font-weight: 600;
     letter-spacing: 0.06em;
 }
@@ -1499,14 +1668,6 @@ button.plan-labor-toggle:hover {
 .plan-day.is-saturday,
 .drop-day.is-saturday {
     background-color: rgba(120, 113, 108, 0.08);
-}
-
-.sticky-head .plan-day.is-saturday {
-    background-color: #3f3b37;
-}
-
-.sticky-head .plan-day-times {
-    color: rgba(255, 255, 255, 0.55);
 }
 
 .plan-days .week-start.day-start {
@@ -1863,7 +2024,7 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-calendar-week:hover {
-    background: #f3d5c8;
+    background: var(--color-nicon-red-light);
     color: var(--color-nicon-orange-dark);
 }
 
@@ -1950,7 +2111,7 @@ button.plan-labor-toggle:hover {
 }
 
 .bar.work {
-    background: #c2410c;
+    background: var(--color-nicon-orange-dark);
 }
 
 .bar.done {
@@ -1977,14 +2138,15 @@ button.plan-labor-toggle:hover {
     position: sticky;
     top: 0;
     z-index: 900;
-    background: var(--color-nicon-ink);
-    color: white;
+    background: var(--color-nicon-sand);
+    color: var(--color-nicon-ink);
+    box-shadow: inset 0 -2px 0 var(--color-nicon-orange);
 }
 
 .sticky-head .plan-frozen {
     z-index: 910;
-    background: var(--color-nicon-ink);
-    border-right: 2px solid #9f998f;
+    background: var(--color-nicon-sand);
+    border-right: 2px solid var(--color-nicon-line);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     font-size: 11px;
@@ -2010,11 +2172,23 @@ button.plan-labor-toggle:hover {
 .sticky-head .plan-days,
 .sticky-head .plan-day,
 .sticky-head .plan-week {
-    background-color: var(--color-nicon-ink);
+    background-color: #f3f4f6;
+}
+
+.sticky-head .plan-day-weekday {
+    color: var(--color-nicon-ink);
+}
+
+.sticky-head .plan-day-date {
+    color: var(--color-nicon-steel);
+}
+
+.sticky-head .plan-day-times {
+    color: var(--color-nicon-muted);
 }
 
 .sticky-head .plan-day.is-saturday {
-    background-color: #3f3b37;
+    background-color: #e7e5e4;
 }
 
 .sticky-head .plan-cell {
@@ -3352,7 +3526,7 @@ button.plan-labor-toggle:hover {
 }
 
 .room-row.is-picked:not(.is-on) {
-    background: #fff7ed;
+    background: var(--color-nicon-red-light);
 }
 
 .room-row.is-picked .status-pill {
@@ -4079,8 +4253,8 @@ button.plan-labor-toggle:hover {
 }
 
 .work-group.is-picked:not(.is-done) {
-    border-color: var(--color-nicon-ink);
-    box-shadow: inset 0 0 0 2px #ea580c;
+    border-color: var(--color-nicon-orange);
+    box-shadow: inset 0 0 0 2px var(--color-nicon-orange);
 }
 
 .work-group.is-picked:not(.is-done) .group-head {
@@ -6143,10 +6317,14 @@ button.plan-labor-toggle:hover {
         line-height: 1;
     }
 
+    .nicon-topbar--vakman .nicon-logo {
+        height: 1.25rem;
+    }
+
     .nicon-topbar--vakman .nicon-topbar-brand > div:first-child::after {
         content: "|";
         margin-left: 0.55rem;
-        color: rgba(255, 255, 255, 0.55);
+        color: var(--color-nicon-muted);
         font-weight: 400;
         letter-spacing: 0;
     }
@@ -6860,7 +7038,7 @@ button.plan-labor-toggle:hover {
 }
 
 .calc-print {
-    background: #e7e0d4;
+    background: var(--color-nicon-line);
 }
 
 .calc-print-page {
@@ -7204,8 +7382,9 @@ img.calc-print-canvas {
 }
 
 .personnel-week-board thead th {
-    background: var(--color-nicon-ink);
-    color: white;
+    background: var(--color-nicon-sand);
+    color: var(--color-nicon-ink);
+    box-shadow: inset 0 -2px 0 var(--color-nicon-orange);
     font-size: 11px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -7460,8 +7639,8 @@ img.calc-print-canvas {
 
     .planning-page.is-filters-open #planning-mobile-filters,
     .planning-page.is-availability-open #planning-mobile-availability {
-        background: var(--color-nicon-ink);
-        border-color: var(--color-nicon-ink);
+        background: var(--color-nicon-orange);
+        border-color: var(--color-nicon-orange);
         color: white;
     }
 
@@ -7636,6 +7815,123 @@ img.calc-print-canvas {
         flex: 1 1 auto;
         min-height: 0;
     }
+}
+
+.nicon-main h1.text-2xl,
+.nicon-main h1.text-xl {
+    box-shadow: inset 3px 0 0 var(--color-nicon-orange);
+    padding-left: 0.65rem;
+}
+
+.planning-heading {
+    box-shadow: inset 3px 0 0 var(--color-nicon-orange);
+    padding-left: 0.45rem;
+}
+
+thead.bg-nicon-ink,
+h2.bg-nicon-ink,
+header.bg-nicon-ink:not(.nicon-topbar) {
+    background-color: var(--color-nicon-sand) !important;
+    color: var(--color-nicon-ink) !important;
+    box-shadow: inset 0 -2px 0 var(--color-nicon-orange);
+}
+
+header.bg-nicon-ink:not(.nicon-topbar) {
+    box-shadow: inset 3px 0 0 var(--color-nicon-orange);
+}
+
+header.bg-nicon-ink:not(.nicon-topbar) :is(.text-white, [class*="text-white"]) {
+    color: var(--color-nicon-steel) !important;
+}
+
+header.bg-nicon-ink:not(.nicon-topbar) h2 {
+    color: var(--color-nicon-ink) !important;
+}
+
+:is(a, button, span).bg-nicon-ink,
+.board-tabs a.is-on,
+.ticket-btn.is-primary,
+#draw-work-apply,
+.room-filter.is-on,
+.tool-btn.is-on,
+.layer-btn.is-on,
+#draw-snag.is-on,
+.room-measure-btn.is-on,
+#room-measure-view[aria-expanded="true"],
+.snag-photo-btn:not(.is-light),
+.snag-popup-btn.is-primary,
+.vakman-drawing-action.is-save,
+.vakman-job-btn-ink,
+.vakman-agenda-switch a.is-active {
+    background-color: var(--color-nicon-orange) !important;
+    border-color: var(--color-nicon-orange) !important;
+    color: #fff !important;
+}
+
+:is(a, button).bg-nicon-orange:hover,
+:is(a, button).bg-nicon-ink:hover,
+.ticket-btn.is-primary:hover,
+.snag-popup-btn.is-primary:hover {
+    background-color: var(--color-nicon-orange-dark) !important;
+    border-color: var(--color-nicon-orange-dark) !important;
+}
+
+.nicon-main :where(button, a.bg-nicon-orange, a.bg-nicon-ink),
+.planning-btn,
+.ticket-btn,
+.tool-btn {
+    border-radius: 2px;
+}
+
+.nicon-main :where(
+        input,
+        select,
+        textarea
+    ):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not([type="color"]):focus {
+    outline: none;
+    border-color: var(--color-nicon-orange);
+    box-shadow: 0 0 0 1px var(--color-nicon-orange);
+}
+
+.nicon-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.08rem 0.45rem;
+    border-radius: 2px;
+    background: var(--color-nicon-red-light);
+    color: var(--color-nicon-orange-dark);
+    font-size: 0.75rem;
+    font-weight: 650;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.nicon-status--gereed,
+.nicon-status--opgeleverd,
+.nicon-status--goedgekeurd,
+.nicon-status--closed,
+.nicon-status--completed {
+    background: #ecfccb;
+    color: #3f6212;
+}
+
+.nicon-status--in_uitvoering,
+.nicon-status--in_behandeling,
+.nicon-status--in_progress,
+.nicon-status--assigned,
+.nicon-status--reviewed,
+.nicon-status--reported_done,
+.nicon-status--voorlopig_gereed {
+    background: #ffedd5;
+    color: #9a3412;
+}
+
+.nicon-status--geblokkeerd,
+.nicon-status--afgewezen,
+.nicon-status--open,
+.nicon-status--failed {
+    background: #fee2e2;
+    color: #991b1b;
 }
 
 @media print {

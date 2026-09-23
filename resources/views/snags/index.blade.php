@@ -112,7 +112,7 @@
                     <td class="px-3 py-2">{{ ($snag->logged_on ?? $snag->created_at)?->format('d-m-Y') }}</td>
                     <td class="px-3 py-2">{{ $snag->due_date?->format('d-m-Y') ?: '—' }}</td>
                     <td class="px-3 py-2">
-                        {{ $snag->status->boardLabel() }}
+                        <span class="nicon-status nicon-status--{{ $snag->status->value }}">{{ $snag->status->boardLabel() }}</span>
                         @if ($snag->status === \App\Enums\SnagStatus::ReportedDone)
                             @can('close', $snag)
                                 <form method="POST" action="{{ route('projects.snags.approve', [$project, $snag]) }}" class="inline">

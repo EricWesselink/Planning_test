@@ -16,7 +16,7 @@
         td, th { vertical-align: top; }
         .brand td {
             border: none;
-            border-bottom: 0.7pt solid #163a5f;
+            border-bottom: 0.7pt solid #c41623;
             padding: 0 0 10px;
             vertical-align: middle;
         }
@@ -27,7 +27,7 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.2;
         }
         .brand-lines {
@@ -40,7 +40,7 @@
         .doc-title {
             font-size: 16pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
             letter-spacing: 0.04em;
             line-height: 1.1;
         }
@@ -52,7 +52,7 @@
             line-height: 1.35;
         }
         .meta .lbl { color: #5b6570; padding-right: 10px; text-align: left; white-space: nowrap; }
-        .meta .val { text-align: right; font-weight: 700; color: #163a5f; white-space: nowrap; }
+        .meta .val { text-align: right; font-weight: 700; color: #1a1a1a; white-space: nowrap; }
         .party { margin: 12px 0 14px; }
         .party td { border: none; padding: 0 12px 0 0; }
         .party .lbl {
@@ -70,11 +70,11 @@
         }
         .activity-head td {
             border: none;
-            border-bottom: 0.6pt solid #163a5f;
+            border-bottom: 0.6pt solid #c41623;
             padding: 0 0 4px;
             font-size: 9.5pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
         }
         .activity-head .num { text-align: right; white-space: nowrap; }
         .rooms { margin: 2px 0 0; }
@@ -93,11 +93,11 @@
         }
         .total td {
             border: none;
-            border-top: 1.2pt solid #163a5f;
+            border-top: 1.2pt solid #c41623;
             padding: 8px 0 0;
             font-size: 11pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
         }
         .total .num { text-align: right; white-space: nowrap; }
         .notes {

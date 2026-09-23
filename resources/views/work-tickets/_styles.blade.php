@@ -28,10 +28,10 @@
     }
     table { width: 100%; border-collapse: collapse; }
     td, th { vertical-align: top; }
-    a { color: #163a5f; }
+    a { color: #c41623; }
     .brand td {
         border: none;
-        border-bottom: 0.7pt solid #163a5f;
+        border-bottom: 0.7pt solid #c41623;
         padding: 0 0 10px;
         vertical-align: middle;
     }
@@ -42,12 +42,12 @@
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #163a5f;
+        color: #1a1a1a;
     }
     .doc-title {
         font-size: 18pt;
         font-weight: 700;
-        color: #163a5f;
+        color: #1a1a1a;
         letter-spacing: 0.06em;
         line-height: 1.1;
         padding-top: 2px;
@@ -59,7 +59,7 @@
     }
     .doc-meta { font-size: 8.5pt; color: #5b6570; padding-top: 3px; }
     .brand-side { text-align: right; font-size: 8pt; color: #5b6570; line-height: 1.4; }
-    .brand-side strong { color: #163a5f; font-size: 9pt; }
+    .brand-side strong { color: #1a1a1a; font-size: 9pt; }
     .blocks { margin-top: 12px; }
     .blocks td {
         width: 50%;
@@ -73,7 +73,7 @@
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #163a5f;
+        color: #1a1a1a;
         margin-bottom: 4px;
     }
     .block p { margin: 0 0 2px; }
@@ -89,8 +89,8 @@
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #163a5f;
-        border-bottom: 0.6pt solid #163a5f;
+        color: #1a1a1a;
+        border-bottom: 0.6pt solid #c41623;
         padding-bottom: 3px;
         margin-bottom: 6px;
     }
@@ -102,9 +102,9 @@
         letter-spacing: 0.04em;
         text-transform: uppercase;
         padding: 4px 6px;
-        border-bottom: 0.6pt solid #163a5f;
+        border-bottom: 0.6pt solid #c41623;
     }
-    .lines td { padding: 6px; border-bottom: 0.4pt solid #e7e0d4; }
+    .lines td { padding: 6px; border-bottom: 0.4pt solid #e5e5e5; }
     .measurement-lines { font-size: 7.5pt; table-layout: fixed; }
     .measurement-lines th, .measurement-lines td {
         padding: 4px 3px;
@@ -116,9 +116,9 @@
     .num { text-align: right; white-space: nowrap; }
     .total td {
         font-weight: 700;
-        border-top: 1.2pt solid #163a5f;
+        border-top: 1.2pt solid #c41623;
         border-bottom: none;
-        color: #163a5f;
+        color: #1a1a1a;
         padding-top: 8px;
     }
     .notes { font-size: 9.5pt; }
@@ -128,7 +128,7 @@
         position: relative;
         width: 100%;
         min-height: 160px;
-        background: #f4efe6;
+        background: #f4f4f5;
         border: 0.4pt solid #d5dde5;
         margin: 6px 0 4px;
     }
@@ -137,7 +137,7 @@
     .room-pin {
         position: absolute;
         transform: translate(-50%, -50%);
-        background: #163a5f;
+        background: #c41623;
         color: #fff;
         font-size: 8px;
         font-weight: 700;
@@ -190,14 +190,14 @@
         display: inline-block;
         margin: 0 8px 8px 0;
         padding: 8px 14px;
-        border: 1px solid #163a5f;
+        border: 1px solid #c41623;
         background: #fff;
-        color: #163a5f;
+        color: #1a1a1a;
         text-decoration: none;
         font: inherit;
         cursor: pointer;
     }
-    .toolbar .primary { background: #e4572e; border-color: #e4572e; color: #fff; }
+    .toolbar .primary { background: #c41623; border-color: #c41623; color: #fff; }
     .hours-form {
         margin-top: 18px;
         padding: 12px;
@@ -214,7 +214,7 @@
     .hours-form button { margin-top: 4px; }
     .status { color: #3f6212; font-size: 13px; margin: 0 0 12px; }
     .error { color: #b91c1c; font-size: 13px; margin: 0 0 12px; }
-    .measurement-note { font-size: 13px; margin: 0 0 12px; color: #163a5f; }
+    .measurement-note { font-size: 13px; margin: 0 0 12px; color: #1a1a1a; }
     .measurement-note label { margin-left: 12px; color: #1a1a1a; }
     @media screen {
         body { margin: 24px; font-size: 13px; }

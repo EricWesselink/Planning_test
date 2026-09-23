@@ -23,12 +23,12 @@
             @endif
             <a class="planning-mobile-btn" href="{{ route('planning', array_merge($query, ['week' => $thisWeek])) }}" title="Ga naar vandaag">Vandaag</a>
         </div>
-        <div class="planning-controls">
+        <div class="planning-controls" style="padding:4px 12px">
             <div class="planning-controls-row">
-                <div class="planning-controls-title">
-                    <div class="planning-eyebrow">Planbord</div>
-                    <h1 class="planning-heading">Planning</h1>
-                    <p class="planning-week-label">
+                <div class="planning-controls-title" style="display:flex;flex-direction:row;flex-wrap:nowrap;align-items:baseline;gap:8px;width:max-content;max-width:100%">
+                    <div class="planning-eyebrow" style="margin:0;white-space:nowrap">Planbord</div>
+                    <h1 class="planning-heading" style="margin:0;font-size:15px;line-height:1.1;white-space:nowrap">Planning</h1>
+                    <p class="planning-week-label" style="margin:0;white-space:nowrap">
                         @if (($filters['day'] ?? '') !== '' && $days->count() === 1)
                             {{ $weekRangeLabel }} · {{ $days->first()->translatedFormat('l d M Y') }}
                         @elseif (($filters['day'] ?? '') !== '')
@@ -38,7 +38,7 @@
                         @endif
                     </p>
                     @php $hoursView = $hoursView ?? ($filters['hours_view'] ?? 'planned'); @endphp
-                    <div class="mt-2 flex gap-1 text-xs">
+                    <div class="flex shrink-0 gap-1 text-xs" style="margin:0">
                         <a href="{{ route('planning', array_merge($query, ['hours_view' => 'planned'])) }}" class="planning-filter{{ $hoursView === 'planned' ? ' is-active' : '' }}">Gepland</a>
                         <a href="{{ route('planning', array_merge($query, ['hours_view' => 'actual'])) }}" class="planning-filter{{ $hoursView === 'actual' ? ' is-active' : '' }}">Werkelijk</a>
                     </div>
@@ -118,7 +118,7 @@
                 </div>
             </div>
 
-            <form method="GET" id="planning-filters" class="planning-filters">
+            <form method="GET" id="planning-filters" class="planning-filters" style="margin-top:6px">
                 <input type="hidden" name="week" value="{{ $weekStart->toDateString() }}">
                 <input type="hidden" name="weeks" value="{{ $weeks }}">
                 <select name="kind" class="planning-filter" onchange="this.form.submit()" aria-label="Soort werk">

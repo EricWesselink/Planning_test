@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <title>{{ $voucher->type->label() }} {{ $voucher->number }}</title>
 </head>
-<body style="font-family: sans-serif; color: #1c1917; margin: 0; padding: 24px; background: #fbf8f3;">
-    <div style="max-width: 720px; margin: 0 auto; background: #ffffff; padding: 24px; border: 1px solid #e7e0d4;">
-        <p style="margin: 0 0 4px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #e4572e;">{{ config('company.name') }}</p>
+<body style="font-family: sans-serif; color: #1c1917; margin: 0; padding: 24px; background: #f6f6f7;">
+    <div style="max-width: 720px; margin: 0 auto; background: #ffffff; padding: 24px; border: 1px solid #e5e5e5;">
+        <p style="margin: 0 0 4px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #c41623;">{{ config('company.name') }}</p>
         <h1 style="font-size: 22px; margin: 0 0 12px;">{{ $voucher->type->label() }} {{ $voucher->number }}</h1>
         <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.5;">
             Beste {{ $voucher->worker?->displayName() }},
@@ -23,32 +23,32 @@
         <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin: 0 0 16px;">
             <thead>
                 <tr>
-                    <th style="text-align: left; padding: 8px 6px; border-bottom: 1px solid #e7e0d4; color: #78716c;">Werkzaamheid</th>
-                    <th style="text-align: right; padding: 8px 6px; border-bottom: 1px solid #e7e0d4; color: #78716c;">Aantal</th>
-                    <th style="text-align: right; padding: 8px 6px; border-bottom: 1px solid #e7e0d4; color: #78716c;">Prijs</th>
-                    <th style="text-align: right; padding: 8px 6px; border-bottom: 1px solid #e7e0d4; color: #78716c;">Bedrag</th>
+                    <th style="text-align: left; padding: 8px 6px; border-bottom: 1px solid #e5e5e5; color: #78716c;">Werkzaamheid</th>
+                    <th style="text-align: right; padding: 8px 6px; border-bottom: 1px solid #e5e5e5; color: #78716c;">Aantal</th>
+                    <th style="text-align: right; padding: 8px 6px; border-bottom: 1px solid #e5e5e5; color: #78716c;">Prijs</th>
+                    <th style="text-align: right; padding: 8px 6px; border-bottom: 1px solid #e5e5e5; color: #78716c;">Bedrag</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (\App\Support\VoucherActivityGroups::fromVoucher($voucher) as $group)
                     <tr>
-                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }};">
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e5e5e5' }};">
                             {{ $group['description'] }}
                             @if ($period = \App\Support\VoucherActivityGroups::periodLabel($group))
                                 <div style="font-size: 12px; color: #78716c; font-weight: 400; padding-top: 2px;">{{ $period }}</div>
                             @endif
                         </td>
-                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }}; text-align: right; white-space: nowrap;">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
-                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }}; text-align: right; white-space: nowrap;">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
-                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e7e0d4' }}; text-align: right; white-space: nowrap;">{{ \App\Support\Format::money($group['amount']) }}</td>
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e5e5e5' }}; text-align: right; white-space: nowrap;">{{ \App\Support\VoucherActivityGroups::quantityLabel($group) }}</td>
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e5e5e5' }}; text-align: right; white-space: nowrap;">{{ \App\Support\VoucherActivityGroups::priceLabel($group) }}</td>
+                        <td style="padding: 8px 6px; border-bottom: {{ $group['has_rooms'] ? 'none' : '1px solid #e5e5e5' }}; text-align: right; white-space: nowrap;">{{ \App\Support\Format::money($group['amount']) }}</td>
                     </tr>
                     @if ($group['has_rooms'])
                         @foreach ($group['entries'] as $entry)
                             <tr>
-                                <td style="padding: 2px 6px 2px 18px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; font-size: 12px; color: #78716c; height: 22px;">{{ $entry['room_label'] }}</td>
-                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; font-size: 12px; color: #78716c; text-align: right; white-space: nowrap; height: 22px;">{{ \App\Support\VoucherActivityGroups::roomQuantityLabel($group, $entry) }}</td>
-                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; height: 22px;"></td>
-                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e7e0d4' : 'none' }}; height: 22px;"></td>
+                                <td style="padding: 2px 6px 2px 18px; border-bottom: {{ $loop->last ? '1px solid #e5e5e5' : 'none' }}; font-size: 12px; color: #78716c; height: 22px;">{{ $entry['room_label'] }}</td>
+                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e5e5e5' : 'none' }}; font-size: 12px; color: #78716c; text-align: right; white-space: nowrap; height: 22px;">{{ \App\Support\VoucherActivityGroups::roomQuantityLabel($group, $entry) }}</td>
+                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e5e5e5' : 'none' }}; height: 22px;"></td>
+                                <td style="padding: 2px 6px; border-bottom: {{ $loop->last ? '1px solid #e5e5e5' : 'none' }}; height: 22px;"></td>
                             </tr>
                         @endforeach
                     @endif

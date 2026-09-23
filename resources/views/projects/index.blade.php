@@ -51,7 +51,7 @@
                     <option value="{{ \App\Enums\ProjectKind::Winkel->value }}" @selected($kind === \App\Enums\ProjectKind::Winkel->value)>Winkelwerk</option>
                     <option value="{{ \App\Enums\ProjectKind::KLEINE_FILTER }}" @selected($kind === \App\Enums\ProjectKind::KLEINE_FILTER)>Kleine werken</option>
                 </select>
-                <button type="submit" class="border border-nicon-line bg-white px-4 py-2 text-sm">Zoeken</button>
+                <button type="submit" class="bg-nicon-orange px-4 py-2 text-sm text-white">Zoeken</button>
                 @if ($search !== '' || $week !== null || $kind !== '')
                     <a href="{{ route('projects.index') }}" class="whitespace-nowrap text-sm text-nicon-muted">Wis</a>
                 @endif
@@ -205,7 +205,7 @@
                             @endif
                         @endcan
                     </td>
-                    <td class="px-2 py-1.5 whitespace-nowrap">{{ $project->status->label() }}</td>
+                    <td class="px-2 py-1.5 whitespace-nowrap"><span class="nicon-status nicon-status--{{ $project->status->value }}">{{ $project->status->label() }}</span></td>
                     <td class="px-2 py-1.5">
                         @if ($project->isWinkel())
                             {{ $project->shopWorkLine() }}

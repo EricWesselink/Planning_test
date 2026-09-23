@@ -24,6 +24,9 @@ class AuthenticatedLayoutTest extends TestCase
         $this->assertSame(1, substr_count($html, '>Uitloggen</button>'));
         $this->assertSame(1, substr_count($html, 'action="'.route('logout').'"'));
         $this->assertStringContainsString('nicon-topbar', $html);
+        $this->assertStringContainsString('images/nicon-vloeren.png', $html);
+        $this->assertStringContainsString('alt="Nicon Vloeren"', $html);
+        $this->assertDoesNotMatchRegularExpression('/<header class="nicon-topbar[^"]*\bbg-nicon-ink\b/', $html);
         $this->assertStringContainsString('nicon-main', $html);
         $this->assertStringNotContainsString('nicon-sidebar', $html);
         $this->assertStringNotContainsString('nicon-mobile-bar', $html);

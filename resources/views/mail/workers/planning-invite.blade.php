@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <title>Uitnodiging planning</title>
 </head>
-<body style="font-family: sans-serif; color: #1c1917; margin: 0; padding: 24px; background: #fbf8f3;">
-    <div style="max-width: 720px; margin: 0 auto; background: #ffffff; padding: 24px; border: 1px solid #e7e0d4;">
-        <p style="margin: 0 0 4px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #e4572e;">{{ config('company.name') }}</p>
+<body style="font-family: sans-serif; color: #1c1917; margin: 0; padding: 24px; background: #f6f6f7;">
+    <div style="max-width: 720px; margin: 0 auto; background: #ffffff; padding: 24px; border: 1px solid #e5e5e5;">
+        <p style="margin: 0 0 4px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #c41623;">{{ config('company.name') }}</p>
         <h1 style="font-size: 22px; margin: 0 0 12px;">Uitnodiging voor de planning</h1>
         <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.5;">
             Beste {{ $worker->planName() }},

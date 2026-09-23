@@ -84,7 +84,7 @@
                         @endif
                     </td>
                     <td class="px-3 py-2">{{ $leaveRequest->workdayCount() }}</td>
-                    <td class="px-3 py-2">{{ $leaveRequest->status->label() }}</td>
+                    <td class="px-3 py-2"><span class="nicon-status nicon-status--{{ $leaveRequest->status->value }}">{{ $leaveRequest->status->label() }}</span></td>
                     <td class="px-3 py-2">
                         @if ($leaveRequest->status === \App\Enums\LeaveRequestStatus::Rejected && filled($leaveRequest->rejection_reason))
                             <div>Reden: {{ $leaveRequest->rejection_reason }}</div>

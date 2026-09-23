@@ -24,16 +24,13 @@
             </form>
         </div>
     @endif
-    <header class="nicon-topbar bg-nicon-ink text-white{{ $user?->isVakman() ? ' nicon-topbar--vakman' : '' }}">
-        <div class="nicon-topbar-bar flex items-center gap-4 px-4 py-3">
-            <div class="nicon-topbar-brand shrink-0">
-                <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
-                <div class="flex items-center gap-2">
-                    <div class="text-lg font-semibold leading-tight">{{ $user?->isVakman() ? 'Mijn planning' : 'Planning' }}</div>
-                    @if ($user?->isReadOnlyOfficeUser())
-                        <span class="rounded border border-white/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90">Alleen lezen</span>
-                    @endif
-                </div>
+    <header class="nicon-topbar border-b border-nicon-line bg-white text-nicon-ink{{ $user?->isVakman() ? ' nicon-topbar--vakman' : '' }}">
+        <div class="nicon-topbar-bar flex items-center gap-3 px-4 py-0.5">
+            <div class="nicon-topbar-brand flex shrink-0 items-center gap-2">
+                <img src="{{ asset(config('company.logo')) }}" alt="Nicon Vloeren" class="nicon-logo">
+                @if ($user?->isReadOnlyOfficeUser())
+                    <span class="rounded border border-nicon-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-nicon-steel">Alleen lezen</span>
+                @endif
             </div>
             <div class="nicon-topbar-menu flex min-w-0 grow items-center gap-1">
             <nav class="flex min-w-0 grow items-center gap-1 overflow-x-auto text-sm">
@@ -90,7 +87,7 @@
                     }
                 @endphp
                 @foreach ($links as $link)
-                    <a href="{{ $link['href'] }}" class="rounded px-3 py-2 whitespace-nowrap {{ $link['active'] ? 'active' : 'text-white/80 hover:bg-white/10' }}{{ ! empty($link['home']) ? ' nicon-topbar-home' : '' }}">
+                    <a href="{{ $link['href'] }}" class="whitespace-nowrap rounded px-2 py-1 text-[13px] leading-none {{ $link['active'] ? 'active' : 'text-nicon-ink hover:bg-nicon-red-light' }}{{ ! empty($link['home']) ? ' nicon-topbar-home' : '' }}">
                         @if (! empty($link['short']))
                             <span class="nicon-topbar-full">{{ $link['label'] }}</span>
                             <span class="nicon-topbar-short">{{ $link['short'] }}</span>
@@ -104,7 +101,7 @@
                         href="https://app.decoloop.com/dossier/floor_browse"
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="rounded px-3 py-2 text-white/80 hover:bg-white/10"
+                        class="rounded px-2 py-1 leading-none hover:bg-nicon-sand"
                         title="Decoloop"
                     >
                         <img src="{{ asset('images/decoloop.png') }}" alt="Decoloop" class="h-6 w-auto max-w-full">
@@ -113,7 +110,7 @@
             </nav>
             <form method="POST" action="{{ route('logout') }}" class="nicon-topbar-logout shrink-0">
                 @csrf
-                <button class="text-sm text-white/70 hover:text-white">Uitloggen</button>
+                <button class="text-sm text-nicon-steel hover:text-nicon-orange">Uitloggen</button>
             </form>
             </div>
         </div>

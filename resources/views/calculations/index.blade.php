@@ -53,7 +53,13 @@
                     <td class="px-3 py-2">{{ $calculation->client_name ?: '—' }}</td>
                     <td class="px-3 py-2">{{ $calculation->project_name ?: '—' }}</td>
                     <td class="px-3 py-2">{{ $calculation->dated_on?->format('d-m-Y') }}</td>
-                    <td class="px-3 py-2">{{ $calculation->isImporting() ? 'Uitlezen' : $calculation->status->label() }}</td>
+                    <td class="px-3 py-2">
+                        @if ($calculation->isImporting())
+                            <span class="nicon-status nicon-status--in_behandeling">Uitlezen</span>
+                        @else
+                            <span class="nicon-status nicon-status--{{ $calculation->status->value }}">{{ $calculation->status->label() }}</span>
+                        @endif
+                    </td>
                     <td class="px-3 py-2 text-right">
                         <a href="{{ $calculation->isImporting() ? route('calculations.processing', $calculation) : route('calculations.board', $calculation) }}" class="text-sm text-nicon-orange-dark">{{ $calculation->isImporting() ? 'Voortgang' : 'Openen' }}</a>
                         @unless ($calculation->isImporting())

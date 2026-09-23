@@ -21,7 +21,7 @@
         }
         .brand-cell {
             border: none;
-            border-bottom: 0.7pt solid #163a5f;
+            border-bottom: 0.7pt solid #c41623;
             padding: 0 0 8px;
             vertical-align: middle;
         }
@@ -48,13 +48,13 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.2;
         }
         .brand-title {
             font-size: 16pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.15;
             padding-top: 2px;
         }
@@ -64,14 +64,15 @@
             padding-top: 3px;
         }
         .cols th {
-            background: #163a5f;
-            color: #ffffff;
+            background: #f4f4f5;
+            color: #1a1a1a;
             font-size: 7pt;
             font-weight: 700;
             letter-spacing: 0.02em;
             text-align: left;
             padding: 4px 5px;
-            border: 0.4pt solid #163a5f;
+            border: 0.4pt solid #e5e5e5;
+            border-bottom: 1.5pt solid #c41623;
         }
         .row td {
             border: 0.4pt solid #d5d0c8;
@@ -109,10 +110,10 @@
         }
         .summary td {
             border: none;
-            border-top: 0.7pt solid #163a5f;
+            border-top: 0.7pt solid #c41623;
             padding: 8px 10px 0 0;
             font-size: 8pt;
-            color: #163a5f;
+            color: #1a1a1a;
             white-space: nowrap;
         }
         .summary .lbl {

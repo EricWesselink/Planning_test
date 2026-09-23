@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AssignmentKind;
+use App\Enums\InternalBusinessUnit;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
@@ -77,7 +79,9 @@ class PlanningPdfTest extends TestCase
             ->assertOk()
             ->assertSee('data-autoprint="1"', false)
             ->assertSee('document.title = \'\'', false)
-            ->assertSee('@page { size: landscape; margin: 0; }', false)
+            ->assertSee('@page { size: A4 landscape; margin: 0; }', false)
+            ->assertSee('@page planning-a3 { size: A3 landscape; margin: 0; }', false)
+            ->assertSee('id="planning-sheet"', false)
             ->assertSee('Laakse Tuinen Amersfoort')
             ->assertSee('Albert')
             ->assertDontSee('School Zwolle');
@@ -112,10 +116,18 @@ class PlanningPdfTest extends TestCase
             ->assertOk()
             ->assertSee('Opslaan als PDF')
             ->assertSee('Nicon Vloeren')
+            ->assertSee('images/nicon-vloeren.png', false)
+            ->assertSee(config('company.address'), false)
+            ->assertSee(config('company.phone'), false)
             ->assertSee('Opdrachtgever: Gemeente Amersfoort')
             ->assertSee('Laakse Tuinen Amersfoort')
             ->assertSee('Primen & Egaliseren')
+            ->assertSee('Planning onder voorbehoud van voortgang op de bouw. Nicon Vloeren')
             ->assertSee('Week 37')
+            ->assertDontSee('offerte11P250575')
+            ->assertDontSee('#e4572e', false)
+            ->assertDontSee('#1f4b63', false)
+            ->assertDontSee('#c2410c', false)
             ->assertSee('Voor de opdrachtgever: zonder namen.')
             ->assertSee('0%')
             ->assertDontSee('Albert')
@@ -201,6 +213,34 @@ class PlanningPdfTest extends TestCase
             ->assertDontSee('Week 40');
     }
 
+    public function test_pdf_renders_internal_inzet_without_a_project_number(): void
+    {
+        $user = User::factory()->create();
+        [$project, , $albert] = $this->seedPlanning();
+        WorkerAssignment::query()->create([
+            'worker_id' => $albert->id,
+            'project_id' => null,
+            'kind' => AssignmentKind::Internal->value,
+            'business_unit' => InternalBusinessUnit::Vloeren->value,
+            'contact_name' => 'Jan Jansen',
+            'description' => 'Werk voor Vloeren',
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-09',
+            'people_count' => 1,
+            'hours_per_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning.export', [
+                'week' => '2026-09-07',
+                'project_id' => $project->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Intern – inzet')
+            ->assertSee('Laakse Tuinen Amersfoort')
+            ->assertSee('Primen & Egaliseren');
+    }
+
     public function test_guest_cannot_open_planning_pdf(): void
     {
         $this->get(route('planning.export'))
@@ -208,7 +248,7 @@ class PlanningPdfTest extends TestCase
     }
 
     /**
-     * @return array{0: Project, 1: Project}
+     * @return array{0: Project, 1: Project, 2: Worker}
      */
     private function seedPlanning(): array
     {
@@ -264,6 +304,6 @@ class PlanningPdfTest extends TestCase
             'status' => 'gepland',
         ]);
 
-        return [$project, $other];
+        return [$project, $other, $albert];
     }
 }

@@ -21,7 +21,7 @@
         }
         .brand-cell {
             border: none;
-            border-bottom: 0.7pt solid #163a5f;
+            border-bottom: 0.7pt solid #c41623;
             padding: 0 0 10px;
             vertical-align: middle;
         }
@@ -48,19 +48,19 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.2;
         }
         .brand-title {
             font-size: 16pt;
             font-weight: 700;
-            color: #163a5f;
+            color: #1a1a1a;
             line-height: 1.15;
             padding-top: 2px;
         }
         .brand-week {
             font-size: 10pt;
-            color: #163a5f;
+            color: #1a1a1a;
             padding-top: 3px;
         }
         .brand-side {
@@ -80,7 +80,7 @@
             padding: 2px 0;
             vertical-align: middle;
             font-size: 7.5pt;
-            color: #163a5f;
+            color: #1a1a1a;
             font-weight: 700;
         }
         .legend-logo {
@@ -134,13 +134,14 @@
             margin-left: auto;
         }
         .sheet thead .day-head th {
-            background: #163a5f;
-            color: #ffffff;
+            background: #f4f4f5;
+            color: #1a1a1a;
             font-size: 8pt;
             font-weight: 700;
             text-align: center;
             padding: 5px 3px;
-            border: 0.4pt solid #0f2a45;
+            border: 0.4pt solid #e5e5e5;
+            border-bottom: 1.5pt solid #c41623;
             vertical-align: middle;
         }
         .sheet thead .day-head th.person {
@@ -187,13 +188,13 @@
             font-size: 8pt;
         }
         .empty.is-pending {
-            color: #163a5f;
+            color: #1a1a1a;
             font-weight: 700;
             font-size: 8.5pt;
             letter-spacing: 0.03em;
             padding: 10px 6px;
-            border: 0.7pt dashed #163a5f;
-            background: #e8eef4;
+            border: 0.7pt dashed #c41623;
+            background: #fdecee;
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
         }

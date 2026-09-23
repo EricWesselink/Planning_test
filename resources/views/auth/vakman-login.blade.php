@@ -7,10 +7,10 @@
     <title>Inloggen · Mijn planning</title>
     @vite(['resources/css/app.css'])
 </head>
-<body class="min-h-screen bg-nicon-ink text-white flex items-center justify-center p-6">
-    <div class="w-full max-w-md bg-white text-nicon-ink p-8">
-        <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Nicon Vloeren</div>
-        <h1 class="mt-2 text-2xl font-semibold">Mijn planning</h1>
+<body class="flex min-h-screen items-center justify-center bg-nicon-paper p-6 text-nicon-ink">
+    <div class="w-full max-w-md border border-nicon-line bg-white p-8 text-nicon-ink">
+        <img src="{{ asset(config('company.logo')) }}" alt="Nicon Vloeren" class="h-12 w-auto">
+        <h1 class="mt-4 text-2xl font-semibold">Mijn planning</h1>
         <p class="mt-2 text-sm text-nicon-muted">Log in met je 06-nummer of e-mailadres om je eigen planning te zien. Na het inloggen kun je zelf je wachtwoord wijzigen.</p>
         <form method="POST" action="{{ route('vakman.login.store') }}" class="mt-6 space-y-4">
             @csrf

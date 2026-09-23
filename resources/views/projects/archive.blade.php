@@ -53,7 +53,7 @@
                         @endif
                     </td>
                     <td class="px-3 py-2">{{ $project->city }}</td>
-                    <td class="px-3 py-2">{{ $project->status->label() }}</td>
+                    <td class="px-3 py-2"><span class="nicon-status nicon-status--{{ $project->status->value }}">{{ $project->status->label() }}</span></td>
                     <td class="px-3 py-2">
                         @if ($head)
                             {{ \App\Support\Format::qty($head->completedQuantity()) }} / {{ \App\Support\Format::qty($head->ordered_quantity) }} {{ $head->unit->label() }}

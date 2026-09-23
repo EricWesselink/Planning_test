@@ -54,8 +54,8 @@
     <input type="hidden" name="type" value="facturatie">
 @endif
     <div class="overflow-x-auto">
-        <table class="w-full text-sm voucher-sheet">
-            <thead class="bg-nicon-sand text-left text-nicon-muted">
+        <table class="w-full min-w-[48rem] text-sm voucher-sheet">
+            <thead class="border-y border-nicon-line bg-nicon-paper text-left text-[11px] tracking-wide text-nicon-muted">
                 <tr>
                     <th class="px-2 py-1 font-medium">Werkzaamheid</th>
                     <th class="px-2 py-1 text-right font-medium">Opdracht</th>
@@ -123,7 +123,7 @@
                                 <input type="hidden" name="lines[{{ $index }}][unit]" value="{{ $unit instanceof \App\Enums\WorkUnit ? $unit->value : $unit }}">
                                 <input type="hidden" name="lines[{{ $index }}][unit_price]" value="{{ $row['unit_price'] }}">
                                 <input type="hidden" name="lines[{{ $index }}][price_kind]" value="{{ $kindValue }}">
-                                <input type="text" inputmode="decimal" name="lines[{{ $index }}][quantity]" value="" placeholder="max. {{ \App\Support\Format::qty($row['remaining_quantity'], 2) }}" data-kind="{{ $kindValue }}" data-price="{{ $row['unit_price'] }}" data-unit="{{ $unitLabel($unit) }}" data-max="{{ $row['remaining_quantity'] }}" data-max-amount="{{ $row['remaining_amount'] }}" data-ordered="{{ $row['quantity'] }}" data-ordered-amount="{{ $row['amount'] }}" class="sheet-qty h-7 w-20 border border-nicon-line bg-white px-1.5 text-right">
+                                <input type="text" inputmode="decimal" name="lines[{{ $index }}][quantity]" value="" placeholder="max. {{ \App\Support\Format::qty($row['remaining_quantity'], 2) }}" data-kind="{{ $kindValue }}" data-price="{{ $row['unit_price'] }}" data-unit="{{ $unitLabel($unit) }}" data-max="{{ $row['remaining_quantity'] }}" data-max-amount="{{ $row['remaining_amount'] }}" data-ordered="{{ $row['quantity'] }}" data-ordered-amount="{{ $row['amount'] }}" class="sheet-qty h-7 w-20 border border-nicon-line bg-white px-1.5 text-right focus:border-nicon-orange focus:outline-none focus:ring-1 focus:ring-nicon-orange">
                             @else
                                 —
                             @endif
@@ -138,7 +138,7 @@
                         </td>
                         <td class="whitespace-nowrap px-2 py-1 text-right align-middle">
                             @if ($canCreateVouchers && $open && $isFixed)
-                                <input type="text" inputmode="decimal" name="lines[{{ $index }}][amount]" value="" placeholder="max. {{ \App\Support\Format::money($row['remaining_amount']) }}" data-max-amount="{{ $row['remaining_amount'] }}" class="sheet-fixed-amount h-7 w-24 border border-nicon-line bg-white px-1.5 text-right">
+                                <input type="text" inputmode="decimal" name="lines[{{ $index }}][amount]" value="" placeholder="max. {{ \App\Support\Format::money($row['remaining_amount']) }}" data-max-amount="{{ $row['remaining_amount'] }}" class="sheet-fixed-amount h-7 w-24 border border-nicon-line bg-white px-1.5 text-right focus:border-nicon-orange focus:outline-none focus:ring-1 focus:ring-nicon-orange">
                             @elseif ($canCreateVouchers && $open)
                                 <span class="sheet-amount">—</span>
                             @else
@@ -212,38 +212,36 @@
 @endif
 
 @if ($bons->isNotEmpty())
-    <div class="flex flex-col px-3 py-0.5 text-[13px]">
+    <div class="mx-3 mb-2 flex flex-col gap-1 text-[13px]">
+        <div class="text-[11px] text-nicon-muted">Bonnen</div>
         @foreach ($bons as $index => $bon)
             @php
                 $bonQty = (float) ($columnTotals[$index]['quantity'] ?? 0);
                 $bonUnit = $agreedUnit instanceof \App\Enums\WorkUnit ? $agreedUnit->label() : $unitLabel($agreedUnit);
             @endphp
-            <div class="flex h-7 flex-wrap items-center gap-x-2 leading-none">
-                @if ($loop->first)
-                    <span class="font-medium text-nicon-ink">Bonnen:</span>
-                @else
-                    <span class="w-[3.75rem] shrink-0"></span>
-                @endif
-                <a class="text-nicon-orange-dark underline-offset-2 hover:underline" href="{{ route('vouchers.show', $bon) }}">{{ $bon->number }}</a>
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 border border-nicon-line bg-nicon-paper px-2 py-1">
+                <a class="font-medium text-nicon-ink underline-offset-2 hover:underline" href="{{ route('vouchers.show', $bon) }}">{{ $bon->type->label() }} {{ $bon->number }}</a>
                 <span class="text-nicon-muted">
-                    · {{ \App\Support\Format::qty($bonQty, 2) }}{{ $bonUnit !== '' ? ' '.$bonUnit : '' }}
+                    {{ \App\Support\Format::qty($bonQty, 2) }}{{ $bonUnit !== '' ? ' '.$bonUnit : '' }}
                     · {{ \App\Support\Format::money($bon->total_amount) }}
                     · {{ $bon->issued_on?->format('d-m-Y') }}
                 </span>
-                <a class="text-xs text-nicon-muted no-print" href="{{ route('vouchers.pdf', $bon) }}">PDF</a>
-                @if ($canCreateVouchers)
-                    <form method="POST" action="{{ route('vouchers.destroy', $bon) }}" class="inline no-print" onsubmit="return confirm({{ json_encode($bon->type->label().' '.$bon->number.' wordt verwijderd.') }})">
-                        @csrf
-                        @method('DELETE')
-                        <button type="submit" class="text-xs text-nicon-danger underline-offset-2 hover:underline">Verwijderen</button>
-                    </form>
-                    @if (filled($worker->email))
-                        <form method="POST" action="{{ route('vouchers.send', $bon) }}" class="inline no-print">
+                <span class="ml-auto flex flex-wrap items-center gap-2 no-print">
+                    <a class="inline-flex h-7 items-center border border-nicon-line bg-white px-2 text-xs text-nicon-ink" href="{{ route('vouchers.pdf', $bon) }}">PDF</a>
+                    @if ($canCreateVouchers)
+                        <form method="POST" action="{{ route('vouchers.destroy', $bon) }}" class="inline" onsubmit="return confirm({{ json_encode($bon->type->label().' '.$bon->number.' wordt verwijderd.') }})">
                             @csrf
-                            <button type="submit" class="text-xs text-nicon-orange-dark underline-offset-2 hover:underline">Verstuur</button>
+                            @method('DELETE')
+                            <button type="submit" class="inline-flex h-7 items-center border border-nicon-line bg-white px-2 text-xs text-nicon-danger">Verwijderen</button>
                         </form>
+                        @if (filled($worker->email))
+                            <form method="POST" action="{{ route('vouchers.send', $bon) }}" class="inline">
+                                @csrf
+                                <button type="submit" class="inline-flex h-7 items-center border border-nicon-line bg-white px-2 text-xs text-nicon-ink">Verstuur</button>
+                            </form>
+                        @endif
                     @endif
-                @endif
+                </span>
             </div>
         @endforeach
     </div>

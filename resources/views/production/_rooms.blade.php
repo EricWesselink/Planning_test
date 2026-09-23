@@ -4,27 +4,27 @@
     $canApproveProgress = $canApproveProgress ?? false;
 @endphp
 <div class="overflow-x-auto">
-    <table class="w-full text-sm">
-        <thead class="text-left text-nicon-muted">
+    <table class="w-full min-w-[36rem] text-sm">
+        <thead class="border-y border-nicon-line bg-nicon-paper text-left text-[11px] tracking-wide text-nicon-muted">
             <tr>
-                <th class="px-3 py-1 font-medium">Ruimte</th>
-                <th class="px-3 py-1 font-medium">m² ruimte</th>
-                <th class="px-3 py-1 font-medium">Materialen</th>
-                <th class="px-3 py-1 font-medium">Status</th>
+                <th class="px-3 py-1.5 font-medium">Ruimte</th>
+                <th class="px-3 py-1.5 text-right font-medium">m² ruimte</th>
+                <th class="px-3 py-1.5 font-medium">Materialen</th>
+                <th class="px-3 py-1.5 font-medium">Status</th>
             </tr>
         </thead>
         <tbody>
             @foreach ($projectGroup['rooms'] as $room)
-                <tr class="border-t border-nicon-line align-top">
-                    <td class="px-3 py-1 font-medium">{{ $room['label'] }}</td>
-                    <td class="whitespace-nowrap px-3 py-1">
+                <tr class="border-b border-nicon-line align-top">
+                    <td class="px-3 py-1.5 font-medium text-nicon-ink">{{ $room['label'] }}</td>
+                    <td class="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                         @if ($room['area_m2'] > 0)
                             {{ \App\Support\Format::qty($room['area_m2'], 2) }} m²
                         @else
                             —
                         @endif
                     </td>
-                    <td class="px-3 py-1">
+                    <td class="px-3 py-1.5">
                         <ul class="flex flex-col gap-0.5">
                             @foreach ($room['materials'] as $material)
                                 <li class="flex items-center gap-2">
@@ -43,7 +43,7 @@
                             @endforeach
                         </ul>
                     </td>
-                    <td class="px-3 py-1">
+                    <td class="px-3 py-1.5">
                         <ul class="flex flex-col gap-0.5">
                             @foreach ($room['materials'] as $material)
                                 <li class="flex flex-wrap items-center gap-2">

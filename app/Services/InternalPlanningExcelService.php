@@ -18,9 +18,11 @@ use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Conditional;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
@@ -37,25 +39,50 @@ class InternalPlanningExcelService
 
     private const FONT = 'Aptos Narrow';
 
-    private const RED = 'C00000';
+    private const RED = 'C41623';
 
-    private const GRAY = 'D8D8D8';
+    private const RED_LIGHT = 'FDECEE';
+
+    private const INK = '1A1A1A';
+
+    private const MUTED = '6B7280';
+
+    private const LINE = 'E5E5E5';
+
+    private const WEEK_LINE = 'D4D4D8';
+
+    private const PAPER = 'F6F6F7';
+
+    private const SAND = 'F4F4F5';
 
     private const WHITE = 'FFFFFF';
 
-    private const LEFT_COLUMNS = 10;
+    private const OK = '3F6212';
+
+    private const OK_LIGHT = 'E8F0DC';
+
+    private const WARN = 'B45309';
+
+    private const WARN_LIGHT = 'FEF4E6';
+
+    /** A Project, B Plaats, C m², D Begroot, E Gepland, F Verschil. */
+    private const LEFT_COLUMNS = 6;
+
+    private const HEADER_ROWS = 3;
 
     private const WEEK_BLOCK = 6;
 
-    private const TEAM_TOTAL_FILL = 'BDD7EE';
+    private const PROJECT_FILL = 'F6F6F7';
 
-    private const WORK_TOTAL_FILL = 'F8CBAD';
+    private const TEAM_TOTAL_FILL = 'F4F4F5';
 
-    private const UNDER_GREEN = '548235';
+    private const WORK_TOTAL_FILL = 'E8E8EA';
 
     private const HOURS_FORMAT = '0.##;;';
 
     private const DIFF_FORMAT = '+0.##;-0.##;0';
+
+    private const M2_FORMAT = '0.##" m²"';
 
     private const DASH = '—';
 
@@ -271,7 +298,17 @@ class InternalPlanningExcelService
             ));
             $showTeamTotals = count($namedTeams) > 1;
             $source = $this->sourceLabel($entry['project']);
-            $rows[] = $this->projectHeader($entry['project'], '', $source);
+            $header = $this->projectHeader($entry['project'], '', $source);
+            $rows[] = $header;
+            $detail = [
+                'customer' => $header['customer'],
+                'name' => $header['name'],
+                'city' => $header['city'],
+                'work_type' => $header['work_type'],
+                'project_number' => $header['project_number'],
+                'work_number' => $header['work_number'],
+                'm2' => $header['m2'],
+            ];
 
             foreach ($teams as $team) {
                 $named = $team['name'] !== null && $team['name'] !== '';
@@ -282,11 +319,18 @@ class InternalPlanningExcelService
                         $this->personLabel($named ? (string) $team['name'] : null, $person['name']),
                         $person['days'],
                         source: $source,
+                        detail: $detail,
                     );
                 }
 
                 if ($named && $showTeamTotals) {
-                    $rows[] = $this->hourRow('team_total', 'Totaal '.$team['name'], [], source: $source);
+                    $rows[] = $this->hourRow(
+                        'team_total',
+                        'Totaal '.$team['name'],
+                        [],
+                        source: $source,
+                        detail: $detail,
+                    );
                 }
             }
 
@@ -297,6 +341,7 @@ class InternalPlanningExcelService
                 $this->budgetHours($entry['project']),
                 $this->plannedHoursForTeams($teams),
                 $source,
+                $detail,
             );
         }
 
@@ -695,6 +740,8 @@ class InternalPlanningExcelService
             'name' => $this->projectName($project),
             'city' => trim((string) $project->city),
             'work_type' => $this->workTypeLabel($project),
+            'project_number' => (string) ($project->workCode() ?? ''),
+            'work_number' => $project->workNumber(),
             'm2' => $this->orderedSquareMeters($project),
             'label' => $label,
             'days' => [],
@@ -703,6 +750,7 @@ class InternalPlanningExcelService
 
     /**
      * @param  array<string, float>  $days
+     * @param  array<string, mixed>  $detail
      * @return array<string, mixed>
      */
     private function hourRow(
@@ -712,15 +760,18 @@ class InternalPlanningExcelService
         int|float|null $budgetHours = null,
         float $plannedHours = 0.0,
         string $source = '',
+        array $detail = [],
     ): array {
         return [
             'kind' => $kind,
             'source' => $source,
-            'customer' => '',
-            'name' => '',
-            'city' => '',
-            'work_type' => '',
-            'm2' => null,
+            'customer' => (string) ($detail['customer'] ?? ''),
+            'name' => (string) ($detail['name'] ?? ''),
+            'city' => (string) ($detail['city'] ?? ''),
+            'work_type' => (string) ($detail['work_type'] ?? ''),
+            'project_number' => (string) ($detail['project_number'] ?? ''),
+            'work_number' => (string) ($detail['work_number'] ?? ''),
+            'm2' => $detail['m2'] ?? null,
             'label' => $label,
             'days' => $days,
             'budget_hours' => $budgetHours,
@@ -891,11 +942,16 @@ class InternalPlanningExcelService
         $spreadsheet->getProperties()
             ->setCreator((string) config('company.name'))
             ->setTitle('Planning Nicon '.$year);
-        $spreadsheet->getDefaultStyle()->getFont()->setName(self::FONT)->setSize(11);
+        $spreadsheet->getDefaultStyle()->getFont()->setName(self::FONT)->setSize(10);
 
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Planning Nicon');
         $this->writeSheet($sheet, $weeks, $rows);
+
+        $detail = $spreadsheet->createSheet();
+        $detail->setTitle('Detail');
+        $this->writeDetailSheet($detail, $rows);
+        $spreadsheet->setActiveSheetIndex(0);
 
         return $spreadsheet;
     }
@@ -909,19 +965,14 @@ class InternalPlanningExcelService
         $weekCount = count($weeks);
         $lastCol = self::LEFT_COLUMNS + ($weekCount * self::WEEK_BLOCK);
         $lastColRef = Coordinate::stringFromColumnIndex($lastCol);
-        $lastRow = 2 + max(1, count($rows));
+        $lastRow = self::HEADER_ROWS + max(1, count($rows));
 
-        $sheet->setCellValue('F1', 'Weeknummer');
-        $sheet->setCellValue('A2', 'Bron');
-        $sheet->setCellValue('B2', 'Aannemer/ klant');
-        $sheet->setCellValue('C2', 'Naam project');
-        $sheet->setCellValue('D2', 'Plaats');
-        $sheet->setCellValue('E2', 'Soort stoffering');
-        $sheet->setCellValue('F2', 'm2');
-        $sheet->setCellValue('G2', 'Team / vakman');
-        $sheet->setCellValue('H2', 'Begroot uren');
-        $sheet->setCellValue('I2', 'Gepland uren');
-        $sheet->setCellValue('J2', 'Verschil');
+        $sheet->setCellValue('A3', 'Project');
+        $sheet->setCellValue('B3', 'Plaats');
+        $sheet->setCellValue('C3', 'm²');
+        $sheet->setCellValue('D3', "Begroot\nuren");
+        $sheet->setCellValue('E3', "Gepland\nuren");
+        $sheet->setCellValue('F3', 'Verschil');
 
         $column = self::LEFT_COLUMNS + 1;
         foreach ($weeks as $week) {
@@ -929,10 +980,12 @@ class InternalPlanningExcelService
             $endRef = Coordinate::stringFromColumnIndex($column + 5);
             $sheet->setCellValue($startRef.'1', $week['number']);
             $sheet->mergeCells($startRef.'1:'.$endRef.'1');
-            foreach (self::DAY_LABELS as $index => $label) {
-                $sheet->setCellValue(Coordinate::stringFromColumnIndex($column + $index).'2', $label);
+            foreach ($week['days'] as $index => $day) {
+                $dayRef = Coordinate::stringFromColumnIndex($column + $index);
+                $sheet->setCellValue($dayRef.'2', Date::PHPToExcel($day));
+                $sheet->setCellValue($dayRef.'3', self::DAY_LABELS[$index]);
             }
-            $sheet->setCellValue(Coordinate::stringFromColumnIndex($column + 5).'2', 'wk');
+            $sheet->setCellValue(Coordinate::stringFromColumnIndex($column + 5).'3', 'wk');
             $column += self::WEEK_BLOCK;
         }
 
@@ -941,35 +994,32 @@ class InternalPlanningExcelService
         $currentTeamPeople = [];
 
         foreach ($rows as $index => $row) {
-            $excelRow = $index + 3;
+            $excelRow = $index + self::HEADER_ROWS + 1;
             if ($row['kind'] === 'project') {
                 if ($current['work_total'] !== null || $current['people'] !== []) {
                     $blocks[] = $current;
                 }
                 $current = $this->emptyBlock();
                 $currentTeamPeople = [];
-                $sheet->setCellValue('B'.$excelRow, $row['customer']);
-                $sheet->setCellValue('C'.$excelRow, $row['name']);
-                $sheet->setCellValue('D'.$excelRow, $row['city']);
-                $sheet->setCellValue('E'.$excelRow, $row['work_type']);
+                $current['project'] = $excelRow;
+                $sheet->setCellValue('A'.$excelRow, $row['name']);
+                $sheet->setCellValue('B'.$excelRow, $row['city']);
                 if ($row['m2'] !== null) {
-                    $sheet->setCellValue('F'.$excelRow, $row['m2']);
+                    $sheet->setCellValue('C'.$excelRow, $row['m2']);
                 }
+            } else {
+                $sheet->setCellValue('A'.$excelRow, $row['label']);
             }
 
-            $sheet->setCellValue('A'.$excelRow, $row['source']);
-
-            $sheet->setCellValue('G'.$excelRow, $row['label']);
-
             if (in_array($row['kind'], ['person', 'team_total'], true)) {
-                $sheet->setCellValue('H'.$excelRow, self::DASH);
-                $sheet->setCellValue('J'.$excelRow, self::DASH);
+                $sheet->setCellValue('D'.$excelRow, self::DASH);
+                $sheet->setCellValue('F'.$excelRow, self::DASH);
             }
 
             if ($row['kind'] === 'person') {
                 $this->writePersonDays($sheet, $excelRow, $weeks, $row['days']);
                 $this->writeWeekFormulas($sheet, $excelRow, $weekCount);
-                $sheet->setCellValue('I'.$excelRow, $this->weekTotalsSumFormula($excelRow, $weekCount));
+                $sheet->setCellValue('E'.$excelRow, $this->weekTotalsSumFormula($excelRow, $weekCount));
                 $current['people'][] = $excelRow;
                 $currentTeamPeople[] = $excelRow;
             }
@@ -986,6 +1036,8 @@ class InternalPlanningExcelService
                 $this->writeWorkBudget($sheet, $excelRow, $row['budget_hours']);
                 $current['loose'] = $currentTeamPeople;
                 $current['work_total'] = $excelRow;
+                $current['budget_hours'] = $row['budget_hours'];
+                $current['planned_hours'] = $row['planned_hours'];
             }
         }
 
@@ -996,7 +1048,7 @@ class InternalPlanningExcelService
         foreach ($blocks as $block) {
             foreach ($block['team_totals'] as $team) {
                 $this->writeRolledUpHours($sheet, $team['row'], $team['people'], $weeks, $weekCount);
-                $sheet->setCellValue('I'.$team['row'], $this->columnSum('I', $team['people']));
+                $sheet->setCellValue('E'.$team['row'], $this->columnSum('E', $team['people']));
             }
 
             $workSources = $block['team_totals'] !== []
@@ -1005,9 +1057,15 @@ class InternalPlanningExcelService
                     $block['loose'],
                 ))
                 : $block['people'];
+            $plannedFormula = $this->columnSum('E', $block['people']);
             if ($block['work_total'] !== null) {
                 $this->writeRolledUpHours($sheet, $block['work_total'], $workSources, $weeks, $weekCount);
-                $sheet->setCellValue('I'.$block['work_total'], $this->columnSum('I', $block['people']));
+                $sheet->setCellValue('E'.$block['work_total'], $plannedFormula);
+            }
+            if ($block['project'] !== null) {
+                $this->writeRolledUpHours($sheet, $block['project'], $workSources, $weeks, $weekCount);
+                $this->writeWorkBudget($sheet, $block['project'], $block['budget_hours']);
+                $sheet->setCellValue('E'.$block['project'], $plannedFormula);
             }
         }
 
@@ -1018,18 +1076,18 @@ class InternalPlanningExcelService
     private function writeWorkBudget(Worksheet $sheet, int $row, int|float|null $budgetHours): void
     {
         if ($budgetHours === null) {
-            $sheet->setCellValue('H'.$row, self::DASH);
-            $sheet->setCellValue('J'.$row, self::DASH);
+            $sheet->setCellValue('D'.$row, self::DASH);
+            $sheet->setCellValue('F'.$row, self::DASH);
 
             return;
         }
 
-        $sheet->setCellValue('H'.$row, $budgetHours);
-        $sheet->setCellValue('J'.$row, '=I'.$row.'-H'.$row);
+        $sheet->setCellValue('D'.$row, $budgetHours);
+        $sheet->setCellValue('F'.$row, '=E'.$row.'-D'.$row);
     }
 
     /**
-     * @return array{people: list<int>, loose: list<int>, team_totals: list<array{row: int, people: list<int>}>, work_total: ?int}
+     * @return array{people: list<int>, loose: list<int>, team_totals: list<array{row: int, people: list<int>}>, work_total: ?int, project: ?int, budget_hours: int|float|null, planned_hours: float}
      */
     private function emptyBlock(): array
     {
@@ -1038,6 +1096,9 @@ class InternalPlanningExcelService
             'loose' => [],
             'team_totals' => [],
             'work_total' => null,
+            'project' => null,
+            'budget_hours' => null,
+            'planned_hours' => 0.0,
         ];
     }
 
@@ -1052,10 +1113,11 @@ class InternalPlanningExcelService
             foreach ($week['days'] as $dayIndex => $day) {
                 $hours = (float) ($days[$day->toDateString()] ?? 0);
                 if ($hours >= 0.05) {
-                    $sheet->setCellValue(
-                        Coordinate::stringFromColumnIndex($column + $dayIndex).$row,
-                        $this->hoursValue($hours),
-                    );
+                    $coordinate = Coordinate::stringFromColumnIndex($column + $dayIndex).$row;
+                    $sheet->setCellValue($coordinate, $this->hoursValue($hours));
+                    $sheet->getStyle($coordinate)->getFill()
+                        ->setFillType(Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB(self::RED_LIGHT);
                 }
             }
             $column += self::WEEK_BLOCK;
@@ -1149,138 +1211,186 @@ class InternalPlanningExcelService
         array $weeks,
         array $rows,
     ): void {
-        $sheet->freezePane(Coordinate::stringFromColumnIndex(self::LEFT_COLUMNS + 1).'3');
-        $sheet->getSheetView()->setZoomScale(140);
+        $firstWeekCol = Coordinate::stringFromColumnIndex(self::LEFT_COLUMNS + 1);
+        $sheet->freezePane($firstWeekCol.(self::HEADER_ROWS + 1));
+        $sheet->getSheetView()->setZoomScale(100);
+        $sheet->setShowGridlines(false);
         $sheet->getPageSetup()
             ->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)
             ->setPaperSize(PageSetup::PAPERSIZE_A4)
-            ->setFitToWidth(1)
+            ->setFitToPage(false)
+            ->setFitToWidth(0)
             ->setFitToHeight(0)
-            ->setRowsToRepeatAtTopByStartAndEnd(1, 2);
+            ->setScale(80)
+            ->setRowsToRepeatAtTopByStartAndEnd(1, self::HEADER_ROWS)
+            ->setColumnsToRepeatAtLeftByStartAndEnd('A', 'F');
         $sheet->getPageMargins()
-            ->setLeft(0.5)
-            ->setRight(0.5)
-            ->setTop(0.6)
-            ->setBottom(0.6)
-            ->setHeader(0.3)
-            ->setFooter(0.3);
+            ->setLeft(0.4)
+            ->setRight(0.4)
+            ->setTop(0.5)
+            ->setBottom(0.5)
+            ->setHeader(0.25)
+            ->setFooter(0.25);
+        $sheet->getHeaderFooter()->setOddFooter('&LPlanning Nicon&R&P / &N');
 
-        $sheet->getColumnDimension('A')->setWidth(22);
-        $sheet->getColumnDimension('B')->setWidth(22);
-        $sheet->getColumnDimension('C')->setWidth(28);
-        $sheet->getColumnDimension('D')->setWidth(16);
-        $sheet->getColumnDimension('E')->setWidth(22);
-        $sheet->getColumnDimension('F')->setWidth(10);
-        $sheet->getColumnDimension('G')->setWidth(26);
-        $sheet->getColumnDimension('H')->setWidth(12);
-        $sheet->getColumnDimension('I')->setWidth(12);
-        $sheet->getColumnDimension('J')->setWidth(12);
+        $sheet->getColumnDimension('A')->setWidth(34);
+        $sheet->getColumnDimension('B')->setWidth(16);
+        $sheet->getColumnDimension('C')->setWidth(10);
+        $sheet->getColumnDimension('D')->setWidth(11);
+        $sheet->getColumnDimension('E')->setWidth(11);
+        $sheet->getColumnDimension('F')->setWidth(11);
 
         $column = self::LEFT_COLUMNS + 1;
         foreach ($weeks as $week) {
             foreach (array_keys($week['days']) as $dayIndex) {
-                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column + $dayIndex))->setWidth(4);
+                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column + $dayIndex))->setWidth(3.8);
             }
-            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column + 5))->setWidth(5);
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column + 5))->setWidth(6);
             $column += self::WEEK_BLOCK;
         }
 
-        $medium = [
-            'borderStyle' => Border::BORDER_MEDIUM,
-            'color' => ['rgb' => '000000'],
+        $thin = [
+            'borderStyle' => Border::BORDER_THIN,
+            'color' => ['rgb' => self::LINE],
         ];
         $sheet->getStyle('A1:'.$lastColRef.$lastRow)->applyFromArray([
-            'font' => ['name' => self::FONT, 'size' => 9],
-            'borders' => ['allBorders' => $medium],
+            'font' => ['name' => self::FONT, 'size' => 10, 'color' => ['rgb' => self::INK]],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+            'borders' => ['allBorders' => $thin],
         ]);
 
-        $sheet->getRowDimension(1)->setRowHeight(42);
-        $sheet->getStyle('A1:'.$lastColRef.'1')->applyFromArray([
-            'font' => ['name' => self::FONT, 'size' => 12, 'bold' => true, 'color' => ['rgb' => '000000']],
-            'alignment' => [
-                'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER,
-            ],
+        $sheet->getRowDimension(1)->setRowHeight(22);
+        $sheet->getRowDimension(2)->setRowHeight(16);
+        $sheet->getRowDimension(3)->setRowHeight(32);
+        $sheet->getStyle('A1:'.$lastColRef.'3')->applyFromArray([
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => self::GRAY],
+                'startColor' => ['rgb' => self::PAPER],
             ],
-        ]);
-        $sheet->getStyle('F1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-
-        $sheet->getRowDimension(2)->setRowHeight(34);
-        $sheet->getStyle('A2:'.$lastColRef.'2')->applyFromArray([
-            'font' => ['name' => self::FONT, 'size' => 11, 'bold' => true, 'color' => ['rgb' => self::WHITE]],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
                 'wrapText' => true,
             ],
-            'fill' => [
-                'fillType' => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => self::RED],
-            ],
         ]);
-        $sheet->getStyle('A2:G2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('A3:F3')->applyFromArray([
+            'font' => ['name' => self::FONT, 'size' => 10, 'bold' => true, 'color' => ['rgb' => self::INK]],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
+        ]);
+        $sheet->getStyle('C3:'.$lastColRef.'3')->getFont()->setBold(true)->setSize(9);
+        $sheet->getStyle($firstWeekCol.'1:'.$lastColRef.'1')->applyFromArray([
+            'font' => ['name' => self::FONT, 'size' => 12, 'bold' => true, 'color' => ['rgb' => self::RED]],
+            'numberFormat' => ['formatCode' => '"WEEK "0'],
+        ]);
+        $sheet->getStyle($firstWeekCol.'2:'.$lastColRef.'2')->applyFromArray([
+            'font' => ['name' => self::FONT, 'size' => 8, 'bold' => false, 'color' => ['rgb' => self::MUTED]],
+            'numberFormat' => ['formatCode' => 'd'],
+        ]);
+        $sheet->getStyle('A3:'.$lastColRef.'3')->getBorders()->getBottom()
+            ->setBorderStyle(Border::BORDER_MEDIUM)
+            ->getColor()->setRGB(self::RED);
 
-        $sheet->getStyle('A3:'.$lastColRef.$lastRow)->applyFromArray([
-            'font' => ['name' => self::FONT, 'size' => 9],
-            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
-            'fill' => [
-                'fillType' => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => self::GRAY],
-            ],
-        ]);
-        $firstWeekCol = Coordinate::stringFromColumnIndex(self::LEFT_COLUMNS + 1);
-        $sheet->getStyle('H3:'.$lastColRef.$lastRow)->applyFromArray([
+        $firstDataRow = self::HEADER_ROWS + 1;
+        $sheet->getStyle('C'.$firstDataRow.':E'.$lastRow)->applyFromArray([
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-        ]);
-        $sheet->getStyle('H3:I'.$lastRow)->applyFromArray([
             'numberFormat' => ['formatCode' => self::HOURS_FORMAT],
         ]);
-        $sheet->getStyle('J3:J'.$lastRow)->applyFromArray([
+        $sheet->getStyle('C'.$firstDataRow.':C'.$lastRow)->applyFromArray([
+            'numberFormat' => ['formatCode' => self::M2_FORMAT],
+        ]);
+        $sheet->getStyle('F'.$firstDataRow.':F'.$lastRow)->applyFromArray([
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             'numberFormat' => ['formatCode' => self::DIFF_FORMAT],
         ]);
-        $sheet->getStyle($firstWeekCol.'3:'.$lastColRef.$lastRow)->applyFromArray([
+        $sheet->getStyle($firstWeekCol.$firstDataRow.':'.$lastColRef.$lastRow)->applyFromArray([
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             'numberFormat' => ['formatCode' => self::HOURS_FORMAT],
         ]);
-        $sheet->getStyle('F3:F'.$lastRow)->applyFromArray([
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
-            'numberFormat' => ['formatCode' => '0" m2"'],
-        ]);
+        $sheet->getStyle('A'.$firstDataRow.':B'.$lastRow)->getAlignment()->setWrapText(true);
 
+        $projectRow = null;
         foreach ($rows as $index => $row) {
-            $excelRow = $index + 3;
-            $sheet->getRowDimension($excelRow)->setRowHeight(16);
-            if (in_array($row['kind'], ['project', 'team', 'team_total', 'work_total'], true)) {
-                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->getFont()->setBold(true);
+            $excelRow = $index + $firstDataRow;
+            $sheet->getRowDimension($excelRow)->setRowHeight(18);
+            if ($row['kind'] === 'project') {
+                $projectRow = $excelRow;
+                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->applyFromArray([
+                    'font' => ['bold' => true, 'color' => ['rgb' => self::INK]],
+                    'fill' => [
+                        'fillType' => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => self::PROJECT_FILL],
+                    ],
+                ]);
+                $sheet->getStyle('A'.$excelRow)->getFont()->getColor()->setRGB(self::RED);
+                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->getBorders()->getTop()
+                    ->setBorderStyle(Border::BORDER_MEDIUM)
+                    ->getColor()->setRGB(self::RED);
+            }
+            if ($row['kind'] === 'person') {
+                $sheet->getStyle('A'.$excelRow)->getFont()->setBold(false);
+                $sheet->getStyle('A'.$excelRow)->getAlignment()->setIndent(1);
             }
             if ($row['kind'] === 'team_total') {
-                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->getFill()
-                    ->setFillType(Fill::FILL_SOLID)
-                    ->getStartColor()->setRGB(self::TEAM_TOTAL_FILL);
-                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->getBorders()->getTop()
-                    ->setBorderStyle(Border::BORDER_THICK)
-                    ->getColor()->setRGB('000000');
+                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->applyFromArray([
+                    'font' => ['bold' => true, 'color' => ['rgb' => self::INK]],
+                    'fill' => [
+                        'fillType' => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => self::TEAM_TOTAL_FILL],
+                    ],
+                ]);
+                $sheet->getStyle('A'.$excelRow)->getAlignment()->setIndent(1);
             }
             if ($row['kind'] === 'work_total') {
-                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->getFill()
-                    ->setFillType(Fill::FILL_SOLID)
-                    ->getStartColor()->setRGB(self::WORK_TOTAL_FILL);
-                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->getBorders()->getTop()
-                    ->setBorderStyle(Border::BORDER_THICK)
-                    ->getColor()->setRGB('000000');
+                $sheet->getStyle('A'.$excelRow.':'.$lastColRef.$excelRow)->applyFromArray([
+                    'font' => ['bold' => true, 'color' => ['rgb' => self::INK]],
+                    'fill' => [
+                        'fillType' => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => self::WORK_TOTAL_FILL],
+                    ],
+                ]);
+                $sheet->getStyle('A'.$excelRow)->getAlignment()->setIndent(1);
                 $this->styleWorkDifference($sheet, $excelRow, $row);
+                if ($projectRow !== null) {
+                    $this->styleWorkDifference($sheet, $projectRow, $row);
+                }
             }
         }
 
         $column = self::LEFT_COLUMNS + 1;
         foreach ($weeks as $week) {
             $startRef = Coordinate::stringFromColumnIndex($column);
-            $endRef = Coordinate::stringFromColumnIndex($column + 5);
-            $sheet->getStyle($startRef.'1:'.$endRef.$lastRow)->applyFromArray([
-                'borders' => ['outline' => $medium],
-            ]);
+            $sheet->getStyle($startRef.'1:'.$startRef.$lastRow)->getBorders()->getLeft()
+                ->setBorderStyle(Border::BORDER_MEDIUM)
+                ->getColor()->setRGB(self::WEEK_LINE);
+            $column += self::WEEK_BLOCK;
+        }
+
+        $this->highlightPlannedDays($sheet, $weeks, $lastRow);
+        $sheet->setAutoFilter('A3:F'.$lastRow);
+        $sheet->getTabColor()->setRGB(self::RED);
+    }
+
+    /**
+     * @param  list<array{number: int, year: int, days: list<Carbon>}>  $weeks
+     */
+    private function highlightPlannedDays(Worksheet $sheet, array $weeks, int $lastRow): void
+    {
+        $firstDataRow = self::HEADER_ROWS + 1;
+        $column = self::LEFT_COLUMNS + 1;
+        foreach ($weeks as $week) {
+            $start = Coordinate::stringFromColumnIndex($column);
+            $end = Coordinate::stringFromColumnIndex($column + 4);
+            $conditional = new Conditional;
+            $conditional->setConditionType(Conditional::CONDITION_CELLIS);
+            $conditional->setOperatorType(Conditional::OPERATOR_GREATERTHAN);
+            $conditional->addCondition('0');
+            $conditional->getStyle()->getFill()
+                ->setFillType(Fill::FILL_SOLID)
+                ->getStartColor()->setRGB(self::RED_LIGHT);
+            $range = $start.$firstDataRow.':'.$end.$lastRow;
+            $styles = $sheet->getStyle($range)->getConditionalStyles();
+            $styles[] = $conditional;
+            $sheet->getStyle($range)->setConditionalStyles($styles);
             $column += self::WEEK_BLOCK;
         }
     }
@@ -1295,11 +1405,119 @@ class InternalPlanningExcelService
         }
 
         $difference = (float) $rowData['planned_hours'] - (float) $rowData['budget_hours'];
-        if ($difference > 0.001) {
-            $sheet->getStyle('J'.$row)->getFont()->getColor()->setRGB(self::RED);
-        } elseif ($difference < -0.001) {
-            $sheet->getStyle('J'.$row)->getFont()->getColor()->setRGB(self::UNDER_GREEN);
+        $fill = self::RED_LIGHT;
+        $font = self::RED;
+        if (abs($difference) <= 0.001) {
+            $fill = self::OK_LIGHT;
+            $font = self::OK;
+        } elseif ($difference > 0.001) {
+            $fill = self::WARN_LIGHT;
+            $font = self::WARN;
         }
+
+        $sheet->getStyle('F'.$row)->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB($fill);
+        $sheet->getStyle('F'.$row)->getFont()->getColor()->setRGB($font);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function writeDetailSheet(Worksheet $sheet, array $rows): void
+    {
+        $headers = [
+            'A' => 'Projectnr.',
+            'B' => 'Werknummer',
+            'C' => 'Bron',
+            'D' => 'Opdrachtgever',
+            'E' => 'Project',
+            'F' => 'Plaats',
+            'G' => 'Soort stoffering',
+            'H' => 'Team / vakman',
+            'I' => 'm²',
+            'J' => 'Begroot uren',
+            'K' => 'Gepland uren',
+            'L' => 'Verschil',
+        ];
+        foreach ($headers as $column => $label) {
+            $sheet->setCellValue($column.'1', $label);
+        }
+
+        $lastRow = max(2, count($rows) + 1);
+        $widths = ['A' => 16, 'B' => 16, 'C' => 22, 'D' => 24, 'E' => 32, 'F' => 16, 'G' => 28, 'H' => 28, 'I' => 10, 'J' => 14, 'K' => 14, 'L' => 12];
+        foreach ($widths as $column => $width) {
+            $sheet->getColumnDimension($column)->setWidth($width);
+        }
+        $sheet->getStyle('A1:L'.$lastRow)->applyFromArray([
+            'font' => ['name' => self::FONT, 'size' => 10, 'color' => ['rgb' => self::INK]],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER, 'wrapText' => true],
+            'borders' => ['allBorders' => [
+                'borderStyle' => Border::BORDER_THIN,
+                'color' => ['rgb' => self::LINE],
+            ]],
+        ]);
+        $sheet->getStyle('A1:L1')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => self::INK]],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => self::PAPER],
+            ],
+        ]);
+        $sheet->getStyle('A1:L1')->getBorders()->getBottom()
+            ->setBorderStyle(Border::BORDER_MEDIUM)
+            ->getColor()->setRGB(self::RED);
+        $sheet->getRowDimension(1)->setRowHeight(22);
+
+        foreach ($rows as $index => $row) {
+            $detailRow = $index + 2;
+            $planningRow = $index + self::HEADER_ROWS + 1;
+            $sheet->setCellValue('A'.$detailRow, (string) ($row['project_number'] ?? ''));
+            $sheet->setCellValue('B'.$detailRow, (string) ($row['work_number'] ?? ''));
+            $sheet->setCellValue('C'.$detailRow, $row['source']);
+            $sheet->setCellValue('D'.$detailRow, $row['customer']);
+            $sheet->setCellValue('E'.$detailRow, $row['name']);
+            $sheet->setCellValue('F'.$detailRow, $row['city']);
+            $sheet->setCellValue('G'.$detailRow, $row['work_type']);
+            $sheet->setCellValue('H'.$detailRow, $row['kind'] === 'project' ? '' : $row['label']);
+            if ($row['m2'] !== null) {
+                $sheet->setCellValue('I'.$detailRow, $row['m2']);
+            }
+            $sheet->setCellValue('J'.$detailRow, "='Planning Nicon'!D{$planningRow}");
+            $sheet->setCellValue('K'.$detailRow, "='Planning Nicon'!E{$planningRow}");
+            $sheet->setCellValue('L'.$detailRow, "='Planning Nicon'!F{$planningRow}");
+            $sheet->getRowDimension($detailRow)->setRowHeight(18);
+            $sheet->getStyle('B'.$detailRow)->getFont()->getColor()->setRGB(self::RED);
+            if ($row['kind'] === 'project') {
+                $sheet->getStyle('A'.$detailRow.':L'.$detailRow)->getFont()->setBold(true);
+                $sheet->getStyle('E'.$detailRow)->getFont()->getColor()->setRGB(self::RED);
+                $sheet->getStyle('A'.$detailRow.':L'.$detailRow)->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB(self::PROJECT_FILL);
+                $sheet->getStyle('A'.$detailRow.':L'.$detailRow)->getBorders()->getTop()
+                    ->setBorderStyle(Border::BORDER_MEDIUM)
+                    ->getColor()->setRGB(self::RED);
+            } elseif (in_array($row['kind'], ['team_total', 'work_total'], true)) {
+                $sheet->getStyle('A'.$detailRow.':L'.$detailRow)->getFont()->setBold(true);
+                $sheet->getStyle('H'.$detailRow)->getAlignment()->setIndent(1);
+            } else {
+                $sheet->getStyle('H'.$detailRow)->getAlignment()->setIndent(1);
+            }
+        }
+
+        $sheet->getStyle('I2:K'.$lastRow)->getNumberFormat()->setFormatCode(self::HOURS_FORMAT);
+        $sheet->getStyle('I2:I'.$lastRow)->getNumberFormat()->setFormatCode(self::M2_FORMAT);
+        $sheet->getStyle('L2:L'.$lastRow)->getNumberFormat()->setFormatCode(self::DIFF_FORMAT);
+        $sheet->freezePane('A2');
+        $sheet->setAutoFilter('A1:L'.$lastRow);
+        $sheet->getPageSetup()
+            ->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)
+            ->setPaperSize(PageSetup::PAPERSIZE_A4)
+            ->setFitToWidth(1)
+            ->setFitToHeight(0)
+            ->setRowsToRepeatAtTopByStartAndEnd(1, 1);
+        $sheet->getPageMargins()->setLeft(0.4)->setRight(0.4)->setTop(0.5)->setBottom(0.5);
+        $sheet->setShowGridlines(false);
     }
 
     private function addCompanyLogo(Worksheet $sheet): void
@@ -1316,7 +1534,7 @@ class InternalPlanningExcelService
         $drawing->setCoordinates('A1');
         $drawing->setOffsetX(4);
         $drawing->setOffsetY(4);
-        $drawing->setHeight(34);
+        $drawing->setHeight(18);
         $drawing->setWorksheet($sheet);
     }
 

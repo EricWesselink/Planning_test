@@ -13,15 +13,15 @@
         h1 { font-size: 20px; margin: 0; }
         h2 { font-size: 16px; margin: 0 0 6px; }
         .muted { color: #78716c; font-size: 12px; }
-        .point { page-break-inside: avoid; margin: 18px 0; padding-top: 12px; border-top: 1px solid #e7e0d4; }
+        .point { page-break-inside: avoid; margin: 18px 0; padding-top: 12px; border-top: 1px solid #e5e5e5; }
         .point-photo { max-width: 280px; max-height: 180px; }
         .media { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin-top: 8px; }
         .map {
             position: relative;
             width: 100%;
             min-height: 180px;
-            background: #f4efe6;
-            border: 1px solid #e7e0d4;
+            background: #f4f4f5;
+            border: 1px solid #e5e5e5;
             margin: 12px 0 18px;
         }
         .map-drawing {
@@ -59,8 +59,8 @@
             width: 220px;
             height: 160px;
             overflow: hidden;
-            background: #f4efe6;
-            border: 1px solid #e7e0d4;
+            background: #f4f4f5;
+            border: 1px solid #e5e5e5;
         }
         .excerpt-drawing {
             position: absolute;

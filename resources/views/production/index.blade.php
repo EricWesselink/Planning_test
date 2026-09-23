@@ -3,61 +3,79 @@
 @section('title', 'Productie · Nicon Planning')
 
 @section('content')
-    <div class="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-            <h1 class="text-lg font-semibold">
-                Productie
-                @if ($ownWorker)
-                    <span class="font-normal text-nicon-muted">· {{ $ownWorker->displayName() }}</span>
-                @endif
-            </h1>
-        </div>
-        <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="window.print()" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">Printen</button>
-            @if ($downloadVoucher ?? null)
-                <a href="{{ route('vouchers.pdf', $downloadVoucher) }}" class="border border-nicon-ink bg-nicon-ink px-3 py-1.5 text-sm text-white">Download PDF</a>
+    @php
+        $fieldClass = 'h-9 w-full border border-nicon-line bg-white px-2 text-sm text-nicon-ink focus:border-nicon-orange focus:outline-none focus:ring-1 focus:ring-nicon-orange';
+    @endphp
+
+    <div class="flex items-center gap-3">
+        <span class="h-6 w-1 shrink-0 bg-nicon-orange" aria-hidden="true"></span>
+        <h1 class="text-lg font-semibold leading-none text-nicon-ink">
+            Productie
+            @if ($ownWorker)
+                <span class="font-normal text-nicon-muted">· {{ $ownWorker->displayName() }}</span>
             @endif
-        </div>
+        </h1>
     </div>
 
     @if (session('status'))
-        <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
+        <p class="mt-3 text-sm text-nicon-ok">{{ session('status') }}</p>
     @endif
     @if (session('warning'))
-        <p class="mt-4 text-sm text-nicon-danger">{{ session('warning') }}</p>
+        <p class="mt-3 text-sm text-nicon-danger">{{ session('warning') }}</p>
     @endif
     @if ($errors->any())
-        <ul class="mt-4 text-sm text-nicon-danger list-disc pl-5">
+        <ul class="mt-3 list-disc pl-5 text-sm text-nicon-danger">
             @foreach ($errors->all() as $error)
                 <li>{{ $error }}</li>
             @endforeach
         </ul>
     @endif
 
-    <form method="GET" class="mt-3 grid gap-2 sm:grid-cols-4 text-sm">
+    <form method="GET" class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
         @if (auth()->user()?->scheduledWorkerId())
             <input type="hidden" name="worker_id" value="{{ $filters['worker_id'] }}">
-            <div class="border border-nicon-line bg-nicon-sand px-2 py-2">{{ $ownWorker?->displayName() ?? 'Jouw productie' }}</div>
+            <label class="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:min-w-48 sm:flex-1">
+                <span class="text-[11px] text-nicon-muted">Vakman</span>
+                <div class="flex h-9 items-center border border-nicon-line bg-nicon-paper px-2 text-sm text-nicon-ink">{{ $ownWorker?->displayName() ?? 'Jouw productie' }}</div>
+            </label>
         @else
-            <select name="worker_id" class="border border-nicon-line px-2 py-2 bg-white" onchange="this.form.submit()">
-                <option value="">Alle vakmensen</option>
-                @foreach ($workers as $worker)
-                    <option value="{{ $worker->id }}" @selected($filters['worker_id'] == $worker->id)>{{ $worker->displayName() }}</option>
+            <label class="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:min-w-48 sm:flex-1">
+                <span class="text-[11px] text-nicon-muted">Vakman</span>
+                <select name="worker_id" class="{{ $fieldClass }}" onchange="this.form.submit()">
+                    <option value="">Alle vakmensen</option>
+                    @foreach ($workers as $worker)
+                        <option value="{{ $worker->id }}" @selected($filters['worker_id'] == $worker->id)>{{ $worker->displayName() }}</option>
+                    @endforeach
+                </select>
+            </label>
+        @endif
+        <label class="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:min-w-56 sm:flex-[1.4]">
+            <span class="text-[11px] text-nicon-muted">Project</span>
+            <select name="project_id" class="{{ $fieldClass }}" onchange="this.form.submit()">
+                <option value="">Alle projecten</option>
+                @foreach ($projects as $project)
+                    <option value="{{ $project->id }}" @selected($filters['project_id'] == $project->id)>{{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}</option>
                 @endforeach
             </select>
-        @endif
-        <select name="project_id" class="border border-nicon-line px-2 py-2 bg-white" onchange="this.form.submit()">
-            <option value="">Alle projecten</option>
-            @foreach ($projects as $project)
-                <option value="{{ $project->id }}" @selected($filters['project_id'] == $project->id)>{{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}</option>
-            @endforeach
-        </select>
-        <input type="date" name="from" value="{{ $filters['from'] }}" class="border border-nicon-line px-2 py-2 bg-white" onchange="this.form.submit()">
-        <input type="date" name="to" value="{{ $filters['to'] }}" class="border border-nicon-line px-2 py-2 bg-white" onchange="this.form.submit()">
+        </label>
+        <label class="flex w-full min-w-0 flex-col gap-1 sm:w-40">
+            <span class="text-[11px] text-nicon-muted">Van</span>
+            <input type="date" name="from" value="{{ $filters['from'] }}" class="{{ $fieldClass }}" onchange="this.form.submit()">
+        </label>
+        <label class="flex w-full min-w-0 flex-col gap-1 sm:w-40">
+            <span class="text-[11px] text-nicon-muted">Tot</span>
+            <input type="date" name="to" value="{{ $filters['to'] }}" class="{{ $fieldClass }}" onchange="this.form.submit()">
+        </label>
+        <div class="flex w-full flex-wrap gap-2 sm:w-auto">
+            <button type="button" onclick="window.print()" class="inline-flex h-9 items-center border border-nicon-line bg-white px-3 text-sm text-nicon-ink">Printen</button>
+            @if ($downloadVoucher ?? null)
+                <a href="{{ route('vouchers.pdf', $downloadVoucher) }}" class="inline-flex h-9 items-center border border-nicon-orange bg-nicon-orange px-3 text-sm text-white">Download PDF</a>
+            @endif
+        </div>
     </form>
 
     @if (! auth()->user()?->scheduledWorkerId() && $groups->isNotEmpty())
-        <div class="mt-3 flex flex-wrap gap-1 text-sm">
+        <div class="mt-3 flex flex-wrap gap-1.5 text-sm">
             @php
                 $chipQuery = array_filter([
                     'project_id' => $filters['project_id'] ?? null,
@@ -65,41 +83,42 @@
                     'to' => $filters['to'] ?? null,
                 ], fn ($value) => $value !== null && $value !== '');
             @endphp
-            <a href="{{ route('production.index', $chipQuery) }}" @class(['border px-3 py-1.5', 'border-nicon-ink bg-nicon-ink text-white' => ! $filters['worker_id'], 'border-nicon-line bg-white' => $filters['worker_id']])>Alle teams</a>
+            <a href="{{ route('production.index', $chipQuery) }}" @class(['inline-flex max-w-full flex-wrap items-center border px-3 py-1 leading-snug break-words', 'border-nicon-orange bg-nicon-orange text-white' => ! $filters['worker_id'], 'border-nicon-line bg-white text-nicon-ink' => $filters['worker_id']])>Alle teams</a>
             @foreach ($groups as $group)
-                <a href="{{ route('production.index', $chipQuery + ['worker_id' => $group['worker']->id]) }}" @class(['border px-3 py-1.5', 'border-nicon-ink bg-nicon-ink text-white' => (int) $filters['worker_id'] === (int) $group['worker']->id, 'border-nicon-line bg-white' => (int) $filters['worker_id'] !== (int) $group['worker']->id])>
+                @php $chipActive = (int) $filters['worker_id'] === (int) $group['worker']->id; @endphp
+                <a href="{{ route('production.index', $chipQuery + ['worker_id' => $group['worker']->id]) }}" @class(['inline-flex max-w-72 flex-wrap items-center border px-3 py-1 text-left leading-snug break-words', 'border-nicon-orange bg-nicon-orange text-white' => $chipActive, 'border-nicon-line bg-white text-nicon-ink' => ! $chipActive])>
                     {{ $group['worker']->planName() }}
                     @if (($group['hours_pending'] ?? 0) > 0)
-                        <span @class(['text-nicon-orange' => (int) $filters['worker_id'] === (int) $group['worker']->id, 'text-nicon-orange-dark' => (int) $filters['worker_id'] !== (int) $group['worker']->id])>· {{ $group['hours_pending'] }} uren</span>
+                        <span @class(['ml-1', 'text-white/90' => $chipActive, 'text-nicon-orange-dark' => ! $chipActive])>· {{ $group['hours_pending'] }} uren</span>
                     @endif
                     @if (($group['provisional_count'] ?? 0) > 0)
-                        <span @class(['text-nicon-orange' => (int) $filters['worker_id'] === (int) $group['worker']->id, 'text-nicon-orange-dark' => (int) $filters['worker_id'] !== (int) $group['worker']->id])>· {{ $group['provisional_count'] }} te keuren</span>
+                        <span @class(['ml-1', 'text-white/90' => $chipActive, 'text-nicon-orange-dark' => ! $chipActive])>· {{ $group['provisional_count'] }} te keuren</span>
                     @endif
                 </a>
             @endforeach
         </div>
     @endif
 
-    <div class="mt-3 grid gap-2 sm:grid-cols-5 text-sm">
-        <div class="flex items-baseline justify-between gap-2 border border-nicon-line bg-white px-3 py-1.5">
-            <span class="text-xs text-nicon-muted">Vakmensen</span>
-            <span class="font-semibold">{{ $totals['workers'] }}</span>
+    <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+        <div class="border border-nicon-line bg-white px-3 py-2">
+            <div class="text-[11px] leading-none text-nicon-muted">Vakmensen</div>
+            <div class="mt-1 text-sm font-semibold leading-none text-nicon-ink">{{ $totals['workers'] }}</div>
         </div>
-        <div class="flex items-baseline justify-between gap-2 border border-nicon-line bg-white px-3 py-1.5">
-            <span class="text-xs text-nicon-muted">Ruimtes</span>
-            <span class="font-semibold">{{ $totals['rooms'] }}</span>
+        <div class="border border-nicon-line bg-white px-3 py-2">
+            <div class="text-[11px] leading-none text-nicon-muted">Ruimtes</div>
+            <div class="mt-1 text-sm font-semibold leading-none text-nicon-ink">{{ $totals['rooms'] }}</div>
         </div>
-        <div class="flex items-baseline justify-between gap-2 border border-nicon-line bg-white px-3 py-1.5">
-            <span class="text-xs text-nicon-muted">m² gedaan</span>
-            <span class="font-semibold">{{ \App\Support\Format::qty($totals['m2'], 2) }}</span>
+        <div class="border border-nicon-line bg-white px-3 py-2">
+            <div class="text-[11px] leading-none text-nicon-muted">m² gedaan</div>
+            <div class="mt-1 text-sm font-semibold leading-none text-nicon-ink tabular-nums">{{ \App\Support\Format::qty($totals['m2'], 2) }}</div>
         </div>
-        <div class="flex items-baseline justify-between gap-2 border border-nicon-line bg-white px-3 py-1.5">
-            <span class="text-xs text-nicon-muted">m¹ plinten</span>
-            <span class="font-semibold">{{ \App\Support\Format::qty($totals['m1'], 2) }}</span>
+        <div class="border border-nicon-line bg-white px-3 py-2">
+            <div class="text-[11px] leading-none text-nicon-muted">m¹ plinten</div>
+            <div class="mt-1 text-sm font-semibold leading-none text-nicon-ink tabular-nums">{{ \App\Support\Format::qty($totals['m1'], 2) }}</div>
         </div>
-        <div class="flex items-baseline justify-between gap-2 border border-nicon-line bg-white px-3 py-1.5">
-            <span class="text-xs text-nicon-muted">Wacht op akkoord</span>
-            <span class="font-semibold {{ ($totals['pending'] ?? 0) > 0 ? 'text-nicon-orange-dark' : '' }}">{{ $totals['pending'] ?? 0 }}</span>
+        <div class="border border-nicon-line bg-white px-3 py-2">
+            <div class="text-[11px] leading-none text-nicon-muted">Wacht op akkoord</div>
+            <div class="mt-1 text-sm font-semibold leading-none {{ ($totals['pending'] ?? 0) > 0 ? 'text-nicon-orange-dark' : 'text-nicon-ink' }}">{{ $totals['pending'] ?? 0 }}</div>
         </div>
     </div>
 
