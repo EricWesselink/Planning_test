@@ -150,7 +150,7 @@ class WorkTicketTest extends TestCase
             ->assertSee('PVC')
             ->assertSee('Deze verdieping')
             ->assertSee('Hele werk')
-            ->assertSee('Hele werk voor alle verdiepingen')
+            ->assertSee('Ruimtes op de tekening selecteren hoeft niet.')
             ->assertSee('Algemeen werk')
             ->assertSee('Algemeen werk zonder ruimtes (nacalculatie)')
             ->assertSee('In de planning')
@@ -237,6 +237,10 @@ class WorkTicketTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('data-ticket-plan-price', false)
+            ->assertSee('id="ticket-form"', false)
+            ->assertSee('name="planned_quantities['.$seed['primer']->id.']"', false)
+            ->assertSee('name="unit_prices['.$seed['primer']->id.']"', false)
+            ->assertSee('name="billing_method"', false)
             ->assertSee('aria-label="Prijs Primen &amp; Egaliseren"', false);
 
         $this->actingAs($user)
@@ -308,7 +312,7 @@ class WorkTicketTest extends TestCase
             ->assertOk()
             ->assertSee('is-ticket-mode', false)
             ->assertSee('id="ticket-panel"', false)
-            ->assertSee('id="ticket-save"', false)
+            ->assertSee('id="ticket-submit"', false)
             ->assertSee('Werkbon maken');
 
         $css = (string) file_get_contents(resource_path('css/app.css'));

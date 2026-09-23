@@ -487,9 +487,14 @@
                         </div>
                     @endif
                     <div id="ticket-chunks" class="ticket-chunks">
-                        <p class="ticket-empty">Kies materialen of winkelwerk, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>
+                        <p class="ticket-empty">{{ $ticketMode['is_external'] ? 'Vink een werkzaamheid aan, vul hoeveelheid en prijs in, en sla de bon op. Ruimtes op de tekening selecteren hoeft niet.' : 'Vink een werkzaamheid aan, vul de hoeveelheid in, en sla de bon op. Ruimtes op de tekening selecteren hoeft niet.' }}</p>
                     </div>
                     <div id="ticket-preview-body" class="ticket-preview hidden" hidden></div>
+                    <form id="ticket-form" method="POST" action="{{ $ticketMode['store_url'] }}">
+                        @csrf
+                        @if ($ticketMode['document_id'])
+                            <input type="hidden" name="document_ids[]" value="{{ $ticketMode['document_id'] }}">
+                        @endif
                     <div class="ticket-extra">
                         @if (! empty($ticketMode['planned_works']))
                             <div class="ticket-billing-label">In de planning</div>
@@ -511,12 +516,13 @@
                                 @endphp
                                 <div class="ticket-plan-row" data-plan-unit="{{ $plannedWork['unit'] }}">
                                     <label>
-                                        <input type="checkbox" data-ticket-plan value="{{ $plannedWork['id'] }}" data-member-ids="{{ implode(',', $plannedWork['member_ids']) }}" @checked(in_array((int) $plannedWork['id'], $selectedPlanIds, true))>
+                                        <input type="checkbox" name="extra_work_item_ids[]" data-ticket-plan value="{{ $plannedWork['id'] }}" data-member-ids="{{ implode(',', $plannedWork['member_ids']) }}" @checked(in_array((int) $plannedWork['id'], $selectedPlanIds, true))>
                                         <span>{{ $plannedWork['name'] }}</span>
                                     </label>
                                     <input
                                         class="ticket-plan-qty"
                                         data-ticket-plan-qty
+                                        name="planned_quantities[{{ $plannedWork['id'] }}]"
                                         inputmode="decimal"
                                         autocomplete="off"
                                         value="{{ $quantityValue }}"
@@ -527,6 +533,7 @@
                                         <input
                                             class="ticket-plan-price"
                                             data-ticket-plan-price
+                                            name="unit_prices[{{ $plannedWork['id'] }}]"
                                             inputmode="decimal"
                                             autocomplete="off"
                                             placeholder="€ / {{ $plannedWork['unit_label'] }}"
@@ -540,12 +547,12 @@
                         <div class="ticket-billing-label">Algemeen werk</div>
                         @forelse ($ticketMode['extra_works'] ?? [] as $extraWork)
                             <label>
-                                <input type="checkbox" data-ticket-extra value="{{ $extraWork['id'] }}">
+                                <input type="checkbox" name="extra_work_item_ids[]" data-ticket-extra value="{{ $extraWork['id'] }}">
                                 {{ $extraWork['name'] }} · {{ $extraWork['qty_label'] }}
                             </label>
                         @empty
                             <label>
-                                <input type="checkbox" id="ticket-general-work" value="1">
+                                <input type="checkbox" id="ticket-general-work" name="general_work" value="1" @checked(old('general_work'))>
                                 Algemeen werk zonder ruimtes (nacalculatie)
                             </label>
                         @endforelse
@@ -553,7 +560,7 @@
                             <div class="ticket-billing-label" style="margin-top:10px">Winkelwerk</div>
                             @foreach ($ticketMode['shop_works'] as $shopWork)
                                 <label>
-                                    <input type="checkbox" data-ticket-shop-activity value="{{ $shopWork['activity_id'] }}">
+                                    <input type="checkbox" name="shop_work_activity_ids[]" data-ticket-shop-activity value="{{ $shopWork['activity_id'] }}">
                                     {{ $shopWork['name'] }} · {{ $shopWork['qty_label'] }}
                                 </label>
                             @endforeach
@@ -561,15 +568,15 @@
                         <p class="ticket-extra-hint">Zonder ruimtes te selecteren. Omschrijf het werk in de opmerking.</p>
                     </div>
                     <label class="ticket-notes-label" for="ticket-notes">Opmerking toevoegen</label>
-                    <textarea id="ticket-notes" class="ticket-notes" rows="2" maxlength="2000" placeholder="Opmerking toevoegen">{{ old('notes') }}</textarea>
+                    <textarea id="ticket-notes" name="notes" class="ticket-notes" rows="2" maxlength="2000" placeholder="Opmerking toevoegen">{{ old('notes') }}</textarea>
                     @if ($ticketMode['is_external'])
                         <div class="ticket-billing">
                             <div class="ticket-billing-label">Afrekening</div>
-                            <label><input type="radio" name="ticket-billing" value="unit" @checked(old('billing_method', 'unit') === 'unit')> Per m² / m¹</label>
-                            <label><input type="radio" name="ticket-billing" value="hourly" @checked(old('billing_method') === 'hourly')> Uren</label>
-                            <label><input type="radio" name="ticket-billing" value="fixed" @checked(old('billing_method') === 'fixed')> Vaste prijs</label>
-                            <input id="ticket-hourly-rate" class="ticket-rate" inputmode="decimal" placeholder="Uurtarief" value="{{ old('hourly_rate', $ticketMode['hourly_rate'] !== null ? \App\Support\Format::qty($ticketMode['hourly_rate']) : '') }}">
-                            <input id="ticket-fixed-price" class="ticket-rate" inputmode="decimal" placeholder="Vaste prijs" value="{{ old('fixed_price') }}">
+                            <label><input type="radio" name="billing_method" value="unit" @checked(old('billing_method', 'unit') === 'unit')> Per m² / m¹</label>
+                            <label><input type="radio" name="billing_method" value="hourly" @checked(old('billing_method') === 'hourly')> Uren</label>
+                            <label><input type="radio" name="billing_method" value="fixed" @checked(old('billing_method') === 'fixed')> Vaste prijs</label>
+                            <input id="ticket-hourly-rate" name="hourly_rate" class="ticket-rate" inputmode="decimal" placeholder="Uurtarief" value="{{ old('hourly_rate', $ticketMode['hourly_rate'] !== null ? \App\Support\Format::qty($ticketMode['hourly_rate']) : '') }}">
+                            <input id="ticket-fixed-price" name="fixed_price" class="ticket-rate" inputmode="decimal" placeholder="Vaste prijs" value="{{ old('fixed_price') }}">
                         </div>
                     @endif
                     <p id="ticket-error" class="ticket-errors hidden" hidden></p>
@@ -577,7 +584,8 @@
                         <div class="ticket-extra">
                             <div class="ticket-billing-label">Inmeetformulier beschikbaar</div>
                             <label>
-                                <input type="checkbox" id="ticket-include-measurement" value="1" @checked($ticketMode['include_measurement_form'] ?? true)>
+                                <input type="hidden" name="include_measurement_form" value="0">
+                                <input type="checkbox" id="ticket-include-measurement" name="include_measurement_form" value="1" @checked(old('include_measurement_form', $ticketMode['include_measurement_form'] ?? true))>
                                 Inmeetformulier toevoegen aan PDF
                             </label>
                         </div>
@@ -585,8 +593,9 @@
                     <div class="ticket-actions">
                         <button type="button" id="ticket-add" class="ticket-btn">Selectie toevoegen</button>
                         <button type="button" id="ticket-preview" class="ticket-btn is-light">Bon bekijken</button>
-                        <button type="button" id="ticket-save" class="ticket-btn is-primary">{{ $ticketMode['save_label'] }}</button>
+                        <button type="submit" id="ticket-submit" class="ticket-btn is-primary">{{ $ticketMode['save_label'] }}</button>
                     </div>
+                    </form>
                 </div>
             @endif
             <div id="room-panel" class="{{ $canEnterProgress ? '' : 'is-readonly' }}{{ $ticketMode ? ' hidden' : '' }}{{ $first ? ' has-room' : '' }}" data-area-id="{{ $first['id'] ?? '' }}">

@@ -5020,7 +5020,10 @@ function boot() {
             return `<article class="ticket-chunk" data-plan-line="${line.id}"><div class="ticket-chunk-head"><span>${escapeHtml(plannedLineText(line))}</span><button type="button" class="ticket-chunk-remove" data-ticket-remove-plan="${line.id}" aria-label="Selectie verwijderen">×</button></div></article>`;
         }).join('');
         if (ticketChunks.length === 0 && ticketPlannedLines.length === 0) {
-            list.innerHTML = '<p class="ticket-empty">Kies materialen of winkelwerk, of klik Hele werk voor alle verdiepingen. Daarna Selectie toevoegen. Algemeen werk kun je hieronder aanvinken.</p>';
+            const empty = ticketMode?.is_external
+                ? 'Vink een werkzaamheid aan, vul hoeveelheid en prijs in, en sla de bon op. Ruimtes op de tekening selecteren hoeft niet.'
+                : 'Vink een werkzaamheid aan, vul de hoeveelheid in, en sla de bon op. Ruimtes op de tekening selecteren hoeft niet.';
+            list.innerHTML = `<p class="ticket-empty">${empty}</p>`;
         } else {
             list.innerHTML = chunksHtml + plannedHtml;
         }
@@ -5192,95 +5195,57 @@ function boot() {
     }
 
     function ticketBillingMethod() {
-        return document.querySelector('input[name="ticket-billing"]:checked')?.value || 'unit';
+        return document.querySelector('input[name="billing_method"]:checked')?.value || 'unit';
     }
 
-    function saveTicket() {
+    function submitTicketForm(event) {
         if (!ticketMode) {
             return;
         }
+        const form = event.currentTarget;
         ticketError('');
-        if (!commitCheckedPlannedLines()) {
-            return;
+        const billing = ticketMode.is_external ? ticketBillingMethod() : '';
+        for (const row of checkedPlannedRows()) {
+            const result = plannedTicketLine({
+                id: row.id,
+                name: row.name,
+                quantity: row.quantity,
+                unit: row.unit,
+                unitPrice: row.unitPrice,
+                billing,
+            });
+            if (!result.ok) {
+                event.preventDefault();
+                ticketError(result.message);
+                return;
+            }
         }
         const general = ticketGeneralWorkState();
-        const plannedIds = ticketPlannedLines.map((line) => line.id);
-        if (ticketChunks.length === 0 && plannedIds.length === 0 && !ticketHasGeneralWork(general)) {
-            ticketError('Voeg eerst een selectie toe, of vink algemeen werk aan.');
+        if (ticketChunks.length === 0 && checkedPlannedRows().length === 0 && ticketPlannedLines.length === 0 && !ticketHasGeneralWork(general)) {
+            event.preventDefault();
+            ticketError('Vink een werkzaamheid aan en vul hoeveelheid en prijs in. Ruimtes selecteren hoeft niet.');
             return;
         }
-        const payload = ticketStorePayload(ticketChunks, {
-            notes: document.getElementById('ticket-notes')?.value || '',
-            document_ids: ticketMode.document_id ? [ticketMode.document_id] : [],
-            extra_work_item_ids: [...general.extraIds, ...plannedIds],
-            shop_work_activity_ids: general.shopActivityIds,
-            general_work: general.general,
-        });
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = ticketMode.store_url;
-        appendTicketField(form, '_token', csrf);
-        (payload.selections || []).forEach((selection, index) => {
+        ticketChunks.forEach((selection, index) => {
             appendTicketField(form, `selections[${index}][floor_id]`, selection.floor_id);
             appendTicketField(form, `selections[${index}][entire]`, selection.entire);
-            selection.area_ids.forEach((id) => {
+            (selection.area_ids || []).forEach((id) => {
                 appendTicketField(form, `selections[${index}][area_ids][]`, id);
             });
-            selection.work_keys.forEach((key) => {
+            (selection.work_keys || []).forEach((key) => {
                 appendTicketField(form, `selections[${index}][work_keys][]`, key);
             });
         });
-        (payload.extra_work_item_ids || []).forEach((id) => {
-            appendTicketField(form, 'extra_work_item_ids[]', id);
-        });
-        const plannedQuantities = { ...(general.plannedQuantities || {}) };
         ticketPlannedLines.forEach((line) => {
-            plannedQuantities[line.id] = line.quantity;
-        });
-        Object.entries(plannedQuantities).forEach(([id, qty]) => {
-            appendTicketField(form, `planned_quantities[${id}]`, qty);
-        });
-        if (ticketMode.is_external && ticketBillingMethod() === 'unit') {
-            ticketPlannedLines.forEach((line) => {
-                if (line.unit_price != null) {
-                    appendTicketField(form, `unit_prices[${line.id}]`, line.unit_price);
-                }
-            });
-        }
-        (payload.shop_work_activity_ids || []).forEach((id) => {
-            appendTicketField(form, 'shop_work_activity_ids[]', id);
-        });
-        if (payload.general_work) {
-            appendTicketField(form, 'general_work', '1');
-        }
-        if (payload.notes) {
-            appendTicketField(form, 'notes', payload.notes);
-        }
-        payload.document_ids.forEach((id) => {
-            appendTicketField(form, 'document_ids[]', id);
-        });
-        (payload.shop_work_activity_ids || []).forEach((id) => {
-            appendTicketField(form, 'shop_work_activity_ids[]', id);
-        });
-        if (ticketMode.has_measurement_form) {
-            appendTicketField(
-                form,
-                'include_measurement_form',
-                document.getElementById('ticket-include-measurement')?.checked ? '1' : '0',
-            );
-        }
-        if (ticketMode.is_external) {
-            const billing = ticketBillingMethod();
-            appendTicketField(form, 'billing_method', billing);
-            if (billing === 'hourly') {
-                appendTicketField(form, 'hourly_rate', document.getElementById('ticket-hourly-rate')?.value || '');
+            if (form.querySelector(`[data-ticket-plan][value="${line.id}"]:checked`)) {
+                return;
             }
-            if (billing === 'fixed') {
-                appendTicketField(form, 'fixed_price', document.getElementById('ticket-fixed-price')?.value || '');
+            appendTicketField(form, 'extra_work_item_ids[]', line.id);
+            appendTicketField(form, `planned_quantities[${line.id}]`, line.quantity);
+            if (billing === 'unit' && line.unit_price != null) {
+                appendTicketField(form, `unit_prices[${line.id}]`, line.unit_price);
             }
-        }
-        document.body.appendChild(form);
-        form.submit();
+        });
     }
 
     function bindTicketPanel() {
@@ -5288,7 +5253,7 @@ function boot() {
             return;
         }
         document.getElementById('ticket-add')?.addEventListener('click', addTicketSelection);
-        document.getElementById('ticket-save')?.addEventListener('click', saveTicket);
+        document.getElementById('ticket-form')?.addEventListener('submit', submitTicketForm);
         document.getElementById('ticket-preview')?.addEventListener('click', () => {
             const preview = document.getElementById('ticket-preview-body');
             if (!preview) {
@@ -5314,7 +5279,7 @@ function boot() {
             }
             removeTicketChunk(Number(button.dataset.ticketRemove));
         });
-        document.querySelectorAll('input[name="ticket-billing"]').forEach((input) => {
+        document.querySelectorAll('input[name="billing_method"]').forEach((input) => {
             input.addEventListener('change', () => {
                 const panel = document.getElementById('ticket-panel');
                 const billing = ticketBillingMethod();
