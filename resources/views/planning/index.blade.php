@@ -100,8 +100,8 @@
                         type="button"
                         class="planning-btn"
                         id="planning-print-open"
-                        title="Planning printen voor eigen gebruik, met namen"
-                    >Intern</button>
+                        title="Planning van één werk afdrukken, met namen"
+                    >Afdruk</button>
                     <form method="GET" action="{{ route('planning.excel') }}" class="planning-pdf-form">
                         <select name="year" class="planning-btn planning-select" aria-label="Jaar voor intern Excel" title="Jaar voor intern Excel">
                             @for ($year = $excelYear - 2; $year <= $excelYear + 1; $year++)
@@ -936,9 +936,9 @@
             target="_blank"
             class="space-y-3"
         >
-            <h2 class="text-base font-semibold">Planning printen</h2>
+            <h2 class="text-base font-semibold">Afdruk</h2>
             <p class="text-sm text-nicon-muted">
-                Kies een werk. Daarna kun je printen of in het afdrukvenster <strong>Opslaan als PDF</strong> kiezen.
+                Kies een werk. Standaard wordt de planning van het <strong>gehele werk</strong> afgedrukt. In het afdrukvenster kun je printen of <strong>Opslaan als PDF</strong> kiezen.
             </p>
             <input type="hidden" name="week" value="{{ $filters['week'] ?? $weekStart->toDateString() }}">
             <input type="hidden" name="intern" value="1">
@@ -964,7 +964,7 @@
             <input type="hidden" name="print" value="1">
             <div class="flex flex-wrap justify-end gap-2 pt-1">
                 <button type="button" id="planning-print-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>
-                <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">Printen / PDF</button>
+                <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">Afdrukken</button>
             </div>
         </form>
     </dialog>
