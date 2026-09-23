@@ -22,6 +22,12 @@ test('matches a place, a name, or any other part of the option text', () => {
     assert.equal(planningSearchMatches(eding, 'reeve'), true);
 });
 
+test('drops the empty choice once a search is typed and keeps it while browsing', () => {
+    assert.deepEqual(filterPlanningOptions(options, '').map((option) => option.value), ['', '1', '2', '3']);
+    assert.deepEqual(filterPlanningOptions(options, 'alle').map((option) => option.value), []);
+    assert.deepEqual(filterPlanningOptions(options, 'groningen').map((option) => option.value), ['2']);
+});
+
 test('keeps every option when the query is empty and drops text that is not in the label', () => {
     assert.deepEqual(filterPlanningOptions(options, '').map((option) => option.value), ['', '1', '2', '3']);
     assert.deepEqual(filterPlanningOptions(options, '   ').map((option) => option.value), ['', '1', '2', '3']);

@@ -11,6 +11,7 @@
     @php
         $query = array_filter($filters, fn ($value) => $value !== null && $value !== '');
         $excelYear = (int) $weekStart->isoWeekYear();
+        $planningStand = $planningStand ?? 'actief';
     @endphp
     <div class="planning-page">
         <div class="planning-mobile-bar">
@@ -38,6 +39,11 @@
                         @endif
                     </p>
                     @php $hoursView = $hoursView ?? ($filters['hours_view'] ?? 'planned'); @endphp
+                    <nav class="planning-stand" aria-label="Stand van de planning">
+                        <a href="{{ route('planning', array_diff_key($query, ['stand' => true])) }}" class="planning-stand-tab{{ $planningStand === 'actief' ? ' is-active' : '' }}" @if ($planningStand === 'actief') aria-current="page" @endif>Actief</a>
+                        <a href="{{ route('planning', array_merge($query, ['stand' => 'afgerond'])) }}" class="planning-stand-tab{{ $planningStand === 'afgerond' ? ' is-active' : '' }}" @if ($planningStand === 'afgerond') aria-current="page" @endif>Afgerond</a>
+                        <a href="{{ route('planning', array_merge($query, ['stand' => 'alles'])) }}" class="planning-stand-tab{{ $planningStand === 'alles' ? ' is-active' : '' }}" @if ($planningStand === 'alles') aria-current="page" @endif>Alles</a>
+                    </nav>
                     <div class="flex shrink-0 gap-1 text-xs" style="margin:0">
                         <a href="{{ route('planning', array_merge($query, ['hours_view' => 'planned'])) }}" class="planning-filter{{ $hoursView === 'planned' ? ' is-active' : '' }}">Gepland</a>
                         <a href="{{ route('planning', array_merge($query, ['hours_view' => 'actual'])) }}" class="planning-filter{{ $hoursView === 'actual' ? ' is-active' : '' }}">Werkelijk</a>
@@ -128,9 +134,16 @@
                     <option value="{{ \App\Enums\ProjectKind::KLEINE_FILTER }}" @selected(($filters['kind'] ?? '') === \App\Enums\ProjectKind::KLEINE_FILTER)>Kleine werken</option>
                 </select>
                 <select name="project_id" class="planning-filter" data-planning-search data-search-placeholder="Zoek op projectnr., werk, opdrachtgever of adres" onchange="this.form.submit()" aria-label="Werk">
-                    <option value="">Alle</option>
+                    <option value="" data-title="Alle werken">Alle</option>
                     @foreach ($projects as $project)
-                        <option value="{{ $project->id }}" data-search="{{ $project->listSearchText() }}" @selected(($filters['project_id'] ?? '') == $project->id)>{{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}</option>
+                        <option
+                            value="{{ $project->id }}"
+                            data-title="{{ $project->planningPickerTitle() }}"
+                            data-meta="{{ $project->planningPickerMeta() }}"
+                            data-search="{{ $project->planningPickerSearchText() }}"
+                            @if ($project->isPlanningFinished()) data-finished="1" @endif
+                            @selected(($filters['project_id'] ?? '') == $project->id)
+                        >{{ $project->planningPickerTitle() }}</option>
                     @endforeach
                 </select>
                 @if ($canManagePlanning)
@@ -520,18 +533,30 @@
                             <div class="plan-frozen">
                                 <div class="plan-cell plan-cell--werk{{ ! empty($projectRow['missing_craftsman']) ? ' has-missing-craftsman' : '' }}">
                                     <div class="plan-project-meta">
-                                        <a href="{{ $projectHref }}" class="hover:text-nicon-orange">
-                                            @if (! empty($projectRow['badge']))
-                                                <span class="plan-small-badge plan-small-badge--{{ $projectRow['kind'] ?? 'klein' }}">{{ $projectRow['badge'] }}</span>
+                                        <div class="plan-project-name">
+                                            <a href="{{ $projectHref }}" class="hover:text-nicon-orange">
+                                                @if (! empty($projectRow['badge']))
+                                                    <span class="plan-small-badge plan-small-badge--{{ $projectRow['kind'] ?? 'klein' }}">{{ $projectRow['badge'] }}</span>
+                                                @endif
+                                                @if (! $isCompact && ! empty($projectRow['numbers_short']))
+                                                    <span class="plan-project-numbers">{{ $projectRow['numbers_short'] }}</span>
+                                                @endif
+                                                <span class="plan-project-title">{{ $projectRow['title'] }}</span>
+                                                @if ($isCompact && ! empty($projectRow['hours_label']))
+                                                    <span class="plan-project-hours">| {{ $projectRow['hours_label'] }}</span>
+                                                @endif
+                                            </a>
+                                            @if (! empty($projectRow['planning_afgerond']) && $planningStand === 'alles')
+                                                <span class="plan-afgerond-mark">Afgerond</span>
                                             @endif
-                                            @if (! $isCompact && ! empty($projectRow['numbers_short']))
-                                                <span class="plan-project-numbers">{{ $projectRow['numbers_short'] }}</span>
+                                            @if ($canManagePlanning && ! $isAttachedExtra)
+                                                @include('planning.partials.finish-action', [
+                                                    'projectId' => $projectRow['id'],
+                                                    'finished' => ! empty($projectRow['planning_afgerond']),
+                                                    'projectName' => $projectRow['title'],
+                                                ])
                                             @endif
-                                            <span class="plan-project-title">{{ $projectRow['title'] }}</span>
-                                            @if ($isCompact && ! empty($projectRow['hours_label']))
-                                                <span class="plan-project-hours">| {{ $projectRow['hours_label'] }}</span>
-                                            @endif
-                                        </a>
+                                        </div>
                                         @if ($showCustomer)
                                             <div class="text-xs font-normal text-nicon-muted">{{ $customerName }}</div>
                                         @endif
@@ -948,7 +973,7 @@
                     <option value="">Kies een werk…</option>
                     @foreach ($projects as $project)
                         <option value="{{ $project->id }}" @selected((string) ($filters['project_id'] ?? '') === (string) $project->id)>
-                            {{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}
+                            {{ $project->labeledNumbersLine() }} — {{ $project->displayTitle() }}{{ $planningStand === 'alles' && $project->isPlanningFinished() ? ' · Afgerond' : '' }}
                         </option>
                     @endforeach
                 </select>

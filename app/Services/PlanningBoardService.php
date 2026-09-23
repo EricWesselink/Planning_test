@@ -105,6 +105,7 @@ class PlanningBoardService
         }
         $weekBands = $this->weekBands($days, $weeks);
         $kindFilter = $this->kindFilter($request);
+        $planningStand = $this->planningStand($request);
         $scheduledWorkerId = $request->user()?->scheduledWorkerId();
         [$filterWorkerId, $filterCrewMemberId, $whoValue] = $this->whoFilter($request);
         $workerId = $scheduledWorkerId ?? $filterWorkerId;
@@ -133,6 +134,7 @@ class PlanningBoardService
         $projectQuery = Project::query()
             ->accessibleBy($request->user())
             ->active()
+            ->planningStand($planningStand)
             ->with($relations)
             ->when($kindFilter !== null, fn ($q) => $this->constrainKind($q, $kindFilter))
             ->when($request->filled('project_id'), fn ($q) => $q->where('id', $request->integer('project_id')));
@@ -150,8 +152,8 @@ class PlanningBoardService
         $hoursView = $this->hoursView($request, $windowEnd);
         $assignments = WorkerAssignment::query()
             ->with(['worker', 'workItem', 'workItems', 'team', 'crewMembers', 'workTickets', 'foreman', 'workTicketHolder'])
-            ->whereHas('project', function ($q) use ($request, $kindFilter): void {
-                $q->active()->accessibleBy($request->user());
+            ->whereHas('project', function ($q) use ($request, $kindFilter, $planningStand): void {
+                $q->active()->accessibleBy($request->user())->planningStand($planningStand);
                 $this->constrainKind($q, $kindFilter);
             })
             ->whereDate('end_date', '>=', $windowStart->toDateString())
@@ -389,6 +391,7 @@ class PlanningBoardService
                     'who' => $executors,
                     'status' => $project->status->label(),
                     'done' => in_array($project->status, [ProjectStatus::Gereed, ProjectStatus::Opgeleverd], true),
+                    'planning_afgerond' => $project->isPlanningFinished(),
                     'bar' => $period['bar'],
                     'start_marker' => $period['start_marker'],
                     'end_marker' => $period['end_marker'],
@@ -447,7 +450,8 @@ class PlanningBoardService
             'dayCount' => $days->count(),
             'dayMin' => $days->count() === 1 ? 0 : ($weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56))),
             'rows' => $rows,
-            'projects' => $this->filterProjects($request, $kindFilter),
+            'projects' => $this->filterProjects($request, $kindFilter, $planningStand),
+            'planningStand' => $planningStand,
             'warnings' => $warnings,
             'doubleFilter' => [
                 'active' => $doubleFilter['active'],
@@ -466,6 +470,7 @@ class PlanningBoardService
                 'worker_id' => $scheduledWorkerId ?? ($whoValue !== '' ? null : $filterWorkerId),
                 'day' => $dayOfWeek === null ? '' : (string) $dayOfWeek,
                 'hours_view' => $hoursView,
+                'stand' => $planningStand === 'actief' ? '' : $planningStand,
                 'doubles' => $doubleFilter['active'] ? '1' : '',
                 'double_crew' => $doubleFilter['crew_id'] ?? '',
                 'double_worker' => $doubleFilter['worker_id'] ?? '',
@@ -581,6 +586,13 @@ class PlanningBoardService
         };
     }
 
+    private function planningStand(Request $request): string
+    {
+        $value = (string) $request->input('stand', 'actief');
+
+        return in_array($value, ['actief', 'afgerond', 'alles'], true) ? $value : 'actief';
+    }
+
     private function kindFilter(Request $request): ProjectKind|string|null
     {
         $value = (string) $request->input('kind', '');
@@ -613,14 +625,34 @@ class PlanningBoardService
     private function filterProjects(
         Request $request,
         ProjectKind|string|null $kindFilter,
+        string $planningStand,
     ): Collection {
         return Project::query()
             ->accessibleBy($request->user())
             ->active()
-            ->with(['workItems', 'customer', 'workActivities.category'])
+            ->planningStand($planningStand)
+            ->with('customer:id,name')
             ->when($kindFilter !== null, fn (Builder $query) => $this->constrainKind($query, $kindFilter))
-            ->orderBy('project_number')
-            ->get();
+            ->get([
+                'id',
+                'customer_id',
+                'project_number',
+                'name',
+                'address',
+                'postal_code',
+                'city',
+                'work_address',
+                'kind',
+                'notes',
+                'work_description',
+                'planning_afgerond',
+            ])
+            ->sortBy(fn (Project $project): array => [
+                mb_strtolower($project->workCode() ?: $project->workNumber()),
+                mb_strtolower($project->workNumber()),
+                $project->id,
+            ])
+            ->values();
     }
 
     /**
@@ -1913,6 +1945,7 @@ class PlanningBoardService
             'who' => collect($personBars)->pluck('label')->filter()->unique()->values(),
             'status' => $project->status->label(),
             'done' => $itemDone || in_array($project->status, [ProjectStatus::Gereed, ProjectStatus::Opgeleverd], true),
+            'planning_afgerond' => $project->isPlanningFinished(),
             'bar' => $this->bar($start, $end, $days),
             'start_marker' => $this->dateMarker($start, $days),
             'end_marker' => $endMarker,

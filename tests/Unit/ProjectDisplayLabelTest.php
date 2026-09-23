@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Models\Customer;
 use App\Models\Project;
 use Tests\TestCase;
 
@@ -49,5 +50,30 @@ class ProjectDisplayLabelTest extends TestCase
         $this->assertSame('11P260521', $project->workCode());
         $this->assertSame('Zeewolde, Bouw Havenkwartier Zuyd', $project->displayTitle());
         $this->assertSame("Projectnr.\u{00A0}11P260521\u{00A0}·\u{00A0}Werk\u{00A0}2026-001", $project->labeledNumbersLine());
+    }
+
+    public function test_planning_picker_lines_show_name_city_numbers_and_search_fields(): void
+    {
+        $project = new Project([
+            'project_number' => '2026-002',
+            'name' => '11P250925 Feringa Building',
+            'notes' => 'Referentie: 11P250925 Feringa Building',
+            'city' => 'Groningen',
+            'address' => 'Zernikelaan 1',
+            'postal_code' => '9747 AA',
+            'work_description' => "Rolgordijnen\nExtra regel",
+        ]);
+        $project->setRelation('customer', new Customer(['name' => 'Rijksuniversiteit']));
+
+        $this->assertSame('Feringa Building — Groningen', $project->planningPickerTitle());
+        $this->assertSame('11P250925 · Werk 2026-002 · Rolgordijnen', $project->planningPickerMeta());
+
+        $search = $project->planningPickerSearchText();
+        $this->assertStringContainsString('Rijksuniversiteit', $search);
+        $this->assertStringContainsString('Zernikelaan 1', $search);
+        $this->assertStringContainsString('9747 AA', $search);
+        $this->assertStringContainsString('Groningen', $search);
+        $this->assertStringContainsString('2026-002', $search);
+        $this->assertStringContainsString('11P250925', $search);
     }
 }

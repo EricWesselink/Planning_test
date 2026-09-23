@@ -177,9 +177,47 @@ class PlanningKindFilterTest extends TestCase
             ->assertOk()
             ->assertSee('data-search-placeholder="Zoek op projectnr., werk, opdrachtgever of adres"', false)
             ->assertSee('name="project_id" class="planning-filter" data-planning-search', false)
-            ->assertSee('Laakse Tuinen</option>', false)
-            ->assertSee('data-search="Gemeente Cuijkstraat 2, 3826 KL Amersfoort"', false)
-            ->assertSee('WINKEL Vloeren · Plinten', false);
+            ->assertSee('data-title="Alle werken"', false)
+            ->assertSee('data-title="Laakse Tuinen — Amersfoort"', false)
+            ->assertSee('data-meta="Werk 260200090"', false)
+            ->assertSee('Gemeente Cuijkstraat 2, 3826 KL Amersfoort', false)
+            ->assertSee('data-title="Eding — Reeve"', false);
+    }
+
+    public function test_work_picker_keeps_every_work_available_while_one_is_selected(): void
+    {
+        $user = User::factory()->create();
+        $selected = $this->createConstruction('Laakse Tuinen');
+        $selected->update(['project_number' => '2026-002']);
+        $other = $this->createConstruction('Feringa Building');
+        $other->update([
+            'project_number' => '2026-014',
+            'name' => '11P250925 Feringa Building',
+            'notes' => 'Referentie: 11P250925 Feringa Building',
+            'city' => 'Groningen',
+            'work_description' => 'Rolgordijnen',
+            'planned_start_date' => '2027-03-01',
+            'planned_end_date' => '2027-03-05',
+        ]);
+        $finished = $this->createConstruction('Klaar werk');
+        $finished->update(['project_number' => '2026-099']);
+        $finished->finishPlanning();
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $selected->id]))
+            ->assertOk()
+            ->assertSee('data-title="Laakse Tuinen — Amersfoort"', false)
+            ->assertSee('data-title="Feringa Building — Groningen"', false)
+            ->assertSee('data-meta="11P250925 · Werk 2026-014 · Rolgordijnen"', false)
+            ->assertDontSee('data-title="Klaar werk — Amersfoort"', false)
+            ->assertDontSee('data-finished="1"', false);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'stand' => 'alles']))
+            ->assertOk()
+            ->assertSee('data-title="Klaar werk — Amersfoort"', false)
+            ->assertSee('data-finished="1"', false)
+            ->assertSee('data-title="Feringa Building — Groningen"', false);
     }
 
     private function createConstruction(string $name): Project

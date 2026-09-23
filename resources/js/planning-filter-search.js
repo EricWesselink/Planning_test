@@ -1,5 +1,5 @@
 /**
- * @typedef {{value: string, label: string, search?: string}} PlanningSearchOption
+ * @typedef {{value: string, label: string, search?: string, title?: string, meta?: string, finished?: boolean}} PlanningSearchOption
  */
 
 /**
@@ -43,9 +43,16 @@ export function planningOptionHaystack(option) {
  * @returns {PlanningSearchOption[]}
  */
 export function filterPlanningOptions(options, query) {
-    return (Array.isArray(options) ? options : []).filter((option) =>
-        planningSearchMatches(planningOptionHaystack(option), query),
-    );
+    const list = Array.isArray(options) ? options : [];
+    const browsing = normalizePlanningSearch(query).trim() === "";
+
+    return list.filter((option) => {
+        if (!browsing && String(option?.value ?? "") === "") {
+            return false;
+        }
+
+        return planningSearchMatches(planningOptionHaystack(option), query);
+    });
 }
 
 /**
@@ -72,10 +79,16 @@ function mountPlanningSearch(select) {
         value: option.value,
         label: option.textContent?.trim() ?? "",
         search: option.dataset.search ?? "",
+        title: option.dataset.title ?? "",
+        meta: option.dataset.meta ?? "",
+        finished: option.dataset.finished === "1",
     }));
     const listId = `${select.name || "planning"}-search-list`;
     const wrap = document.createElement("div");
     wrap.className = "planning-search";
+
+    const field = document.createElement("div");
+    field.className = "planning-search-field";
 
     const input = document.createElement("input");
     input.type = "text";
@@ -92,6 +105,14 @@ function mountPlanningSearch(select) {
     input.autocomplete = "off";
     input.spellcheck = false;
 
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "planning-search-toggle";
+    toggle.setAttribute("aria-label", "Alle werken tonen");
+    toggle.setAttribute("aria-controls", listId);
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.innerHTML = '<span aria-hidden="true">▼</span>';
+
     const list = document.createElement("ul");
     list.id = listId;
     list.className = "planning-search-list";
@@ -100,24 +121,27 @@ function mountPlanningSearch(select) {
 
     select.hidden = true;
     select.before(wrap);
-    wrap.append(input, list, select);
+    field.append(input, toggle);
+    wrap.append(field, list, select);
 
     let active = -1;
     let choosing = false;
     let editing = false;
-
-    const labelFor = (value) =>
-        options.find((option) => option.value === value)?.label ?? "";
+    let suppressFocusOpen = false;
 
     const showSelected = () => {
-        input.value = select.value === "" ? "" : labelFor(select.value);
-        input.title = input.value;
+        const selected = options.find((option) => option.value === select.value);
+        const title = selected?.title || selected?.label || "";
+        input.value = select.value === "" ? "" : title;
+        input.title = [input.value, selected?.meta ?? ""].filter((part) => part !== "").join("\n");
     };
 
     const setOpen = (open) => {
         list.hidden = !open;
         wrap.classList.toggle("is-open", open);
-        input.setAttribute("aria-expanded", open ? "true" : "false");
+        const expanded = open ? "true" : "false";
+        input.setAttribute("aria-expanded", expanded);
+        toggle.setAttribute("aria-expanded", expanded);
         if (open) {
             placeList();
         }
@@ -126,11 +150,14 @@ function mountPlanningSearch(select) {
     const placeList = () => {
         list.style.left = "0";
         list.style.right = "auto";
+        list.style.maxHeight = "400px";
         const rect = list.getBoundingClientRect();
         if (rect.right > window.innerWidth - 8) {
             list.style.left = "auto";
             list.style.right = "0";
         }
+        const room = window.innerHeight - list.getBoundingClientRect().top - 8;
+        list.style.maxHeight = `${Math.max(160, Math.min(400, room))}px`;
     };
 
     const items = () => [...list.querySelectorAll(".planning-search-option")];
@@ -177,7 +204,28 @@ function mountPlanningSearch(select) {
             item.id = `${listId}-${index}`;
             item.setAttribute("role", "option");
             item.dataset.value = option.value;
-            item.textContent = option.label;
+
+            const line = document.createElement("span");
+            line.className = "planning-search-line";
+            const title = document.createElement("span");
+            title.className = "planning-search-title";
+            title.textContent = option.title || option.label;
+            line.append(title);
+            if (option.finished) {
+                const badge = document.createElement("span");
+                badge.className = "planning-search-badge";
+                badge.textContent = "Afgerond";
+                line.append(badge);
+            }
+            item.append(line);
+
+            if (option.meta) {
+                const meta = document.createElement("span");
+                meta.className = "planning-search-meta";
+                meta.textContent = option.meta;
+                item.append(meta);
+            }
+
             item.addEventListener("mousedown", (event) => {
                 event.preventDefault();
                 choose(option.value);
@@ -206,7 +254,35 @@ function mountPlanningSearch(select) {
         choosing = false;
     };
 
+    const showAll = () => {
+        editing = false;
+        showSelected();
+        render("");
+        setOpen(true);
+        list.scrollTop = 0;
+    };
+
+    toggle.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+    });
+
+    toggle.addEventListener("click", () => {
+        if (!list.hidden && !editing) {
+            editing = false;
+            showSelected();
+            setOpen(false);
+            return;
+        }
+        suppressFocusOpen = true;
+        input.focus({ preventScroll: true });
+        suppressFocusOpen = false;
+        showAll();
+    });
+
     input.addEventListener("focus", () => {
+        if (suppressFocusOpen) {
+            return;
+        }
         editing = false;
         render("");
         setOpen(true);

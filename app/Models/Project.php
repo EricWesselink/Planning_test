@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Storage;
     'contact_name', 'contact_phone', 'contact_role', 'contact_email', 'supervisor_user_id',
     'planned_start_date', 'planned_end_date', 'actual_start_date', 'actual_end_date',
     'status', 'kind', 'notes', 'work_description', 'basis_uurtarief', 'order_amount',
-    'archived_at', 'import_warnings',
+    'archived_at', 'planning_afgerond', 'afgerond_at', 'import_warnings',
 ])]
 class Project extends Model
 {
@@ -34,6 +34,7 @@ class Project extends Model
      */
     protected $attributes = [
         'kind' => 'project',
+        'planning_afgerond' => false,
     ];
 
     protected static function booted(): void
@@ -55,6 +56,8 @@ class Project extends Model
             'basis_uurtarief' => 'decimal:2',
             'order_amount' => 'decimal:2',
             'archived_at' => 'datetime',
+            'planning_afgerond' => 'boolean',
+            'afgerond_at' => 'datetime',
             'import_warnings' => 'array',
         ];
     }
@@ -67,6 +70,21 @@ class Project extends Model
     public function scopeArchived(Builder $query): void
     {
         $query->whereNotNull('archived_at');
+    }
+
+    public function scopePlanningStand(Builder $query, string $stand): void
+    {
+        if ($stand === 'afgerond') {
+            $query->where('planning_afgerond', true);
+
+            return;
+        }
+
+        if ($stand === 'alles') {
+            return;
+        }
+
+        $query->where('planning_afgerond', false);
     }
 
     public function scopeMatchingSearch(Builder $query, string $term): void
@@ -162,6 +180,35 @@ class Project extends Model
         }
 
         $this->forceFill(['archived_at' => null])->save();
+    }
+
+    public function isPlanningFinished(): bool
+    {
+        return (bool) $this->planning_afgerond;
+    }
+
+    public function finishPlanning(): void
+    {
+        if ($this->isArchived() || $this->isPlanningFinished()) {
+            return;
+        }
+
+        $this->forceFill([
+            'planning_afgerond' => true,
+            'afgerond_at' => now(),
+        ])->save();
+    }
+
+    public function reactivatePlanning(): void
+    {
+        if (! $this->isPlanningFinished()) {
+            return;
+        }
+
+        $this->forceFill([
+            'planning_afgerond' => false,
+            'afgerond_at' => null,
+        ])->save();
     }
 
     public function purge(): void
@@ -631,17 +678,95 @@ class Project extends Model
     }
 
     /**
-     * Tekst uit de projectlijst die niet al in de plankeuze staat: opdrachtgever, adres, soort en winkelwerk.
+     * Eerste regel in de plankeuze: projectnaam en plaats.
      */
-    public function listSearchText(): string
+    public function planningPickerTitle(): string
+    {
+        $name = $this->planningPickerName();
+        $city = trim((string) $this->city);
+        if ($name !== '' && $city !== '' && ! str_contains(mb_strtolower($name), mb_strtolower($city))) {
+            return $name.' — '.$city;
+        }
+
+        return $name !== '' ? $name : ($city !== '' ? $city : 'Werk');
+    }
+
+    /**
+     * Tweede regel in de plankeuze: projectnummer, werknummer en omschrijving.
+     */
+    public function planningPickerMeta(): string
+    {
+        $parts = [];
+        $code = $this->workCode();
+        if (is_string($code) && $code !== '') {
+            $parts[] = $code;
+        }
+        $number = $this->workNumber();
+        if ($number !== '') {
+            $parts[] = 'Werk '.$number;
+        }
+        $work = $this->planningPickerWorkLabel();
+        if ($work !== '') {
+            $parts[] = $work;
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    /**
+     * Zoektekst voor de plankeuze, alleen uit projectgegevens.
+     */
+    public function planningPickerSearchText(): string
     {
         return collect([
+            $this->planningPickerMeta(),
             $this->customer?->name,
             $this->nawLine(),
-            $this->isWinkel() || $this->isSmallWork() ? $this->kind?->badge() : null,
-            $this->isWinkel() ? $this->shopWorkLine() : null,
+            trim((string) $this->name),
+            trim((string) $this->work_description),
+            trim((string) $this->city),
         ])->filter(fn (?string $part): bool => is_string($part) && trim($part) !== '')
             ->implode(' ');
+    }
+
+    private function planningPickerName(): string
+    {
+        if ($this->isWinkel()) {
+            $customer = trim((string) ($this->customer?->name ?? ''));
+            if ($customer !== '') {
+                return $customer;
+            }
+        }
+
+        if ($this->isSmallWork()) {
+            $description = trim((string) $this->name);
+            if ($description !== '') {
+                return $description;
+            }
+        }
+
+        $title = $this->displayTitle();
+
+        return $title !== '' ? $title : trim((string) $this->name);
+    }
+
+    private function planningPickerWorkLabel(): string
+    {
+        $description = trim((string) $this->work_description);
+        if ($description === '') {
+            return '';
+        }
+
+        $line = preg_split('/\R/u', $description, 2)[0] ?? '';
+        $line = trim((string) preg_replace('/\s+/u', ' ', trim((string) $line)));
+        if ($line === '') {
+            return '';
+        }
+        if (mb_strlen($line) > 80) {
+            return rtrim(mb_substr($line, 0, 79)).'…';
+        }
+
+        return $line;
     }
 
     public function nawLine(): ?string

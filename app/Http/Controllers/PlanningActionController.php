@@ -888,6 +888,28 @@ class PlanningActionController extends Controller
         return back();
     }
 
+    public function finishPlanning(Project $project): RedirectResponse
+    {
+        Gate::authorize('manage-planning');
+        Gate::authorize('view', $project);
+        abort_if($project->isArchived(), 404);
+
+        $project->finishPlanning();
+
+        return back()->with('status', $project->name.' is afgerond. Je vindt het onder Afgerond, met alle planning en gegevens.');
+    }
+
+    public function reactivatePlanning(Project $project): RedirectResponse
+    {
+        Gate::authorize('manage-planning');
+        Gate::authorize('view', $project);
+        abort_if($project->isArchived(), 404);
+
+        $project->reactivatePlanning();
+
+        return back()->with('status', $project->name.' staat weer onder Actief.');
+    }
+
     /**
      * @return Collection<int, WorkItem>
      */

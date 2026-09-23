@@ -119,6 +119,8 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::patch('/planning/werk/{workItem}/regel', [PlanningActionController::class, 'updateWorkLine'])->name('planning.work-line.update');
     Route::delete('/planning/werk/{workItem}/regel', [PlanningActionController::class, 'destroyWorkLine'])->name('planning.work-line.destroy');
     Route::delete('/planning/assignments/{assignment}', [PlanningActionController::class, 'destroyAssignment'])->name('planning.assignments.destroy');
+    Route::post('/planning/werken/{project}/afronden', [PlanningActionController::class, 'finishPlanning'])->name('planning.finish');
+    Route::post('/planning/werken/{project}/weer-actief', [PlanningActionController::class, 'reactivatePlanning'])->name('planning.reactivate');
     Route::get('/planning/assignments/{assignment}/werkbonnen/nieuw', [WorkTicketController::class, 'create'])->name('work-tickets.create');
     Route::post('/planning/assignments/{assignment}/werkbonnen', [WorkTicketController::class, 'store'])->name('work-tickets.store');
     Route::get('/werkbonnen/{workTicket}', [WorkTicketController::class, 'show'])->name('work-tickets.show');
