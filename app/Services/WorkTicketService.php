@@ -114,7 +114,7 @@ class WorkTicketService
             'document_id' => $project->plattegrond()?->id,
             'work_items' => $draft['workItems'],
             'extra_works' => $this->extraWorkOptions($project),
-            'planned_works' => $this->plannedLooseWorkOptions($project),
+            'planned_works' => $this->planningChoiceRows($project),
             'shop_works' => $this->shopWorkOptions($project, $assignment),
             'has_measurement_form' => $project->measurementForm?->isFilled() ?? false,
             'include_measurement_form' => $project->measurementForm?->isFilled() ?? false,
@@ -497,9 +497,9 @@ class WorkTicketService
      */
     private function extraWorkItemIds(Project $project, array $input, ?WorkerAssignment $assignment): array
     {
-        $looseIds = array_flip($this->plannedLooseWorkItemIds($project));
+        $plannedIds = array_flip($this->planningMemberIds($project));
         $extraIds = $project->workItems
-            ->filter(fn (WorkItem $item): bool => $item->isExtraWork() || isset($looseIds[(int) $item->id]))
+            ->filter(fn (WorkItem $item): bool => $item->isExtraWork() || isset($plannedIds[(int) $item->id]))
             ->pluck('id')
             ->map(fn (mixed $id): int => (int) $id)
             ->all();

@@ -5014,8 +5014,13 @@ function boot() {
     }
 
     function ticketGeneralWorkState() {
-        const extraIds = [...document.querySelectorAll('[data-ticket-extra]:checked')]
-            .map((input) => Number(input.value))
+        const extraIds = [
+            ...[...document.querySelectorAll('[data-ticket-extra]:checked')]
+                .map((input) => Number(input.value)),
+            ...[...document.querySelectorAll('[data-ticket-plan]:checked')]
+                .flatMap((input) => String(input.dataset.memberIds || input.value).split(',')),
+        ]
+            .map((id) => Number(id))
             .filter((id) => Number.isFinite(id) && id > 0);
         const shopActivityIds = [
             ...document.querySelectorAll('[data-ticket-shop-activity]:checked'),

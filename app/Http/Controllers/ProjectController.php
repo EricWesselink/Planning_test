@@ -382,6 +382,7 @@ class ProjectController extends Controller
         $payload['csrf'] = csrf_token();
         $ticketMode = $this->ticketModePayload($request, $project, $tickets);
         if ($ticketMode !== null) {
+            $payload = $tickets->restrictBoardToPlannedWorks($project, $payload);
             $payload['ticketMode'] = $ticketMode;
             $payload['canPickRooms'] = true;
         }

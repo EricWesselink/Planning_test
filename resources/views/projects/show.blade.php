@@ -486,7 +486,7 @@
                             <div class="ticket-billing-label">In de planning</div>
                             @foreach ($ticketMode['planned_works'] as $plannedWork)
                                 <label>
-                                    <input type="checkbox" data-ticket-extra value="{{ $plannedWork['id'] }}">
+                                    <input type="checkbox" data-ticket-plan value="{{ $plannedWork['id'] }}" data-member-ids="{{ implode(',', $plannedWork['member_ids']) }}">
                                     {{ $plannedWork['name'] }} · {{ $plannedWork['qty_label'] }}
                                 </label>
                             @endforeach
