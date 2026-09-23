@@ -1019,7 +1019,23 @@ button.planning-avail-part {
 }
 
 .plan-line--project {
-    background: var(--color-nicon-sand);
+    background: color-mix(in srgb, var(--color-nicon-ink) 6%, var(--color-nicon-sand));
+}
+
+.plan-line--project:not(.plan-line--internal) {
+    border-top: 2px solid var(--nicon-red);
+}
+
+.plan-line--project:not(.plan-line--internal) .plan-frozen::before {
+    content: "";
+    position: absolute;
+    z-index: 6;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 4px;
+    background: var(--nicon-red);
+    pointer-events: none;
 }
 
 .plan-line--project .plan-frozen {
@@ -1029,6 +1045,23 @@ button.planning-avail-part {
 
 .plan-line--work {
     font-size: 0.75rem;
+    background: white;
+}
+
+.plan-line--work .plan-frozen {
+    background: white;
+}
+
+.plan-line--work .plan-cell--werk::before {
+    content: "";
+    position: absolute;
+    left: 0.42rem;
+    top: 0;
+    width: 0.38rem;
+    height: 55%;
+    border-left: 1px solid color-mix(in srgb, var(--color-nicon-ink) 22%, var(--color-nicon-line));
+    border-bottom: 1px solid color-mix(in srgb, var(--color-nicon-ink) 22%, var(--color-nicon-line));
+    pointer-events: none;
 }
 
 .plan-line--work .plan-cell--werk {
@@ -1244,6 +1277,7 @@ button.planning-avail-part {
     font-size: 13px;
     font-weight: 700;
     line-height: 1.1;
+    color: var(--color-nicon-ink);
 }
 
 .plan-project-meta > .text-nicon-muted {
@@ -1312,7 +1346,6 @@ a.plan-missing-craftsman:hover {
 
 .plan-line--small {
     font-size: 0.75rem;
-    background: var(--color-nicon-paper);
 }
 
 .plan-line--small .plan-frozen {
@@ -1703,10 +1736,11 @@ button.plan-labor-toggle:hover {
 .plan-day {
     position: relative;
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
+    flex-flow: row wrap;
+    align-items: baseline;
     justify-content: flex-start;
-    gap: 0;
+    column-gap: 0.35rem;
+    row-gap: 0;
     min-height: 0;
     padding: 1px 6px;
     border-left: 1px solid transparent;
@@ -1718,21 +1752,21 @@ button.plan-labor-toggle:hover {
 }
 
 .plan-day-weekday {
-    display: block;
-    font-size: 12px;
+    display: inline;
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.03em;
     line-height: 1.05;
     text-transform: uppercase;
     color: #fff;
 }
 
 .plan-day-date {
-    display: block;
+    display: inline;
     margin-top: 0;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 650;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     line-height: 1.05;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.88);
@@ -1740,6 +1774,7 @@ button.plan-labor-toggle:hover {
 
 .plan-day-times {
     display: grid;
+    flex: 1 0 100%;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
     margin-top: 1px;
