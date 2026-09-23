@@ -1166,7 +1166,7 @@ class PlanningBoardService
                     $item,
                     $name !== '' ? $name : $item->planningTitle(),
                     collect([$item]),
-                    trim((string) $item->notes),
+                    $this->boardStep((string) $item->notes) ?? '',
                 );
             })
             ->values()
@@ -1992,6 +1992,30 @@ class PlanningBoardService
 
     /**
      * @param  Collection<int, WorkItem>  $items
+     * @return list<string>
+     */
+    private function activitySteps(Collection $items): array
+    {
+        return $items
+            ->map(fn (WorkItem $item): ?string => $this->boardStep((string) $item->notes))
+            ->filter(fn (?string $note): bool => $note !== null)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function boardStep(string $note): ?string
+    {
+        $line = trim((string) preg_replace('/\s+/u', ' ', $note));
+        if ($line === '' || mb_strlen($line) > 80) {
+            return null;
+        }
+
+        return $line;
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
      * @return array<string, mixed>
      */
     private function smallWorkChildRow(Project $project, Collection $items, bool $grouped): array
@@ -2013,12 +2037,7 @@ class PlanningBoardService
             'id' => $primary->id,
             'project_id' => $project->id,
             'title' => $grouped ? $primary->packageLabel() : $primary->name,
-            'steps' => $items
-                ->map(fn (WorkItem $item): string => trim((string) $item->notes))
-                ->filter(fn (string $note): bool => $note !== '')
-                ->unique()
-                ->values()
-                ->all(),
+            'steps' => $this->activitySteps($items),
             'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
             'ordered' => $hasQuantity ? $ordered : null,
             'ordered_decimals' => $hasQuantity && fmod($ordered, 1.0) !== 0.0 ? 2 : 0,
@@ -2116,12 +2135,7 @@ class PlanningBoardService
             ? (float) $items->max(fn (WorkItem $item): float => (float) $item->ordered_quantity)
             : (float) $primary->ordered_quantity;
         $hasQuantity = $ordered > 0 && ! $primary->isIntakeTask();
-        $steps = $items
-            ->map(fn (WorkItem $item): string => trim((string) $item->notes))
-            ->filter(fn (string $note): bool => $note !== '')
-            ->unique()
-            ->values()
-            ->all();
+        $steps = $this->activitySteps($items);
         $personBars = [];
 
         foreach ($projectAssignments as $assignment) {

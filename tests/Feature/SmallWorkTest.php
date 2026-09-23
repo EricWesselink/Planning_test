@@ -931,6 +931,49 @@ class SmallWorkTest extends TestCase
             ->assertSee('wit RAL 9010');
     }
 
+    public function test_planning_board_shows_the_short_description_without_a_long_activity_note(): void
+    {
+        $user = User::factory()->create();
+        $other = $this->floorActivity('overig-vloerwerk');
+        $long = "Hier hebben we in het verleden een stalen traptrede losgeplakt.\nIk heb nog een sleutel om binnen te komen.";
+
+        $this->actingAs($user)->post(route('projects.small.store'), [
+            'type' => SmallWorkType::Klein->value,
+            'customer_name' => 'Van Wijnen',
+            'description' => 'Traptreden',
+            'location' => 'Harderwijk',
+            'date' => '2026-09-08',
+            'hours' => 4,
+            'work_activity_ids' => [$other->id],
+            'activity_notes' => [
+                $other->id => $long,
+            ],
+        ])->assertRedirect();
+
+        $project = Project::query()->where('name', 'Traptreden')->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('Traptreden')
+            ->assertSee('Overig vloerwerk')
+            ->assertDontSee('stalen traptrede')
+            ->assertDontSee('sleutel om binnen');
+
+        $request = Request::create('/planning', 'GET', [
+            'week' => '2026-09-07',
+            'project_id' => $project->id,
+        ]);
+        $request->setUserResolver(fn () => $user);
+        $row = collect(app(PlanningBoardService::class)->build($request)['rows'])
+            ->firstWhere('id', $project->id);
+        $child = collect($row['children'] ?? [])->firstWhere('title', 'Overig vloerwerk');
+
+        $this->assertNotNull($child);
+        $this->assertSame([], $child['steps']);
+    }
+
     public function test_vakman_sees_the_floor_note_on_the_work_line(): void
     {
         $planner = User::factory()->create();
