@@ -99,6 +99,12 @@ class WorkerAvailabilityService
             }
 
             if ($absence['full'] || $this->absenceOverlapsTimes($worker, $day, $member, $from, $to)) {
+                if ($this->plannedWeekendOverridesStructuralDayOff($day, $absence)) {
+                    $day->addDay();
+
+                    continue;
+                }
+
                 return $absence['label'];
             }
             $day->addDay();
@@ -216,6 +222,21 @@ class WorkerAvailabilityService
             'hint' => $full ? null : $slot->hint($hours),
             'structural' => false,
         ];
+    }
+
+    /**
+     * A normal Saturday or Sunday off stays visible on the board, but does not
+     * block planning once that weekend day is explicitly included.
+     *
+     * @param  array{structural?: bool, label?: string}  $absence
+     */
+    private function plannedWeekendOverridesStructuralDayOff(CarbonInterface $day, array $absence): bool
+    {
+        if (! ($absence['structural'] ?? false) || ($absence['label'] ?? '') !== 'Vrije dag') {
+            return false;
+        }
+
+        return $day->isSaturday() || $day->isSunday();
     }
 
     /**

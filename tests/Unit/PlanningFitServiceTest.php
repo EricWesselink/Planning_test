@@ -324,6 +324,66 @@ class PlanningFitServiceTest extends TestCase
         $this->assertTrue($row['selectable']);
     }
 
+    public function test_saturday_planning_keeps_people_selectable_on_their_usual_day_off(): void
+    {
+        $team = $this->makeWorker('Team Egaliseren', 'Primen & egaliseren', ['Persoon 1', 'Persoon 2']);
+        $item = $this->makeWorkItem('Primen & egaliseren');
+        $saturday = Carbon::parse('2026-09-26');
+        $fit = app(PlanningFitService::class);
+
+        $payload = $fit->candidates($item, $saturday, $saturday, '08:00:00', '16:00:00', null, true);
+        $candidate = collect($payload['workers'])->firstWhere('name', 'Team Egaliseren');
+
+        $this->assertIsArray($candidate);
+        $this->assertTrue($candidate['selectable']);
+        $this->assertSame('2/2 geschikt en beschikbaar', $candidate['status_label']);
+        foreach ($candidate['crew'] as $person) {
+            $this->assertTrue($person['selectable']);
+            $this->assertSame('Beschikbaar', $person['status_label']);
+        }
+        $this->assertNull($fit->awayRejection(
+            $team->fresh(['availabilities', 'crewPeople']),
+            $saturday,
+            $saturday,
+            true,
+            false,
+            '08:00',
+            '16:00',
+            $team->crewPeople()->pluck('id')->all(),
+        ));
+    }
+
+    public function test_booked_day_off_on_saturday_stays_unselectable(): void
+    {
+        $team = $this->makeWorker('Team Egaliseren', 'Primen & egaliseren', ['Persoon 1', 'Persoon 2']);
+        $item = $this->makeWorkItem('Primen & egaliseren');
+        $saturday = Carbon::parse('2026-09-26');
+        $team->availabilities()->create([
+            'start_date' => $saturday->toDateString(),
+            'end_date' => $saturday->toDateString(),
+            'kind' => AvailabilityKind::DayOff,
+        ]);
+
+        $payload = app(PlanningFitService::class)->candidates(
+            $item,
+            $saturday,
+            $saturday,
+            '08:00:00',
+            '16:00:00',
+            null,
+            true,
+        );
+        $candidate = collect($payload['workers'])->firstWhere('name', 'Team Egaliseren');
+
+        $this->assertIsArray($candidate);
+        $this->assertFalse($candidate['selectable']);
+        $this->assertSame('0/2 geschikt en beschikbaar', $candidate['status_label']);
+        foreach ($candidate['crew'] as $person) {
+            $this->assertFalse($person['selectable']);
+            $this->assertSame('Vrije dag', $person['status_label']);
+        }
+    }
+
     /**
      * @param  list<string>  $names
      */
