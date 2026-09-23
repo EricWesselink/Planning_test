@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CrewMember;
 use App\Models\Project;
+use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Services\InternalPlanningExcelService;
 use App\Services\PersonnelWeekOverviewService;
@@ -14,6 +15,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -57,6 +59,7 @@ class PlanningController extends Controller
                 ->sortBy(fn (array $row): string => mb_strtolower($row['label'].' '.$row['team']), SORT_NATURAL)
                 ->values(),
             'canManagePlanning' => $request->user()?->canManagePlanning() ?? false,
+            'workActivityChoices' => $this->workActivityChoices($request->user()?->canManagePlanning() ?? false),
             'canDragPlanning' => $request->user()?->canDragPlanning() ?? false,
             'canAssignPlanning' => $request->user()?->canAssignPlanning() ?? false,
             'canViewLaborCosts' => $request->user()?->canViewLaborCosts() ?? false,
@@ -178,5 +181,25 @@ class PlanningController extends Controller
         }
 
         Gate::authorize('view', Project::query()->findOrFail($request->integer('project_id')));
+    }
+
+    /**
+     * @return Collection<int, WorkActivityCategory>
+     */
+    private function workActivityChoices(bool $canManagePlanning): Collection
+    {
+        if (! $canManagePlanning) {
+            return collect();
+        }
+
+        return WorkActivityCategory::query()
+            ->active()
+            ->ordered()
+            ->with(['activities' => function ($query): void {
+                $query->active()->ordered();
+            }])
+            ->get()
+            ->filter(fn (WorkActivityCategory $category): bool => $category->activities->isNotEmpty())
+            ->values();
     }
 }

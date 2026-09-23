@@ -98,6 +98,15 @@ class ImportPreviewBuilder
                 $parsed = $this->stampAreaSource($parsed, $bucket);
             }
 
+            $classifiedIndex = array_key_last($classified);
+            if ($bucket !== ($classified[$classifiedIndex]['type'] ?? null)) {
+                $label = ImportDocumentType::tryFrom($bucket)?->label() ?? $bucket;
+                $classified[$classifiedIndex]['type'] = $bucket;
+                $classified[$classifiedIndex]['type_label'] = $label;
+                $sourceAnalysis[$classifiedIndex]['type'] = $bucket;
+                $sourceAnalysis[$classifiedIndex]['type_label'] = $label;
+            }
+
             match ($bucket) {
                 ImportDocumentType::Meetstaat->value => $meetstaat = $this->mergeParsed($meetstaat, $parsed),
                 ImportDocumentType::Plattegrond->value => $drawing = $this->mergeParsed($drawing, $parsed),

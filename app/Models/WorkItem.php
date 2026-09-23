@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'project_id', 'work_activity_id', 'name', 'display_color', 'unit', 'ordered_quantity',
+    'project_id', 'work_activity_id', 'planning_work_activity_id', 'name', 'display_color', 'unit', 'ordered_quantity',
     'begrote_uren', 'begrote_hoeveelheid', 'uurtarief', 'labor_unit_price',
     'planned_start_date', 'planned_end_date', 'status', 'sort_order', 'notes',
     'is_extra_work', 'small_work_type', 'extra_lines',
@@ -216,6 +216,11 @@ class WorkItem extends Model
     public function workActivity(): BelongsTo
     {
         return $this->belongsTo(WorkActivity::class);
+    }
+
+    public function planningActivity(): BelongsTo
+    {
+        return $this->belongsTo(WorkActivity::class, 'planning_work_activity_id');
     }
 
     public function progressEntries(): HasMany

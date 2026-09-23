@@ -78,7 +78,17 @@ class SourceDocumentService
     ): ProjectDocument {
         $filename = Str::uuid()->toString().'.'.(pathinfo($absolutePath, PATHINFO_EXTENSION) ?: 'pdf');
         $stored = 'projects/'.$project->id.'/'.$type.'/'.$filename;
-        Storage::disk('local')->put($stored, (string) file_get_contents($absolutePath));
+        $stream = fopen($absolutePath, 'rb');
+        if ($stream === false) {
+            throw new \RuntimeException('Bronbestand kon niet worden gelezen.');
+        }
+        try {
+            Storage::disk('local')->writeStream($stored, $stream);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
 
         return $this->createRevision(
             $project,

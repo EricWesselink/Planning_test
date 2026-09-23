@@ -880,6 +880,25 @@ button.planning-avail-part {
     line-height: 1.15;
 }
 
+.plan-work-label {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0 1rem 0 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    cursor: pointer;
+}
+
+.plan-work-label:hover,
+.plan-work-label:focus {
+    outline: 1px solid var(--color-nicon-line);
+    background: #fff;
+}
+
 .plan-cell--werk.has-missing-craftsman {
     padding-right: 1.5rem;
 }

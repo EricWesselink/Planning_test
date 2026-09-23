@@ -115,6 +115,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::post('/planning/assignments', [PlanningActionController::class, 'storeAssignment'])->name('planning.assignments.store');
     Route::post('/planning/interne-inzet', [PlanningActionController::class, 'storeInternalAssignment'])->name('planning.internal.store');
     Route::patch('/planning/assignments/{assignment}', [PlanningActionController::class, 'updateAssignment'])->name('planning.assignments.update');
+    Route::patch('/planning/werk/{workItem}/werkzaamheid', [PlanningActionController::class, 'updateWorkLabel'])->name('planning.work-label.update');
     Route::delete('/planning/assignments/{assignment}', [PlanningActionController::class, 'destroyAssignment'])->name('planning.assignments.destroy');
     Route::get('/planning/assignments/{assignment}/werkbonnen/nieuw', [WorkTicketController::class, 'create'])->name('work-tickets.create');
     Route::post('/planning/assignments/{assignment}/werkbonnen', [WorkTicketController::class, 'store'])->name('work-tickets.store');

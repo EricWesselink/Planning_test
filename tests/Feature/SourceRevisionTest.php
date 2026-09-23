@@ -22,6 +22,7 @@ use App\Models\WorkTicket;
 use App\Services\SourceUpdateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\SimplePdf;
@@ -485,6 +486,115 @@ class SourceRevisionTest extends TestCase
         $this->assertSame(1, Project::query()->count());
     }
 
+    public function test_confirming_a_drawing_labelled_as_meetstaat_stores_the_plattegrond(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $project = $this->makeProject('4943-1');
+        $project->areas()->create([
+            'area_number' => '1',
+            'name' => 'Bestaande ruimte',
+            'square_meters' => 10,
+            'status' => 'niet_gestart',
+        ]);
+        $project->documents()->create([
+            'document_type' => 'plattegrond',
+            'original_filename' => 'oud.pdf',
+            'file_path' => 'projects/'.$project->id.'/plattegrond/oud.pdf',
+            'mime_type' => 'application/pdf',
+            'revision' => 1,
+            'is_current' => true,
+            'uploaded_by' => $user->id,
+        ]);
+        $relative = 'meetstaat-previews/live/meetstaat-0.pdf';
+        Storage::disk('local')->put($relative, SimplePdf::bytes('plattegrond'));
+        $token = '10db33a7-1109-4226-9059-6e5f6ceae2f7';
+        Cache::put('source-update.'.$token, [
+            'project_id' => $project->id,
+            'preview' => [
+                'sources' => ['meetstaat' => false, 'plattegrond' => true],
+                'areas' => [[
+                    'floor' => 'Onbekend',
+                    'room_number' => '',
+                    'room_name' => 'showroom',
+                    'square_meters' => 49.4,
+                    'tasks' => [],
+                ]],
+                'works' => [],
+                'header' => [],
+            ],
+            'file' => null,
+            'original' => 'bouwtekening_ruimtes_marmoleum.pdf',
+            'meetstaat' => $relative,
+            'meetstaat_original' => 'bouwtekening_ruimtes_marmoleum.pdf',
+            'plattegrond' => null,
+            'plattegrond_original' => null,
+            'uploads' => [[
+                'original' => 'bouwtekening_ruimtes_marmoleum.pdf',
+                'type' => 'meetstaat',
+            ]],
+            'extra' => [],
+            'types' => ['meetstaat', 'plattegrond'],
+            'comparison' => [],
+        ], now()->addHour());
+
+        $this->actingAs($user)
+            ->post(route('projects.sources.confirm', $token))
+            ->assertRedirect(route('projects.show', $project))
+            ->assertSessionHas('status');
+
+        $project->refresh();
+        $drawing = $project->plattegrond();
+        $this->assertNotNull($drawing);
+        $this->assertSame('bouwtekening_ruimtes_marmoleum.pdf', $drawing->original_filename);
+        $this->assertSame(2, $drawing->revision);
+        $this->assertTrue((bool) $drawing->is_current);
+        $this->assertNotNull($project->areas()->where('name', 'Bestaande ruimte')->first());
+        $this->assertNull($project->areas()->where('name', 'showroom')->first());
+    }
+
+    public function test_uploading_a_drawing_labelled_as_meetstaat_reviews_it_as_plattegrond(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $project = $this->makeProject('4943-1');
+        $project->areas()->create([
+            'area_number' => '1',
+            'name' => 'Bestaande ruimte',
+            'square_meters' => 10,
+            'status' => 'niet_gestart',
+        ]);
+        $project->documents()->create([
+            'document_type' => 'plattegrond',
+            'original_filename' => 'oud.pdf',
+            'file_path' => 'projects/'.$project->id.'/plattegrond/oud.pdf',
+            'mime_type' => 'application/pdf',
+            'revision' => 1,
+            'is_current' => true,
+            'uploaded_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)->post(route('projects.sources.store', $project), [
+            'files' => [$this->drawingLabelledAsMeetstaat()],
+        ]);
+
+        $response->assertRedirect();
+        $this->followRedirects($response)
+            ->assertOk()
+            ->assertSee('bouwtekening_ruimtes_marmoleum.pdf · plattegrond')
+            ->assertSee('Plattegrond')
+            ->assertDontSee('Vervallen');
+
+        $this->confirmToken($user, $project, $response);
+        $project->refresh();
+        $drawing = $project->plattegrond();
+        $this->assertNotNull($drawing);
+        $this->assertSame('bouwtekening_ruimtes_marmoleum.pdf', $drawing->original_filename);
+        $this->assertSame(2, $drawing->revision);
+        $this->assertNotNull($project->areas()->where('name', 'Bestaande ruimte')->first());
+        $this->assertNull($project->areas()->where('name', 'showroom')->first());
+    }
+
     private function makeProject(string $number): Project
     {
         $customer = Customer::query()->create(['name' => 'Nicon vloeren']);
@@ -555,6 +665,17 @@ PVC
 Netto : {$netto} m²
 TXT),
             'Materialenstaat.pdf',
+            'application/pdf',
+            null,
+            true
+        );
+    }
+
+    private function drawingLabelledAsMeetstaat(): UploadedFile
+    {
+        return new UploadedFile(
+            SimplePdf::path("meetstaat\nmarmoleum\n0.12 showroom 49,40 m2\n"),
+            'bouwtekening_ruimtes_marmoleum.pdf',
             'application/pdf',
             null,
             true

@@ -16,6 +16,7 @@ use App\Support\PlanningHours;
 use App\Support\PlanningWeek;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -799,6 +800,37 @@ class PlanningActionController extends Controller
         $assignment->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    public function updateWorkLabel(Request $request, WorkItem $workItem): JsonResponse|RedirectResponse
+    {
+        Gate::authorize('manage-planning');
+        $workItem->loadMissing('project');
+        Gate::authorize('view', $workItem->project);
+
+        $data = $request->validate([
+            'work_activity_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('work_activities', 'id')->where(
+                    fn ($query) => $query->where('is_active', true)
+                ),
+            ],
+        ], [
+            'work_activity_id.exists' => 'Kies een werkzaamheid uit beheer.',
+        ]);
+
+        WorkItem::query()
+            ->whereIn('id', $this->draggedLineIds($workItem->project, $workItem))
+            ->update([
+                'planning_work_activity_id' => $data['work_activity_id'] ?? null,
+            ]);
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => true]);
+        }
+
+        return back();
     }
 
     /**

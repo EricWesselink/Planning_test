@@ -601,7 +601,26 @@
                                 <div class="plan-frozen">
                                     <div class="plan-cell plan-cell--werk plan-cell--indent">
                                         <div>
-                                            <div>{{ $work['title'] }}</div>
+                                            @if ($canManagePlanning)
+                                                <form method="POST" action="{{ route('planning.work-label.update', $work['id']) }}" class="plan-work-label-form" onsubmit="window.niconRememberPlanningScroll && window.niconRememberPlanningScroll()">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <select name="work_activity_id" class="plan-work-label" aria-label="Werkzaamheid {{ $work['title'] }}" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
+                                                        <option value="" @selected(empty($work['planning_work_activity_id']))>{{ $work['default_title'] ?? $work['title'] }}</option>
+                                                        @foreach ($workActivityChoices as $category)
+                                                            @if ($category->activities->isNotEmpty())
+                                                                <optgroup label="{{ $category->name }}">
+                                                                    @foreach ($category->activities as $activity)
+                                                                        <option value="{{ $activity->id }}" @selected((int) ($work['planning_work_activity_id'] ?? 0) === (int) $activity->id)>{{ $activity->name }}</option>
+                                                                    @endforeach
+                                                                </optgroup>
+                                                            @endif
+                                                        @endforeach
+                                                    </select>
+                                                </form>
+                                            @else
+                                                <div>{{ $work['title'] }}</div>
+                                            @endif
                                             @if (! empty($work['steps']))
                                                 <div class="text-[10px] font-normal text-nicon-muted">{{ implode(' · ', $work['steps']) }}</div>
                                             @endif
@@ -632,6 +651,20 @@
                 (function () {
                     var scroller = document.getElementById('plan-scroller');
                     var key = scroller && scroller.getAttribute('data-scroll-key');
+                    window.niconRememberPlanningScroll = function () {
+                        if (!scroller || !key) {
+                            return;
+                        }
+                        try {
+                            sessionStorage.setItem(key, JSON.stringify({
+                                left: scroller.scrollLeft,
+                                top: scroller.scrollTop,
+                                windowLeft: window.scrollX,
+                                windowTop: window.scrollY,
+                                href: location.pathname + location.search
+                            }));
+                        } catch (e) {}
+                    };
                     if (!scroller || !key) {
                         return;
                     }

@@ -8,7 +8,6 @@ use App\Enums\WorkUnit;
 use App\Models\AreaTask;
 use App\Models\Project;
 use App\Models\ProjectArea;
-use App\Models\ProjectCalculationLine;
 use App\Models\ProjectDocument;
 use App\Models\ProjectFloor;
 use App\Models\SnagItem;
@@ -99,6 +98,7 @@ class SourceUpdateService
     public function apply(Project $project, User $user, array $preview, array $files, array $types): Project
     {
         return DB::transaction(function () use ($project, $user, $preview, $files, $types) {
+            [$files, $types] = $this->retargetDrawingUpload($preview, $files, $types);
             $types = array_values(array_unique(array_filter($types)));
             $byType = [];
             foreach ($files as $file) {
@@ -381,6 +381,47 @@ class SourceUpdateService
     }
 
     /**
+     * Een bouwtekening kan als meetstaat gelabeld zijn terwijl de preview alleen een plattegrond bevat.
+     * Die PDF als meetstaat opslaan herschrijft ruimtes en toont de nieuwe tekening niet.
+     *
+     * @param  array<string, mixed>  $preview
+     * @param  list<array{path: string, type: string, original: string}>  $files
+     * @param  list<string>  $types
+     * @return array{0: list<array{path: string, type: string, original: string}>, 1: list<string>}
+     */
+    private function retargetDrawingUpload(array $preview, array $files, array $types): array
+    {
+        $sources = is_array($preview['sources'] ?? null) ? $preview['sources'] : [];
+        if (! empty($sources['meetstaat']) || empty($sources['plattegrond'])) {
+            return [$files, $types];
+        }
+
+        $types = array_values(array_filter(
+            $types,
+            fn (string $type): bool => $type !== ImportDocumentType::Meetstaat->value,
+        ));
+        if (! in_array(ImportDocumentType::Plattegrond->value, $types, true)) {
+            $types[] = ImportDocumentType::Plattegrond->value;
+        }
+
+        foreach ($files as $file) {
+            if (($file['type'] ?? '') === ImportDocumentType::Plattegrond->value) {
+                return [$files, $types];
+            }
+        }
+
+        foreach ($files as $index => $file) {
+            if (($file['type'] ?? '') === ImportDocumentType::Meetstaat->value) {
+                $files[$index]['type'] = ImportDocumentType::Plattegrond->value;
+
+                break;
+            }
+        }
+
+        return [$files, $types];
+    }
+
+    /**
      * @param  array<string, mixed>  $preview
      */
     private function applyMeetstaat(Project $project, array $preview): void
@@ -418,7 +459,7 @@ class SourceUpdateService
             $this->upsertSourceTask($area, $item, $row);
         }
 
-            $this->syncWorkItemQuantities($project->fresh(['workItems.areaTasks']));
+        $this->syncWorkItemQuantities($project->fresh(['workItems.areaTasks']));
     }
 
     /**

@@ -13,6 +13,7 @@ use App\Enums\WorkUnit;
 use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\TimeEntry;
+use App\Models\WorkActivity;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\Format;
@@ -115,6 +116,7 @@ class PlanningBoardService
         $relations = [
             'customer',
             'workActivities.category',
+            'workItems.planningActivity',
             'workItems.progressEntries.crewMember',
             'workItems.progressEntries.worker',
             'workItems.workOrders.worker',
@@ -221,7 +223,7 @@ class PlanningBoardService
                     }
                     $shownQty = $ordered > 0.0001 ? $ordered : $linkedQty;
                     $isOndergrond = $packageKey === 'ondergrond';
-                    ['primary' => $primary, 'title' => $title] = $this->boardGroupHeading($isOndergrond, $items);
+                    ['primary' => $primary, 'title' => $title, 'default_title' => $defaultTitle, 'planning_work_activity_id' => $planningActivityId] = $this->boardGroupHeading($isOndergrond, $items);
                     $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->all();
                     $done = (float) $items->sum(fn (WorkItem $item) => $item->completedQuantity());
                     $rest = (float) $items->sum(fn (WorkItem $item) => $item->remainingQuantity());
@@ -280,6 +282,8 @@ class PlanningBoardService
                         'id' => $primary->id,
                         'project_id' => $project->id,
                         'title' => $title,
+                        'default_title' => $defaultTitle,
+                        'planning_work_activity_id' => $planningActivityId,
                         'steps' => $steps,
                         'is_ondergrond' => $isOndergrond,
                         'unit' => $primary->unit->label(),
@@ -1089,7 +1093,7 @@ class PlanningBoardService
      */
     public function plannableWorkChoices(Project $project): array
     {
-        $project->loadMissing('workItems');
+        $project->loadMissing('workItems.planningActivity');
 
         if ($project->isSmallWork() || $project->isWinkel()) {
             return $this->individualWorkChoices($project);
@@ -1132,17 +1136,43 @@ class PlanningBoardService
 
     /**
      * @param  Collection<int, WorkItem>  $items
-     * @return array{primary: WorkItem, title: string}
+     * @return array{primary: WorkItem, title: string, default_title: string, planning_work_activity_id: ?int}
      */
     private function boardGroupHeading(bool $isOndergrond, Collection $items): array
     {
         $primary = $isOndergrond
             ? $this->primaryWorkItem($items)
             : $items->sortByDesc(fn (WorkItem $item): float => (float) $item->ordered_quantity)->first();
+        $defaultTitle = $isOndergrond ? $primary->packageLabel() : $primary->planningTitle();
+        $chosen = $this->chosenActivityLabel($items, $primary);
 
         return [
             'primary' => $primary,
-            'title' => $isOndergrond ? $primary->packageLabel() : $primary->planningTitle(),
+            'title' => $chosen['title'] ?? $defaultTitle,
+            'default_title' => $defaultTitle,
+            'planning_work_activity_id' => $chosen['id'],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, WorkItem>  $items
+     * @return array{title: ?string, id: ?int}
+     */
+    private function chosenActivityLabel(Collection $items, WorkItem $primary): array
+    {
+        $activity = $primary->planningActivity;
+        if (! $activity instanceof WorkActivity) {
+            $activity = $items
+                ->map(fn (WorkItem $item): ?WorkActivity => $item->planningActivity)
+                ->first(fn (?WorkActivity $candidate): bool => $candidate instanceof WorkActivity);
+        }
+        if (! $activity instanceof WorkActivity || trim($activity->name) === '') {
+            return ['title' => null, 'id' => null];
+        }
+
+        return [
+            'title' => $activity->name,
+            'id' => (int) $activity->id,
         ];
     }
 
@@ -2021,6 +2051,8 @@ class PlanningBoardService
     private function smallWorkChildRow(Project $project, Collection $items, bool $grouped): array
     {
         $primary = $grouped ? $this->primaryWorkItem($items) : $items->first();
+        $defaultTitle = $grouped ? $primary->packageLabel() : $primary->name;
+        $chosen = $this->chosenActivityLabel($items, $primary);
         $ordered = $grouped
             ? (float) $items->max(fn (WorkItem $item): float => (float) $item->ordered_quantity)
             : (float) $primary->ordered_quantity;
@@ -2036,7 +2068,9 @@ class PlanningBoardService
             'type' => 'work',
             'id' => $primary->id,
             'project_id' => $project->id,
-            'title' => $grouped ? $primary->packageLabel() : $primary->name,
+            'title' => $chosen['title'] ?? $defaultTitle,
+            'default_title' => $defaultTitle,
+            'planning_work_activity_id' => $chosen['id'],
             'steps' => $this->activitySteps($items),
             'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
             'ordered' => $hasQuantity ? $ordered : null,
@@ -2130,7 +2164,9 @@ class PlanningBoardService
     ): array {
         $primary = $grouped ? $this->primaryWorkItem($items) : $items->first();
         $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->all();
-        $title = $grouped ? $primary->packageLabel() : $primary->name;
+        $defaultTitle = $grouped ? $primary->packageLabel() : $primary->name;
+        $chosen = $this->chosenActivityLabel($items, $primary);
+        $title = $chosen['title'] ?? $defaultTitle;
         $ordered = $grouped
             ? (float) $items->max(fn (WorkItem $item): float => (float) $item->ordered_quantity)
             : (float) $primary->ordered_quantity;
@@ -2170,6 +2206,8 @@ class PlanningBoardService
             'id' => $primary->id,
             'project_id' => $project->id,
             'title' => $title,
+            'default_title' => $defaultTitle,
+            'planning_work_activity_id' => $chosen['id'],
             'steps' => $steps,
             'unit' => $hasQuantity ? ($primary->unit?->label() ?? '') : '',
             'ordered' => $hasQuantity ? $ordered : null,
