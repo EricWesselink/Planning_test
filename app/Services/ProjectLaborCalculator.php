@@ -46,9 +46,11 @@ class ProjectLaborCalculator
      */
     public function for(Project $project): array
     {
-        $this->imports->linkOpenLaborQuantities($project);
-        $project->unsetRelation('workItems');
-        $project->unsetRelation('calculationLines');
+        $changed = $this->imports->linkOpenLaborQuantities($project);
+        if ($changed) {
+            $project->unsetRelation('workItems');
+            $project->unsetRelation('calculationLines');
+        }
         $project->loadMissing(['assignments.crewMembers', 'workItems.progressEntries.crewMember', 'workItems.progressEntries.worker', 'workOrders']);
 
         $hoursByItem = $project->assignments->groupBy(

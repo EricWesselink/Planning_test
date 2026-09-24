@@ -209,16 +209,22 @@ class CalculationImportService
      * Koppel arbeidsregels die nog op uren staan aan hun productie-m²/m¹
      * en vul de arbeidsprijs per eenheid aan.
      */
-    public function linkOpenLaborQuantities(Project $project): void
+    public function linkOpenLaborQuantities(Project $project): bool
     {
-        $project->load(['calculationLines', 'workItems']);
-        $this->alignDistinctLaborActivities($project);
-        $project->unsetRelation('calculationLines');
-        $project->unsetRelation('workItems');
-        $project->load(['calculationLines', 'workItems']);
+        $project->loadMissing(['calculationLines', 'workItems']);
+        if (! $this->hasOpenLaborToLink($project)) {
+            return $this->fillUnsetLaborPrices($project);
+        }
+
+        $changed = $this->alignDistinctLaborActivities($project);
+        if ($changed) {
+            $project->unsetRelation('calculationLines');
+            $project->unsetRelation('workItems');
+            $project->load(['calculationLines', 'workItems']);
+        }
         $lines = $project->calculationLines->sortBy('row_number')->values();
         if ($lines->isEmpty()) {
-            return;
+            return $changed;
         }
 
         $openIds = $lines
@@ -270,14 +276,17 @@ class CalculationImportService
             $line->unit = $unit;
             $line->quantity = $fresh['quantity'];
             $line->save();
+            $changed = true;
             if ($line->work_item_id !== null) {
                 $touchedItemIds[] = (int) $line->work_item_id;
             }
         }
 
-        $project->unsetRelation('calculationLines');
-        $project->unsetRelation('workItems');
-        $project->load(['calculationLines', 'workItems']);
+        if ($touchedItemIds !== []) {
+            $project->unsetRelation('calculationLines');
+            $project->unsetRelation('workItems');
+            $project->load(['calculationLines', 'workItems']);
+        }
 
         foreach ($project->workItems as $item) {
             $price = $item->calculatedLaborUnitPrice();
@@ -315,8 +324,11 @@ class CalculationImportService
             }
             if ($item->isDirty()) {
                 $item->save();
+                $changed = true;
             }
         }
+
+        return $changed;
     }
 
     public function persist(Project $project, array $preview): int
@@ -632,7 +644,58 @@ class CalculationImportService
         return $created;
     }
 
-    private function alignDistinctLaborActivities(Project $project): void
+    private function hasOpenLaborToLink(Project $project): bool
+    {
+        foreach ($project->calculationLines as $line) {
+            if (! $line->is_labor) {
+                continue;
+            }
+            if ($line->normalizedUnit() === WorkUnit::Hours) {
+                return true;
+            }
+
+            $activity = WorkType::distinctActivity((string) $line->production_description);
+            if ($activity === null) {
+                continue;
+            }
+
+            $current = $line->work_item_id === null
+                ? null
+                : $project->workItems->firstWhere('id', $line->work_item_id);
+            if (! $current instanceof WorkItem || ! $this->itemRepresentsActivity($current, $activity)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function fillUnsetLaborPrices(Project $project): bool
+    {
+        if ($project->calculationLines->isEmpty()) {
+            return false;
+        }
+
+        $changed = false;
+        foreach ($project->workItems as $item) {
+            if ($item->labor_unit_price !== null) {
+                continue;
+            }
+            $price = $item->calculatedLaborUnitPrice();
+            if ($price === null) {
+                continue;
+            }
+            $item->labor_unit_price = $price;
+            if ($item->isDirty()) {
+                $item->save();
+                $changed = true;
+            }
+        }
+
+        return $changed;
+    }
+
+    private function alignDistinctLaborActivities(Project $project): bool
     {
         $touched = [];
         foreach ($project->calculationLines as $line) {
@@ -663,10 +726,12 @@ class CalculationImportService
         }
 
         if ($touched === []) {
-            return;
+            return false;
         }
 
         $this->rebuildBudgetsFromLaborLines($project, array_values(array_unique($touched)));
+
+        return true;
     }
 
     private function itemRepresentsActivity(WorkItem $item, string $activity): bool

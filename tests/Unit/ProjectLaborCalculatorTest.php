@@ -11,9 +11,11 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkOrder;
 use App\Models\WorkProgressEntry;
+use App\Services\CalculationImportService;
 use App\Services\ProjectLaborCalculator;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ProjectLaborCalculatorTest extends TestCase
@@ -54,6 +56,31 @@ class ProjectLaborCalculatorTest extends TestCase
         $this->assertSame(6.0, $byItem[$primer->id]['planned_hours']);
         $this->assertSame(6.0, $byItem[$pvc->id]['planned_hours']);
         $this->assertSame(12.0, $labor['planned_hours']);
+    }
+
+    public function test_labor_for_a_loaded_project_does_not_reload_work_items_when_nothing_changes(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-21',
+            end: '2026-09-21',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+        );
+        $loaded = $project->fresh(['workItems', 'assignments.crewMembers', 'workOrders']);
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $labor = app(ProjectLaborCalculator::class)->for($loaded);
+
+        $reloads = array_values(array_filter(
+            $queries,
+            fn (string $sql): bool => str_contains($sql, 'work_items') && str_contains($sql, 'project_id'),
+        ));
+        $this->assertSame([], $reloads);
+        $this->assertSame(8.0, $labor['planned_hours']);
     }
 
     public function test_two_people_for_three_days_cost_nine_euro_per_completed_square_meter(): void
@@ -999,5 +1026,146 @@ class ProjectLaborCalculatorTest extends TestCase
         }
 
         return [$project, $worker, $item];
+    }
+
+    public function test_labor_without_an_open_calculation_line_skips_linking_and_keeps_the_same_hours(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-21',
+            end: '2026-09-21',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+        );
+        $item = $project->workItems()->first();
+        $before = [
+            'begrote_uren' => $item->begrote_uren,
+            'begrote_hoeveelheid' => $item->begrote_hoeveelheid,
+            'labor_unit_price' => $item->labor_unit_price,
+        ];
+        $writes = 0;
+        DB::listen(function ($query) use (&$writes): void {
+            if (preg_match('/\b(insert|update|delete)\b/i', $query->sql) === 1) {
+                $writes++;
+            }
+        });
+
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+
+        $this->assertSame(0, $writes);
+        $this->assertFalse(app(CalculationImportService::class)->linkOpenLaborQuantities($project->fresh()));
+        $this->assertSame(8.0, $labor['planned_hours']);
+        $this->assertSame($before, [
+            'begrote_uren' => $item->fresh()->begrote_uren,
+            'begrote_hoeveelheid' => $item->fresh()->begrote_hoeveelheid,
+            'labor_unit_price' => $item->fresh()->labor_unit_price,
+        ]);
+    }
+
+    public function test_an_open_hour_line_is_still_linked_to_the_floor_quantity(): void
+    {
+        $project = Project::query()->create([
+            'project_number' => '260200091',
+            'customer_id' => Customer::query()->create(['name' => 'Open regel'])->id,
+            'name' => 'Open arbeidsregel',
+            'kind' => ProjectKind::Project,
+            'status' => 'in_uitvoering',
+        ]);
+        $item = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 40,
+            'status' => 'gepland',
+        ]);
+        $description = 'Leveren en leggen Gerflor Marmorette 0045';
+        ProjectCalculationLine::query()->create([
+            'project_id' => $project->id,
+            'row_number' => 1,
+            'source_hash' => 'open-uur',
+            'source_filename' => 'open.xlsx',
+            'group_code' => 'A',
+            'production_description' => $description,
+            'unit' => 'm2',
+            'quantity' => 40,
+            'is_labor' => false,
+            'match_status' => 'ignored',
+        ]);
+        $laborLine = ProjectCalculationLine::query()->create([
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'row_number' => 2,
+            'source_hash' => 'open-uur',
+            'source_filename' => 'open.xlsx',
+            'group_code' => 'A',
+            'production_description' => $description,
+            'unit' => 'uur',
+            'quantity' => 8,
+            'hours' => 8,
+            'hourly_rate' => 45,
+            'labor_cost' => 360,
+            'is_labor' => true,
+            'match_status' => 'matched',
+        ]);
+
+        $linked = app(CalculationImportService::class)->linkOpenLaborQuantities($project->fresh());
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+
+        $this->assertTrue($linked);
+        $laborLine->refresh();
+        $item->refresh();
+        $this->assertSame('m2', $laborLine->unit);
+        $this->assertEqualsWithDelta(40.0, (float) $laborLine->quantity, 0.001);
+        $this->assertEqualsWithDelta(40.0, (float) $item->begrote_hoeveelheid, 0.001);
+        $this->assertEqualsWithDelta(8.0, (float) $item->begrote_uren, 0.001);
+        $this->assertEqualsWithDelta(9.0, (float) $labor['items_by_id'][$item->id]['budget_unit_price'], 0.001);
+    }
+
+    public function test_an_already_linked_labor_line_is_not_written_again(): void
+    {
+        [$project] = $this->makeScheduledProject(
+            people: 1,
+            start: '2026-09-21',
+            end: '2026-09-21',
+            startTime: '08:00:00',
+            endTime: '16:00:00',
+        );
+        $item = $project->workItems()->first();
+        $item->update([
+            'begrote_uren' => 8,
+            'begrote_hoeveelheid' => 40,
+            'uurtarief' => 45,
+            'labor_unit_price' => 9,
+        ]);
+        ProjectCalculationLine::query()->create([
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'row_number' => 1,
+            'source_hash' => 'gekoppeld',
+            'source_filename' => 'gekoppeld.xlsx',
+            'production_description' => 'Leveren en leggen linoleum',
+            'unit' => 'm2',
+            'quantity' => 40,
+            'hours' => 8,
+            'hourly_rate' => 45,
+            'labor_cost' => 360,
+            'is_labor' => true,
+            'match_status' => 'matched',
+        ]);
+        $writes = 0;
+        DB::listen(function ($query) use (&$writes): void {
+            if (preg_match('/\b(insert|update|delete)\b/i', $query->sql) === 1) {
+                $writes++;
+            }
+        });
+
+        $linked = app(CalculationImportService::class)->linkOpenLaborQuantities($project->fresh());
+        $labor = app(ProjectLaborCalculator::class)->for($project->fresh());
+
+        $this->assertFalse($linked);
+        $this->assertSame(0, $writes);
+        $this->assertSame(8.0, $labor['planned_hours']);
+        $this->assertEqualsWithDelta(9.0, (float) $item->fresh()->labor_unit_price, 0.001);
+        $this->assertEqualsWithDelta(40.0, (float) $item->fresh()->begrote_hoeveelheid, 0.001);
     }
 }

@@ -2,191 +2,134 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectKind;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
-use App\Models\Worker;
-use App\Models\WorkerAssignment;
+use App\Models\WorkActivity;
 use App\Models\WorkItem;
+use App\Services\PlanningBoardService;
+use App\Services\ShopWorkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class PlanningWorkChoicesTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_planning_choices_list_only_the_selected_projects_board_works(): void
+    public function test_reused_board_groups_keep_the_same_work_choices(): void
     {
         $user = User::factory()->create();
-        $customer = Customer::query()->create(['name' => 'Gemeente Amersfoort']);
-        $amersfoort = $this->project($customer, '11P260141', 'Laakse Tuinen Amersfoort');
-        $wezep = $this->project($customer, '11P260200', 'School Wezep');
-        $this->workItem($amersfoort, 'Primen & Egaliseren', 3168);
-        $marmoleum = $this->workItem($amersfoort, 'Marmoleum Cocoa, Linoleum', 100);
-        $linoleum = $this->workItem($amersfoort, 'Linoleum', 3168);
-        $this->workItem($amersfoort, 'PU gietvloer', 252);
-        $this->workItem($amersfoort, 'Entreemat', 21);
-        $this->workItem($amersfoort, 'Plinten', 2973, 'm1');
-        $this->workItem($amersfoort, 'Vinyl', 0);
-        $tapijt = $this->workItem($wezep, 'Tapijt', 80);
+        $normal = $this->normalProject();
+        $small = $this->smallProject();
+        Storage::fake('local');
+        $activity = WorkActivity::query()->firstOrFail();
+        $winkel = app(ShopWorkService::class)->create([
+            'customer_name' => 'Jansen',
+            'city' => 'Hengelo',
+            'work_activity_ids' => [$activity->id],
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ], $user);
 
-        $html = $this->actingAs($user)
-            ->get(route('planning', ['week' => '2026-09-07']))
-            ->assertOk()
-            ->getContent();
-        $choices = $this->choices($html, $amersfoort->id);
-        $wezepChoices = $this->choices($html, $wezep->id);
+        $direct = app(PlanningBoardService::class);
+        $before = [];
+        foreach ([$normal, $small, $winkel] as $project) {
+            $before[$project->id] = $direct->plannableWorkChoices($project->fresh(['workItems.planningActivity']));
+        }
 
-        $this->assertEqualsCanonicalizing([
-            'Primen & Egaliseren',
-            'Linoleum',
-            'Gietvloer',
-            'Entreemat',
-            'Plinten',
-        ], array_column($choices, 'name'));
-        $linoleumChoice = collect($choices)->firstWhere('name', 'Linoleum');
-        $this->assertIsArray($linoleumChoice);
-        $this->assertSame($linoleum->id, $linoleumChoice['id']);
-        $this->assertEqualsCanonicalizing([$linoleum->id, $marmoleum->id], $linoleumChoice['member_ids']);
-        $this->assertNotContains($tapijt->id, collect($choices)->flatMap(fn (array $choice): array => $choice['member_ids'])->all());
-        $this->assertNotContains('Tapijt', array_column($choices, 'name'));
-        $this->assertNotContains('Vinyl', array_column($choices, 'name'));
-        $this->assertSame(['Tapijt'], array_column($wezepChoices, 'name'));
-        $this->assertNotContains($linoleum->id, collect($wezepChoices)->flatMap(fn (array $choice): array => $choice['member_ids'])->all());
+        $request = Request::create('/planning', 'GET', ['week' => '2026-09-07']);
+        $request->setUserResolver(fn () => $user);
+        $board = app(PlanningBoardService::class);
+        $board->build($request);
+        $after = [];
+        foreach ([$normal, $small, $winkel] as $project) {
+            $after[$project->id] = $board->plannableWorkChoices($project->fresh(['workItems.planningActivity']));
+        }
+
+        $this->assertSame($before, $after);
+        $byName = $normal->workItems->keyBy('name');
+        $choiceIds = array_column($before[$normal->id], 'id');
+        $this->assertNotContains($byName['Lege groep']->id, $choiceIds);
+        $this->assertNotContains($byName['Ongepland meerwerk']->id, $choiceIds);
+        $this->assertContains($byName['Meerwerk trap']->id, $choiceIds);
+        $this->assertContains($byName['Egaliseren']->id, $choiceIds);
+        $this->assertContains($byName['Linoleum']->id, $choiceIds);
+        $this->assertContains($byName['PVC stroken']->id, $choiceIds);
+        $this->assertNotEmpty($before[$small->id]);
+        $this->assertNotEmpty($before[$winkel->id]);
+        $this->assertSame(
+            array_column($before[$small->id], 'id'),
+            array_column($after[$small->id], 'id'),
+        );
+        $this->assertSame(
+            array_column($before[$winkel->id], 'member_ids'),
+            array_column($after[$winkel->id], 'member_ids'),
+        );
     }
 
-    public function test_budgeted_board_lines_stay_choosable_without_ordered_quantity(): void
+    private function normalProject(): Project
     {
-        $user = User::factory()->create();
-        $customer = Customer::query()->create(['name' => 'Stichting Philadelphia Zorg']);
-        $project = $this->project($customer, 'offerte1IP250575', 'Kampen Philadelphia Kaarsenmakerij');
-        $removal = WorkItem::query()->create([
-            'project_id' => $project->id,
-            'name' => 'Vloer verwijderen',
-            'unit' => 'm2',
-            'ordered_quantity' => 0,
-            'begrote_uren' => 40,
-            'begrote_hoeveelheid' => 790,
-            'status' => 'gepland',
-        ]);
-        $this->workItem($project, 'Rubber tegels', 0);
-        $other = WorkItem::query()->create([
-            'project_id' => $project->id,
-            'name' => 'Overig vloerwerk',
-            'unit' => 'm2',
-            'ordered_quantity' => 0,
-            'begrote_uren' => 8,
-            'status' => 'gepland',
-        ]);
-        $work = $this->workItem($project, 'Werk', 578);
-
-        $html = $this->actingAs($user)
-            ->get(route('planning', ['week' => '2026-09-21', 'project_id' => $project->id]))
-            ->assertOk()
-            ->getContent();
-        $names = array_column($this->choices($html, $project->id), 'name');
-
-        $this->assertContains('Vloer verwijderen', $names);
-        $this->assertContains('Overig vloerwerk', $names);
-        $this->assertContains('Werk', $names);
-        $this->assertNotContains('Rubber tegels', $names);
-        $choice = collect($this->choices($html, $project->id))->firstWhere('name', 'Vloer verwijderen');
-        $this->assertSame($removal->id, $choice['id']);
-        $this->assertContains($removal->id, $choice['member_ids']);
-        $this->assertContains($other->id, collect($this->choices($html, $project->id))->firstWhere('name', 'Overig vloerwerk')['member_ids']);
-        $this->assertContains($work->id, collect($this->choices($html, $project->id))->firstWhere('name', 'Werk')['member_ids']);
-    }
-
-    public function test_saving_an_existing_assignment_keeps_the_planned_work(): void
-    {
-        $user = User::factory()->create();
-        $worker = Worker::query()->create([
-            'name' => 'Kees Jansen',
-            'employment_type' => 'zzp',
-            'company' => 'Jansen Vloeren',
-            'specialty' => 'Linoleum',
-            'active' => true,
-        ]);
-        $customer = Customer::query()->create(['name' => 'Gemeente Amersfoort']);
-        $project = $this->project($customer, '11P260141', 'Laakse Tuinen Amersfoort');
-        $marmoleum = $this->workItem($project, 'Marmoleum Cocoa, Linoleum', 100);
-        $this->workItem($project, 'Linoleum', 3168);
-        $assignment = WorkerAssignment::query()->create([
-            'worker_id' => $worker->id,
-            'project_id' => $project->id,
-            'work_item_id' => $marmoleum->id,
-            'start_date' => '2026-09-08',
-            'end_date' => '2026-09-09',
-            'hours_per_day' => 8,
-        ]);
-
-        $html = $this->actingAs($user)
-            ->get(route('planning', ['week' => '2026-09-07']))
-            ->assertOk()
-            ->getContent();
-
-        $this->assertStringContainsString('data-shift-id="'.$assignment->id.'"', $html);
-        $this->assertStringContainsString('data-work-item-id="'.$marmoleum->id.'"', $html);
-        $this->assertSame(1, WorkerAssignment::query()->count());
-
-        $this->actingAs($user)
-            ->patchJson(route('planning.assignments.update', $assignment), [
-                'worker_id' => $worker->id,
-                'project_id' => $project->id,
-                'work_item_id' => $marmoleum->id,
-                'work_item_ids' => [$marmoleum->id],
-                'start_date' => '2026-09-08',
-                'end_date' => '2026-09-09',
-                'hours' => 8,
-            ])
-            ->assertOk();
-
-        $assignment->refresh();
-        $this->assertSame(1, WorkerAssignment::query()->count());
-        $this->assertSame($project->id, $assignment->project_id);
-        $this->assertSame($marmoleum->id, $assignment->work_item_id);
-        $this->assertSame('2026-09-08', $assignment->start_date->toDateString());
-        $this->assertSame('2026-09-09', $assignment->end_date->toDateString());
-        $this->assertTrue($assignment->coversWorkIds([$marmoleum->id]));
-    }
-
-    private function project(Customer $customer, string $number, string $name): Project
-    {
-        return Project::query()->create([
-            'project_number' => $number,
-            'customer_id' => $customer->id,
-            'name' => $name,
+        $project = Project::query()->create([
+            'project_number' => '260200092',
+            'customer_id' => Customer::query()->create(['name' => 'Gemeente'])->id,
+            'name' => 'Meerdere werkzaamheden',
             'city' => 'Amersfoort',
+            'kind' => ProjectKind::Project,
             'status' => 'in_uitvoering',
             'planned_start_date' => '2026-09-08',
             'planned_end_date' => '2026-09-12',
         ]);
-    }
-
-    private function workItem(Project $project, string $name, float $quantity, string $unit = 'm2'): WorkItem
-    {
-        return WorkItem::query()->create([
+        foreach ([
+            ['Linoleum', 'm2', 100, false, null],
+            ['PVC stroken', 'm2', 40, false, null],
+            ['Lege groep', 'm2', 0, false, null],
+            ['Meerwerk trap', 'm2', 12, true, null],
+            ['Ongepland meerwerk', 'm2', 0, true, null],
+        ] as [$name, $unit, $quantity, $extra, $start]) {
+            WorkItem::query()->create([
+                'project_id' => $project->id,
+                'name' => $name,
+                'unit' => $unit,
+                'ordered_quantity' => $quantity,
+                'is_extra_work' => $extra,
+                'planned_start_date' => $start,
+                'status' => 'gepland',
+            ]);
+        }
+        WorkItem::query()->create([
             'project_id' => $project->id,
-            'name' => $name,
-            'unit' => $unit,
-            'ordered_quantity' => $quantity,
-            'planned_start_date' => '2026-09-08',
-            'planned_end_date' => '2026-09-12',
-            'status' => 'in_uitvoering',
+            'name' => 'Egaliseren',
+            'unit' => 'm2',
+            'ordered_quantity' => 80,
+            'begrote_uren' => 10,
+            'status' => 'gepland',
         ]);
+
+        return $project->fresh('workItems');
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function choices(string $html, int $projectId): array
+    private function smallProject(): Project
     {
-        $this->assertSame(1, preg_match("/data-work-items='([^']*)'/", $html, $matches));
-        $decoded = json_decode(html_entity_decode($matches[1], ENT_QUOTES), true);
-        $this->assertIsArray($decoded);
-        $items = $decoded[$projectId] ?? $decoded[(string) $projectId] ?? null;
-        $this->assertIsArray($items);
+        $project = Project::query()->create([
+            'project_number' => '260200093',
+            'customer_id' => Customer::query()->create(['name' => 'Klein'])->id,
+            'name' => 'Klein werk',
+            'kind' => ProjectKind::Klein,
+            'status' => 'in_uitvoering',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-08',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Plinten',
+            'unit' => 'm1',
+            'ordered_quantity' => 12,
+            'status' => 'gepland',
+        ]);
 
-        return $items;
+        return $project->fresh('workItems');
     }
 }

@@ -47,6 +47,12 @@ class PlanningBoardService
         private ProjectLaborCalculator $labor,
     ) {}
 
+    /** @var array<int, Collection<string, Collection<int, WorkItem>>> */
+    private array $quantityGroupsByProject = [];
+
+    /** @var array<int, list<array{id: int, name: string, group: string, notes: string, type_key: string, project_id: int, project: string, member_ids: list<int>}>> */
+    private array $plannableChoicesByProject = [];
+
     public function weekStart(?string $week, ?int $weekNr = null, ?int $year = null): Carbon
     {
         if ($weekNr !== null && $weekNr >= 1 && $weekNr <= 53) {
@@ -213,6 +219,7 @@ class PlanningBoardService
             if ($project->isWinkel()) {
                 [$workRows, $usedIds] = $this->winkelWorkRows($project, $projectAssignments, $days, $doubleBooked, $usedIds, $labor);
             } else {
+                $groupChoices = [];
                 foreach ($this->quantityWorkGroups($project) as $packageKey => $items) {
                     $ordered = (float) $items->sum(fn (WorkItem $item): float => (float) $item->ordered_quantity);
                     $linkedQty = (float) $items->sum(
@@ -227,6 +234,7 @@ class PlanningBoardService
                     $shownQty = $ordered > 0.0001 ? $ordered : $linkedQty;
                     $isOndergrond = $packageKey === 'ondergrond';
                     ['primary' => $primary, 'title' => $title, 'default_title' => $defaultTitle, 'planning_work_activity_id' => $planningActivityId] = $this->boardGroupHeading($isOndergrond, $items);
+                    $groupChoices[] = $this->workChoice($project, $primary, $title, $items);
                     $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->all();
                     $done = (float) $items->sum(fn (WorkItem $item) => $item->completedQuantity());
                     $rest = (float) $items->sum(fn (WorkItem $item) => $item->remainingQuantity());
@@ -306,6 +314,10 @@ class PlanningBoardService
                         'labor' => $itemLabor,
                     ];
                 }
+                $this->plannableChoicesByProject[(int) $project->id] = array_merge(
+                    $groupChoices,
+                    $this->extraWorkChoices($project),
+                );
             }
 
             foreach ($workRows as $index => $row) {
@@ -1130,10 +1142,15 @@ class PlanningBoardService
      */
     public function plannableWorkChoices(Project $project): array
     {
+        $id = (int) $project->id;
+        if (array_key_exists($id, $this->plannableChoicesByProject)) {
+            return $this->plannableChoicesByProject[$id];
+        }
+
         $project->loadMissing('workItems.planningActivity');
 
         if ($project->isSmallWork() || $project->isWinkel()) {
-            return $this->individualWorkChoices($project);
+            return $this->plannableChoicesByProject[$id] = $this->individualWorkChoices($project);
         }
 
         $choices = [];
@@ -1146,6 +1163,15 @@ class PlanningBoardService
             $choices[] = $this->workChoice($project, $primary, $title, $items);
         }
 
+        return $this->plannableChoicesByProject[$id] = array_merge($choices, $this->extraWorkChoices($project));
+    }
+
+    /**
+     * @return list<array{id: int, name: string, group: string, notes: string, type_key: string, project_id: int, project: string, member_ids: list<int>}>
+     */
+    private function extraWorkChoices(Project $project): array
+    {
+        $choices = [];
         foreach ($project->workItems->filter(fn (WorkItem $item): bool => $item->isExtraWork()) as $item) {
             if ((float) $item->ordered_quantity <= 0.0001 && $item->planned_start_date === null) {
                 continue;
@@ -1162,7 +1188,12 @@ class PlanningBoardService
      */
     private function quantityWorkGroups(Project $project): Collection
     {
-        return $project->workItems
+        $id = (int) $project->id;
+        if (array_key_exists($id, $this->quantityGroupsByProject)) {
+            return $this->quantityGroupsByProject[$id];
+        }
+
+        return $this->quantityGroupsByProject[$id] = $project->workItems
             ->reject(fn (WorkItem $item): bool => $item->isExtraWork())
             ->groupBy(fn (WorkItem $item): string => $item->typeKey())
             ->sortBy(
@@ -2422,8 +2453,7 @@ class PlanningBoardService
         $related = WorkerAssignment::query()
             ->with('crewMembers')
             ->whereIn('worker_id', $workerIds)
-            ->whereDate('end_date', '>=', $start->toDateString())
-            ->whereDate('start_date', '<=', $end->toDateString())
+            ->coveringDates($start, $end)
             ->get();
         $hoursById = $this->uniqueHoursByAssignment($related);
         foreach ($assignments as $assignment) {
