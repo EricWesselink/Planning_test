@@ -26,11 +26,12 @@ class PersonnelHoursService
 
     /**
      * @param  Collection<int, CarbonInterface>  $days
+     * @param  list<array<string, mixed>>|null  $people
      * @return list<array<string, mixed>>
      */
-    public function weekstaat(Collection $days): array
+    public function weekstaat(Collection $days, ?array $people = null): array
     {
-        $people = $this->weeks->forDays($days);
+        $people ??= $this->weeks->forDays($days);
         $people = array_values(array_filter(
             $people,
             fn (array $row): bool => $this->personRegistersHours($row['worker'], $row['member']),

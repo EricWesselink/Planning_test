@@ -223,12 +223,17 @@ class ProjectArea extends Model
         }
 
         $allDone = $tasks->every(fn (AreaTask $task) => $task->status === AreaStatus::Gereed);
-        $this->status = match (true) {
+        $status = match (true) {
             $allDone && $tasks->every(fn (AreaTask $task) => $task->isApproved()) => AreaStatus::Gereed,
             $allDone => AreaStatus::VoorlopigGereed,
             $tasks->contains(fn (AreaTask $task) => $task->status !== AreaStatus::NietGestart) => AreaStatus::InUitvoering,
             default => AreaStatus::NietGestart,
         };
+        if ($this->status === $status) {
+            return;
+        }
+
+        $this->status = $status;
         $this->save();
     }
 

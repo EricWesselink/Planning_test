@@ -16,6 +16,7 @@ use App\Models\TimeEntry;
 use App\Models\WorkActivity;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
+use App\Models\WorkOrder;
 use App\Support\Format;
 use App\Support\PlanningHours;
 use App\Support\PlanningLaborForecast;
@@ -156,8 +157,7 @@ class PlanningBoardService
                 $q->active()->accessibleBy($request->user())->planningStand($planningStand);
                 $this->constrainKind($q, $kindFilter);
             })
-            ->whereDate('end_date', '>=', $windowStart->toDateString())
-            ->whereDate('start_date', '<=', $windowEnd->toDateString())
+            ->coveringDates($windowStart, $windowEnd)
             ->when($workerId, fn ($q) => $q->where('worker_id', $workerId))
             ->when($crewMemberId, fn ($q) => $this->constrainCrewMember($q, $crewMemberId))
             ->when(
@@ -171,8 +171,7 @@ class PlanningBoardService
         $internalAssignments = WorkerAssignment::query()
             ->with(['worker', 'team', 'crewMembers'])
             ->where('kind', AssignmentKind::Internal)
-            ->whereDate('end_date', '>=', $windowStart->toDateString())
-            ->whereDate('start_date', '<=', $windowEnd->toDateString())
+            ->coveringDates($windowStart, $windowEnd)
             ->when($workerId, fn ($q) => $q->where('worker_id', $workerId))
             ->when($crewMemberId, fn ($q) => $this->constrainCrewMember($q, $crewMemberId))
             ->get();
@@ -193,11 +192,13 @@ class PlanningBoardService
             $usedIds = [];
             $workRows = [];
             $projectWarnings = [];
+            $workOrdersByItem = $this->loadedWorkOrdersByItem($project);
             $labor = $canViewLabor ? $this->labor->for($project) : [
                 'groups' => [],
                 'items_by_id' => [],
                 'overrun_label' => null,
             ];
+            $this->restoreWorkOrders($project, $workOrdersByItem);
 
             if ($project->isSmallWork()) {
                 $rows[] = $this->smallProjectRow($project, $projectAssignments, $days, $doubleBooked, $labor, $canViewLabor);
@@ -2293,6 +2294,42 @@ class PlanningBoardService
         }
 
         return [$row, $usedIds];
+    }
+
+    /**
+     * @return array<int, Collection<int, WorkOrder>>
+     */
+    private function loadedWorkOrdersByItem(Project $project): array
+    {
+        if (! $project->relationLoaded('workItems')) {
+            return [];
+        }
+
+        $orders = [];
+        foreach ($project->workItems as $item) {
+            if ($item->relationLoaded('workOrders')) {
+                $orders[(int) $item->id] = $item->getRelation('workOrders');
+            }
+        }
+
+        return $orders;
+    }
+
+    /**
+     * @param  array<int, Collection<int, WorkOrder>>  $ordersByItem
+     */
+    private function restoreWorkOrders(Project $project, array $ordersByItem): void
+    {
+        if ($ordersByItem === [] || ! $project->relationLoaded('workItems')) {
+            return;
+        }
+
+        foreach ($project->workItems as $item) {
+            $id = (int) $item->id;
+            if (array_key_exists($id, $ordersByItem)) {
+                $item->setRelation('workOrders', $ordersByItem[$id]);
+            }
+        }
     }
 
     private function hoursView(Request $request, CarbonInterface $windowEnd): string

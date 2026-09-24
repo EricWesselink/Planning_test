@@ -315,7 +315,7 @@ class PlanningWeekTest extends TestCase
             $css
         );
         $this->assertMatchesRegularExpression(
-            '/\.plan-line--small \.plan-project-meta > a\s*\{[^}]*display:\s*flex/s',
+            '/\.plan-line--small \.plan-project-name > a\s*\{[^}]*display:\s*flex/s',
             $css
         );
         $this->assertMatchesRegularExpression(

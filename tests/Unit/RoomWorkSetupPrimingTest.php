@@ -13,6 +13,7 @@ use App\Models\WorkItem;
 use App\Services\RoomWorkSetup;
 use App\Support\WorkType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class RoomWorkSetupPrimingTest extends TestCase
@@ -199,6 +200,47 @@ class RoomWorkSetupPrimingTest extends TestCase
         $this->assertNotNull($primen);
         $this->assertSame(WorkUnit::SquareMeter, $primen->unit);
         $this->assertEqualsWithDelta(2484.24, (float) $primen->ordered_quantity, 0.001);
+    }
+
+    public function test_ensuring_a_project_reuses_loaded_work_items_and_keeps_quantities(): void
+    {
+        [$project, $first] = $this->makeArea(squareMeters: 40.0);
+        $this->addFlooringTask($project, $first, 'Linoleum', 40.0);
+        $second = ProjectArea::query()->create([
+            'project_id' => $project->id,
+            'project_floor_id' => $first->project_floor_id,
+            'area_number' => '0.02',
+            'name' => 'gang',
+            'square_meters' => 20,
+            'status' => AreaStatus::NietGestart,
+        ]);
+        $this->addFlooringTask($project, $second, 'Linoleum', 20.0);
+        $loaded = $project->fresh(['areas.tasks.workItem', 'workItems']);
+        app(RoomWorkSetup::class)->ensureProject($loaded);
+        $before = $loaded->fresh('workItems')->workItems->mapWithKeys(
+            fn (WorkItem $item): array => [$item->name => (float) $item->ordered_quantity]
+        )->all();
+        $queries = 0;
+        $writes = 0;
+        DB::listen(function ($query) use (&$queries, &$writes): void {
+            $queries++;
+            $sql = ltrim(strtolower($query->sql));
+            if (str_starts_with($sql, 'insert') || str_starts_with($sql, 'update') || str_starts_with($sql, 'delete')) {
+                $writes++;
+            }
+        });
+
+        app(RoomWorkSetup::class)->ensureProject($loaded);
+        $during = $queries;
+        $after = $loaded->fresh('workItems')->workItems->mapWithKeys(
+            fn (WorkItem $item): array => [$item->name => (float) $item->ordered_quantity]
+        )->all();
+
+        $this->assertSame($before, $after);
+        $this->assertSame(0, $during);
+        $this->assertSame(0, $writes);
+        $this->assertArrayHasKey(RoomWorkSetup::PRIMEN_EGALISEREN, $after);
+        $this->assertEqualsWithDelta(60.0, $after[RoomWorkSetup::PRIMEN_EGALISEREN], 0.001);
     }
 
     public function test_coating_work_item_without_area_tasks_is_not_added_to_project_priming(): void

@@ -43,6 +43,9 @@ class ProjectBoardService
         ]);
 
         $drawing = $project->plattegrond();
+        foreach ($project->areas as $area) {
+            $area->setRelation('project', $project);
+        }
         $areas = $this->areaSummaries($project->areas, $drawing);
 
         return [

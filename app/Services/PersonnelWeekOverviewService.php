@@ -71,8 +71,7 @@ class PersonnelWeekOverviewService
             ->whereHas('project', function ($query) use ($request): void {
                 $query->active()->accessibleBy($request->user());
             })
-            ->whereDate('end_date', '>=', $monday)
-            ->whereDate('start_date', '<=', $saturday)
+            ->coveringDates($monday, $saturday)
             ->when(
                 $request->user()?->scheduledWorkerId(),
                 fn ($query, int $workerId) => $query->where('worker_id', $workerId),

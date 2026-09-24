@@ -37,7 +37,7 @@ class WorkerPersonnelController extends Controller
         $tab = $this->tab($request);
         $staff = $this->weeks->forDays($days);
         $people = $tab === 'weekstaat' || $tab === 'goedkeuren'
-            ? $this->hours->weekstaat($days)
+            ? $this->hours->weekstaat($days, $staff)
             : $staff;
 
         $payload = [

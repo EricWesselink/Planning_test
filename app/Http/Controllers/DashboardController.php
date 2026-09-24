@@ -22,8 +22,7 @@ class DashboardController extends Controller
             ->with(['project.workItems', 'project.workActivities.category', 'project.customer', 'worker', 'crewMembers'])
             ->whereHas('project', fn ($query) => $query->active()->accessibleBy($user))
             ->when($user->scheduledWorkerId(), fn ($query, $workerId) => $query->where('worker_id', $workerId))
-            ->whereDate('start_date', '<=', $today)
-            ->whereDate('end_date', '>=', $today)
+            ->coveringDates($today, $today)
             ->get()
             ->groupBy('project_id');
 

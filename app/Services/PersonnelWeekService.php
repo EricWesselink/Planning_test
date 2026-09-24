@@ -6,6 +6,7 @@ use App\Enums\EmploymentType;
 use App\Models\CrewMember;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
+use App\Support\AssignmentCoverage;
 use App\Support\PlanningHours;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -27,6 +28,7 @@ class PersonnelWeekService
 
     public function __construct(
         private WorkerAvailabilityService $availability,
+        private AssignmentCoverage $coverage,
     ) {}
 
     /**
@@ -53,19 +55,18 @@ class PersonnelWeekService
             ->get();
 
         $ids = $workers->modelKeys();
-        $assignments = $ids === []
+        $loaded = $ids === []
             ? collect()
             : WorkerAssignment::query()
                 ->with('crewMembers')
                 ->whereIn('worker_id', $ids)
                 ->when(
                     $boardDays->isNotEmpty(),
-                    fn ($query) => $query
-                        ->whereDate('end_date', '>=', $boardDays->first())
-                        ->whereDate('start_date', '<=', $boardDays->last())
+                    fn ($query) => $query->coveringDates($boardDays->first(), $boardDays->last()),
                 )
-                ->get()
-                ->groupBy(fn (WorkerAssignment $assignment): int => (int) $assignment->worker_id);
+                ->get();
+        $this->coverage->remember($ids, $loaded);
+        $assignments = $loaded->groupBy(fn (WorkerAssignment $assignment): int => (int) $assignment->worker_id);
 
         $people = [];
         foreach ($workers as $worker) {

@@ -6,6 +6,7 @@ use App\Contracts\SnagNotifier;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Services\MailSnagNotifier;
+use App\Support\AssignmentCoverage;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -21,6 +22,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(SnagNotifier::class, MailSnagNotifier::class);
+        $this->app->scoped(AssignmentCoverage::class);
     }
 
     /**
@@ -29,6 +31,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Carbon::setLocale('nl');
+
+        $this->app->terminating(function (AssignmentCoverage $coverage): void {
+            $coverage->flush();
+        });
 
         RateLimiter::for('login', function (Request $request) {
             $email = Str::transliterate(Str::lower($request->string('email')));

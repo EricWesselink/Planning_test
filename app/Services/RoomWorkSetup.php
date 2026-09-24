@@ -10,6 +10,7 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\WorkItem;
 use App\Support\WorkType;
+use WeakMap;
 
 class RoomWorkSetup
 {
@@ -17,15 +18,24 @@ class RoomWorkSetup
 
     public const DERIVED_FLOORING_SOURCE = 'afgeleid van vloerafwerking';
 
+    /** @var WeakMap<Project, true> */
+    private static WeakMap $ensuredProjects;
+
     public function ensureProject(Project $project): void
     {
-        $project->loadMissing(['areas.tasks.workItem', 'workItems']);
+        self::$ensuredProjects ??= new WeakMap;
+        if (isset(self::$ensuredProjects[$project])) {
+            return;
+        }
 
+        $project->loadMissing(['areas.tasks.workItem', 'workItems']);
         foreach ($project->areas as $area) {
+            $area->setRelation('project', $project);
             $this->ensureAreaState($area);
         }
 
         $this->syncProjectPrimingQuantity($project);
+        self::$ensuredProjects[$project] = true;
     }
 
     public function ensureArea(ProjectArea $area): void
@@ -44,9 +54,7 @@ class RoomWorkSetup
 
         if ($existing !== null && $this->hasExplicitPrimingQuantity($existing)) {
             $this->collapseOndergrond($area);
-            $this->syncWorkItemName($existing->fresh(['workItem'])->workItem, $this->primingWorkName());
-            $area->unsetRelation('tasks');
-            $area->load('tasks.workItem');
+            $this->syncWorkItemName($existing->workItem, $this->primingWorkName());
             $area->refreshStatusFromTasks();
 
             return;
@@ -55,8 +63,7 @@ class RoomWorkSetup
         if ($derivedMeters <= 0.0001) {
             if ($existing !== null && $this->isDerivedPrimingTask($existing)) {
                 $this->removeDuplicateTask($existing);
-                $area->unsetRelation('tasks');
-                $area->load('tasks.workItem');
+                $this->forgetTask($area, $existing);
                 $area->refreshStatusFromTasks();
             }
 
@@ -64,11 +71,9 @@ class RoomWorkSetup
         }
 
         $this->collapseOndergrond($area);
-        $area->unsetRelation('tasks');
-        $area->load(['tasks.workItem', 'project.workItems']);
+        $area->loadMissing(['tasks.workItem', 'project.workItems']);
         $this->ensurePrimingQuantity($area, $derivedMeters);
-        $area->unsetRelation('tasks');
-        $area->load('tasks.workItem');
+        $area->loadMissing('tasks.workItem');
         $area->refreshStatusFromTasks();
     }
 
@@ -123,9 +128,10 @@ class RoomWorkSetup
 
     private function syncProjectPrimingQuantity(Project $project): void
     {
-        $project->unsetRelation('workItems');
-        $project->unsetRelation('areas');
-        $project->load(['workItems', 'areas.tasks.workItem']);
+        $project->loadMissing(['workItems', 'areas.tasks.workItem']);
+        foreach ($project->areas as $area) {
+            $area->setRelation('project', $project);
+        }
 
         $fromWorkItems = $this->primingMetersFromWorkItems($project);
         $fromAreas = round((float) $project->areas
@@ -259,8 +265,7 @@ class RoomWorkSetup
 
     private function collapseOndergrond(ProjectArea $area): void
     {
-        $area->unsetRelation('tasks');
-        $area->load('tasks.workItem');
+        $area->loadMissing('tasks.workItem');
 
         $ondergrond = $area->tasks
             ->filter(fn (AreaTask $task) => $task->phase()->group() === 'ondergrond')
@@ -280,14 +285,23 @@ class RoomWorkSetup
             }
 
             $this->removeDuplicateTask($task);
+            $this->forgetTask($area, $task);
         }
 
-        $keep->unsetRelation('workItem');
-        $keep->load('workItem');
+        $keep->loadMissing('workItem');
         $this->syncWorkItemName($keep->workItem, $this->primingWorkName());
+    }
 
-        $area->unsetRelation('tasks');
-        $area->load(['tasks.workItem', 'project.workItems']);
+    private function forgetTask(ProjectArea $area, AreaTask $task): void
+    {
+        if (! $area->relationLoaded('tasks')) {
+            return;
+        }
+
+        $area->setRelation(
+            'tasks',
+            $area->tasks->reject(fn (AreaTask $row): bool => (int) $row->id === (int) $task->id)->values(),
+        );
     }
 
     private function isPrimenEgaliserenTask(AreaTask $task): bool

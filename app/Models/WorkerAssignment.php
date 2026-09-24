@@ -6,11 +6,13 @@ use App\Enums\AssignmentKind;
 use App\Enums\InternalBusinessUnit;
 use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
+use App\Support\AssignmentCoverage;
 use App\Support\PlanningHours;
 use App\Support\PlanningWeek;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -412,6 +414,17 @@ class WorkerAssignment extends Model
         );
     }
 
+    /**
+     * Assignments overlapping the inclusive range. The columns stay bare so the date indexes can be used.
+     *
+     * @param  Builder<WorkerAssignment>  $query
+     */
+    public function scopeCoveringDates(Builder $query, CarbonInterface $start, CarbonInterface $end): void
+    {
+        $query->where('end_date', '>=', $start->copy()->startOfDay())
+            ->where('start_date', '<', $end->copy()->addDay()->startOfDay());
+    }
+
     public function claimedHoursOnDate(CarbonInterface $date, ?CrewMember $member = null): float
     {
         if ($this->isProvisional() || $this->isHoursOrigin()) {
@@ -425,12 +438,7 @@ class WorkerAssignment extends Model
             return 0.0;
         }
 
-        $siblings = self::query()
-            ->with('crewMembers')
-            ->where('worker_id', $this->worker_id)
-            ->whereDate('start_date', '<=', $date->toDateString())
-            ->whereDate('end_date', '>=', $date->toDateString())
-            ->get();
+        $siblings = $this->assignmentsCovering($date);
 
         $rows = [];
         foreach ($siblings as $assignment) {
@@ -451,6 +459,34 @@ class WorkerAssignment extends Model
         }
 
         return (float) (PlanningHours::claimById($rows)[$this->id] ?? 0.0);
+    }
+
+    /**
+     * @return Collection<int, WorkerAssignment>
+     */
+    private function assignmentsCovering(CarbonInterface $date): Collection
+    {
+        $coverage = app(AssignmentCoverage::class);
+        $workerId = (int) $this->worker_id;
+        $day = $date->toDateString();
+
+        if ($coverage->known($workerId)) {
+            return $coverage->onDate($workerId, $date);
+        }
+
+        $cached = $coverage->cachedQuery($workerId, $day);
+        if ($cached instanceof Collection) {
+            return $cached;
+        }
+
+        $siblings = self::query()
+            ->with('crewMembers')
+            ->where('worker_id', $workerId)
+            ->coveringDates($date, $date)
+            ->get();
+        $coverage->storeQuery($workerId, $day, $siblings);
+
+        return $siblings;
     }
 
     /**
