@@ -54,17 +54,7 @@
     <input type="email" name="email" value="{{ old('email', $worker->email) }}" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" placeholder="naam@niconvloeren.nl" autocomplete="off">
 </div>
 @unless ($worker->exists)
-    <p class="text-xs text-nicon-muted">E-mail en tijdelijk wachtwoord zijn optioneel. Zonder inlog staat het team al in de lijst.</p>
-    <div class="grid gap-3 sm:grid-cols-2">
-        <div>
-            <label class="text-xs uppercase tracking-wide text-nicon-muted">Tijdelijk wachtwoord</label>
-            <input type="password" name="password" minlength="8" autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-        </div>
-        <div>
-            <label class="text-xs uppercase tracking-wide text-nicon-muted">Wachtwoord herhalen</label>
-            <input type="password" name="password_confirmation" minlength="8" autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-        </div>
-    </div>
+    <p class="text-xs text-nicon-muted">E-mail is optioneel. Met een e-mailadres krijgt de vakman een activatielink om zelf een wachtwoord te kiezen.</p>
     <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" name="invite" value="1" @checked((int) old('invite') === 1) class="size-4 accent-nicon-ok">
         Stuur uitnodiging voor de planning

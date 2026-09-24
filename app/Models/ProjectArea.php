@@ -217,7 +217,7 @@ class ProjectArea extends Model
 
     public function refreshStatusFromTasks(): void
     {
-        $tasks = $this->tasks()->get();
+        $tasks = $this->relationLoaded('tasks') ? $this->tasks : $this->tasks()->get();
         if ($tasks->isEmpty()) {
             return;
         }

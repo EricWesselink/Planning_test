@@ -2,7 +2,11 @@
 
 use App\Http\Controllers\AreaTaskController;
 use App\Http\Controllers\AreaWithoutM2TrialController;
+use App\Http\Controllers\Auth\AccountPasswordController;
+use App\Http\Controllers\Auth\ActivationController;
+use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Auth\SetupController;
 use App\Http\Controllers\Auth\VakmanLoginController;
 use App\Http\Controllers\Auth\VakmanPasswordController;
@@ -28,6 +32,7 @@ use App\Http\Controllers\SmallWorkController;
 use App\Http\Controllers\SnagController;
 use App\Http\Controllers\SourceUpdateController;
 use App\Http\Controllers\TeamController;
+use App\Http\Controllers\UserActivationController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VakmanDrawingController;
 use App\Http\Controllers\VakmanHoursController;
@@ -65,6 +70,12 @@ Route::post('/login', [LoginController::class, 'store'])->middleware(['guest', '
 Route::get('/vakman/login', [VakmanLoginController::class, 'create'])->name('vakman.login')->middleware('guest');
 Route::post('/vakman/login', [VakmanLoginController::class, 'store'])->name('vakman.login.store')->middleware(['guest', 'throttle:vakman-login']);
 Route::post('/logout', [LoginController::class, 'destroy'])->name('logout')->middleware('auth');
+Route::get('/activeren/{token}', [ActivationController::class, 'create'])->name('activation.show')->middleware('guest');
+Route::post('/activeren/{token}', [ActivationController::class, 'store'])->name('activation.store')->middleware(['guest', 'throttle:activation']);
+Route::get('/wachtwoord/vergeten', [ForgotPasswordController::class, 'create'])->name('password.request')->middleware('guest');
+Route::post('/wachtwoord/vergeten', [ForgotPasswordController::class, 'store'])->name('password.email')->middleware(['guest', 'throttle:password-email']);
+Route::get('/wachtwoord/herstel/{token}', [ResetPasswordController::class, 'create'])->name('password.reset')->middleware('guest');
+Route::post('/wachtwoord/herstel', [ResetPasswordController::class, 'store'])->name('password.update')->middleware(['guest', 'throttle:password-reset']);
 
 Route::middleware(['first-run', 'guest'])->group(function () {
     Route::get('/setup', [SetupController::class, 'create'])->name('setup.create');
@@ -100,6 +111,8 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/mijn-planning/tekeningen/{project}/{document}', [VakmanDrawingController::class, 'show'])->scopeBindings()->name('vakman.drawings.show');
     Route::get('/mijn-planning/tekeningen/{project}/{document}/bestand', [VakmanDrawingController::class, 'file'])->scopeBindings()->name('vakman.drawings.file');
     Route::get('/mijn-planning/tekeningen/{project}/{document}/download', [VakmanDrawingController::class, 'download'])->scopeBindings()->name('vakman.drawings.download');
+    Route::get('/account/wachtwoord', [AccountPasswordController::class, 'edit'])->name('account.password.edit');
+    Route::patch('/account/wachtwoord', [AccountPasswordController::class, 'update'])->middleware('throttle:account-password')->name('account.password.update');
     Route::get('/vakman/wachtwoord', [VakmanPasswordController::class, 'edit'])->name('vakman.password.edit');
     Route::patch('/vakman/wachtwoord', [VakmanPasswordController::class, 'update'])->middleware('throttle:vakman-password')->name('vakman.password.update');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
@@ -254,6 +267,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/gebruikers/{user}', [UserController::class, 'show'])->name('users.show');
     Route::patch('/gebruikers/{user}', [UserController::class, 'update'])->name('users.update');
     Route::delete('/gebruikers/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+    Route::post('/gebruikers/{user}/activeren', [UserActivationController::class, 'store'])->middleware('throttle:activation-resend')->name('users.activation.store');
     Route::post('/gebruikers/{user}/overnemen', [ImpersonateController::class, 'start'])->name('users.impersonate.start');
     Route::get('/beheer/werkzaamheden', [WorkActivityController::class, 'index'])->name('work-activities.index');
     Route::post('/beheer/werkzaamheden', [WorkActivityController::class, 'store'])->name('work-activities.store');

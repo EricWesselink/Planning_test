@@ -72,6 +72,28 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(10)->by(($request->user()?->id ?: $request->ip()).'|'.$request->ip());
         });
 
+        RateLimiter::for('account-password', function (Request $request) {
+            return Limit::perMinute(10)->by(($request->user()?->id ?: $request->ip()).'|'.$request->ip());
+        });
+
+        RateLimiter::for('activation', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip());
+        });
+
+        RateLimiter::for('activation-resend', function (Request $request) {
+            return Limit::perMinute(10)->by(($request->user()?->id ?: $request->ip()).'|'.$request->ip());
+        });
+
+        RateLimiter::for('password-email', function (Request $request) {
+            $email = Str::transliterate(Str::lower($request->string('email')));
+
+            return Limit::perMinute(5)->by($email.'|'.$request->ip());
+        });
+
+        RateLimiter::for('password-reset', function (Request $request) {
+            return Limit::perMinute(5)->by($request->ip());
+        });
+
         Gate::define('manage-planning', fn (User $user) => $user->canManagePlanning());
         Gate::define('view-planning', fn (User $user) => $user->canViewPlanning());
         Gate::define('view-dashboard', fn (User $user) => $user->canViewDashboard());

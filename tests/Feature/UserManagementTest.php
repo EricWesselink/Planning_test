@@ -4,13 +4,16 @@ namespace Tests\Feature;
 
 use App\Enums\Permission;
 use App\Enums\UserRole;
+use App\Models\AccountActivation;
 use App\Models\Customer;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Worker;
+use App\Notifications\AccountActivationNotification;
 use App\Support\PermissionCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -101,7 +104,91 @@ class UserManagementTest extends TestCase
         $this->assertSame(false, $jan->can_access_all_projects);
         $this->assertTrue($jan->projects->contains($projectA));
         $this->assertFalse($jan->projects->contains($projectB));
-        $this->assertTrue(Hash::check('wachtwoord123', $jan->password));
+        $this->assertFalse(Hash::check('wachtwoord123', $jan->password));
+        $this->assertNull($jan->activated_at);
+    }
+
+    public function test_new_user_gets_an_activation_link_instead_of_a_password(): void
+    {
+        Notification::fake();
+        $admin = User::factory()->admin()->create();
+        $existing = User::factory()->create([
+            'email' => 'bestaand@niconvloeren.nl',
+            'password' => 'password',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('users.create'))
+            ->assertOk()
+            ->assertDontSee('name="password"', false)
+            ->assertDontSee('Wachtwoord herhalen')
+            ->assertSee('activatielink');
+
+        $this->actingAs($admin)
+            ->post(route('users.store'), $this->payload([
+                'name' => 'Nieuwe collega',
+                'email' => 'nieuw@niconvloeren.nl',
+                'password' => 'kort',
+                'password_confirmation' => 'kort',
+                'crew_members' => [
+                    ['name' => 'Peter', 'email' => '', 'password' => 'kort'],
+                ],
+            ]))
+            ->assertRedirect()
+            ->assertSessionHas('status', 'Gebruiker aangemaakt. De activatielink is verzonden.');
+
+        $created = User::query()->where('email', 'nieuw@niconvloeren.nl')->first();
+        $this->assertNotNull($created);
+        $this->assertNull($created->activated_at);
+        $this->assertFalse(Hash::check('wachtwoord123', $created->password));
+        $this->assertNotNull(AccountActivation::query()->where('user_id', $created->id)->whereNull('used_at')->first());
+
+        $this->get(route('users.show', $created))
+            ->assertOk()
+            ->assertSee('Nog niet geactiveerd')
+            ->assertSee('Activatielink opnieuw versturen');
+
+        $activationUrl = null;
+        Notification::assertSentTo($created, AccountActivationNotification::class, function (AccountActivationNotification $notification) use ($created, &$activationUrl): bool {
+            $activationUrl = $notification->activationUrl;
+            $html = $notification->toMail($created)->render();
+
+            return str_contains($activationUrl, '/activeren/')
+                && ! str_contains($html, 'wachtwoord123')
+                && ! str_contains($html, 'Tijdelijk wachtwoord');
+        });
+
+        $this->post('/logout');
+        $this->from(route('login'))->post('/login', [
+            'email' => 'nieuw@niconvloeren.nl',
+            'password' => 'wachtwoord123',
+        ])->assertRedirect(route('login'));
+        $this->assertGuest();
+
+        $this->from(route('login'))->post('/login', [
+            'email' => 'bestaand@niconvloeren.nl',
+            'password' => 'password',
+        ])->assertRedirect(route('dashboard'));
+        $this->post('/logout');
+
+        preg_match('#/activeren/([^"\s]+)#', (string) $activationUrl, $matches);
+        $this->post(route('activation.store', ['token' => $matches[1]]), [
+            'password' => 'zelfgekozen1',
+            'password_confirmation' => 'zelfgekozen1',
+        ])->assertRedirect(route('login'));
+
+        $this->from(route('login'))->post('/login', [
+            'email' => 'nieuw@niconvloeren.nl',
+            'password' => 'zelfgekozen1',
+        ])->assertRedirect(route('dashboard'));
+
+        $this->assertNotNull($created->fresh()->activated_at);
+        $this->actingAs($admin)
+            ->get(route('users.show', $created))
+            ->assertOk()
+            ->assertSee('Geactiveerd')
+            ->assertDontSee('Nog niet geactiveerd')
+            ->assertDontSee('Activatielink opnieuw versturen');
     }
 
     public function test_user_index_shows_edit_link_and_custom_role_label(): void
@@ -395,7 +482,7 @@ class UserManagementTest extends TestCase
             ->from(route('users.create'))
             ->post(route('users.store'), [])
             ->assertRedirect(route('users.create'))
-            ->assertSessionHasErrors(['name', 'email', 'password', 'role', 'project_access']);
+            ->assertSessionHasErrors(['name', 'email', 'role', 'project_access']);
     }
 
     public function test_admin_cannot_deactivate_themselves(): void

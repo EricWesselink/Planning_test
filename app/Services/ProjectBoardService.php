@@ -46,6 +46,7 @@ class ProjectBoardService
         foreach ($project->areas as $area) {
             $area->setRelation('project', $project);
         }
+        $this->rememberCompletedQuantities($project);
         $areas = $this->areaSummaries($project->areas, $drawing);
 
         return [
@@ -69,6 +70,29 @@ class ProjectBoardService
             'next_snag_number' => (int) $project->snags->max('number') + 1,
             'production' => $this->production($project),
         ];
+    }
+
+    private function rememberCompletedQuantities(Project $project): void
+    {
+        if (! $project->relationLoaded('progressEntries') || ! $project->relationLoaded('areas')) {
+            return;
+        }
+
+        $totals = [];
+        foreach ($project->progressEntries as $entry) {
+            $key = ((int) $entry->project_area_id).':'.((int) $entry->work_item_id);
+            $totals[$key] = ($totals[$key] ?? 0.0) + (float) $entry->completed_quantity;
+        }
+
+        foreach ($project->areas as $area) {
+            if (! $area->relationLoaded('tasks')) {
+                continue;
+            }
+            foreach ($area->tasks as $task) {
+                $key = ((int) $task->project_area_id).':'.((int) $task->work_item_id);
+                $task->useLoadedCompletedQuantity($totals[$key] ?? 0.0);
+            }
+        }
     }
 
     private function drawingDownloadUrl(Project $project, ProjectDocument $drawing): ?string

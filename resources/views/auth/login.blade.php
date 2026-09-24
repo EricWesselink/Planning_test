@@ -18,6 +18,9 @@
                 <a href="{{ route('setup.create') }}" class="mt-3 flex w-full items-center justify-center bg-nicon-orange text-white py-2.5 font-medium hover:bg-nicon-orange-dark">Beheerdersaccount aanmaken</a>
             </div>
         @endif
+        @if (session('status'))
+            <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
+        @endif
         <form method="POST" action="{{ url('/login') }}" class="mt-6 space-y-4">
             @csrf
             <div>
@@ -36,6 +39,9 @@
             <button class="w-full bg-nicon-orange text-white py-2.5 font-medium hover:bg-nicon-orange-dark">Inloggen</button>
         </form>
         <p class="mt-6 text-sm text-nicon-muted">
+            <a href="{{ route('password.request') }}" class="hover:text-nicon-ink">Wachtwoord vergeten?</a>
+        </p>
+        <p class="mt-2 text-sm text-nicon-muted">
             <a href="{{ route('vakman.login') }}" class="hover:text-nicon-ink">Vakman? Log in met 06-nummer of e-mailadres.</a>
         </p>
     </div>

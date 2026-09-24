@@ -26,12 +26,12 @@
             </div>
             <div>
                 <label class="text-xs uppercase tracking-wide text-nicon-muted">Wachtwoord</label>
-                <input name="password" type="password" required autocomplete="new-password"
+                <input name="password" type="password" required minlength="10" autocomplete="new-password"
                        class="mt-1 w-full border border-nicon-line px-3 py-2">
             </div>
             <div>
                 <label class="text-xs uppercase tracking-wide text-nicon-muted">Wachtwoord bevestigen</label>
-                <input name="password_confirmation" type="password" required autocomplete="new-password"
+                <input name="password_confirmation" type="password" required minlength="10" autocomplete="new-password"
                        class="mt-1 w-full border border-nicon-line px-3 py-2">
             </div>
             @if ($errors->any())

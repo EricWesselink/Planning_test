@@ -11,6 +11,7 @@ use App\Models\SpecialtyOption;
 use App\Models\User;
 use App\Models\Worker;
 use App\Models\WorkerRate;
+use App\Services\AccountActivationService;
 use App\Services\ProductionOverviewService;
 use App\Services\VoucherDraftService;
 use Illuminate\Http\RedirectResponse;
@@ -72,8 +73,8 @@ class WorkerController extends Controller
         $account = null;
         $worker = DB::transaction(function () use ($request, &$account): Worker {
             $worker = Worker::query()->create($this->payload($request, creating: true));
-            if ($request->filled('email') && $request->filled('password')) {
-                $account = $this->createLogin($worker, $request);
+            if ($request->filled('email')) {
+                $account = $this->createLogin($worker);
             }
 
             return $worker;
@@ -150,7 +151,7 @@ class WorkerController extends Controller
             $email = strtolower(trim($request->string('email')->toString()));
             $worker->forceFill(['email' => $email])->save();
 
-            return $this->createLogin($worker->fresh(), $request);
+            return $this->createLogin($worker->fresh());
         });
         $this->sendPlanningInvite($request, $worker->fresh(), $account);
 
@@ -256,7 +257,6 @@ class WorkerController extends Controller
             'unavailable' => ['sometimes', 'boolean'],
         ];
         if ($creating) {
-            $rules['password'] = $this->passwordRules($request, required: false);
             $rules['invite'] = ['sometimes', 'boolean'];
         }
 
@@ -264,9 +264,6 @@ class WorkerController extends Controller
             'email.required' => 'Vul een e-mailadres in voor de inlog.',
             'email.email' => 'Vul een geldig e-mailadres in.',
             'email.unique' => 'Dit e-mailadres is al in gebruik.',
-            'password.required' => 'Vul een tijdelijk wachtwoord in.',
-            'password.min' => 'Het wachtwoord moet minstens 8 tekens zijn.',
-            'password.confirmed' => 'De wachtwoorden komen niet overeen.',
             'people_count.min' => 'Er moet minstens 1 persoon zijn.',
             'specialties.*.max' => 'Een onderdeel mag maximaal 64 tekens zijn.',
             'specialties.*.not_regex' => 'Gebruik geen komma in een onderdeel.',
@@ -456,15 +453,11 @@ class WorkerController extends Controller
     {
         return $request->validate([
             'email' => $this->emailRules($request, $required),
-            'password' => $this->passwordRules($request, $required),
             'invite' => ['sometimes', 'boolean'],
         ], [
             'email.required' => 'Vul een e-mailadres in voor de inlog.',
             'email.email' => 'Vul een geldig e-mailadres in.',
             'email.unique' => 'Dit e-mailadres is al in gebruik.',
-            'password.required' => 'Vul een tijdelijk wachtwoord in.',
-            'password.min' => 'Het wachtwoord moet minstens 8 tekens zijn.',
-            'password.confirmed' => 'De wachtwoorden komen niet overeen.',
         ]);
     }
 
@@ -473,9 +466,7 @@ class WorkerController extends Controller
      */
     private function emailRules(Request $request, bool $required): array
     {
-        $needsLogin = $required
-            || $request->filled('password')
-            || $request->boolean('invite');
+        $needsLogin = $required || $request->boolean('invite');
 
         return [
             $needsLogin ? 'required' : 'nullable',
@@ -485,30 +476,14 @@ class WorkerController extends Controller
         ];
     }
 
-    /**
-     * @return list<mixed>
-     */
-    private function passwordRules(Request $request, bool $required): array
+    private function createLogin(Worker $worker): User
     {
-        $needsLogin = $required
-            || $request->filled('email')
-            || $request->boolean('invite');
+        $activations = app(AccountActivationService::class);
 
-        return [
-            Rule::requiredIf($needsLogin),
-            'nullable',
-            'string',
-            'min:8',
-            'confirmed',
-        ];
-    }
-
-    private function createLogin(Worker $worker, Request $request): User
-    {
         return User::query()->create([
             'name' => $worker->name,
             'email' => strtolower(trim((string) $worker->email)),
-            'password' => $request->string('password')->toString(),
+            'password' => $activations->placeholderPassword(),
             'role' => UserRole::Vakman,
             'active' => true,
             'can_access_all_projects' => false,
@@ -519,16 +494,20 @@ class WorkerController extends Controller
 
     private function sendPlanningInvite(Request $request, Worker $worker, ?User $account): void
     {
-        if (! $request->boolean('invite') || $account === null) {
+        if ($account === null) {
             return;
         }
 
-        Mail::to($account->email)->send(new WorkerPlanningInviteMail(
-            $worker,
-            $account,
-            route('vakman.login'),
-            $request->string('password')->toString(),
-        ));
+        $activations = app(AccountActivationService::class);
+        $url = $activations->url($activations->issue($account));
+
+        if ($request->boolean('invite')) {
+            Mail::to($account->email)->send(new WorkerPlanningInviteMail(
+                $worker,
+                $account,
+                $url,
+            ));
+        }
     }
 
     private function savedStatus(Request $request, ?User $account, bool $createdWorker = true): string

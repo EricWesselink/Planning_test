@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 ])]
 class AreaTask extends Model
 {
+    private ?float $loadedCompletedQuantity = null;
+
     protected function casts(): array
     {
         return [
@@ -78,8 +80,17 @@ class AreaTask extends Model
         return $this->isDone() && $this->approved_at === null;
     }
 
+    public function useLoadedCompletedQuantity(float $quantity): void
+    {
+        $this->loadedCompletedQuantity = round($quantity, 2);
+    }
+
     public function completedQuantity(): float
     {
+        if ($this->loadedCompletedQuantity !== null) {
+            return $this->loadedCompletedQuantity;
+        }
+
         return round((float) WorkProgressEntry::query()
             ->where('project_area_id', $this->project_area_id)
             ->where('work_item_id', $this->work_item_id)

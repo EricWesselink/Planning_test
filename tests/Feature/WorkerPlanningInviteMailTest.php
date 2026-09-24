@@ -21,10 +21,11 @@ class WorkerPlanningInviteMailTest extends TestCase
         $mail->assertSeeInHtml('ZZP · 2 personen');
         $mail->assertSeeInHtml('Vakkennis: PVC');
         $mail->assertSeeInHtml('wespro@niconvloeren.nl');
-        $mail->assertSeeInHtml('tijdelijk1');
-        $mail->assertSeeInHtml(route('vakman.login'));
-        $mail->assertSeeInText('Tijdelijk wachtwoord: tijdelijk1');
+        $mail->assertSeeInHtml('/activeren/');
+        $mail->assertDontSeeInHtml('Tijdelijk wachtwoord');
+        $mail->assertDontSeeInText('Tijdelijk wachtwoord');
         $mail->assertSeeInText('Log in om je planning te zien.');
+        $mail->assertSeeInText('/activeren/');
     }
 
     public function test_escapes_dangerous_content_in_the_invite(): void
@@ -56,6 +57,6 @@ class WorkerPlanningInviteMailTest extends TestCase
             'email' => 'wespro@niconvloeren.nl',
         ]);
 
-        return new WorkerPlanningInviteMail($worker, $account, route('vakman.login'), 'tijdelijk1');
+        return new WorkerPlanningInviteMail($worker, $account, route('activation.show', ['token' => 'activeringtoken123']));
     }
 }

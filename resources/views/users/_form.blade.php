@@ -91,19 +91,21 @@
         @endforeach
     @endif
 </div>
+@if ($user->exists)
 <div class="grid gap-3 sm:grid-cols-2">
     <div>
-        <label class="text-xs uppercase tracking-wide text-nicon-muted">{{ $requirePassword ? 'Wachtwoord' : 'Nieuw wachtwoord' }}</label>
-        <input type="password" name="password" {{ $requirePassword ? 'required' : '' }} autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-        @unless ($requirePassword)
-            <p class="mt-1 text-xs text-nicon-muted">Leeg laten om het huidige wachtwoord te behouden.</p>
-        @endunless
+        <label class="text-xs uppercase tracking-wide text-nicon-muted">Nieuw wachtwoord</label>
+        <input type="password" name="password" autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+        <p class="mt-1 text-xs text-nicon-muted">Leeg laten om het huidige wachtwoord te behouden.</p>
     </div>
     <div>
         <label class="text-xs uppercase tracking-wide text-nicon-muted">Wachtwoord herhalen</label>
-        <input type="password" name="password_confirmation" {{ $requirePassword ? 'required' : '' }} autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
+        <input type="password" name="password_confirmation" autocomplete="new-password" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
     </div>
 </div>
+@else
+    <p class="text-sm text-nicon-muted">Na opslaan krijgt deze gebruiker een activatielink om zelf een wachtwoord te kiezen.</p>
+@endif
 @if ($isSelf || $lastAdmin)
     <input type="hidden" name="active" value="1">
     <p class="text-sm text-nicon-muted">
@@ -225,6 +227,9 @@
             const custom = role?.value === '{{ \App\Enums\UserRole::Aangepast->value }}';
             if (projectAccess) projectAccess.hidden = vakman;
             if (workerAccess) workerAccess.hidden = ! vakman;
+            workerAccess?.querySelectorAll('input, select, textarea').forEach((field) => {
+                field.disabled = ! vakman;
+            });
             if (matrix) matrix.hidden = ! custom;
             radios.forEach((radio) => { radio.disabled = vakman; });
             if (countInput) countInput.required = vakman;

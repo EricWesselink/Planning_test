@@ -6,11 +6,12 @@ use App\Enums\UserRole;
 use App\Models\CrewMember;
 use App\Models\User;
 use App\Support\PhoneNumber;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class VakmanLoginInviteService
 {
+    public function __construct(private AccountActivationService $activations) {}
+
     /**
      * @return array{
      *     account: User,
@@ -25,7 +26,7 @@ class VakmanLoginInviteService
     {
         $account = $this->existingAccount($member);
         if ($account !== null) {
-            return $this->payload($member, $account, password: null, accountExisted: true);
+            return $this->payload($member, $account, activationUrl: null, accountExisted: true);
         }
 
         if ($this->officeAccount($member) !== null) {
@@ -34,10 +35,10 @@ class VakmanLoginInviteService
             ]);
         }
 
-        $plain = $this->temporaryPassword();
-        $account = $this->createAccount($member, $plain);
+        $account = $this->createAccount($member);
+        $url = $this->activations->url($this->activations->issue($account));
 
-        return $this->payload($member, $account, password: $plain, accountExisted: false);
+        return $this->payload($member, $account, activationUrl: $url, accountExisted: false);
     }
 
     /**
@@ -59,10 +60,9 @@ class VakmanLoginInviteService
             ]);
         }
 
-        $plain = $this->temporaryPassword();
-        $account->forceFill(['password' => $plain])->save();
+        $url = $this->activations->url($this->activations->issue($account));
 
-        return $this->payload($member, $account->fresh(), password: $plain, accountExisted: true);
+        return $this->payload($member, $account->fresh(), activationUrl: $url, accountExisted: true);
     }
 
     public function existingAccount(CrewMember $member): ?User
@@ -93,10 +93,10 @@ class VakmanLoginInviteService
      *     crew_member_id: int
      * }
      */
-    private function payload(CrewMember $member, User $account, ?string $password, bool $accountExisted): array
+    private function payload(CrewMember $member, User $account, ?string $activationUrl, bool $accountExisted): array
     {
         [$whatsAppId, $displayPhone] = $this->phoneParts($member);
-        $message = $this->message($member, $displayPhone, $password);
+        $message = $this->message($member, $displayPhone, $activationUrl);
         $whatsAppUrl = 'https://web.whatsapp.com/send?phone='.$whatsAppId.'&text='.rawurlencode($message);
 
         return [
@@ -104,12 +104,12 @@ class VakmanLoginInviteService
             'message' => $message,
             'whatsapp_url' => $whatsAppUrl,
             'account_existed' => $accountExisted,
-            'password_generated' => $password !== null,
+            'password_generated' => $activationUrl !== null,
             'crew_member_id' => (int) $member->id,
         ];
     }
 
-    private function createAccount(CrewMember $member, string $password): User
+    private function createAccount(CrewMember $member): User
     {
         $this->phoneParts($member);
         $email = $this->loginEmail($member);
@@ -124,7 +124,7 @@ class VakmanLoginInviteService
         return User::query()->create([
             'name' => $member->label(),
             'email' => $email,
-            'password' => $password,
+            'password' => $this->activations->placeholderPassword(),
             'role' => UserRole::Vakman,
             'active' => true,
             'can_access_all_projects' => false,
@@ -161,7 +161,7 @@ class VakmanLoginInviteService
         return $whatsAppId.'@telefoon.niconvloeren.nl';
     }
 
-    private function message(CrewMember $member, string $displayPhone, ?string $password): string
+    private function message(CrewMember $member, string $displayPhone, ?string $activationUrl): string
     {
         $greeting = $this->greetingName($member);
         $company = (string) config('company.name');
@@ -177,8 +177,11 @@ class VakmanLoginInviteService
             $phoneLabel.': '.$displayPhone,
         ];
 
-        if ($password !== null) {
-            $lines[] = 'Tijdelijk wachtwoord: '.$password;
+        if ($activationUrl !== null) {
+            $lines[] = '';
+            $lines[] = 'Je account voor Nicon Planning is aangemaakt.';
+            $lines[] = 'Klik hier om je wachtwoord in te stellen:';
+            $lines[] = $activationUrl;
         }
 
         $lines[] = '';
@@ -197,10 +200,5 @@ class VakmanLoginInviteService
         }
 
         return explode(' ', $name, 2)[0];
-    }
-
-    private function temporaryPassword(): string
-    {
-        return Str::password(10, symbols: false);
     }
 }

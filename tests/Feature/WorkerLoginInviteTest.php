@@ -65,17 +65,17 @@ class WorkerLoginInviteTest extends TestCase
         $this->assertSame($nick->id, $invite['crew_member_id']);
         $this->assertStringContainsString('Hallo Nick,', $invite['message']);
         $this->assertStringContainsString('06-nummer: 06-57925505', $invite['message']);
-        $this->assertStringContainsString(route('vakman.login'), $invite['message']);
+        $this->assertStringContainsString('/activeren/', $invite['message']);
+        $this->assertStringNotContainsString('Tijdelijk wachtwoord:', $invite['message']);
         $this->assertStringContainsString('https://web.whatsapp.com/send?phone=31657925505&text=', $invite['whatsapp_url']);
-        $this->assertMatchesRegularExpression('/Tijdelijk wachtwoord: \S{10}/', $invite['message']);
 
-        preg_match('/Tijdelijk wachtwoord: (\S+)/', $invite['message'], $matches);
+        preg_match('#/activeren/([A-Za-z0-9]+)#', $invite['message'], $matches);
         $account = User::query()->where('crew_member_id', $nick->id)->first();
         $this->assertNotNull($account);
         $this->assertTrue($account->isVakman());
         $this->assertSame('31657925505@telefoon.niconvloeren.nl', $account->email);
-        $this->assertTrue(Hash::check($matches[1], $account->password));
-        $this->assertNotSame($matches[1], $account->getRawOriginal('password'));
+        $this->assertFalse(Hash::check('tijdelijk1', $account->password));
+        $this->assertNotSame('', (string) $account->getRawOriginal('password'));
 
         $this->get(route('workers.show', $worker))
             ->assertOk()
@@ -83,7 +83,8 @@ class WorkerLoginInviteTest extends TestCase
             ->assertSee('Bericht kopiëren')
             ->assertSee('Hallo Nick,', false)
             ->assertSee($matches[1])
-            ->assertDontSee('Nieuw tijdelijk wachtwoord maken');
+            ->assertDontSee('Tijdelijk wachtwoord:')
+            ->assertDontSee('Nieuwe activatielink maken');
     }
 
     public function test_existing_account_keeps_its_password_and_offers_a_reset(): void
@@ -107,7 +108,7 @@ class WorkerLoginInviteTest extends TestCase
 
         $this->get(route('workers.show', $worker))
             ->assertOk()
-            ->assertSee('Nieuw tijdelijk wachtwoord maken')
+            ->assertSee('Nieuwe activatielink maken')
             ->assertDontSee('Tijdelijk wachtwoord:');
     }
 
@@ -126,10 +127,9 @@ class WorkerLoginInviteTest extends TestCase
 
         $invite = session('vakman_login_invite');
         $this->assertTrue($invite['password_generated']);
-        preg_match('/Tijdelijk wachtwoord: (\S+)/', $invite['message'], $matches);
-        $this->assertNotSame('password', $matches[1]);
-        $this->assertTrue(Hash::check($matches[1], $account->fresh()->password));
-        $this->assertFalse(Hash::check('password', $account->fresh()->password));
+        $this->assertStringContainsString('/activeren/', $invite['message']);
+        $this->assertStringNotContainsString('Tijdelijk wachtwoord:', $invite['message']);
+        $this->assertTrue(Hash::check('password', $account->fresh()->password));
     }
 
     public function test_foreign_number_opens_whatsapp_in_international_format(): void

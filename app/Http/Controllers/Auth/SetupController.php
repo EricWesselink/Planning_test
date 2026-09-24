@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\NewPassword;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,14 +30,14 @@ class SetupController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => NewPassword::rules(),
         ], [
             'name.required' => 'Vul een naam in.',
             'email.required' => 'Vul een e-mailadres in.',
             'email.email' => 'Vul een geldig e-mailadres in.',
             'email.unique' => 'Dit e-mailadres is al in gebruik.',
             'password.required' => 'Vul een wachtwoord in.',
-            'password.min' => 'Het wachtwoord moet minstens 8 tekens zijn.',
+            'password.min' => 'Het wachtwoord moet minstens 10 tekens zijn.',
             'password.confirmed' => 'De wachtwoorden komen niet overeen.',
         ]);
 

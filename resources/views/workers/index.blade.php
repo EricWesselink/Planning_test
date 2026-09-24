@@ -103,20 +103,10 @@
                     ])
                 </div>
                 <div class="mt-4 space-y-3">
-                    <p class="text-xs text-nicon-muted">Inlog is optioneel. Zonder e-mail staat het team al in de lijst; inloggen en een uitnodiging voor de planning kan later.</p>
-                    <div class="flex flex-wrap items-end gap-3">
-                        <div class="min-w-56 flex-1">
-                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-email">E-mail (inlog)</label>
-                            <input id="worker-email" type="email" name="email" value="{{ old('email') }}" placeholder="leeg = nog geen inlog" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="off">
-                        </div>
-                        <div class="min-w-40 flex-1">
-                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-password">Tijdelijk wachtwoord</label>
-                            <input id="worker-password" type="password" name="password" minlength="8" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="new-password">
-                        </div>
-                        <div class="min-w-40 flex-1">
-                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-password-confirmation">Wachtwoord herhalen</label>
-                            <input id="worker-password-confirmation" type="password" name="password_confirmation" minlength="8" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="new-password">
-                        </div>
+                    <p class="text-xs text-nicon-muted">Inlog is optioneel. Zonder e-mail staat het team al in de lijst. Met een e-mailadres kan de vakman via een activatielink zelf een wachtwoord kiezen.</p>
+                    <div class="min-w-56 max-w-md">
+                        <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-email">E-mail (inlog)</label>
+                        <input id="worker-email" type="email" name="email" value="{{ old('email') }}" placeholder="leeg = nog geen inlog" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm" autocomplete="off">
                     </div>
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <label class="flex items-center gap-2 text-sm">

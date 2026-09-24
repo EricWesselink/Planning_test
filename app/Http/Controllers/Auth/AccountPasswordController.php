@@ -10,19 +10,15 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
-class VakmanPasswordController extends Controller
+class AccountPasswordController extends Controller
 {
-    public function edit(Request $request): View
+    public function edit(): View
     {
-        abort_unless($request->user()?->isVakman(), 403);
-
-        return view('vakman.password');
+        return view('auth.password');
     }
 
     public function update(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->isVakman(), 403);
-
         $validated = $request->validate([
             'current_password' => ['required', 'current_password'],
             'password' => [...NewPassword::rules(), 'different:current_password'],
@@ -33,7 +29,8 @@ class VakmanPasswordController extends Controller
             'password.different' => 'Kies een ander wachtwoord dan je huidige.',
         ]);
 
-        $request->user()->forceFill([
+        $user = $request->user();
+        $user->forceFill([
             'password' => $validated['password'],
             'remember_token' => Str::random(60),
         ])->save();
@@ -42,7 +39,7 @@ class VakmanPasswordController extends Controller
         $request->session()->regenerate();
 
         return redirect()
-            ->route('vakman.password.edit')
+            ->route('account.password.edit')
             ->with('status', 'Wachtwoord is gewijzigd.');
     }
 }

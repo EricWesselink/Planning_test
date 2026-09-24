@@ -5,8 +5,11 @@ namespace App\Models;
 use App\Enums\EmploymentType;
 use App\Enums\Permission;
 use App\Enums\UserRole;
+use App\Notifications\ResetPasswordNotification;
 use App\Support\PermissionCatalog;
 use Database\Factories\UserFactory;
+use Illuminate\Auth\Passwords\CanResetPassword;
+use Illuminate\Contracts\Auth\CanResetPassword as CanResetPasswordContract;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,10 +22,20 @@ use Illuminate\Notifications\Notifiable;
 
 #[Fillable(['name', 'email', 'password', 'role', 'permissions', 'active', 'can_access_all_projects', 'worker_id', 'crew_member_id'])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable
+class User extends Authenticatable implements CanResetPasswordContract
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use CanResetPassword, HasFactory, Notifiable;
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordNotification($token));
+    }
+
+    public function hasDeliverableEmail(): bool
+    {
+        return ! str_ends_with(strtolower($this->email), '@telefoon.niconvloeren.nl');
+    }
 
     /**
      * @var array<string, mixed>
@@ -36,6 +49,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'activated_at' => 'datetime',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'active' => 'boolean',

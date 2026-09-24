@@ -12,6 +12,9 @@
         <img src="{{ asset(config('company.logo')) }}" alt="Nicon Vloeren" class="h-12 w-auto">
         <h1 class="mt-4 text-2xl font-semibold">Mijn planning</h1>
         <p class="mt-2 text-sm text-nicon-muted">Log in met je 06-nummer of e-mailadres om je eigen planning te zien. Na het inloggen kun je zelf je wachtwoord wijzigen.</p>
+        @if (session('status'))
+            <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
+        @endif
         <form method="POST" action="{{ route('vakman.login.store') }}" class="mt-6 space-y-4">
             @csrf
             <div>
@@ -34,6 +37,9 @@
             <button class="w-full bg-nicon-orange text-white py-2.5 font-medium hover:bg-nicon-orange-dark">Inloggen</button>
         </form>
         <p class="mt-6 text-sm text-nicon-muted">
+            <a href="{{ route('password.request') }}" class="hover:text-nicon-ink">Wachtwoord vergeten?</a>
+        </p>
+        <p class="mt-2 text-sm text-nicon-muted">
             <a href="{{ route('login') }}" class="hover:text-nicon-ink">Planner of beheerder? Ga naar de kantoorlogin.</a>
         </p>
     </div>

@@ -45,8 +45,8 @@
                 type="submit"
                 form="vakman-login-reset-{{ $memberId }}"
                 class="border border-nicon-line bg-nicon-paper px-3 py-2 text-xs"
-                onclick="return confirm('Nieuw tijdelijk wachtwoord maken? Het oude wachtwoord werkt daarna niet meer.')"
-            >Nieuw tijdelijk wachtwoord maken</button>
+                onclick="return confirm('Nieuwe activatielink maken? Het huidige wachtwoord blijft werken tot de link is gebruikt.')"
+            >Nieuwe activatielink maken</button>
             @push('detached-forms')
                 <form id="vakman-login-reset-{{ $memberId }}" method="POST" action="{{ route('workers.login-invite.reset', [$worker, $memberId]) }}">
                     @csrf

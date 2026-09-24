@@ -3,9 +3,8 @@
 @section('title', 'Wachtwoord wijzigen · Nicon Planning')
 
 @section('content')
-    <div class="text-[11px] uppercase tracking-[0.2em] text-nicon-orange">Vakman</div>
-    <h1 class="mt-2 text-2xl font-semibold">Wachtwoord wijzigen</h1>
-    <p class="text-sm text-nicon-muted">Vul je huidige wachtwoord in en kies een nieuw wachtwoord.</p>
+    <h1 class="text-2xl font-semibold">Wachtwoord wijzigen</h1>
+    <p class="text-sm text-nicon-muted">Vul je huidige wachtwoord in en kies een nieuw wachtwoord van minstens 10 tekens.</p>
 
     @if (session('status'))
         <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
@@ -18,7 +17,7 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('vakman.password.update') }}" class="mt-6 max-w-md border border-nicon-line bg-white p-5 space-y-4">
+    <form method="POST" action="{{ route('account.password.update') }}" class="mt-6 max-w-md border border-nicon-line bg-white p-5 space-y-4">
         @csrf
         @method('PATCH')
         <div>

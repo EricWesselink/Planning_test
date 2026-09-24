@@ -1544,30 +1544,61 @@ a.plan-missing-craftsman:hover {
     max-width: 100%;
 }
 
-.plan-line--small .plan-project-name > a {
+.plan-line--small .plan-project-name {
     display: flex;
-    align-items: baseline;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 1px;
+}
+
+.plan-line--small .plan-small-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+}
+
+.plan-line--small .plan-small-head > a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1 1 auto;
+    gap: 6px;
     min-width: 0;
     max-width: 100%;
-    overflow: hidden;
+}
+
+.plan-line--small .plan-project-name > a.plan-project-title-link {
+    display: block;
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .plan-line--small .plan-small-badge,
-.plan-line--small .plan-project-hours {
-    flex: none;
+.plan-line--small .plan-project-hours,
+.plan-line--small .plan-finish-form,
+.plan-line--small .plan-afgerond-mark {
+    flex: 0 0 auto;
     white-space: nowrap;
 }
 
 .plan-line--small .plan-project-title {
-    display: block;
-    flex: 1 1 auto;
+    display: -webkit-box;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    -webkit-box-orient: initial;
-    -webkit-line-clamp: none;
-    line-clamp: none;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+    line-height: 1.2;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
 }
 
 .plan-cell--werk .plan-project-numbers {

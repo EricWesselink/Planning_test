@@ -11,14 +11,19 @@ use App\Models\Project;
 use App\Models\SpecialtyOption;
 use App\Models\User;
 use App\Models\Worker;
+use App\Notifications\AccountActivationNotification;
+use App\Services\AccountActivationService;
 use App\Support\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class UserController extends Controller
@@ -64,10 +69,11 @@ class UserController extends Controller
                 $workerId = $this->createTeam($data)->id;
             }
 
+            $activations = app(AccountActivationService::class);
             $user = User::query()->create([
                 'name' => $data['name'],
                 'email' => $data['email'],
-                'password' => $data['password'],
+                'password' => $activations->placeholderPassword(),
                 'role' => $data['role'],
                 'permissions' => $data['permissions'],
                 'active' => $data['active'],
@@ -75,17 +81,26 @@ class UserController extends Controller
                 'worker_id' => $workerId,
                 'email_verified_at' => now(),
             ]);
+            $plain = $activations->issue($user);
             $this->syncProjects($user, $data);
             if ($user->isVakman()) {
                 $this->syncMemberLogins($user, $data['crew_logins']);
             }
 
-            return $user;
+            return [$user, $activations->url($plain)];
         });
+
+        [$user, $activationUrl] = $user;
+        if ($user->hasDeliverableEmail()) {
+            $user->notify(new AccountActivationNotification($activationUrl));
+            $status = 'Gebruiker aangemaakt. De activatielink is verzonden.';
+        } else {
+            $status = 'Gebruiker aangemaakt. Dit account heeft geen e-mailadres. Verstuur de activatielink via het inlogbericht bij de vakman.';
+        }
 
         return redirect()
             ->route('users.show', $user)
-            ->with('status', 'Gebruiker toegevoegd.');
+            ->with('status', $status);
     }
 
     public function show(User $user): View
@@ -106,7 +121,7 @@ class UserController extends Controller
         $data = $this->validated($request, $user);
         $this->authorizeAccountChanges($request->user(), $user, $data);
 
-        DB::transaction(function () use ($user, $data) {
+        DB::transaction(function () use ($user, $data, $request) {
             $wasVakman = $user->isVakman();
             $user->fill([
                 'name' => $data['name'],
@@ -128,9 +143,15 @@ class UserController extends Controller
             if (! empty($data['password'])) {
                 Gate::authorize('resetPassword', $user);
                 $user->password = $data['password'];
+                $user->remember_token = Str::random(60);
+                $user->activated_at = $user->activated_at ?? now();
             }
 
             $user->save();
+            if (! empty($data['password']) && $request->user()?->is($user)) {
+                Auth::logoutOtherDevices($data['password']);
+                $request->session()->regenerate();
+            }
             $this->syncProjects($user, $data);
             if ($user->isVakman()) {
                 $this->syncMemberLogins($user, $data['crew_logins']);
@@ -160,11 +181,7 @@ class UserController extends Controller
      */
     private function validated(Request $request, ?User $user = null): array
     {
-        $passwordRules = $user === null
-            ? ['required', 'string', 'min:8', 'confirmed']
-            : ['nullable', 'string', 'min:8', 'confirmed'];
-
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'name' => ['required', 'string', 'max:255'],
             'email' => [
                 'required',
@@ -172,7 +189,6 @@ class UserController extends Controller
                 'max:255',
                 Rule::unique('users', 'email')->ignore($user),
             ],
-            'password' => $passwordRules,
             'role' => ['required', Rule::enum(UserRole::class)],
             'permissions' => ['nullable', 'array'],
             'permissions.*' => ['string', Rule::enum(Permission::class)],
@@ -183,7 +199,7 @@ class UserController extends Controller
             'crew_members.*.id' => ['nullable', 'integer', 'min:1'],
             'crew_members.*.name' => ['nullable', 'string', 'max:255'],
             'crew_members.*.email' => ['nullable', 'email', 'max:255'],
-            'crew_members.*.password' => ['nullable', 'string', 'min:8'],
+            'crew_members.*.password' => ['nullable', 'string'],
             'specialties' => ['nullable', 'array'],
             'specialties.*' => ['string', 'max:64', 'not_regex:/[,\r\n]/'],
             'phone' => ['nullable', 'string', 'max:64'],
@@ -194,20 +210,30 @@ class UserController extends Controller
             'project_access' => ['required_unless:role,'.UserRole::Vakman->value, Rule::in(['all', 'selected'])],
             'project_ids' => ['exclude_unless:project_access,selected', 'array'],
             'project_ids.*' => ['integer', 'exists:projects,id'],
-        ], [
+        ];
+
+        if ($user !== null) {
+            $rules['password'] = ['nullable', 'string', Password::min(10), 'confirmed'];
+        }
+
+        if ($request->input('role') === UserRole::Vakman->value) {
+            $rules['crew_members.*.password'] = ['nullable', 'string', Password::min(10)];
+        }
+
+        $validator = Validator::make($request->all(), $rules, [
             'name.required' => 'Vul een naam in.',
             'email.required' => 'Vul een e-mailadres in.',
             'email.email' => 'Vul een geldig e-mailadres in.',
             'email.unique' => 'Dit e-mailadres is al in gebruik.',
             'password.required' => 'Vul een wachtwoord in.',
-            'password.min' => 'Het wachtwoord moet minstens 8 tekens zijn.',
+            'password.min' => 'Het wachtwoord moet minstens 10 tekens zijn.',
             'password.confirmed' => 'De wachtwoorden komen niet overeen.',
             'role.required' => 'Kies een rol.',
             'employment_type.required_if' => 'Kies eigen personeel of ZZP.',
             'people_count.required_if' => 'Vul in met hoeveel personen dit team is.',
             'people_count.min' => 'Er moet minstens 1 persoon zijn.',
             'crew_members.*.email.email' => 'Vul een geldig e-mailadres in.',
-            'crew_members.*.password.min' => 'Het wachtwoord moet minstens 8 tekens zijn.',
+            'crew_members.*.password.min' => 'Het wachtwoord moet minstens 10 tekens zijn.',
             'specialties.*.max' => 'Een onderdeel mag maximaal 64 tekens zijn.',
             'specialties.*.not_regex' => 'Gebruik geen komma in een onderdeel.',
             'project_access.required_unless' => 'Kies de projecttoegang.',

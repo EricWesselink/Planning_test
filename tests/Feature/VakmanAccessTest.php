@@ -160,7 +160,7 @@ class VakmanAccessTest extends TestCase
                 'people_count' => '2',
                 'crew_members' => [
                     ['name' => 'Peter', 'email' => '', 'password' => ''],
-                    ['name' => 'Kees Jansen', 'email' => 'kees@niconvloeren.nl', 'password' => 'lidwacht1'],
+                    ['name' => 'Kees Jansen', 'email' => 'kees@niconvloeren.nl', 'password' => 'lidwachtwoord'],
                 ],
             ])
             ->assertRedirect();
@@ -180,7 +180,7 @@ class VakmanAccessTest extends TestCase
         $this->assertSame(UserRole::Vakman, $member->role);
         $this->assertSame($team->worker_id, $member->worker_id);
         $this->assertNotNull($member->crew_member_id);
-        $this->assertTrue(Hash::check('lidwacht1', $member->password));
+        $this->assertTrue(Hash::check('lidwachtwoord', $member->password));
     }
 
     public function test_vakman_team_requires_type_and_size(): void
@@ -260,7 +260,7 @@ class VakmanAccessTest extends TestCase
                 'city' => 'Zwolle',
                 'crew_members' => [
                     ['name' => 'Peter', 'email' => '', 'password' => ''],
-                    ['name' => 'Kees Jansen', 'email' => 'kees@niconvloeren.nl', 'password' => 'lidwacht1'],
+                    ['name' => 'Kees Jansen', 'email' => 'kees@niconvloeren.nl', 'password' => 'lidwachtwoord'],
                 ],
             ])
             ->assertRedirect();

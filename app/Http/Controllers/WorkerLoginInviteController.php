@@ -21,7 +21,7 @@ class WorkerLoginInviteController extends Controller
             ->route('workers.show', $worker)
             ->with('vakman_login_invite', $this->sessionPayload($invite))
             ->with('status', $invite['password_generated']
-                ? 'Inlog is klaar. Stuur het bericht via WhatsApp of kopieer het.'
+                ? 'Inlog is klaar. Stuur de activatielink via WhatsApp of kopieer het bericht.'
                 : 'Er is al een inlog. Het bestaande wachtwoord blijft geheim.');
     }
 
@@ -35,7 +35,7 @@ class WorkerLoginInviteController extends Controller
         return redirect()
             ->route('workers.show', $worker)
             ->with('vakman_login_invite', $this->sessionPayload($invite))
-            ->with('status', 'Nieuw tijdelijk wachtwoord is klaar. Stuur het bericht via WhatsApp of kopieer het.');
+            ->with('status', 'Nieuwe activatielink is klaar. Het huidige wachtwoord blijft werken tot de link is gebruikt.');
     }
 
     private function assertMemberOfWorker(Worker $worker, CrewMember $crewMember): void

@@ -16,8 +16,7 @@ class WorkerPlanningInviteMail extends Mailable
     public function __construct(
         public Worker $worker,
         public User $account,
-        public string $loginUrl,
-        public string $temporaryPassword,
+        public string $activationUrl,
     ) {}
 
     public function envelope(): Envelope

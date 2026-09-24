@@ -528,24 +528,46 @@
                             $customerName = trim((string) ($projectRow['customer'] ?? ''));
                             $showCustomer = $customerName !== ''
                                 && ! str_contains(mb_strtolower((string) $projectRow['title']), mb_strtolower($customerName));
+                            $compactTitle = (string) $projectRow['title'];
+                            if ($isCompact) {
+                                $compactCity = trim((string) ($projectRow['city'] ?? ''));
+                                if ($compactCity !== '') {
+                                    $quotedCity = preg_quote($compactCity, '/');
+                                    $compactTitle = preg_replace('/\s*·\s*'.$quotedCity.'(?=\s|[·–-]|$)/u', '', $compactTitle) ?? $compactTitle;
+                                    $compactTitle = preg_replace('/^'.$quotedCity.'\s*[–\-]\s*/u', '', $compactTitle) ?? $compactTitle;
+                                    $compactTitle = trim($compactTitle, " \t·–-");
+                                }
+                                if ($compactTitle === '') {
+                                    $compactTitle = (string) $projectRow['title'];
+                                }
+                            }
                         @endphp
                         <div class="plan-line plan-line--project{{ $isCompact ? ' plan-line--small' : '' }}{{ $projectOver ? ' plan-line--hour-over' : '' }}" style="min-height: {{ $projectHeight }}px">
                             <div class="plan-frozen">
                                 <div class="plan-cell plan-cell--werk{{ ! empty($projectRow['missing_craftsman']) ? ' has-missing-craftsman' : '' }}">
                                     <div class="plan-project-meta">
                                         <div class="plan-project-name">
+                                            @if ($isCompact)
+                                                <div class="plan-small-head">
+                                                    <a href="{{ $projectHref }}" class="hover:text-nicon-orange">
+                                                        @if (! empty($projectRow['badge']))
+                                                            <span class="plan-small-badge plan-small-badge--{{ $projectRow['kind'] ?? 'klein' }}">{{ $projectRow['badge'] }}</span>
+                                                        @endif
+                                                        @if (! empty($projectRow['hours_label']))
+                                                            <span class="plan-project-hours">{{ $projectRow['hours_label'] }}</span>
+                                                        @endif
+                                                    </a>
+                                            @else
                                             <a href="{{ $projectHref }}" class="hover:text-nicon-orange">
                                                 @if (! empty($projectRow['badge']))
                                                     <span class="plan-small-badge plan-small-badge--{{ $projectRow['kind'] ?? 'klein' }}">{{ $projectRow['badge'] }}</span>
                                                 @endif
-                                                @if (! $isCompact && ! empty($projectRow['numbers_short']))
+                                                @if (! empty($projectRow['numbers_short']))
                                                     <span class="plan-project-numbers">{{ $projectRow['numbers_short'] }}</span>
                                                 @endif
                                                 <span class="plan-project-title">{{ $projectRow['title'] }}</span>
-                                                @if ($isCompact && ! empty($projectRow['hours_label']))
-                                                    <span class="plan-project-hours">| {{ $projectRow['hours_label'] }}</span>
-                                                @endif
                                             </a>
+                                            @endif
                                             @if (! empty($projectRow['planning_afgerond']) && $planningStand === 'alles')
                                                 <span class="plan-afgerond-mark">Afgerond</span>
                                             @endif
@@ -553,8 +575,14 @@
                                                 @include('planning.partials.finish-action', [
                                                     'projectId' => $projectRow['id'],
                                                     'finished' => ! empty($projectRow['planning_afgerond']),
-                                                    'projectName' => $projectRow['title'],
+                                                    'projectName' => $isCompact ? $compactTitle : $projectRow['title'],
                                                 ])
+                                            @endif
+                                            @if ($isCompact)
+                                                </div>
+                                                <a href="{{ $projectHref }}" class="plan-project-title-link hover:text-nicon-orange">
+                                                    <span class="plan-project-title">{{ $compactTitle }}</span>
+                                                </a>
                                             @endif
                                         </div>
                                         @if ($showCustomer)

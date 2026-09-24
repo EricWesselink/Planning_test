@@ -6,10 +6,10 @@ Vakkennis: {{ $worker->specialtyLabel() }}.
 @endif
 Log in om je planning te zien.
 
-Inloggen: {{ $loginUrl }}
-E-mail: {{ $account->email }}
-Tijdelijk wachtwoord: {{ $temporaryPassword }}
+Je account voor Nicon Planning is aangemaakt.
+Klik hier om je wachtwoord in te stellen:
+{{ $activationUrl }}
 
-Wijzig dit wachtwoord na de eerste keer inloggen.
+De link is 24 uur geldig en werkt één keer.
 
 {{ config('company.name') }}

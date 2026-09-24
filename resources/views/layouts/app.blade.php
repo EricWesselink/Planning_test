@@ -108,6 +108,7 @@
                     </a>
                 @endunless
             </nav>
+            <a href="{{ route('account.password.edit') }}" class="text-sm text-nicon-steel hover:text-nicon-orange {{ request()->routeIs('account.password.*') ? 'text-nicon-orange' : '' }}">Wachtwoord</a>
             <form method="POST" action="{{ route('logout') }}" class="nicon-topbar-logout shrink-0">
                 @csrf
                 <button class="text-sm text-nicon-steel hover:text-nicon-orange">Uitloggen</button>

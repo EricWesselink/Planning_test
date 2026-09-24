@@ -223,7 +223,7 @@ class WorkerProfileTest extends TestCase
             ->assertSee('Reparatie')
             ->assertSee('Service')
             ->assertSee('E-mail (inlog, optioneel)')
-            ->assertSee('Tijdelijk wachtwoord')
+            ->assertSee('activatielink')
             ->assertSee('Stuur uitnodiging voor de planning')
             ->assertSee('class="space-y-4 hidden"', false)
             ->assertDontSee('name="team_ids[]"', false)
@@ -258,7 +258,7 @@ class WorkerProfileTest extends TestCase
         $this->assertNotNull($login);
         $this->assertSame(UserRole::Vakman, $login->role);
         $this->assertSame($worker->id, $login->worker_id);
-        $this->assertTrue(Hash::check('wachtwoord123', $login->password));
+        $this->assertFalse(Hash::check('wachtwoord123', $login->password));
         $this->assertSame('Zwolle', $worker->city);
         $this->assertSame('PVC', $worker->specialty);
         $this->assertNotNull($worker->color);
@@ -339,7 +339,7 @@ class WorkerProfileTest extends TestCase
             ->assertSee('Primen & egaliseren')
             ->assertSee('Naam van het team')
             ->assertSee('E-mail (inlog)')
-            ->assertSee('Tijdelijk wachtwoord')
+            ->assertSee('activatielink')
             ->assertSee('Stuur uitnodiging voor de planning')
             ->assertSee('Vakkennis van dit team')
             ->assertSee('Inmeten')
@@ -596,7 +596,7 @@ class WorkerProfileTest extends TestCase
         $this->assertNotNull($login);
         $this->assertSame(UserRole::Vakman, $login->role);
         $this->assertSame($worker->id, $login->worker_id);
-        $this->assertTrue(Hash::check('tijdelijk1', $login->password));
+        $this->assertFalse(Hash::check('tijdelijk1', $login->password));
 
         $this->actingAs($user)
             ->get(route('workers.index'))
@@ -626,7 +626,8 @@ class WorkerProfileTest extends TestCase
 
         Mail::assertSent(WorkerPlanningInviteMail::class, function (WorkerPlanningInviteMail $mail): bool {
             return $mail->hasTo('wespro@niconvloeren.nl')
-                && $mail->temporaryPassword === 'tijdelijk1'
+                && str_contains($mail->activationUrl, '/activeren/')
+                && ! str_contains($mail->activationUrl, 'tijdelijk1')
                 && $mail->worker->name === 'Team Wespro';
         });
     }
@@ -646,7 +647,6 @@ class WorkerProfileTest extends TestCase
             ->assertRedirect(route('workers.index'))
             ->assertSessionHasErrors([
                 'email' => 'Vul een e-mailadres in voor de inlog.',
-                'password' => 'Vul een tijdelijk wachtwoord in.',
             ]);
 
         $this->assertDatabaseMissing('workers', ['name' => 'Team Wespro']);
@@ -1408,7 +1408,7 @@ class WorkerProfileTest extends TestCase
         $login = User::query()->where('email', 'wespro@niconvloeren.nl')->first();
         $this->assertNotNull($login);
         $this->assertSame($worker->id, $login->worker_id);
-        $this->assertTrue(Hash::check('tijdelijk1', $login->password));
+        $this->assertFalse(Hash::check('tijdelijk1', $login->password));
         $this->assertSame('wespro@niconvloeren.nl', $worker->fresh()->email);
     }
 

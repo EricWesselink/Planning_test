@@ -311,11 +311,31 @@ class PlanningWeekTest extends TestCase
             $css
         );
         $this->assertMatchesRegularExpression(
-            '/\.plan-line--small \.plan-project-title\s*\{[^}]*display:\s*block;[^}]*line-clamp:\s*none/s',
+            '/\.plan-line--small \.plan-project-title\s*\{[^}]*-webkit-line-clamp:\s*2;[^}]*line-clamp:\s*2/s',
+            $css
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.plan-line--small \.plan-project-title\s*\{[^}]*(?<![\w-])width:\s*0/s',
+            $css
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.plan-line--small \.plan-project-title\s*\{[^}]*(?:text-overflow:\s*ellipsis|white-space:\s*nowrap)/s',
             $css
         );
         $this->assertMatchesRegularExpression(
-            '/\.plan-line--small \.plan-project-name > a\s*\{[^}]*display:\s*flex/s',
+            '/\.plan-line--small \.plan-small-badge,\s*\.plan-line--small \.plan-project-hours,\s*\.plan-line--small \.plan-finish-form,\s*\.plan-line--small \.plan-afgerond-mark\s*\{[^}]*flex:\s*0 0 auto/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-line--small \.plan-project-name\s*\{[^}]*flex-direction:\s*column/s',
+            $css
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.plan-line--small \.plan-project-name > a\.plan-project-title-link\s*\{[^}]*display:\s*block;[^}]*width:\s*100%/s',
+            $css
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.plan-line--small \.plan-project-name > a\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto/s',
             $css
         );
         $this->assertMatchesRegularExpression(
@@ -382,6 +402,67 @@ class PlanningWeekTest extends TestCase
             ->assertSee('plan-project-numbers', false)
             ->assertSee('plan-project-title', false)
             ->assertSee('11P240897 · 251100081', false);
+    }
+
+    public function test_service_card_shows_the_name_on_its_own_line_without_repeating_the_city(): void
+    {
+        $user = User::factory()->create();
+        $customer = Customer::query()->create(['name' => 'hegeman bouwgroep']);
+        $service = Project::query()->create([
+            'project_number' => '2026-060',
+            'customer_id' => $customer->id,
+            'name' => 'hestel schoon maken',
+            'city' => 'Deventer',
+            'kind' => ProjectKind::Service,
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-11',
+            'planned_end_date' => '2026-09-11',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $service->id,
+            'name' => 'PVC stroken',
+            'unit' => 'uren',
+            'ordered_quantity' => 4,
+            'begrote_uren' => 4,
+            'status' => 'gepland',
+        ]);
+        $regular = Project::query()->create([
+            'project_number' => '251100099',
+            'customer_id' => $customer->id,
+            'name' => 'Nieuwbouw Zwolle',
+            'city' => 'Zwolle',
+            'status' => 'gepland',
+            'planned_start_date' => '2026-09-08',
+            'planned_end_date' => '2026-09-12',
+        ]);
+        WorkItem::query()->create([
+            'project_id' => $regular->id,
+            'name' => 'Linoleum',
+            'unit' => 'm2',
+            'ordered_quantity' => 80,
+            'status' => 'gepland',
+        ]);
+
+        $serviceHtml = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $service->id]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<div class="plan-small-head">.*?<span class="plan-small-badge[^"]*">SERVICE<\/span>.*?<span class="plan-project-hours">4u<\/span>.*?<\/div>\s*<a [^>]*class="plan-project-title-link[^"]*"[^>]*>\s*<span class="plan-project-title">hegeman bouwgroep – hestel schoon maken<\/span>/s',
+            $serviceHtml,
+        );
+        $this->assertStringNotContainsString('plan-project-title">hegeman bouwgroep · Deventer', $serviceHtml);
+        $this->assertStringContainsString('Deventer', $serviceHtml);
+
+        $regularHtml = $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $regular->id]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringNotContainsString('plan-small-head', $regularHtml);
+        $this->assertStringContainsString('plan-project-title">Nieuwbouw Zwolle', $regularHtml);
+        $this->assertStringContainsString('plan-project-numbers', $regularHtml);
     }
 
     public function test_planning_board_shows_the_opdrachtgever_under_the_project_name(): void
