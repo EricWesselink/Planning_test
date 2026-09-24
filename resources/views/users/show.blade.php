@@ -14,6 +14,12 @@
     @if (session('status'))
         <p class="mt-4 text-sm text-nicon-ok">{{ session('status') }}</p>
     @endif
+    @if (session('activation_url'))
+        <div class="mt-4 max-w-2xl border border-nicon-line bg-white p-4">
+            <label class="text-xs uppercase tracking-wide text-nicon-muted" for="activation-url">Activatielink</label>
+            <input id="activation-url" readonly value="{{ session('activation_url') }}" class="mt-1 w-full border border-nicon-line bg-nicon-paper px-3 py-2 text-sm" onclick="this.select()">
+        </div>
+    @endif
     @if ($errors->any())
         <ul class="mt-4 text-sm text-nicon-danger list-disc pl-5">
             @foreach ($errors->all() as $error)

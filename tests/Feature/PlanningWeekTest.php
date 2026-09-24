@@ -449,7 +449,7 @@ class PlanningWeekTest extends TestCase
             ->getContent();
 
         $this->assertMatchesRegularExpression(
-            '/<div class="plan-small-head">.*?<span class="plan-small-badge[^"]*">SERVICE<\/span>.*?<span class="plan-project-hours">4u<\/span>.*?<\/div>\s*<a [^>]*class="plan-project-title-link[^"]*"[^>]*>\s*<span class="plan-project-title">hegeman bouwgroep – hestel schoon maken<\/span>/s',
+            '/<div class="plan-small-head">.*?<span class="plan-small-badge[^"]*">SERVICE<\/span>.*?<span class="plan-project-hours">\| 4u<\/span>.*?<\/div>\s*<a [^>]*class="plan-project-title-link[^"]*"[^>]*>\s*<span class="plan-project-title">hegeman bouwgroep – hestel schoon maken<\/span>/s',
             $serviceHtml,
         );
         $this->assertStringNotContainsString('plan-project-title">hegeman bouwgroep · Deventer', $serviceHtml);

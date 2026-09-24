@@ -91,16 +91,19 @@ class UserController extends Controller
         });
 
         [$user, $activationUrl] = $user;
-        if ($user->hasDeliverableEmail()) {
+        if ($user->hasDeliverableEmail() && config('mail.default') !== 'log') {
             $user->notify(new AccountActivationNotification($activationUrl));
             $status = 'Gebruiker aangemaakt. De activatielink is verzonden.';
+        } elseif ($user->hasDeliverableEmail()) {
+            $status = 'Gebruiker aangemaakt. Op deze computer wordt geen e-mail naar een postvak gestuurd. Kopieer de activatielink hieronder.';
         } else {
-            $status = 'Gebruiker aangemaakt. Dit account heeft geen e-mailadres. Verstuur de activatielink via het inlogbericht bij de vakman.';
+            $status = 'Gebruiker aangemaakt. Dit account heeft geen e-mailadres. Kopieer de activatielink of verstuur hem via het inlogbericht bij de vakman.';
         }
 
         return redirect()
             ->route('users.show', $user)
-            ->with('status', $status);
+            ->with('status', $status)
+            ->with('activation_url', $activationUrl);
     }
 
     public function show(User $user): View

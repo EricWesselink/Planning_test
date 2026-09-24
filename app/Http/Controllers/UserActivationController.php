@@ -19,9 +19,18 @@ class UserActivationController extends Controller
         }
 
         $plain = $activations->issue($user);
+        $url = $activations->url($plain);
 
-        $user->notify(new AccountActivationNotification($activations->url($plain)));
+        if ($user->hasDeliverableEmail() && config('mail.default') !== 'log') {
+            $user->notify(new AccountActivationNotification($url));
 
-        return back()->with('status', 'Activatielink is per e-mail verstuurd.');
+            return back()
+                ->with('status', 'Activatielink is per e-mail verstuurd.')
+                ->with('activation_url', $url);
+        }
+
+        return back()
+            ->with('status', 'Kopieer de activatielink. Op deze computer wordt geen e-mail naar een postvak gestuurd.')
+            ->with('activation_url', $url);
     }
 }

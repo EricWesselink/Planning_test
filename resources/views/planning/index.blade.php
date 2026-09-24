@@ -554,7 +554,7 @@
                                                             <span class="plan-small-badge plan-small-badge--{{ $projectRow['kind'] ?? 'klein' }}">{{ $projectRow['badge'] }}</span>
                                                         @endif
                                                         @if (! empty($projectRow['hours_label']))
-                                                            <span class="plan-project-hours">{{ $projectRow['hours_label'] }}</span>
+                                                            <span class="plan-project-hours">| {{ $projectRow['hours_label'] }}</span>
                                                         @endif
                                                     </a>
                                             @else

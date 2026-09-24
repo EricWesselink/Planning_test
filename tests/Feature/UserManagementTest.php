@@ -135,7 +135,8 @@ class UserManagementTest extends TestCase
                 ],
             ]))
             ->assertRedirect()
-            ->assertSessionHas('status', 'Gebruiker aangemaakt. De activatielink is verzonden.');
+            ->assertSessionHas('status', 'Gebruiker aangemaakt. De activatielink is verzonden.')
+            ->assertSessionHas('activation_url');
 
         $created = User::query()->where('email', 'nieuw@niconvloeren.nl')->first();
         $this->assertNotNull($created);
