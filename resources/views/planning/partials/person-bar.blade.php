@@ -41,7 +41,7 @@
     @if (! empty($personBar['ticket_mark']))
         <span class="bar-ticket">{{ $personBar['ticket_mark'] }}</span>
     @endif
-    <span class="bar-label">{{ $personBar['label'] }}</span>
+    <span class="bar-label" data-label-full="{{ $personBar['label'] }}" data-label-short="{{ $personBar['label_short'] ?? $personBar['label'] }}">{{ $personBar['label'] }}</span>
     @if ($personBar['show_end_handle'] ?? true)
         <span class="bar-handle bar-handle-end" data-edge="end"></span>
     @endif

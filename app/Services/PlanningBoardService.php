@@ -1362,7 +1362,8 @@ class PlanningBoardService
         } else {
             $hoursOverride = null;
         }
-        $label = $assignment->planningLabel($hoursOverride);
+        $label = $assignment->planningBarLabel();
+        $shortLabel = $assignment->planningBarLabel(false);
         $ticketLabel = $assignment->planningTicketLabel();
         $ticket = $assignment->workTickets->first();
         $double = $days->contains(
@@ -1385,9 +1386,10 @@ class PlanningBoardService
             'foreman_id' => $assignment->foreman_crew_member_id,
             'work_ticket_holder_id' => $assignment->work_ticket_crew_member_id,
             'label' => $label,
+            'label_short' => $shortLabel,
             'title' => filled($ticketLabel)
-                ? $assignment->detailTitle($workName, $projectName, $hoursOverride).' · '.$ticketLabel
-                : $assignment->detailTitle($workName, $projectName, $hoursOverride),
+                ? $assignment->planningHoverTitle($hoursOverride)."\n".$ticketLabel
+                : $assignment->planningHoverTitle($hoursOverride),
             'ticket' => $ticketLabel,
             'ticket_mark' => $assignment->planningTicketMark(),
             'ticket_url' => $ticket === null ? null : route('work-tickets.show', $ticket),

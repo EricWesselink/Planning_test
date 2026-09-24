@@ -935,9 +935,9 @@ class WorkerProfileTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('Kees Jansen · 2 personen')
+            ->assertSee('Kees J. · 2 man')
             ->assertSee('Aantal personen')
-            ->assertDontSee('2 man');
+            ->assertSee('2 vakmensen');
     }
 
     public function test_planning_bar_shows_one_person(): void
@@ -979,8 +979,9 @@ class WorkerProfileTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('bar-label">Jan · 40u</span>', false)
-            ->assertDontSee('bar-label">Jan</span>', false);
+            ->assertSee('bar-label" data-label-full="Jan · 1 man"', false)
+            ->assertSee('1 vakman')
+            ->assertDontSee('bar-label" data-label-full="Jan"', false);
     }
 
     public function test_planning_shows_the_team_name_instead_of_a_zzp_label(): void
@@ -1025,7 +1026,7 @@ class WorkerProfileTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('Team Wespro · 2 personen')
+            ->assertSee('Team Wespro · 2 man')
             ->assertSee('>Team Wespro</option>', false)
             ->assertDontSee('ZZP Harm Wesselink')
             ->assertDontSee('Kies vakman of ploeg');

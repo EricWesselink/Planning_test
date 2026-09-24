@@ -185,7 +185,7 @@ class SmallWorkTest extends TestCase
         );
         $barsOnWorkLines = 0;
         foreach ($works[0] as $workLine) {
-            if (str_contains($workLine, 'class="bar-label">Albert')) {
+            if (str_contains($workLine, 'data-label-full="Albert · 1 man"')) {
                 $barsOnWorkLines++;
             }
         }
@@ -401,7 +401,7 @@ class SmallWorkTest extends TestCase
         );
         $linesWithBar = array_values(array_filter(
             $works[0],
-            fn (string $line): bool => str_contains($line, 'class="bar-label">Albert'),
+            fn (string $line): bool => str_contains($line, 'data-label-full="Albert · 1 man"'),
         ));
         $this->assertCount(2, $linesWithBar);
         $titles = array_map(

@@ -740,6 +740,131 @@ class WorkerAssignment extends Model
         return $team.' · '.$hours;
     }
 
+    public function planningBarLabel(bool $withNames = true): string
+    {
+        $this->loadMissing(['workItem', 'worker']);
+        if ($this->isInternal() || ($this->workItem?->isIntakeTask() && ! $this->isProvisional())) {
+            return $this->planningLabel();
+        }
+
+        $parts = array_values(array_filter([
+            $this->planningTeamCode(),
+            ...($withNames ? $this->planningPersonShortNames() : []),
+            $this->planningManCountLabel(),
+            $this->isProvisional() ? 'voorlopig' : null,
+        ], fn (?string $part): bool => $part !== null && $part !== ''));
+
+        return implode(' · ', $parts);
+    }
+
+    public function planningHoverTitle(?float $hoursOverride = null): string
+    {
+        $this->loadMissing('worker');
+        $lines = [];
+        $team = $this->planningTeamTitle();
+        if ($team !== '') {
+            $lines[] = $team;
+        }
+        $names = $this->presentNames();
+        if ($names === []) {
+            $plan = trim((string) ($this->worker?->planName() ?? ''));
+            if ($plan !== '' && $plan !== $team) {
+                $lines[] = $plan;
+            }
+        } else {
+            array_push($lines, ...$names);
+        }
+        $count = $this->planningHeadcount();
+        $lines[] = $count === 1 ? '1 vakman' : $count.' vakmensen';
+        $hours = $hoursOverride === null ? $this->plannedHoursValue() : $hoursOverride;
+        $amount = PlanningHours::hourText($hours);
+        $lines[] = ($amount === '1' ? '1 gepland uur' : $amount.' geplande uren');
+
+        return implode("\n", $lines);
+    }
+
+    public static function compactPersonName(string $name): string
+    {
+        $parts = preg_split('/\s+/u', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($parts === []) {
+            return '';
+        }
+        if (count($parts) === 1) {
+            return $parts[0];
+        }
+
+        return $parts[0].' '.mb_strtoupper(mb_substr($parts[1], 0, 1)).'.';
+    }
+
+    private function planningTeamCode(): string
+    {
+        $name = trim((string) ($this->worker?->planName() ?? ''));
+        if (preg_match('/^team\s*(\d+)\b/iu', $name, $matches) === 1) {
+            return 'T'.$matches[1];
+        }
+        if ($name === '') {
+            return 'Onbekend';
+        }
+        if (preg_match('/^team\b/iu', $name) === 1 || $this->presentNames() !== []) {
+            return $name;
+        }
+
+        return '';
+    }
+
+    private function planningTeamTitle(): string
+    {
+        $name = trim((string) ($this->worker?->planName() ?? ''));
+        if (preg_match('/^team\s*(\d+)\b/iu', $name, $matches) === 1) {
+            return 'Team '.$matches[1];
+        }
+
+        return $name !== '' ? $name : 'Onbekend';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function planningPersonShortNames(): array
+    {
+        $source = $this->presentNames();
+        if ($source === []) {
+            $plan = trim((string) ($this->worker?->planName() ?? ''));
+            if ($plan === '' || preg_match('/^team\b/iu', $plan) === 1) {
+                return [];
+            }
+            $source = [$plan];
+        }
+
+        $names = [];
+        $seen = [];
+        foreach ($source as $name) {
+            $short = self::compactPersonName($name);
+            $key = mb_strtolower($short);
+            if ($short === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $names[] = $short;
+        }
+
+        return $names;
+    }
+
+    private function planningHeadcount(): int
+    {
+        if ($this->relationLoaded('crewMembers') && $this->crewMembers->isNotEmpty()) {
+            return max(1, count($this->presentNames()));
+        }
+
+        return $this->peopleCount();
+    }
+
+    private function planningManCountLabel(): string
+    {
+        return $this->planningHeadcount().' man';
+    }
+
     public function detailTitle(string $workName, string $projectName = '', ?float $hoursOverride = null): string
     {
         if ($this->isInternal()) {

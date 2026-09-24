@@ -220,7 +220,7 @@ class PlanningHoursAssignmentTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('· 2u', false)
+            ->assertSee('2 geplande uren', false)
             ->assertSee('data-start-offset="0.25"', false)
             ->assertSee('data-end-offset="0.5"', false)
             ->assertSee('plan-day-times', false)
@@ -430,7 +430,7 @@ class PlanningHoursAssignmentTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('· 8u', false)
+            ->assertSee('8 geplande uren', false)
             ->assertSee('08:00–16:00', false)
             ->assertSee('data-planned-hours="8"', false)
             ->assertSee('data-start-offset="0"', false)
@@ -723,7 +723,7 @@ class PlanningHoursAssignmentTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07']))
             ->assertOk()
-            ->assertSee('· 4u', false)
+            ->assertSee('4 geplande uren', false)
             ->assertSee('data-start-offset="0"', false)
             ->assertSee('data-end-offset="0.5"', false);
     }
