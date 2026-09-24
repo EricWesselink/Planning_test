@@ -14,6 +14,9 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkTicket;
 use App\Support\Format;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Barryvdh\DomPDF\PDF as PdfDocument;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 
@@ -334,6 +337,44 @@ class WorkTicketPdfService
             ->implode('_');
 
         return ($safe !== '' ? $safe : 'servicebon').'.pdf';
+    }
+
+    /**
+     * @return array{pdf: PdfDocument, filename: string}|null
+     */
+    public function makePdf(WorkTicket $ticket, bool $showPrices, bool $includeMeasurementForm): ?array
+    {
+        $data = $this->build($ticket, $showPrices, includeMeasurementForm: $includeMeasurementForm);
+        if (($data['drawingRender'] ?? 'image') === 'browser') {
+            return null;
+        }
+
+        $pdf = Pdf::loadView('work-tickets.pdf', $data)
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['documentTitle'].' '.$ticket->number,
+            'Author' => $data['companyName'],
+        ]);
+
+        return [
+            'pdf' => $pdf,
+            'filename' => $data['filename'],
+        ];
+    }
+
+    public function wantsMeasurementForm(WorkTicket $ticket, Request $request): bool
+    {
+        $filled = $this->measurements->isFilled($ticket->project?->measurementForm);
+        if (! $filled) {
+            return false;
+        }
+
+        if ($request->has('inmeetformulier')) {
+            return $request->boolean('inmeetformulier');
+        }
+
+        return (bool) $ticket->include_measurement_form;
     }
 
     public function filename(WorkTicket $ticket): string

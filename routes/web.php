@@ -14,6 +14,7 @@ use App\Http\Controllers\CalculationController;
 use App\Http\Controllers\CalculationLineController;
 use App\Http\Controllers\CalculationWorkbookController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocumentMailController;
 use App\Http\Controllers\DrawingController;
 use App\Http\Controllers\ImpersonateController;
 use App\Http\Controllers\LeaveRequestController;
@@ -120,8 +121,10 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::get('/planning/candidates', [PlanningActionController::class, 'candidates'])->name('planning.candidates');
     Route::get('/planning/pdf', [PlanningController::class, 'export'])->name('planning.export');
     Route::get('/planning/weekplanning', [PlanningController::class, 'weekplanning'])->name('planning.weekplanning');
+    Route::post('/planning/weekplanning/email', [DocumentMailController::class, 'weekplanning'])->name('planning.weekplanning.email');
     Route::get('/planning/weekplanning-personeel', [PlanningController::class, 'personnelWeek'])->name('planning.personnel-week');
     Route::get('/planning/weekplanning-personeel/pdf', [PlanningController::class, 'personnelWeekPdf'])->name('planning.personnel-week.pdf');
+    Route::post('/planning/weekplanning-personeel/email', [DocumentMailController::class, 'personnelWeek'])->name('planning.personnel-week.email');
     Route::get('/planning/excel', [PlanningController::class, 'excel'])->name('planning.excel');
     Route::post('/planning/shift', [PlanningActionController::class, 'shift'])->name('planning.shift');
     Route::post('/planning/assignments/move', [PlanningActionController::class, 'moveAssignment'])->name('planning.assignments.move');
@@ -138,6 +141,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::post('/planning/assignments/{assignment}/werkbonnen', [WorkTicketController::class, 'store'])->name('work-tickets.store');
     Route::get('/werkbonnen/{workTicket}', [WorkTicketController::class, 'show'])->name('work-tickets.show');
     Route::get('/werkbonnen/{workTicket}/pdf', [WorkTicketController::class, 'pdf'])->name('work-tickets.pdf');
+    Route::post('/werkbonnen/{workTicket}/email', [DocumentMailController::class, 'workTicket'])->name('work-tickets.email');
     Route::patch('/werkbonnen/{workTicket}/uren', [WorkTicketController::class, 'updateHours'])->name('work-tickets.hours.update');
     Route::delete('/werkbonnen/{workTicket}', [WorkTicketController::class, 'destroy'])->name('work-tickets.destroy');
     Route::get('/productie', [ProductionController::class, 'index'])->name('production.index');
@@ -213,6 +217,8 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::post('/projecten/afmetingen/{token}', [ScannedDimensionsImportController::class, 'import'])->name('projects.afmetingen.import');
     Route::post('/projecten', [ProjectController::class, 'store'])->name('projects.store');
     Route::get('/projecten/meetstaat-voorbeeld.csv', [ProjectController::class, 'template'])->name('projects.template');
+    Route::get('/projecten/{project}/emails', [DocumentMailController::class, 'projectIndex'])->name('projects.emails');
+    Route::get('/projecten/{project}/emails/{documentMail}', [DocumentMailController::class, 'projectShow'])->name('projects.emails.show');
     Route::get('/projecten/{project}', [ProjectController::class, 'show'])->name('projects.show');
     Route::patch('/projecten/{project}', [ProjectController::class, 'update'])->name('projects.update');
     Route::patch('/projecten/{project}/winkel', [ShopProjectController::class, 'update'])->name('projects.winkel.update');

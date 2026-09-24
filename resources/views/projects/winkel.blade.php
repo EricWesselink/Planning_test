@@ -31,6 +31,7 @@
         <span class="text-nicon-muted">{{ $project->isArchived() ? 'Archief' : $project->status->label() }}</span>
         <a href="{{ route('projects.winkel.werkbon', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">Werkbon</a>
         <a href="{{ route('projects.winkel.werkbon.pdf', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">Download PDF</a>
+        <a href="{{ route('projects.emails', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">E-mails</a>
     </div>
     @if ($project->shopWorkLine())
         <p class="mt-1 text-sm text-nicon-muted">{{ $project->shopWorkLine() }}</p>

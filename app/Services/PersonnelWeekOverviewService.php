@@ -8,6 +8,8 @@ use App\Models\Project;
 use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Support\PlanningHours;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Barryvdh\DomPDF\PDF as PdfDocument;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
@@ -118,6 +120,26 @@ class PersonnelWeekOverviewService
             'omittedWithoutInzet' => max(0, $omittedWithoutInzet),
             'unresolved' => array_values($this->unresolved),
             'legend' => $this->legend($covering),
+        ];
+    }
+
+    /**
+     * @return array{pdf: PdfDocument, filename: string, weekNumber: int}
+     */
+    public function makePdf(Request $request): array
+    {
+        $data = $this->build($request);
+        $pdf = Pdf::loadView('planning.personnel-week-pdf', $data)
+            ->setPaper('a3', 'landscape')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['heading'].' · Week '.$data['weekNumber'].' · '.$data['weekYear'],
+        ]);
+
+        return [
+            'pdf' => $pdf,
+            'filename' => $data['filename'],
+            'weekNumber' => $data['weekNumber'],
         ];
     }
 

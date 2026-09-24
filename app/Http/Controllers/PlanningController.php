@@ -6,12 +6,12 @@ use App\Models\CrewMember;
 use App\Models\Project;
 use App\Models\WorkActivityCategory;
 use App\Models\Worker;
+use App\Services\DocumentMailService;
 use App\Services\InternalPlanningExcelService;
 use App\Services\PersonnelWeekOverviewService;
 use App\Services\PlanningBoardService;
 use App\Services\WeekplanningPdfService;
 use App\Support\PlanningWeek;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -22,7 +22,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PlanningController extends Controller
 {
-    public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning): View|RedirectResponse
+    public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning, DocumentMailService $mailer): View|RedirectResponse
     {
         Gate::authorize('view-planning');
         $this->authorizeRequestedProject($request);
@@ -64,6 +64,9 @@ class PlanningController extends Controller
             'canAssignPlanning' => $request->user()?->canAssignPlanning() ?? false,
             'canViewLaborCosts' => $request->user()?->canViewLaborCosts() ?? false,
             'weekplanningTeams' => $weekplanning->scheduledGroups($request),
+            'weekplanningMail' => ($request->user()?->canDownloadPlanningWeekPdf() ?? false)
+                ? $mailer->weekplanningDraft($request->user(), $data['weekStart']->isoWeek())
+                : null,
             'workItemsByProject' => $data['projects']->mapWithKeys(
                 fn (Project $project): array => [$project->id => $board->plannableWorkChoices($project)]
             ),
@@ -89,38 +92,21 @@ class PlanningController extends Controller
     {
         Gate::authorize('view-planning');
         abort_unless($request->user()?->canDownloadPlanningWeekPdf() ?? false, 403);
-        $data = $weekplanning->build($request);
-        $pdf = Pdf::loadView('planning.weekplanning', $data)
-            ->setPaper('a4', 'landscape')
-            ->setOption('defaultFont', 'DejaVu Sans');
-        $pdf->addInfo([
-            'Title' => $data['heading'].' · Week '.$data['weekNumber'].' · '.$data['weekYear'],
-        ]);
-        $pdf->render();
+        $document = $weekplanning->makePdf($request);
 
-        $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
-        if ($font) {
-            $muted = [0.35, 0.35, 0.38];
-            $pdf->getCanvas()->page_text(
-                28,
-                18,
-                'NICON VLOEREN | Weekplanning | Gegenereerd op '.$data['generatedOn'],
-                $font,
-                8,
-                $muted,
-            );
-            $pdf->getCanvas()->page_text(700, 18, 'Pagina {PAGE_NUM} van {PAGE_COUNT}', $font, 8, $muted);
-        }
-
-        return $pdf->stream($data['filename']);
+        return $document['pdf']->stream($document['filename']);
     }
 
-    public function personnelWeek(Request $request, PersonnelWeekOverviewService $overview): View
+    public function personnelWeek(Request $request, PersonnelWeekOverviewService $overview, DocumentMailService $mailer): View
     {
         Gate::authorize('view-personnel');
         $this->authorizeRequestedProject($request);
+        $data = $overview->build($request);
+        $data['mailDraft'] = ($request->user()?->canDownloadPlanningWeekPdf() ?? false)
+            ? $mailer->personnelWeekDraft($request->user(), $data['weekNumber'])
+            : null;
 
-        return view('planning.personnel-week', $overview->build($request));
+        return view('planning.personnel-week', $data);
     }
 
     public function personnelWeekPdf(Request $request, PersonnelWeekOverviewService $overview): Response
@@ -128,15 +114,9 @@ class PlanningController extends Controller
         Gate::authorize('view-personnel');
         abort_unless($request->user()?->canDownloadPlanningWeekPdf() ?? false, 403);
         $this->authorizeRequestedProject($request);
-        $data = $overview->build($request);
-        $pdf = Pdf::loadView('planning.personnel-week-pdf', $data)
-            ->setPaper('a3', 'landscape')
-            ->setOption('defaultFont', 'DejaVu Sans');
-        $pdf->addInfo([
-            'Title' => $data['heading'].' · Week '.$data['weekNumber'].' · '.$data['weekYear'],
-        ]);
+        $document = $overview->makePdf($request);
 
-        return $pdf->stream($data['filename']);
+        return $document['pdf']->stream($document['filename']);
     }
 
     public function excel(Request $request, InternalPlanningExcelService $excel): BinaryFileResponse

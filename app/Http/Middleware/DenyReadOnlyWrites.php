@@ -16,6 +16,9 @@ class DenyReadOnlyWrites
         'vakman.password.update',
         'projects.areas.details',
         'users.impersonate.stop',
+        'planning.weekplanning.email',
+        'planning.personnel-week.email',
+        'work-tickets.email',
     ];
 
     /**

@@ -21,6 +21,9 @@
                     target="_blank"
                     rel="noopener"
                 >Weekplanning personeel PDF</a>
+                @if ($mailDraft)
+                    <button type="button" class="planning-btn" id="personnel-week-mail">E-mailen</button>
+                @endif
             </div>
         </div>
 
@@ -56,4 +59,24 @@
             </div>
         @endif
     </div>
+    @if ($mailDraft)
+        @include('partials.document-mail-dialog', [
+            'id' => 'personnel-week-mail-dialog',
+            'action' => route('planning.personnel-week.email'),
+            'subject' => $mailDraft['subject'],
+            'body' => $mailDraft['body'],
+            'attachment' => $filename,
+            'hidden' => [
+                'week' => $weekStart->toDateString(),
+            ],
+        ])
+        <script>
+            document.getElementById('personnel-week-mail')?.addEventListener('click', () => {
+                document.getElementById('personnel-week-mail-dialog')?.showModal();
+            });
+            document.querySelector('#personnel-week-mail-dialog [data-mail-cancel]')?.addEventListener('click', () => {
+                document.getElementById('personnel-week-mail-dialog')?.close();
+            });
+        </script>
+    @endif
 @endsection

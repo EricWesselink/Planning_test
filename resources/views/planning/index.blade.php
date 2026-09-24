@@ -1052,8 +1052,23 @@
             </div>
             <div class="flex flex-wrap justify-end gap-2 pt-1">
                 <button type="button" id="weekplanning-cancel" class="border border-nicon-line px-4 py-1.5 bg-white">Annuleren</button>
+                @if ($weekplanningMail)
+                    <button type="button" id="weekplanning-mail" class="border border-nicon-line px-4 py-1.5 bg-white">E-mailen</button>
+                @endif
                 <button type="submit" class="bg-nicon-orange text-white px-4 py-1.5">PDF maken</button>
             </div>
         </form>
     </dialog>
+    @if ($weekplanningMail)
+        @include('partials.document-mail-dialog', [
+            'id' => 'weekplanning-mail-dialog',
+            'action' => route('planning.weekplanning.email'),
+            'subject' => $weekplanningMail['subject'],
+            'body' => $weekplanningMail['body'],
+            'attachment' => 'weekplanning-week-'.$weekStart->isoWeek().'-'.$weekStart->isoWeekYear().'.pdf',
+            'hidden' => [
+                'week' => $filters['week'] ?? $weekStart->toDateString(),
+            ],
+        ])
+    @endif
 @endsection

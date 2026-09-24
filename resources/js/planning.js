@@ -49,6 +49,20 @@ const token = document
     ?.getAttribute("content");
 const board = document.getElementById("plan-board");
 if (board) {
+    function fitPlanningBarLabels() {
+        board.querySelectorAll(".bar-label[data-label-full]").forEach((label) => {
+            const full = label.dataset.labelFull || "";
+            const short = label.dataset.labelShort || full;
+            label.textContent = full;
+            if (short !== full && label.scrollWidth > label.clientWidth + 1) {
+                label.textContent = short;
+            }
+        });
+    }
+
+    fitPlanningBarLabels();
+    window.addEventListener("resize", fitPlanningBarLabels);
+
     const scroller = document.getElementById("plan-scroller");
     bindPlanningMobileChrome(document);
     bindPlanningScrollRestore(scroller);
@@ -1808,6 +1822,8 @@ function bindWeekplanningExport() {
     const form = document.getElementById("weekplanning-form");
     const open = document.getElementById("weekplanning-open");
     const cancel = document.getElementById("weekplanning-cancel");
+    const mail = document.getElementById("weekplanning-mail");
+    const mailDialog = document.getElementById("weekplanning-mail-dialog");
     const all = document.getElementById("weekplanning-all");
     if (!dialog || !form || !open) {
         return;
@@ -1840,6 +1856,44 @@ function bindWeekplanningExport() {
             all.checked = true;
         }
     });
+
+    mail?.addEventListener("click", () => {
+        if (!mailDialog) {
+            return;
+        }
+        const mailForm = mailDialog.querySelector("form");
+        const selected = teams().filter((input) => input.checked);
+        const useAll = !all || all.checked || selected.length === 0;
+        mailForm?.querySelectorAll('input[name="all"], input[name="teams[]"]').forEach((input) => input.remove());
+        if (useAll) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "all";
+            input.value = "1";
+            mailForm?.append(input);
+        } else {
+            selected.forEach((team) => {
+                const input = document.createElement("input");
+                input.type = "hidden";
+                input.name = "teams[]";
+                input.value = team.value;
+                mailForm?.append(input);
+            });
+        }
+        const attachment = mailDialog.querySelector("[data-mail-attachment]");
+        if (attachment) {
+            const base = attachment.dataset.base || attachment.textContent || "";
+            if (!attachment.dataset.base) {
+                attachment.dataset.base = base;
+            }
+            attachment.textContent = selected.length === 1
+                ? `Weekplanning – ${selected[0].parentElement?.textContent?.trim() || "geselecteerd team"}`
+                : attachment.dataset.base;
+        }
+        dialog.close();
+        mailDialog.showModal();
+    });
+    mailDialog?.querySelector("[data-mail-cancel]")?.addEventListener("click", () => mailDialog.close());
 
     form.addEventListener("submit", () => {
         const useAll =

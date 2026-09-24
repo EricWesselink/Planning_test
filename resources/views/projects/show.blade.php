@@ -160,6 +160,7 @@
                 <a href="{{ route('projects.snags.index', $project) }}">Opleverpunten</a>
                 <a href="{{ route('planning', ['project_id' => $project->id]) }}">Planning</a>
                 <a href="{{ route('production.index', ['project_id' => $project->id]) }}">Productie</a>
+                <a href="{{ route('projects.emails', $project) }}">E-mails</a>
             </nav>
             @if (auth()->user()?->canViewLaborCosts())
                 @php

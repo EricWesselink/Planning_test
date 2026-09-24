@@ -12,6 +12,8 @@ use App\Models\Worker;
 use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Support\PlanningHours;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Barryvdh\DomPDF\PDF as PdfDocument;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
@@ -224,6 +226,41 @@ class WeekplanningPdfService
         }
 
         return 'weekplanning-week-'.$weekNumber.'-'.$weekYear.'.pdf';
+    }
+
+    /**
+     * @return array{pdf: PdfDocument, filename: string, weekNumber: int}
+     */
+    public function makePdf(Request $request): array
+    {
+        $data = $this->build($request);
+        $pdf = Pdf::loadView('planning.weekplanning', $data)
+            ->setPaper('a4', 'landscape')
+            ->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->addInfo([
+            'Title' => $data['heading'].' · Week '.$data['weekNumber'].' · '.$data['weekYear'],
+        ]);
+        $pdf->render();
+
+        $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
+        if ($font) {
+            $muted = [0.35, 0.35, 0.38];
+            $pdf->getCanvas()->page_text(
+                28,
+                18,
+                'NICON VLOEREN | Weekplanning | Gegenereerd op '.$data['generatedOn'],
+                $font,
+                8,
+                $muted,
+            );
+            $pdf->getCanvas()->page_text(700, 18, 'Pagina {PAGE_NUM} van {PAGE_COUNT}', $font, 8, $muted);
+        }
+
+        return [
+            'pdf' => $pdf,
+            'filename' => $data['filename'],
+            'weekNumber' => $data['weekNumber'],
+        ];
     }
 
     /**

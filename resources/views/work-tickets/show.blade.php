@@ -21,6 +21,7 @@
         <a href="{{ $backUrl }}">← {{ $backLabel }}</a>
         <a class="primary" href="{{ route('work-tickets.pdf', $ticket) }}" id="ticket-pdf-link">Download PDF</a>
         <button type="button" onclick="niconPrintTicket()">Afdrukken</button>
+        <button type="button" id="ticket-mail-open">E-mailen</button>
     </p>
     @if ($hasMeasurementForm ?? false)
         <p class="no-print measurement-note">
@@ -83,6 +84,7 @@
             (() => {
                 const checkbox = document.getElementById('ticket-include-measurement');
                 const link = document.getElementById('ticket-pdf-link');
+                const mailMeasurement = document.getElementById('ticket-mail-measurement');
                 if (! checkbox || ! link) {
                     return;
                 }
@@ -90,11 +92,31 @@
                     const url = new URL(link.href, window.location.origin);
                     url.searchParams.set('inmeetformulier', checkbox.checked ? '1' : '0');
                     link.href = url.pathname + url.search;
+                    if (mailMeasurement) {
+                        mailMeasurement.value = checkbox.checked ? '1' : '0';
+                    }
                 };
                 checkbox.addEventListener('change', sync);
                 sync();
             })();
         </script>
     @endif
+    @include('partials.document-mail-dialog', [
+        'id' => 'ticket-mail-dialog',
+        'action' => route('work-tickets.email', $ticket),
+        'recipient' => $mailRecipient,
+        'subject' => $mailDraft['subject'],
+        'body' => $mailDraft['body'],
+        'attachment' => $filename,
+        'hidden' => ($hasMeasurementForm ?? false) ? ['inmeetformulier' => ($includeMeasurementForm ?? false) ? '1' : '0'] : [],
+    ])
+    <script>
+        document.getElementById('ticket-mail-open')?.addEventListener('click', () => {
+            document.getElementById('ticket-mail-dialog')?.showModal();
+        });
+        document.querySelector('#ticket-mail-dialog [data-mail-cancel]')?.addEventListener('click', () => {
+            document.getElementById('ticket-mail-dialog')?.close();
+        });
+    </script>
 </body>
 </html>

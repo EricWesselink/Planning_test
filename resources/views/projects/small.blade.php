@@ -31,6 +31,7 @@
         <div class="flex flex-wrap gap-2">
             <a href="{{ route('projects.small.werkbon', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">{{ $project->printedBonLabel() }}</a>
             <a href="{{ route('projects.small.werkbon.pdf', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">Download PDF</a>
+            <a href="{{ route('projects.emails', $project) }}" class="border border-nicon-line bg-white px-3 py-1.5 text-sm">E-mails</a>
         </div>
     </div>
     @if (auth()->user()?->canViewLaborCosts())

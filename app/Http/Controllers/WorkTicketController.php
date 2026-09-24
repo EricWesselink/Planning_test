@@ -6,13 +6,13 @@ use App\Enums\WorkTicketBilling;
 use App\Enums\WorkTicketKind;
 use App\Models\WorkerAssignment;
 use App\Models\WorkTicket;
+use App\Services\DocumentMailService;
 use App\Services\MeasurementFormService;
 use App\Services\WorkTicketHoursNotifier;
 use App\Services\WorkTicketPdfService;
 use App\Services\WorkTicketService;
 use App\Support\DutchNumber;
 use App\Support\Format;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -62,13 +62,13 @@ class WorkTicketController extends Controller
             ->with('status', $ticket->kind->label().' '.$ticket->number.' is klaar.');
     }
 
-    public function show(Request $request, WorkTicket $workTicket, WorkTicketPdfService $pdfs, MeasurementFormService $measurements): View
+    public function show(Request $request, WorkTicket $workTicket, WorkTicketPdfService $pdfs, MeasurementFormService $measurements, DocumentMailService $mailer): View
     {
         $this->loadTicket($workTicket);
         Gate::authorize('view', $workTicket);
 
         $showPrices = Gate::allows('viewPrices', $workTicket);
-        $includeMeasurement = $this->shouldIncludeMeasurement($workTicket, $request, $measurements);
+        $includeMeasurement = $pdfs->wantsMeasurementForm($workTicket, $request);
 
         return view('work-tickets.show', [
             ...$pdfs->build($workTicket, $showPrices, embedDrawings: false, includeMeasurementForm: $includeMeasurement),
@@ -76,30 +76,30 @@ class WorkTicketController extends Controller
             'canEdit' => Gate::allows('update', $workTicket),
             'hasMeasurementForm' => $measurements->isFilled($workTicket->project?->measurementForm),
             'includeMeasurementForm' => $includeMeasurement,
+            'mailRecipient' => $this->suggestedMailRecipient($workTicket),
+            'mailDraft' => $mailer->workTicketDraft(
+                $request->user(),
+                $workTicket->kind->label(),
+                $workTicket->number,
+                (string) ($workTicket->project?->displayTitle() ?? ''),
+                $workTicket->project?->issuerName() ?: (string) config('company.name'),
+            ),
         ]);
     }
 
-    public function pdf(Request $request, WorkTicket $workTicket, WorkTicketPdfService $pdfs, MeasurementFormService $measurements): Response|View
+    public function pdf(Request $request, WorkTicket $workTicket, WorkTicketPdfService $pdfs): Response|View
     {
         $this->loadTicket($workTicket);
         Gate::authorize('view', $workTicket);
 
         $showPrices = Gate::allows('viewPrices', $workTicket);
-        $includeMeasurement = $this->shouldIncludeMeasurement($workTicket, $request, $measurements);
-        $data = $pdfs->build($workTicket, $showPrices, includeMeasurementForm: $includeMeasurement);
-        if (($data['drawingRender'] ?? 'image') === 'browser') {
-            return view('work-tickets.print', $data);
+        $includeMeasurement = $pdfs->wantsMeasurementForm($workTicket, $request);
+        $document = $pdfs->makePdf($workTicket, $showPrices, $includeMeasurement);
+        if ($document === null) {
+            return view('work-tickets.print', $pdfs->build($workTicket, $showPrices, includeMeasurementForm: $includeMeasurement));
         }
 
-        $pdf = Pdf::loadView('work-tickets.pdf', $data)
-            ->setPaper('a4', 'portrait')
-            ->setOption('defaultFont', 'DejaVu Sans');
-        $pdf->addInfo([
-            'Title' => $data['documentTitle'].' '.$workTicket->number,
-            'Author' => $data['companyName'],
-        ]);
-
-        return $pdf->download($data['filename']);
+        return $document['pdf']->download($document['filename']);
     }
 
     public function updateHours(Request $request, WorkTicket $workTicket, WorkTicketHoursNotifier $hours): RedirectResponse
@@ -185,18 +185,17 @@ class WorkTicketController extends Controller
         ]);
     }
 
-    private function shouldIncludeMeasurement(WorkTicket $ticket, Request $request, MeasurementFormService $measurements): bool
+    private function suggestedMailRecipient(WorkTicket $ticket): string
     {
-        $filled = $measurements->isFilled($ticket->project?->measurementForm);
-        if (! $filled) {
-            return false;
+        $project = $ticket->project;
+        foreach ([$project?->contact_email, $project?->customer?->email] as $email) {
+            $email = trim((string) $email);
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
+            }
         }
 
-        if ($request->has('inmeetformulier')) {
-            return $request->boolean('inmeetformulier');
-        }
-
-        return (bool) $ticket->include_measurement_form;
+        return '';
     }
 
     /**
