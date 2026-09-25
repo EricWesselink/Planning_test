@@ -24,6 +24,7 @@
      data-locked="{{ ! empty($personBar['locked']) ? '1' : '0' }}"
      data-people-count="{{ $personBar['people_count'] }}"
      data-planned-hours="{{ $personBar['planned_hours'] ?? 8 }}"
+     data-share-hours="{{ $personBar['share_hours'] ?? '' }}"
      data-crew-ids="{{ implode(',', $personBar['crew_ids'] ?? []) }}"
      data-foreman-id="{{ $personBar['foreman_id'] ?? '' }}"
      data-work-ticket-holder-id="{{ $personBar['work_ticket_holder_id'] ?? '' }}"
@@ -42,6 +43,9 @@
         <span class="bar-ticket">{{ $personBar['ticket_mark'] }}</span>
     @endif
     <span class="bar-label" data-label-full="{{ $personBar['label'] }}" data-label-short="{{ $personBar['label_short'] ?? $personBar['label'] }}">{{ $personBar['label'] }}</span>
+    @if (! empty($personBar['hours_label']))
+        <span class="bar-hours">{{ $personBar['hours_label'] }}</span>
+    @endif
     @if ($personBar['show_end_handle'] ?? true)
         <span class="bar-handle bar-handle-end" data-edge="end"></span>
     @endif

@@ -186,6 +186,28 @@ class ConflictServiceTest extends TestCase
         $this->assertSame([], $map);
     }
 
+    public function test_a_four_plus_four_split_is_not_double_booked_when_a_crew_clock_sticks_out(): void
+    {
+        [$worker, $egaliseren, $linoleum] = $this->makeTeamWithTwoWorkItems(2, ['Eric Wesselink', 'Harm Wesselink']);
+        $memberId = (int) $worker->crewPeople()->where('name', 'Eric Wesselink')->firstOrFail()->id;
+        $morning = $this->assignNamed($worker, $egaliseren, [$memberId]);
+        $morning->applySchedule(Carbon::parse('2026-09-07'), Carbon::parse('2026-09-07'), '08:00:00', '12:00:00');
+        $morning->save();
+        $morning->crewMembers()->updateExistingPivot($memberId, [
+            'start_time' => '08:00:00',
+            'end_time' => '14:00:00',
+        ]);
+        $afternoon = $this->assign($worker, $linoleum, 1, '12:00:00', '16:00:00');
+        $afternoon->syncPresentCrew([$memberId]);
+
+        $map = app(ConflictService::class)->doubleBookedMap(
+            WorkerAssignment::query()->with(['worker', 'crewMembers'])->get(),
+            $this->days(),
+        );
+
+        $this->assertSame([], $map);
+    }
+
     public function test_overlapping_hours_for_the_same_person_are_a_conflict(): void
     {
         [$worker, $egaliseren] = $this->makeTeamWithTwoWorkItems(1);

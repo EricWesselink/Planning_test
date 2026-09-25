@@ -9,6 +9,7 @@ import {
     shiftBox,
     slotOptions,
     snapPosition,
+    linkedDayResize,
     timeFromFraction,
     timesFromHours,
     workdayCount,
@@ -274,12 +275,29 @@ if (board) {
                 const ids = selectedWorkIds();
                 workSelect.value = ids[0] ? String(ids[0]) : "";
                 syncProjectFromWork();
+                refreshWorkHours();
                 refreshCandidates();
             });
             const text = document.createElement("span");
-            text.className = "min-w-0 truncate";
+            text.className = "min-w-0 flex-1 truncate";
             text.textContent = choice.label;
-            row.append(input, text);
+            const hours = document.createElement("input");
+            hours.type = "number";
+            hours.min = "0";
+            hours.max = String(WORKDAY_HOURS);
+            hours.step = "1";
+            hours.value = "0";
+            hours.disabled = !input.checked;
+            hours.dataset.workHours = String(choice.id);
+            hours.className = "w-14 rounded border border-nicon-line px-1 py-0.5 text-right text-sm";
+            hours.addEventListener("input", () => {
+                hours.dataset.manual = "1";
+                refreshWorkHours();
+            });
+            const unit = document.createElement("span");
+            unit.className = "text-xs text-nicon-muted";
+            unit.textContent = "u";
+            row.append(input, text, hours, unit);
             workList.append(row);
         });
         if (workList && workList.children.length === 0) {
@@ -292,6 +310,44 @@ if (board) {
             ? String(selectedWorkIds()[0])
             : "";
         syncProjectFromWork();
+        refreshWorkHours();
+    }
+
+    function refreshWorkHours() {
+        const rows = [...(workList?.querySelectorAll("label") || [])];
+        const checked = rows.filter((row) => row.querySelector('input[type="checkbox"]')?.checked);
+        const manualRows = checked.filter((row) => row.querySelector("[data-work-hours]")?.dataset.manual === "1");
+        const manualSum = manualRows.reduce((sum, row) => sum + Number(row.querySelector("[data-work-hours]")?.value || 0), 0);
+        const autoRows = checked.filter((row) => row.querySelector("[data-work-hours]")?.dataset.manual !== "1");
+        const share = autoRows.length ? Math.round(((WORKDAY_HOURS - manualSum) / autoRows.length) * 10) / 10 : 0;
+        rows.forEach((row) => {
+            const box = row.querySelector('input[type="checkbox"]');
+            const hours = row.querySelector("[data-work-hours]");
+            if (!box || !hours) {
+                return;
+            }
+            hours.disabled = !box.checked;
+            if (!box.checked) {
+                hours.value = "0";
+                delete hours.dataset.manual;
+                return;
+            }
+            if (hours.dataset.manual !== "1") {
+                hours.value = String(Math.max(0, share));
+            }
+        });
+        let total = document.getElementById("plan-work-hour-total");
+        if (!total && workList) {
+            total = document.createElement("p");
+            total.id = "plan-work-hour-total";
+            total.className = "mt-2 text-sm font-semibold";
+            workList.after(total);
+        }
+        if (!total) {
+            return;
+        }
+        const used = checked.reduce((sum, row) => sum + Number(row.querySelector("[data-work-hours]")?.value || 0), 0);
+        total.textContent = `Totaal ${used} / ${WORKDAY_HOURS}u`;
     }
 
     function syncProjectFromWork() {
@@ -915,7 +971,7 @@ if (board) {
 
     function openEdit(bar) {
         if (bar.dataset.internal === "1") {
-            openInternalFromBar(bar);
+            openInternalFromBar(bar.dataset.workerId || "");
             return;
         }
         invalidateWhoCandidates();
@@ -1030,6 +1086,46 @@ if (board) {
         hoursHint.style.left = `${clientX}px`;
         hoursHint.style.top = `${clientY}px`;
         hoursHint.classList.remove("hidden");
+    }
+
+    function barSnapshot(bar) {
+        return {
+            shiftId: bar.dataset.shiftId,
+            workerId: bar.dataset.workerId,
+            projectId: bar.dataset.projectId,
+            workItemId: bar.dataset.workItemId,
+            startDate: bar.dataset.startDate,
+            endDate: bar.dataset.endDate,
+            startTime: bar.dataset.startTime,
+            endTime: bar.dataset.endTime,
+            startOffset: bar.dataset.startOffset,
+            endOffset: bar.dataset.endOffset,
+            shareHours: bar.dataset.shareHours,
+            internal: bar.dataset.internal === "1",
+        };
+    }
+
+    function linkedResize(current, startTime, endTime) {
+        return linkedDayResize({
+            mode: current.mode,
+            internal: current.bar.dataset.internal === "1",
+            shiftId: current.bar.dataset.shiftId,
+            workerId: current.bar.dataset.workerId,
+            projectId: current.bar.dataset.projectId,
+            workItemId: current.bar.dataset.workItemId,
+            shareHours: current.bar.dataset.shareHours,
+            startDate: current.startDate,
+            endDate: current.endDate,
+            originStartOffset: current.originStartOffset,
+            originEndOffset: current.originEndOffset,
+            startOffset: current.bar.dataset.startOffset,
+            endOffset: current.bar.dataset.endOffset,
+            startTime,
+            endTime,
+            originStartTime: current.startTime,
+            originEndTime: current.endTime,
+            bars: [...board.querySelectorAll(".person-bar")].map(barSnapshot),
+        });
     }
 
     function siblingSegments(bar, stack) {
@@ -1220,20 +1316,28 @@ if (board) {
             restoreBar(current);
             return;
         }
+        const body = {
+            worker_id: Number(current.bar.dataset.workerId),
+            work_item_id: workItemId ? Number(workItemId) : null,
+            start_date: startDate,
+            end_date: endDate,
+            start_time: startTime,
+            end_time: endTime,
+            include_saturday: current.bar.dataset.includeSaturday === "1",
+            include_sunday: current.bar.dataset.includeSunday === "1",
+            is_provisional: current.bar.dataset.provisional === "1",
+        };
+        const linked = linkedResize(current, startTime, endTime);
+        if (linked?.work_hours) {
+            body.work_hours = linked.work_hours;
+        }
+        if (linked?.neighbor) {
+            body.linked_assignment = linked.neighbor;
+        }
         const ok = await save(
             assignmentUrl(current.bar.dataset.shiftId),
             "PATCH",
-            {
-                worker_id: Number(current.bar.dataset.workerId),
-                work_item_id: workItemId ? Number(workItemId) : null,
-                start_date: startDate,
-                end_date: endDate,
-                start_time: startTime,
-                end_time: endTime,
-                include_saturday: current.bar.dataset.includeSaturday === "1",
-                include_sunday: current.bar.dataset.includeSunday === "1",
-                is_provisional: current.bar.dataset.provisional === "1",
-            },
+            body,
         );
         if (ok) {
             reloadPlanningBoard(scroller);
@@ -1258,6 +1362,13 @@ if (board) {
             });
         } else {
         board.querySelectorAll(".person-bar").forEach((bar) => {
+            if (bar.dataset.internal === "1") {
+                bar.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    openEdit(bar);
+                });
+                return;
+            }
             bar.addEventListener("pointerdown", (event) => {
                 if (bar.dataset.locked === "1") {
                     return;
@@ -1482,6 +1593,11 @@ if (board) {
             project_id: Number(projectInput.value),
             work_item_id: workIds[0],
             work_item_ids: workIds,
+            work_hours: Object.fromEntries(
+                [...(workList?.querySelectorAll("[data-work-hours]") || [])]
+                    .filter((input) => !input.disabled)
+                    .map((input) => [input.dataset.workHours, Number(input.value || 0)]),
+            ),
             start_date: startInput.value,
             end_date: endInput.value,
             people_count: Math.max(1, Number(menInput.value || 1)),
@@ -1633,163 +1749,73 @@ if (board) {
         const dialog = document.getElementById("internal-dialog");
         const form = document.getElementById("internal-form");
         const openBtn = document.getElementById("internal-open");
-        const unit = document.getElementById("internal-unit");
-        const contact = document.getElementById("internal-contact");
-        if (!dialog || !form || !openBtn || !unit || !contact) {
+        const who = document.getElementById("internal-who");
+        if (!dialog || !form || !openBtn || !who) {
             return;
         }
 
-        const who = document.getElementById("internal-who");
-        const crewBox = document.getElementById("internal-crew");
-        const crewList = document.getElementById("internal-crew-list");
-        const description = document.getElementById("internal-description");
-        const notes = document.getElementById("internal-notes");
-        const start = document.getElementById("internal-start");
-        const end = document.getElementById("internal-end");
-        const saturday = document.getElementById("internal-saturday");
-        const sunday = document.getElementById("internal-sunday");
-        const deleteBtn = document.getElementById("internal-delete");
-        const title = document.getElementById("internal-dialog-title");
-        openBtn.addEventListener("click", (event) => {
-            event.preventDefault();
-            openCreate();
-        });
+        const dayInputs = () => [
+            ...form.querySelectorAll('input[name="dates[]"]'),
+        ];
+        const coveredByWorker = JSON.parse(board.dataset.internalDays || "{}");
 
-        const selectedCrew = () =>
-            [
-                ...crewList.querySelectorAll(
-                    'input[name="crew_member_ids"]:checked',
-                ),
-            ].map((input) => Number(input.value));
-
-        const renderCrew = (workerId, selectedIds) => {
-            const people = workerId ? workerCrew(workerId) : [];
-            crewList.innerHTML = "";
-            if (people.length < 1) {
-                crewBox.classList.add("hidden");
-                return;
-            }
-            crewBox.classList.remove("hidden");
-            people.forEach((person) => {
-                const label = document.createElement("label");
-                label.className = "flex items-center gap-2 text-sm";
-                const input = document.createElement("input");
-                input.type = "checkbox";
-                input.name = "crew_member_ids";
-                input.value = String(person.id);
-                input.checked = selectedIds.includes(person.id);
-                label.append(input, document.createTextNode(` ${person.name}`));
-                crewList.append(label);
+        const showDays = (workerId) => {
+            const covered = new Set(
+                (coveredByWorker[String(workerId)] || []).map(String),
+            );
+            dayInputs().forEach((input) => {
+                input.checked = covered.has(input.value);
             });
         };
 
-        const workerIdFromWho = () => {
-            const value = who.value || "";
-            return value.startsWith("worker:")
-                ? value.slice("worker:".length)
-                : "";
+        const openForWorker = (workerId) => {
+            who.value = workerId ? String(workerId) : "";
+            showDays(who.value);
+            dialog.showModal();
         };
 
-        who?.addEventListener("change", () => {
-            const workerId = workerIdFromWho();
-            const people = workerId ? workerCrew(workerId) : [];
-            renderCrew(
-                workerId,
-                people.map((person) => person.id),
-            );
+        openBtn.addEventListener("click", (event) => {
+            event.preventDefault();
+            openForWorker("");
         });
+        who.addEventListener("change", () => showDays(who.value));
+        document.getElementById("internal-whole-week")?.addEventListener("click", () => {
+            dayInputs().forEach((input) => {
+                input.checked = true;
+            });
+        });
+        document.getElementById("internal-ongoing")?.addEventListener("click", async () => {
+            const from = document.getElementById("internal-from")?.value;
+            if (!who.value || !from) {
+                return;
+            }
+            const saved = await save(board.dataset.internalWeekUrl, "POST", {
+                worker_id: Number(who.value),
+                ongoing_from: from,
+            });
+            if (saved) {
+                reloadPlanningBoard(scroller);
+            }
+        });
+        openInternalFromBar = (workerId) => openForWorker(workerId);
 
-        const openCreate = () => {
-            form.dataset.assignmentId = "";
-            title.textContent = "Interne inzet";
-            deleteBtn.classList.add("hidden");
-            who.value = "";
-            unit.value = "";
-            contact.value = "";
-            description.value = "";
-            notes.value = "";
-            start.value = dates[0] || "";
-            end.value = dates[0] || "";
-            saturday.checked = false;
-            sunday.checked = false;
-            renderCrew("", []);
-            dialog.showModal();
-        };
-
-        openInternalFromBar = (bar) => {
-            form.dataset.assignmentId = bar.dataset.shiftId || "";
-            title.textContent = "Interne inzet aanpassen";
-            deleteBtn.classList.remove("hidden");
-            who.value = `worker:${bar.dataset.workerId}`;
-            unit.value = bar.dataset.businessUnit || "";
-            contact.value = bar.dataset.contactName || "";
-            description.value = bar.dataset.description || "";
-            notes.value = bar.dataset.notes || "";
-            start.value = bar.dataset.startDate || "";
-            end.value = bar.dataset.endDate || "";
-            saturday.checked = bar.dataset.includeSaturday === "1";
-            sunday.checked = bar.dataset.includeSunday === "1";
-            const selected = (bar.dataset.crewIds || "")
-                .split(",")
-                .filter(Boolean)
-                .map(Number);
-            const people = workerCrew(bar.dataset.workerId);
-            renderCrew(
-                bar.dataset.workerId,
-                selected.length ? selected : people.map((person) => person.id),
-            );
-            dialog.showModal();
-        };
-
-        bindPlanningDatePickers(start, end);
         document
             .getElementById("internal-cancel")
             ?.addEventListener("click", () => dialog.close());
 
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
-            const workerId = workerIdFromWho();
-            if (
-                !workerId ||
-                !unit.value ||
-                !contact.value.trim() ||
-                !description.value ||
-                !start.value ||
-                !end.value
-            ) {
+            if (!who.value) {
                 return;
             }
-            const body = {
-                worker_id: Number(workerId),
-                business_unit: unit.value,
-                contact_name: contact.value.trim(),
-                description: description.value,
-                notes: notes.value,
-                start_date: start.value,
-                end_date: end.value,
-                include_saturday: saturday.checked,
-                include_sunday: sunday.checked,
-                crew_member_ids: selectedCrew(),
-            };
-            const assignmentId = form.dataset.assignmentId;
-            const url = assignmentId
-                ? assignmentUrl(assignmentId)
-                : board.dataset.internalStoreUrl;
-            const method = assignmentId ? "PATCH" : "POST";
-            if (await save(url, method, body)) {
-                reloadPlanningBoard(scroller);
-            }
-        });
-
-        deleteBtn.addEventListener("click", async () => {
-            const assignmentId = form.dataset.assignmentId;
-            if (
-                !assignmentId ||
-                !window.confirm("Deze interne inzet uit de planning halen?")
-            ) {
-                return;
-            }
-            if (await save(assignmentUrl(assignmentId), "DELETE", {})) {
+            const saved = await save(board.dataset.internalWeekUrl, "POST", {
+                worker_id: Number(who.value),
+                week: board.dataset.internalWeek,
+                dates: dayInputs()
+                    .filter((input) => input.checked)
+                    .map((input) => input.value),
+            });
+            if (saved) {
                 reloadPlanningBoard(scroller);
             }
         });

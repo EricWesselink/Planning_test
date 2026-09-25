@@ -2,8 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\Customer;
+use App\Models\Project;
+use App\Models\TimeEntry;
 use App\Models\User;
 use App\Models\Worker;
+use App\Models\WorkerAssignment;
+use App\Models\WorkItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -19,10 +24,13 @@ class WorkerCrewMemberTest extends TestCase
         $this->actingAs($user)
             ->get(route('workers.show', $team))
             ->assertOk()
-            ->assertSee('Naam persoon 1')
-            ->assertSee('Naam persoon 3')
+            ->assertSee('Persoon 1')
+            ->assertSee('Persoon 3')
+            ->assertSee('3 personen')
+            ->assertSee('+ Persoon toevoegen')
             ->assertSee('Actief')
-            ->assertSee('wordt verwijderd uit het team');
+            ->assertSee('wordt verwijderd uit het team')
+            ->assertDontSee('name="people_count"', false);
     }
 
     public function test_planner_can_set_a_teammate_inactive(): void
@@ -168,6 +176,118 @@ class WorkerCrewMemberTest extends TestCase
         $this->assertFalse($login->fresh()->active);
     }
 
+    public function test_adding_a_person_without_a_count_field_raises_the_total(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makePair();
+        $members = $team->crewPeople->map(fn ($member): array => [
+            'id' => $member->id,
+            'name' => $member->name,
+            'phone' => $member->phone,
+            'active' => '1',
+            'registers_hours' => '1',
+        ])->all();
+        $members[] = [
+            'name' => 'Piet',
+            'phone' => '0611111111',
+            'active' => '1',
+            'registers_hours' => '1',
+        ];
+
+        $this->actingAs($user)
+            ->patch(route('workers.update', $team), [
+                'name' => 'Team 1',
+                'employment_type' => 'eigen',
+                'active' => '1',
+                'crew_members' => $members,
+            ])
+            ->assertRedirect(route('workers.show', $team));
+
+        $team = $team->fresh('crewPeople');
+        $this->assertSame(['Willem', 'Jan', 'Piet'], $team->crewPeople->pluck('name')->all());
+        $this->assertSame(3, $team->peopleCount());
+        $this->assertSame(3, $team->people_count);
+    }
+
+    public function test_removing_a_person_with_history_keeps_planning_and_hours(): void
+    {
+        $user = User::factory()->create();
+        $team = $this->makePair();
+        $willem = $team->crewPeople->firstWhere('name', 'Willem');
+        $jan = $team->crewPeople->firstWhere('name', 'Jan');
+        $login = User::factory()->vakman($team->id, $jan->id)->create([
+            'name' => 'Jan',
+            'active' => true,
+        ]);
+        $customer = Customer::query()->create(['name' => 'Griftland']);
+        $project = Project::query()->create([
+            'project_number' => 'TF29047',
+            'customer_id' => $customer->id,
+            'name' => 'Griftland college',
+            'status' => 'in_uitvoering',
+            'planned_start_date' => '2026-09-07',
+            'planned_end_date' => '2026-09-11',
+        ]);
+        $item = WorkItem::query()->create([
+            'project_id' => $project->id,
+            'name' => 'PVC',
+            'unit' => 'm2',
+            'ordered_quantity' => 10,
+            'status' => 'in_uitvoering',
+        ]);
+        $both = WorkerAssignment::query()->create([
+            'worker_id' => $team->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'start_date' => '2026-09-07',
+            'end_date' => '2026-09-07',
+            'hours_per_day' => 8,
+            'people_count' => 2,
+        ]);
+        $both->syncPresentCrew([$willem->id, $jan->id]);
+        $entry = TimeEntry::query()->create([
+            'worker_id' => $team->id,
+            'crew_member_id' => $jan->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'worker_assignment_id' => $both->id,
+            'date' => '2026-09-07',
+            'hours' => 8,
+            'identity_key' => 'jan-2026-09-07',
+            'status' => 'ingediend',
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('workers.crew-members.destroy', [$team, $jan]))
+            ->assertRedirect();
+
+        $this->assertSoftDeleted($jan);
+        $this->assertModelExists($login);
+        $this->assertFalse($login->fresh()->active);
+        $this->assertSame($jan->id, $entry->fresh()->crew_member_id);
+        $this->assertTrue($both->fresh()->crewMembers->contains(fn ($member): bool => (int) $member->id === (int) $jan->id));
+        $team = $team->fresh('crewPeople');
+        $this->assertSame(['Willem'], $team->crewPeople->pluck('name')->all());
+        $this->assertSame(1, $team->peopleCount());
+
+        $onlyWillem = WorkerAssignment::query()->create([
+            'worker_id' => $team->id,
+            'project_id' => $project->id,
+            'work_item_id' => $item->id,
+            'start_date' => '2026-09-08',
+            'end_date' => '2026-09-08',
+            'hours_per_day' => 8,
+            'people_count' => 1,
+        ]);
+        $onlyWillem->syncPresentCrew([$willem->id]);
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $project->id]))
+            ->assertOk()
+            ->assertSee('data-label-full="T1 · Willem · Jan"', false)
+            ->assertSee('data-label-full="T1 · Willem"', false);
+    }
+
     public function test_deleting_a_teammate_removes_their_login(): void
     {
         $user = User::factory()->create();
@@ -195,6 +315,24 @@ class WorkerCrewMemberTest extends TestCase
                 ['name' => 'Nick', 'phone' => '0657925505'],
                 ['name' => 'Mahmoud', 'phone' => '0685035333'],
                 ['name' => 'Mohammed', 'phone' => '0639332148'],
+            ],
+            'specialty' => 'Linoleum',
+            'active' => true,
+        ]);
+        $worker->load('crewPeople');
+
+        return $worker;
+    }
+
+    private function makePair(): Worker
+    {
+        $worker = Worker::query()->create([
+            'name' => 'Team 1',
+            'employment_type' => 'eigen',
+            'people_count' => 2,
+            'crew_members' => [
+                ['name' => 'Willem', 'phone' => '0628345656'],
+                ['name' => 'Jan', 'phone' => '0612345678'],
             ],
             'specialty' => 'Linoleum',
             'active' => true,

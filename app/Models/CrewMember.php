@@ -9,10 +9,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable(['worker_id', 'name', 'phone', 'sort_order', 'specialty', 'friday_off', 'unavailable', 'active', 'work_days', 'registers_hours'])]
 class CrewMember extends Model
 {
+    use SoftDeletes;
+
     public const WEEKDAY_LABELS = [
         1 => 'Ma',
         2 => 'Di',

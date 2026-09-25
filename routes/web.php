@@ -130,6 +130,7 @@ Route::middleware(['auth', EnsureProjectAccess::class, DenyReadOnlyWrites::class
     Route::post('/planning/assignments/move', [PlanningActionController::class, 'moveAssignment'])->name('planning.assignments.move');
     Route::post('/planning/assignments', [PlanningActionController::class, 'storeAssignment'])->name('planning.assignments.store');
     Route::post('/planning/interne-inzet', [PlanningActionController::class, 'storeInternalAssignment'])->name('planning.internal.store');
+    Route::post('/planning/interne-inzet/week', [PlanningActionController::class, 'syncInternalWeek'])->name('planning.internal.week');
     Route::patch('/planning/assignments/{assignment}', [PlanningActionController::class, 'updateAssignment'])->name('planning.assignments.update');
     Route::patch('/planning/werk/{workItem}/werkzaamheid', [PlanningActionController::class, 'updateWorkLabel'])->name('planning.work-label.update');
     Route::patch('/planning/werk/{workItem}/regel', [PlanningActionController::class, 'updateWorkLine'])->name('planning.work-line.update');

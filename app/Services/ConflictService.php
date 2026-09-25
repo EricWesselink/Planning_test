@@ -31,6 +31,13 @@ class ConflictService
 
             foreach ($byWorker as $workerId => $rows) {
                 $capacity = $rows->first()?->worker?->peopleCount() ?? 1;
+                if ($capacity === 1) {
+                    $hours = round((float) $rows->sum(fn (WorkerAssignment $assignment): float => $assignment->hoursOnDate($day)), 2);
+                    $budget = (float) ($rows->first()?->worker?->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+                    if ($hours <= $budget + 0.01) {
+                        continue;
+                    }
+                }
                 $people = $this->overlappingPeople($rows, $day);
                 $used = $this->peakPeople($rows, $day);
 
@@ -82,18 +89,25 @@ class ConflictService
         bool $includeSunday = false,
         ?int $projectId = null,
         ?int $workItemId = null,
+        array $alsoIgnoreIds = [],
     ): ?array {
         $worker = Worker::query()->findOrFail($workerId);
         $capacity = $worker->peopleCount();
         $addingIds = $this->uniquePositiveIds($addingCrewMemberIds);
         $adding = $addingIds !== [] ? count($addingIds) : max(1, $addingPeople);
-        $existing = $this->overlapsInRange($workerId, $start, $end, $ignoreAssignmentId);
+        $existing = $this->overlapsInRange($workerId, $start, $end, $ignoreAssignmentId)
+            ->reject(fn (WorkerAssignment $row): bool => in_array((int) $row->id, $alsoIgnoreIds, true))
+            ->values();
         $from = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $to = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
 
         $personConflict = $this->firstPersonConflict($existing, $start, $end, $from, $to, $addingIds, $worker, $includeSaturday, $includeSunday);
         if ($personConflict !== null) {
             return $personConflict;
+        }
+
+        if ($capacity === 1 && $projectId) {
+            return $this->singlePersonHourConflict($worker, $existing, $start, $end, $from, $to, $includeSaturday, $includeSunday, $projectId, $workItemId, $ignoreAssignmentId);
         }
 
         $peak = $adding;
@@ -143,6 +157,79 @@ class ConflictService
 
     /**
      * @param  Collection<int, WorkerAssignment>  $existing
+     * @return array{worker: Worker, overlaps: Collection<int, WorkerAssignment>, used: int, capacity: int, message: string}|null
+     */
+    private function singlePersonHourConflict(
+        Worker $worker,
+        Collection $existing,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        string $startTime,
+        string $endTime,
+        bool $includeSaturday,
+        bool $includeSunday,
+        ?int $projectId = null,
+        ?int $workItemId = null,
+        ?int $ignoreAssignmentId = null,
+    ): ?array {
+        $budget = (float) ($worker->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+        $adding = PlanningHours::hoursBetween($startTime, $endTime);
+        $day = $start->copy()->startOfDay();
+        $last = $end->copy()->startOfDay();
+        while ($day->lte($last)) {
+            $window = PlanningHours::intervalOnDate($day, $start, $end, $startTime, $endTime, $includeSaturday, $includeSunday);
+            if ($window === null) {
+                $day->addDay();
+
+                continue;
+            }
+            $used = $adding;
+            $overlaps = [];
+            foreach ($existing as $assignment) {
+                if (
+                    $ignoreAssignmentId === null
+                    && $projectId
+                    && (int) $assignment->project_id === $projectId
+                    && (int) $assignment->work_item_id === (int) $workItemId
+                    && $assignment->start_date->isSameDay($start)
+                    && $assignment->end_date->isSameDay($end)
+                ) {
+                    continue;
+                }
+                $interval = $assignment->intervalOnDate($day);
+                if ($interval === null || ! PlanningHours::intervalsOverlap($interval[0], $interval[1], $window[0], $window[1])) {
+                    continue;
+                }
+                $used += $assignment->hoursOnDate($day);
+                $overlaps[] = $assignment;
+                if ($assignment->isInternal()) {
+                    return [
+                        'worker' => $worker,
+                        'overlaps' => collect([$assignment]),
+                        'used' => 2,
+                        'capacity' => 1,
+                    ];
+                }
+            }
+            if ($used > $budget + 0.01) {
+                $name = $worker->displayName();
+
+                return [
+                    'worker' => $worker,
+                    'overlaps' => collect($overlaps),
+                    'used' => 2,
+                    'capacity' => 1,
+                    'message' => $name.' is voor '.PlanningHours::hourText($used).' uur ingepland terwijl '.PlanningHours::hourText($budget).' uur beschikbaar is.',
+                ];
+            }
+            $day->addDay();
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  Collection<int, WorkerAssignment>  $existing
      * @param  list<int>  $addingIds
      * @return array{worker: Worker, overlaps: Collection<int, WorkerAssignment>, used: int, capacity: int, person: string}|null
      */
@@ -171,6 +258,8 @@ class ConflictService
                 continue;
             }
 
+            $already = [];
+            $person = null;
             foreach ($existing as $assignment) {
                 foreach ($assignment->crewMembers as $member) {
                     if (! in_array((int) $member->id, $addingIds, true)) {
@@ -186,12 +275,24 @@ class ConflictService
                         continue;
                     }
 
+                    $already[$assignment->id] = $assignment->hoursOnDate($day);
+                    $person = $member->label() ?: (CrewMember::query()->find($member->id)?->label() ?? 'Iemand');
+                }
+            }
+
+            if ($already !== []) {
+                $budget = (float) ($worker->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+                $used = round(array_sum($already) + PlanningHours::hoursBetween($startTime, $endTime), 2);
+                if ($used > $budget + 0.01) {
+                    $name = $person ?? $worker->displayName();
+
                     return [
                         'worker' => $worker,
-                        'overlaps' => collect([$assignment]),
+                        'overlaps' => $existing,
                         'used' => $worker->peopleCount() + 1,
                         'capacity' => $worker->peopleCount(),
-                        'person' => $member->label() ?: (CrewMember::query()->find($member->id)?->label() ?? 'Iemand'),
+                        'person' => $name,
+                        'message' => $name.' is voor '.PlanningHours::hourText($used).' uur ingepland terwijl '.PlanningHours::hourText($budget).' uur beschikbaar is.',
                     ];
                 }
             }

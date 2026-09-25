@@ -82,10 +82,6 @@
                                 @endforeach
                             </select>
                         </div>
-                        <div class="w-28">
-                            <label class="block text-xs uppercase tracking-wide text-nicon-muted" for="worker-people">Personen</label>
-                            <input id="worker-people" type="number" name="people_count" value="{{ old('people_count', 1) }}" min="1" max="50" required data-crew-count class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-                        </div>
                     </div>
                     @if (old('crew_members') || old('crew_names'))
                         @include('workers._crew-member-rows')

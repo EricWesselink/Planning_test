@@ -27,8 +27,10 @@ class PlanningBarLabelTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('data-label-full="T2 · Peter K. · José D. · 2 man"', false)
-            ->assertSee('data-label-short="T2 · 2 man"', false)
+            ->assertSee('data-label-full="T2 · Peter K. · José D."', false)
+            ->assertSee('class="bar-hours">8u', false)
+            ->assertSee('data-label-short="T2"', false)
+            ->assertSee('class="plan-day-crew" title="Vakmannen deze dag">2', false)
             ->assertSee('Team 2', false)
             ->assertSee('Peter Korteschiel', false)
             ->assertSee('José da Costa', false)
@@ -48,7 +50,7 @@ class PlanningBarLabelTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('data-label-full="T1 · Nick S. · Mahmoud K. · 2 man"', false)
+            ->assertSee('data-label-full="T1 · Nick S. · Mahmoud K."', false)
             ->assertSee('Nick Seine', false)
             ->assertSee('Mahmoud Khairallah Sulaiman', false);
     }
@@ -61,9 +63,33 @@ class PlanningBarLabelTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('data-label-full="T2 · José D. · 1 man"', false)
-            ->assertSee('data-label-short="T2 · 1 man"', false)
+            ->assertSee('data-label-full="T2 · José D."', false)
+            ->assertSee('data-label-short="T2"', false)
             ->assertSee('1 vakman', false);
+    }
+
+    public function test_two_day_bar_shows_its_own_hours_when_another_booking_overlaps(): void
+    {
+        $user = User::factory()->create();
+        $assignment = $this->assignment('Team 1', ['Eric'], '2026-09-24', '2026-09-25');
+        $other = WorkerAssignment::query()->create([
+            'worker_id' => $assignment->worker_id,
+            'project_id' => $assignment->project_id,
+            'work_item_id' => $assignment->work_item_id,
+            'start_date' => '2026-09-25',
+            'end_date' => '2026-09-25',
+            'hours_per_day' => 8,
+            'people_count' => 1,
+            'start_time' => '08:00:00',
+            'end_time' => '12:00:00',
+        ]);
+        $other->syncPresentCrew($assignment->crewMembers()->pluck('crew_members.id')->all());
+
+        $this->actingAs($user)
+            ->get(route('planning', ['week' => '2026-09-21', 'project_id' => $assignment->project_id]))
+            ->assertOk()
+            ->assertSee('class="bar-hours">16u', false)
+            ->assertSee('class="bar-hours">4u', false);
     }
 
     public function test_duplicate_crew_names_are_counted_once(): void
@@ -77,7 +103,7 @@ class PlanningBarLabelTest extends TestCase
         $this->actingAs($user)
             ->get(route('planning', ['week' => '2026-09-07', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('data-label-full="T3 · Peter K. · 1 man"', false)
+            ->assertSee('data-label-full="T3 · Peter K."', false)
             ->assertSee('1 vakman', false)
             ->assertDontSee('2 man', false);
     }
@@ -85,7 +111,7 @@ class PlanningBarLabelTest extends TestCase
     /**
      * @param  list<string>  $names
      */
-    private function assignment(string $team, array $names): WorkerAssignment
+    private function assignment(string $team, array $names, string $start = '2026-09-07', string $end = '2026-09-07'): WorkerAssignment
     {
         $worker = Worker::query()->create([
             'name' => $team,
@@ -113,8 +139,8 @@ class PlanningBarLabelTest extends TestCase
             'worker_id' => $worker->id,
             'project_id' => $project->id,
             'work_item_id' => $item->id,
-            'start_date' => '2026-09-07',
-            'end_date' => '2026-09-07',
+            'start_date' => $start,
+            'end_date' => $end,
             'hours_per_day' => 8,
             'people_count' => count($names),
         ]);

@@ -13,6 +13,7 @@ use App\Models\WorkerAssignment;
 use App\Models\WorkItem;
 use App\Models\WorkTicketLine;
 use App\Services\ConflictService;
+use App\Services\InternalWeekPlanningService;
 use App\Services\PlanningFitService;
 use App\Support\DutchNumber;
 use App\Support\PlanningHours;
@@ -168,6 +169,8 @@ class PlanningActionController extends Controller
             'work_ticket_crew_member_id' => ['nullable', 'integer', 'exists:crew_members,id'],
             'crew_hours' => ['nullable', 'array'],
             'crew_hours.*' => ['numeric', 'min:2', 'max:8'],
+            'work_hours' => ['nullable', 'array'],
+            'work_hours.*' => ['numeric', 'min:0', 'max:8'],
             'hours' => ['nullable', 'numeric', 'min:2', 'max:8'],
             'slot' => ['nullable', 'in:morning,afternoon,full'],
             'start_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
@@ -232,6 +235,11 @@ class PlanningActionController extends Controller
             if ($message) {
                 return response()->json(['message' => $message], 422);
             }
+        }
+
+        $workHours = $this->workHoursForItems($data, $workItemIds, $workers->first());
+        if ($workHours instanceof JsonResponse) {
+            return $workHours;
         }
 
         $independentClocks = ! $isProvisional && ! $start->isSameDay($end);
@@ -303,6 +311,7 @@ class PlanningActionController extends Controller
                     $includeSunday,
                     $workItemIds,
                     $isProvisional,
+                    $workHours,
                 );
                 $created->applyRoles(
                     WorkerAssignment::roleIdInCrew($roles['foreman'], $ids),
@@ -417,6 +426,149 @@ class PlanningActionController extends Controller
         return response()->json(['ok' => true, 'id' => $assignment->id]);
     }
 
+    public function syncInternalWeek(
+        Request $request,
+        InternalWeekPlanningService $weeks,
+        ConflictService $conflicts,
+        PlanningFitService $fit,
+    ): JsonResponse {
+        Gate::authorize('planning-assign');
+        $data = $request->validate([
+            'worker_id' => ['required', 'integer', 'exists:workers,id'],
+            'week' => ['required_without:ongoing_from', 'nullable', 'date'],
+            'dates' => ['nullable', 'array'],
+            'dates.*' => ['date'],
+            'ongoing_from' => ['nullable', 'date'],
+            'confirm_conflict' => ['sometimes', 'boolean'],
+        ], [
+            'worker_id.required' => 'Kies een vakman.',
+            'week.required_without' => 'De planningweek ontbreekt.',
+            'dates.required_without' => 'Geef de dagen van deze week door.',
+            'ongoing_from.required_without' => 'Kies de datum vanaf wanneer deze vakman niet beschikbaar is.',
+        ]);
+
+        if (! $request->filled('ongoing_from') && ! $request->has('dates')) {
+            return response()->json([
+                'message' => 'Geef de dagen van deze week door.',
+                'errors' => [
+                    'dates' => ['Geef de dagen van deze week door.'],
+                    'ongoing_from' => ['Kies de datum vanaf wanneer deze vakman niet beschikbaar is.'],
+                ],
+            ], 422);
+        }
+
+        $worker = Worker::query()->with(['availabilities', 'crewPeople'])->findOrFail($data['worker_id']);
+        if ($request->filled('ongoing_from')) {
+            return $this->storeOngoingInternal($request, $worker, $weeks, $conflicts, $fit);
+        }
+
+        $monday = Carbon::parse($data['week'])->startOfWeek(Carbon::MONDAY)->startOfDay();
+        $allowed = $weeks->weekDays($monday)->map(fn (Carbon $day): string => $day->toDateString());
+        $checked = collect($data['dates'] ?? [])
+            ->map(fn (string $date): string => Carbon::parse($date)->toDateString())
+            ->unique()
+            ->values();
+        if ($checked->diff($allowed)->isNotEmpty()) {
+            return response()->json(['message' => 'Kies alleen dagen van deze week.'], 422);
+        }
+
+        $covered = collect($weeks->coveredDates($worker, $monday));
+        $crewIds = $worker->activeCrewPeople()
+            ->map(fn (CrewMember $member): int => (int) $member->id)
+            ->all();
+        foreach ($checked->diff($covered) as $date) {
+            $day = Carbon::parse($date)->startOfDay();
+            $hours = (float) ($worker->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+            [$startTime, $endTime] = PlanningHours::timesFromHours($hours);
+            $away = $fit->awayRejection(
+                $worker,
+                $day,
+                $day,
+                $day->isSaturday(),
+                false,
+                $startTime,
+                $endTime,
+                $crewIds,
+            );
+            if ($away) {
+                return response()->json(['message' => $away], 422);
+            }
+
+            $blocked = $this->firstConflict(
+                $conflicts,
+                collect([$worker]),
+                $day,
+                $day,
+                max(1, count($crewIds) ?: $worker->peopleCount()),
+                $request->boolean('confirm_conflict'),
+                $crewIds,
+                $startTime,
+                $endTime,
+                $day->isSaturday(),
+                false,
+            );
+            if ($blocked) {
+                return $blocked;
+            }
+        }
+
+        $weeks->sync($worker, $monday, $checked->all());
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function storeOngoingInternal(
+        Request $request,
+        Worker $worker,
+        InternalWeekPlanningService $weeks,
+        ConflictService $conflicts,
+        PlanningFitService $fit,
+    ): JsonResponse {
+        $from = Carbon::parse($request->string('ongoing_from')->toString())->startOfDay();
+        $runs = $weeks->futureRuns($worker, $from);
+        $crewIds = $worker->activeCrewPeople()
+            ->map(fn (CrewMember $member): int => (int) $member->id)
+            ->all();
+        $hours = (float) ($worker->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+        [$startTime, $endTime] = PlanningHours::timesFromHours($hours);
+        foreach ($runs as [$start, $end]) {
+            $away = $fit->awayRejection(
+                $worker,
+                $start,
+                $end,
+                true,
+                false,
+                $startTime,
+                $endTime,
+                $crewIds,
+            );
+            if ($away) {
+                return response()->json(['message' => $away], 422);
+            }
+
+            $blocked = $this->firstConflict(
+                $conflicts,
+                collect([$worker]),
+                $start,
+                $end,
+                max(1, count($crewIds) ?: $worker->peopleCount()),
+                $request->boolean('confirm_conflict'),
+                $crewIds,
+                $startTime,
+                $endTime,
+                true,
+                false,
+            );
+            if ($blocked) {
+                return $blocked;
+            }
+        }
+
+        $weeks->createRuns($worker, $runs);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function updateAssignment(Request $request, WorkerAssignment $assignment, ConflictService $conflicts, PlanningFitService $fit): JsonResponse
     {
         Gate::authorize('manage-planning');
@@ -444,6 +596,8 @@ class PlanningActionController extends Controller
             'work_ticket_crew_member_id' => ['nullable', 'integer', 'exists:crew_members,id'],
             'crew_hours' => ['nullable', 'array'],
             'crew_hours.*' => ['numeric', 'min:2', 'max:8'],
+            'work_hours' => ['nullable', 'array'],
+            'work_hours.*' => ['numeric', 'min:0', 'max:8'],
             'hours' => ['nullable', 'numeric', 'min:2', 'max:8'],
             'slot' => ['nullable', 'in:morning,afternoon,full'],
             'start_time' => ['nullable', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
@@ -451,6 +605,11 @@ class PlanningActionController extends Controller
             'include_saturday' => ['sometimes', 'boolean'],
             'include_sunday' => ['sometimes', 'boolean'],
             'confirm_conflict' => ['sometimes', 'boolean'],
+            'linked_assignment' => ['nullable', 'array'],
+            'linked_assignment.id' => ['required_with:linked_assignment', 'integer', 'exists:worker_assignments,id'],
+            'linked_assignment.work_item_id' => ['nullable', 'integer', 'exists:work_items,id'],
+            'linked_assignment.start_time' => ['required_with:linked_assignment', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'linked_assignment.end_time' => ['required_with:linked_assignment', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
         ]);
 
         $period = $this->assignmentPeriod($data, $assignment);
@@ -582,6 +741,22 @@ class PlanningActionController extends Controller
             'people_count' => $crewIds !== [] ? count($crewIds) : (array_key_exists('people_count', $data) ? (int) $data['people_count'] : $assignment->peopleCount()),
             'crew_ids' => $crewIds,
         ];
+        $shareHours = $this->absorbLinkedResize($assignment, $first, $targetItem?->id, $data, $start, $end);
+        if ($shareHours instanceof JsonResponse) {
+            return $shareHours;
+        }
+        $neighborUpdate = is_array($shareHours) ? null : $this->contiguousNeighborResize($assignment, $first, $data, $start, $end);
+        if ($neighborUpdate instanceof JsonResponse) {
+            return $neighborUpdate;
+        }
+        $conflictStart = $first['start_time'];
+        $conflictEnd = $first['end_time'];
+        $alsoIgnore = [];
+        if (is_array($neighborUpdate)) {
+            $conflictStart = $neighborUpdate['union_start'];
+            $conflictEnd = $neighborUpdate['union_end'];
+            $alsoIgnore = [(int) $neighborUpdate['id']];
+        }
 
         foreach (array_merge([$first], $groups) as $index => $group) {
             if ($isProvisional) {
@@ -595,12 +770,13 @@ class PlanningActionController extends Controller
                 $group['people_count'],
                 $ignoreId,
                 $group['crew_ids'],
-                $group['start_time'],
-                $group['end_time'],
+                $index === 0 ? $conflictStart : $group['start_time'],
+                $index === 0 ? $conflictEnd : $group['end_time'],
                 $includeSaturday,
                 $includeSunday,
                 $targetItem ? (int) $targetItem->project_id : (int) $assignment->project_id,
                 $targetItem ? (int) $targetItem->id : ($assignment->work_item_id ? (int) $assignment->work_item_id : null),
+                $alsoIgnore,
             );
             if ($conflict && ! $request->boolean('confirm_conflict')) {
                 return $this->conflictJson($conflict);
@@ -647,7 +823,7 @@ class PlanningActionController extends Controller
         if ($sharedLine === 'keep') {
             return response()->json(['ok' => true]);
         }
-        if ($sharedLine === 'fork') {
+        if ($sharedLine === 'fork' && ! is_array($shareHours) && ! is_array($neighborUpdate)) {
             $created = $this->forkSharedSmallWorkLine(
                 $assignment,
                 $targetItem,
@@ -684,6 +860,8 @@ class PlanningActionController extends Controller
             $includeSunday,
             $isProvisional,
             $roles,
+            $shareHours,
+            $neighborUpdate,
         ): void {
             $assignment->project_id = $targetProjectId;
             $assignment->work_item_id = $targetWorkItemId;
@@ -691,7 +869,22 @@ class PlanningActionController extends Controller
             $assignment->people_count = $first['people_count'];
             $assignment->applySchedule($start, $end, $first['start_time'], $first['end_time'], $includeSaturday, $includeSunday, $isProvisional);
             $assignment->save();
-            $assignment->syncLinkedWorkItems($linkedWorkItemIds);
+            $assignment->syncLinkedWorkItems($linkedWorkItemIds, is_array($shareHours) ? $shareHours : []);
+            if (is_array($neighborUpdate)) {
+                $neighbor = WorkerAssignment::query()->find($neighborUpdate['id']);
+                if ($neighbor instanceof WorkerAssignment) {
+                    $neighbor->applySchedule(
+                        $neighbor->start_date->copy(),
+                        $neighbor->end_date->copy(),
+                        $neighborUpdate['start_time'],
+                        $neighborUpdate['end_time'],
+                        $neighbor->includesSaturday(),
+                        $neighbor->includesSunday(),
+                        $neighbor->isProvisional(),
+                    );
+                    $neighbor->save();
+                }
+            }
             if (array_key_exists('crew_member_ids', $data) || $first['crew_ids'] !== [] || $stayingIds !== []) {
                 $assignment->syncPresentCrew($first['crew_ids']);
             } elseif ($originalWorkerId !== $workerId) {
@@ -1200,10 +1393,6 @@ class PlanningActionController extends Controller
         ?int $projectId = null,
         ?int $workItemId = null,
     ): ?JsonResponse {
-        if ($confirm) {
-            return null;
-        }
-
         foreach ($workers as $worker) {
             $ids = $crewIds !== [] && $workers->count() === 1 ? $crewIds : [];
             $conflict = $conflicts->capacityConflict(
@@ -1220,7 +1409,10 @@ class PlanningActionController extends Controller
                 $projectId,
                 $workItemId,
             );
-            if ($conflict) {
+            if ($conflict === null) {
+                continue;
+            }
+            if (! empty($conflict['message']) || ! $confirm) {
                 return $this->conflictJson($conflict);
             }
         }
@@ -1295,6 +1487,7 @@ class PlanningActionController extends Controller
         bool $includeSunday = false,
         array $linkedWorkItemIds = [],
         bool $isProvisional = false,
+        array $workHours = [],
     ): WorkerAssignment {
         $startTime = PlanningHours::normalizeTime($startTime, PlanningHours::DAY_START);
         $endTime = PlanningHours::normalizeTime($endTime, PlanningHours::DAY_END);
@@ -1330,6 +1523,7 @@ class PlanningActionController extends Controller
             $includeSaturday,
             $includeSunday,
             $isProvisional,
+            $workHours,
         ): WorkerAssignment {
             return DB::transaction(function () use (
                 $workerId,
@@ -1346,6 +1540,7 @@ class PlanningActionController extends Controller
                 $includeSaturday,
                 $includeSunday,
                 $isProvisional,
+                $workHours,
             ): WorkerAssignment {
                 $existing = WorkerAssignment::query()
                     ->where('worker_id', $workerId)
@@ -1366,7 +1561,7 @@ class PlanningActionController extends Controller
                     ->first();
 
                 if ($existing) {
-                    $existing->syncLinkedWorkItems($linkedWorkItemIds);
+                    $existing->syncLinkedWorkItems($linkedWorkItemIds, $workHours);
 
                     return $existing;
                 }
@@ -1380,7 +1575,7 @@ class PlanningActionController extends Controller
                 ]);
                 $assignment->applySchedule($start, $end, $startTime, $endTime, $includeSaturday, $includeSunday, $isProvisional);
                 $assignment->save();
-                $assignment->syncLinkedWorkItems($linkedWorkItemIds);
+                $assignment->syncLinkedWorkItems($linkedWorkItemIds, $workHours);
                 if ($crewIds !== []) {
                     $assignment->syncPresentCrew($crewIds);
                 }
@@ -1395,6 +1590,14 @@ class PlanningActionController extends Controller
      */
     private function conflictJson(array $conflict): JsonResponse
     {
+        if (! empty($conflict['message'])) {
+            return response()->json([
+                'ok' => false,
+                'conflict' => true,
+                'message' => $conflict['message'],
+            ], 409);
+        }
+
         $names = $conflict['overlaps']->map(function (WorkerAssignment $row): ?string {
             if ($row->isInternal()) {
                 return $row->internalTitle();
@@ -1494,6 +1697,210 @@ class PlanningActionController extends Controller
             $assignment->includesSaturday(),
             $assignment->includesSunday(),
         );
+    }
+
+    /**
+     * A resize of one activity in a shared day keeps the day total.
+     * The neighbor activity absorbs the difference before validation.
+     *
+     * @param  array{start_time: string, end_time: string, people_count: int, crew_ids: list<int>}  $first
+     * @param  array<string, mixed>  $data
+     * @return array<int, float>|JsonResponse|null
+     */
+    private function absorbLinkedResize(WorkerAssignment $assignment, array &$first, ?int $targetWorkItemId, array $data, Carbon $start, Carbon $end): array|JsonResponse|null
+    {
+        if ($assignment->isInternal() || ! $this->sameDayResize($assignment, $start, $end)) {
+            return null;
+        }
+        $assignment->loadMissing(['workItems', 'worker']);
+        $hours = [];
+        foreach ($assignment->workItems as $item) {
+            if ($item->pivot?->planned_hours === null) {
+                continue;
+            }
+            $hours[(int) $item->id] = (float) $item->pivot->planned_hours;
+        }
+        if (count($hours) < 2) {
+            return null;
+        }
+        $targetId = $targetWorkItemId && isset($hours[$targetWorkItemId])
+            ? $targetWorkItemId
+            : (int) array_key_first($hours);
+        $raw = is_array($data['work_hours'] ?? null) ? $data['work_hours'] : [];
+        $proposed = $hours;
+        if ($raw !== []) {
+            foreach (array_keys($hours) as $id) {
+                $proposed[$id] = round((float) ($raw[$id] ?? $raw[(string) $id] ?? $hours[$id]), 1);
+            }
+        } else {
+            $newDuration = PlanningHours::hoursBetween($first['start_time'], $first['end_time']);
+            $delta = round($newDuration - $hours[$targetId], 2);
+            if (abs($delta) < 0.05) {
+                return null;
+            }
+            $adjacentId = (int) array_key_first(array_diff_key($hours, [$targetId => true]));
+            $proposed[$targetId] = round($newDuration, 1);
+            $proposed[$adjacentId] = round($hours[$adjacentId] - $delta, 1);
+        }
+        if ($proposed == $hours) {
+            return null;
+        }
+        $sum = round(array_sum($proposed), 2);
+        $budget = (float) ($assignment->worker?->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+        if (min($proposed) < -0.01 || $sum > $budget + 0.01) {
+            $name = $assignment->worker?->displayName() ?: 'Deze vakman';
+
+            return response()->json([
+                'message' => $name.' is voor '.PlanningHours::hourText($sum).' uur ingepland terwijl '.PlanningHours::hourText($budget).' uur beschikbaar is.',
+            ], 422);
+        }
+        $first['start_time'] = $assignment->startTimeValue();
+        $first['end_time'] = $assignment->endTimeValue();
+
+        return $proposed;
+    }
+
+    /**
+     * @param  array{start_time: string, end_time: string, people_count: int, crew_ids: list<int>}  $first
+     * @param  array<string, mixed>  $data
+     * @return array{id: int, start_time: string, end_time: string, union_start: string, union_end: string}|JsonResponse|null
+     */
+    private function contiguousNeighborResize(WorkerAssignment $assignment, array $first, array $data, Carbon $start, Carbon $end): array|JsonResponse|null
+    {
+        if ($assignment->isInternal() || ! $this->sameDayResize($assignment, $start, $end)) {
+            return null;
+        }
+        $posted = is_array($data['linked_assignment'] ?? null) ? $data['linked_assignment'] : null;
+        $neighbor = $posted
+            ? WorkerAssignment::query()->find((int) $posted['id'])
+            : $this->touchingAssignment($assignment);
+        if (! $neighbor instanceof WorkerAssignment || ! $this->sharesDayDeployment($assignment, $neighbor)) {
+            return null;
+        }
+        $oldHours = PlanningHours::hoursBetween($assignment->startTimeValue(), $assignment->endTimeValue());
+        $newHours = PlanningHours::hoursBetween($first['start_time'], $first['end_time']);
+        $delta = round($newHours - $oldHours, 2);
+        if (abs($delta) < 0.05 && $posted === null) {
+            return null;
+        }
+        $neighborStart = $posted
+            ? PlanningHours::normalizeTime((string) $posted['start_time'], PlanningHours::DAY_START)
+            : $neighbor->startTimeValue();
+        $neighborEnd = $posted
+            ? PlanningHours::normalizeTime((string) $posted['end_time'], PlanningHours::DAY_END)
+            : $neighbor->endTimeValue();
+        if ($posted === null) {
+            if ($neighbor->startTimeValue() === $assignment->endTimeValue()) {
+                $neighborStart = PlanningHours::normalizeTime($first['end_time'], PlanningHours::DAY_START);
+            } elseif ($neighbor->endTimeValue() === $assignment->startTimeValue()) {
+                $neighborEnd = PlanningHours::normalizeTime($first['start_time'], PlanningHours::DAY_END);
+            } else {
+                return null;
+            }
+        }
+        $neighborHours = PlanningHours::hoursBetween($neighborStart, $neighborEnd);
+        $sum = round($newHours + $neighborHours, 2);
+        $budget = (float) ($assignment->worker?->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+        $others = WorkerAssignment::query()
+            ->where('worker_id', $assignment->worker_id)
+            ->whereNotIn('id', [$assignment->id, $neighbor->id])
+            ->whereDate('start_date', '<=', $end)
+            ->whereDate('end_date', '>=', $start)
+            ->get()
+            ->sum(fn (WorkerAssignment $row): float => $row->hoursOnDate($start));
+        if ($neighborHours < -0.01 || $sum + $others > $budget + 0.01) {
+            $name = $assignment->worker?->displayName() ?: 'Deze vakman';
+
+            return response()->json([
+                'message' => $name.' is voor '.PlanningHours::hourText($sum + $others).' uur ingepland terwijl '.PlanningHours::hourText($budget).' uur beschikbaar is.',
+            ], 422);
+        }
+        $unionStart = strcmp($first['start_time'], $neighborStart) <= 0 ? $first['start_time'] : $neighborStart;
+        $unionEnd = strcmp($first['end_time'], $neighborEnd) >= 0 ? $first['end_time'] : $neighborEnd;
+
+        return [
+            'id' => (int) $neighbor->id,
+            'start_time' => $neighborStart,
+            'end_time' => $neighborEnd,
+            'union_start' => $unionStart,
+            'union_end' => $unionEnd,
+        ];
+    }
+
+    private function sameDayResize(WorkerAssignment $assignment, Carbon $start, Carbon $end): bool
+    {
+        return $assignment->start_date?->isSameDay($assignment->end_date)
+            && $start->isSameDay($assignment->start_date)
+            && $end->isSameDay($assignment->end_date);
+    }
+
+    private function sharesDayDeployment(WorkerAssignment $assignment, WorkerAssignment $neighbor): bool
+    {
+        return ! $neighbor->isInternal()
+            && (int) $neighbor->id !== (int) $assignment->id
+            && (int) $neighbor->worker_id === (int) $assignment->worker_id
+            && (int) $neighbor->project_id === (int) $assignment->project_id
+            && $neighbor->start_date?->isSameDay($assignment->start_date)
+            && $neighbor->end_date?->isSameDay($assignment->end_date);
+    }
+
+    private function touchingAssignment(WorkerAssignment $assignment): ?WorkerAssignment
+    {
+        return WorkerAssignment::query()
+            ->where('worker_id', $assignment->worker_id)
+            ->where('project_id', $assignment->project_id)
+            ->where('id', '!=', $assignment->id)
+            ->whereDate('start_date', $assignment->start_date)
+            ->whereDate('end_date', $assignment->end_date)
+            ->get()
+            ->first(function (WorkerAssignment $neighbor) use ($assignment): bool {
+                if ($neighbor->isInternal()) {
+                    return false;
+                }
+
+                return $neighbor->startTimeValue() === $assignment->endTimeValue()
+                    || $neighbor->endTimeValue() === $assignment->startTimeValue();
+            });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<int>  $workItemIds
+     * @return array<int, float>|JsonResponse
+     */
+    private function workHoursForItems(array $data, array $workItemIds, Worker $worker): array|JsonResponse
+    {
+        if (count($workItemIds) < 2) {
+            return [];
+        }
+
+        $budget = (float) ($worker->default_hours_per_day ?: PlanningHours::WORKDAY_HOURS);
+        $raw = is_array($data['work_hours'] ?? null) ? $data['work_hours'] : [];
+        $map = [];
+        if ($raw === []) {
+            $share = round($budget / count($workItemIds), 1);
+            foreach ($workItemIds as $id) {
+                $map[$id] = $share;
+            }
+
+            return $map;
+        }
+
+        $sum = 0.0;
+        foreach ($workItemIds as $id) {
+            $value = round((float) ($raw[$id] ?? $raw[(string) $id] ?? 0), 1);
+            $map[$id] = $value;
+            $sum += $value;
+        }
+        if ($sum > $budget + 0.01) {
+            $name = $worker->displayName();
+
+            return response()->json([
+                'message' => $name.' is voor '.PlanningHours::hourText($sum).' uur ingepland terwijl '.PlanningHours::hourText($budget).' uur beschikbaar is.',
+            ], 422);
+        }
+
+        return $map;
     }
 
     /**
@@ -1871,8 +2278,8 @@ class PlanningActionController extends Controller
             $original->work_item_id = $remaining[0];
             $original->save();
         }
-        $original->syncLinkedWorkItems($remaining);
-        $created->syncLinkedWorkItems($remove);
+        $original->syncLinkedWorkItems($remaining, array_fill_keys($remaining, null));
+        $created->syncLinkedWorkItems($remove, array_fill_keys($remove, null));
     }
 
     /**

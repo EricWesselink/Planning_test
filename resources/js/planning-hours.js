@@ -190,6 +190,117 @@ export function countsOnDate(iso, includeSaturday = false, includeSunday = false
     return true;
 }
 
+export function roundHours(value) {
+    return Math.round(Number(value) * 10) / 10;
+}
+
+export function sliceHours(startOffset, endOffset) {
+    return roundHours((Number(endOffset) - Number(startOffset)) * WORKDAY_HOURS);
+}
+
+function clock(value) {
+    return String(value || "").slice(0, 5);
+}
+
+function shareOf(bar) {
+    const share = Number(bar.shareHours);
+    if (Number.isFinite(share) && share > 0) {
+        return share;
+    }
+
+    return sliceHours(bar.startOffset ?? 0, bar.endOffset ?? 1);
+}
+
+/**
+ * Payload for a mouse resize of one slice inside an 8-hour day.
+ * The partner is the other work of the same assignment, or the one
+ * assignment that touches this slice. A bar on another project, date
+ * or visit is left alone.
+ *
+ * @param {object} drag
+ * @returns {{work_hours: Record<string, number>}|{neighbor: {id: number, work_item_id: number|null, start_time: string, end_time: string}}|null}
+ */
+export function linkedDayResize(drag) {
+    if (drag.internal || drag.mode === "move") {
+        return null;
+    }
+    const oldShare = shareOf({
+        shareHours: drag.shareHours,
+        startOffset: drag.originStartOffset,
+        endOffset: drag.originEndOffset,
+    });
+    const nextHours = sliceHours(drag.startOffset, drag.endOffset);
+    const delta = roundHours(nextHours - oldShare);
+    if (Math.abs(delta) < 0.05) {
+        return null;
+    }
+
+    const sameVisit = (drag.bars || []).filter((bar) => (
+        !bar.internal
+        && String(bar.shiftId) === String(drag.shiftId)
+        && bar.workItemId
+        && String(bar.workItemId) !== String(drag.workItemId)
+    ));
+    const originStart = clock(drag.originStartTime);
+    const originEnd = clock(drag.originEndTime);
+    let partner = null;
+    if (sameVisit.length === 1) {
+        partner = sameVisit[0];
+    } else if (sameVisit.length > 1) {
+        partner = sameVisit.find((bar) => clock(bar.startTime) === originEnd || clock(bar.endTime) === originStart) || null;
+    }
+    if (partner) {
+        return {
+            work_hours: {
+                [drag.workItemId]: nextHours,
+                [partner.workItemId]: roundHours(shareOf(partner) - delta),
+            },
+        };
+    }
+
+    const sameDay = (drag.bars || []).filter((bar) => (
+        !bar.internal
+        && String(bar.shiftId) !== String(drag.shiftId)
+        && String(bar.workerId) === String(drag.workerId)
+        && String(bar.projectId) === String(drag.projectId)
+        && bar.startDate === drag.startDate
+        && bar.endDate === drag.endDate
+    ));
+    const touching = sameDay.filter((bar) => {
+        const start = clock(bar.startTime);
+        const end = clock(bar.endTime);
+        return start === originEnd || end === originStart;
+    });
+    if (touching.length === 1) {
+        const neighbor = touching[0];
+        const neighborStart = clock(neighbor.startTime);
+        const neighborEnd = clock(neighbor.endTime);
+        return {
+            neighbor: {
+                id: Number(neighbor.shiftId),
+                work_item_id: neighbor.workItemId ? Number(neighbor.workItemId) : null,
+                start_time: neighborStart === originEnd ? drag.endTime : neighborStart,
+                end_time: neighborEnd === originStart ? drag.startTime : neighborEnd,
+            },
+        };
+    }
+    if (touching.length === 0 && sameDay.length === 1) {
+        const neighbor = sameDay[0];
+        const dayStart = originStart < clock(neighbor.startTime) ? originStart : clock(neighbor.startTime);
+        const dayEnd = originEnd > clock(neighbor.endTime) ? originEnd : clock(neighbor.endTime);
+        return {
+            neighbor: {
+                id: Number(neighbor.shiftId),
+                work_item_id: neighbor.workItemId ? Number(neighbor.workItemId) : null,
+                start_time: drag.mode === "resize-start" ? dayStart : drag.endTime,
+                end_time: drag.mode === "resize-start" ? drag.startTime : dayEnd,
+            },
+        };
+    }
+
+    return null;
+}
+
 export function workdayCount(startIso, endIso, includeSaturday = false, includeSunday = false) {
     if (!startIso || !endIso || startIso > endIso) {
         return 0;

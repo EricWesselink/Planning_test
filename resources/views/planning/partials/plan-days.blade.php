@@ -13,9 +13,24 @@
 <div class="plan-days person-stack"
      data-project-id="{{ $projectId }}"
      @if (! empty($workItemId)) data-work-item-id="{{ $workItemId }}" @endif
-     @if (! empty($plannedHours)) data-hours="{{ $plannedHours }}" @endif>
+     @if (! empty($plannedHours)) data-hours="{{ $plannedHours }}" @endif
+     @if (is_array($dayCrew ?? null)) data-day-crew="{{ collect($days)->map(fn ($day) => (int) ($dayCrew[$day->toDateString()] ?? 0))->implode(',') }}" @endif>
     @foreach ($days as $day)
-        <div class="drop-day{{ $loop->first ? '' : ' day-start' }}{{ $day->isMonday() && ! $loop->first ? ' week-start' : '' }}{{ $day->isSaturday() ? ' is-saturday' : '' }}" data-date="{{ $day->toDateString() }}"></div>
+        <div class="drop-day{{ $loop->first ? '' : ' day-start' }}{{ $day->isMonday() && ! $loop->first ? ' week-start' : '' }}{{ $day->isSaturday() ? ' is-saturday' : '' }}" data-date="{{ $day->toDateString() }}">
+            @if (is_array($dayCrew ?? null))
+                @php
+                    $crewCount = (int) ($dayCrew[$day->toDateString()] ?? 0);
+                @endphp
+                @if ($crewCount === 0)
+                    <div class="day-worker-count is-empty" title="Geen vakman"><span>–</span></div>
+                @else
+                    <div class="day-worker-count" title="{{ $crewCount === 1 ? '1 vakman' : $crewCount.' vakmannen' }}">
+                        <img src="{{ asset('images/vakman.svg') }}" alt="" width="14" height="14">
+                        <span>{{ $crewCount }}</span>
+                    </div>
+                @endif
+            @endif
+        </div>
     @endforeach
     @if ($periodBar)
         <div class="period-band"

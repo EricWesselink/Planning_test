@@ -197,7 +197,7 @@ class UserController extends Controller
             'permissions.*' => ['string', Rule::enum(Permission::class)],
             'active' => ['sometimes', 'boolean'],
             'employment_type' => ['required_if:role,'.UserRole::Vakman->value, 'nullable', Rule::enum(EmploymentType::class)],
-            'people_count' => ['required_if:role,'.UserRole::Vakman->value, 'nullable', 'integer', 'min:1', 'max:50'],
+            'people_count' => ['nullable', 'integer', 'min:1', 'max:50'],
             'crew_members' => ['nullable', 'array', 'max:50'],
             'crew_members.*.id' => ['nullable', 'integer', 'min:1'],
             'crew_members.*.name' => ['nullable', 'string', 'max:255'],
@@ -264,8 +264,12 @@ class UserController extends Controller
             $data['can_access_all_projects'] = false;
             $data['project_ids'] = [];
             $data['employment_type'] = EmploymentType::from((string) $data['employment_type']);
-            $data['people_count'] = max(1, (int) ($data['people_count'] ?? 1));
-            $members = Worker::normalizeCrewMembers($request->input('crew_members', []), $data['people_count']);
+            $submittedMembers = $request->input('crew_members', []);
+            $submittedCount = is_array($submittedMembers) ? count($submittedMembers) : 0;
+            $data['people_count'] = $request->exists('crew_members') && ! $request->exists('people_count')
+                ? max(1, $submittedCount)
+                : max(1, (int) ($data['people_count'] ?? 1));
+            $members = Worker::normalizeCrewMembers(is_array($submittedMembers) ? $submittedMembers : [], $data['people_count']);
             $data['crew_members'] = $members;
             $data['people_count'] = max(1, count($members));
             $data['crew_logins'] = $this->crewLoginsFromRequest($request, $data['people_count']);

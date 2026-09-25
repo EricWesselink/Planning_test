@@ -206,8 +206,9 @@ class PlanningHoursAssignmentTest extends TestCase
                 'start_time' => '10:00',
                 'end_time' => '14:00',
             ])
-            ->assertConflict()
-            ->assertJsonPath('conflict', true);
+            ->assertOk();
+
+        $this->assertSame(2, WorkerAssignment::query()->where('worker_id', $assignment->worker_id)->count());
     }
 
     public function test_two_hour_bar_uses_a_quarter_of_the_day_cell(): void

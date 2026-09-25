@@ -43,10 +43,6 @@
     @include('workers._specialties', ['worker' => $worker])
 </div>
 <div data-crew-fields class="space-y-3">
-    <div class="w-28 sm:w-40">
-        <label class="text-xs uppercase tracking-wide text-nicon-muted">Personen</label>
-        <input type="number" name="people_count" value="{{ old('people_count', $worker->rosterCount()) }}" min="1" max="50" required data-crew-count class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
-    </div>
     @include('workers._crew-member-rows', ['worker' => $worker])
 </div>
 <div>

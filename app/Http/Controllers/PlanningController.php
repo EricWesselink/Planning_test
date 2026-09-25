@@ -8,6 +8,7 @@ use App\Models\WorkActivityCategory;
 use App\Models\Worker;
 use App\Services\DocumentMailService;
 use App\Services\InternalPlanningExcelService;
+use App\Services\InternalWeekPlanningService;
 use App\Services\PersonnelWeekOverviewService;
 use App\Services\PlanningBoardService;
 use App\Services\WeekplanningPdfService;
@@ -22,7 +23,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PlanningController extends Controller
 {
-    public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning, DocumentMailService $mailer): View|RedirectResponse
+    public function index(Request $request, PlanningBoardService $board, WeekplanningPdfService $weekplanning, DocumentMailService $mailer, InternalWeekPlanningService $internalWeeks): View|RedirectResponse
     {
         Gate::authorize('view-planning');
         $this->authorizeRequestedProject($request);
@@ -62,6 +63,7 @@ class PlanningController extends Controller
             'workActivityChoices' => $this->workActivityChoices($request->user()?->canManagePlanning() ?? false),
             'canDragPlanning' => $request->user()?->canDragPlanning() ?? false,
             'canAssignPlanning' => $request->user()?->canAssignPlanning() ?? false,
+            'internalWeekDays' => $internalWeeks->coveredDatesByWorker($data['weekStart']),
             'canViewLaborCosts' => $request->user()?->canViewLaborCosts() ?? false,
             'weekplanningTeams' => $weekplanning->scheduledGroups($request),
             'weekplanningMail' => ($request->user()?->canDownloadPlanningWeekPdf() ?? false)

@@ -41,9 +41,9 @@
 <div data-team-fields class="space-y-3">
     <div>
         <div class="text-xs uppercase tracking-wide text-nicon-muted">Team</div>
-        <p class="mt-1 text-xs text-nicon-muted">Kies eigen personeel of ZZP, het aantal personen, vakkennis, en wie met een eigen e-mail mag inloggen.</p>
+        <p class="mt-1 text-xs text-nicon-muted">Kies eigen personeel of ZZP, vakkennis, en wie met een eigen e-mail mag inloggen. Het aantal personen volgt de leden hieronder.</p>
     </div>
-    <div class="grid gap-3 sm:grid-cols-2">
+    <div>
         <div>
             <label class="text-xs uppercase tracking-wide text-nicon-muted" for="employment_type">Eigen personeel of ZZP</label>
             <select id="employment_type" name="employment_type" class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
@@ -51,10 +51,6 @@
                 <option value="{{ \App\Enums\EmploymentType::Zzp->value }}" @selected(old('employment_type', $worker->employment_type?->value) === \App\Enums\EmploymentType::Zzp->value)>ZZP</option>
                 <option value="{{ \App\Enums\EmploymentType::Onderaannemer->value }}" @selected(old('employment_type', $worker->employment_type?->value) === \App\Enums\EmploymentType::Onderaannemer->value)>Onderaannemer</option>
             </select>
-        </div>
-        <div>
-            <label class="text-xs uppercase tracking-wide text-nicon-muted" for="people_count">Aantal personen</label>
-            <input id="people_count" type="number" name="people_count" min="1" max="50" value="{{ $crewCount }}" data-crew-count class="mt-1 w-full border border-nicon-line px-3 py-2 bg-white text-sm">
         </div>
     </div>
     @include('workers._specialties', [
@@ -64,7 +60,10 @@
         'specialtyCatalog' => $specialtyCatalog ?? null,
     ])
     <div>
-        <div class="text-xs uppercase tracking-wide text-nicon-muted">Leden</div>
+        <div class="flex items-baseline justify-between gap-3">
+            <div class="text-xs uppercase tracking-wide text-nicon-muted">Leden</div>
+            <p class="text-sm text-nicon-ink" data-crew-total>{{ $crewCount === 1 ? '1 persoon' : $crewCount.' personen' }}</p>
+        </div>
         <p class="mt-1 text-[11px] text-nicon-muted">E-mail en wachtwoord alleen bij wie zelf mag inloggen. Leeg laten = geen inlog.</p>
         <div class="mt-2 space-y-2" data-crew-rows>
             @foreach ($crewMembers as $index => $member)
@@ -102,6 +101,7 @@
                 </div>
             </div>
         </template>
+        <button type="button" class="mt-2 border border-nicon-line bg-white px-3 py-1.5 text-sm" data-crew-add>+ Persoon toevoegen</button>
     </div>
     <details class="border border-nicon-line bg-nicon-paper/60 p-3" @if ($hasDetails) open @endif>
         <summary class="cursor-pointer text-xs uppercase tracking-wide text-nicon-muted">Bijzonderheden</summary>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CrewMember;
 use App\Models\Worker;
+use App\Models\WorkerAssignment;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,11 +48,33 @@ class WorkerCrewMemberController extends Controller
         $name = $crewMember->displayName();
 
         DB::transaction(function () use ($worker, $crewMember): void {
-            $crewMember->user?->delete();
-            $crewMember->delete();
+            if ($this->keepsHistory($crewMember)) {
+                $crewMember->user?->update(['active' => false]);
+                $crewMember->update(['active' => false]);
+                $crewMember->delete();
+            } else {
+                $crewMember->user?->delete();
+                $crewMember->forceDelete();
+            }
             $worker->refreshRosterFromCrewPeople();
         });
 
         return back()->with('status', $name.' is verwijderd.');
+    }
+
+    private function keepsHistory(CrewMember $crewMember): bool
+    {
+        if ($crewMember->assignments()->exists() || $crewMember->availabilities()->exists()) {
+            return true;
+        }
+
+        return DB::table('time_entries')->where('crew_member_id', $crewMember->id)->exists()
+            || DB::table('leave_requests')->where('crew_member_id', $crewMember->id)->exists()
+            || WorkerAssignment::query()
+                ->where(function ($query) use ($crewMember): void {
+                    $query->where('foreman_crew_member_id', $crewMember->id)
+                        ->orWhere('work_ticket_crew_member_id', $crewMember->id);
+                })
+                ->exists();
     }
 }

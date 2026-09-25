@@ -755,14 +755,14 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'actual', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('6 geplande uren')
-            ->assertDontSee('8 geplande uren');
+            ->assertSee("\n6 geplande uren")
+            ->assertDontSee("\n8 geplande uren");
 
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('6 geplande uren')
-            ->assertDontSee('8 geplande uren');
+            ->assertSee("\n6 geplande uren")
+            ->assertDontSee("\n8 geplande uren");
     }
 
     public function test_unplanned_approved_hours_appear_only_in_actual_planning(): void
@@ -952,9 +952,9 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'actual', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('7 geplande uren')
-            ->assertDontSee('8 geplande uren')
-            ->assertDontSee('6,5 geplande uren');
+            ->assertSee("\n7 geplande uren")
+            ->assertDontSee("\n8 geplande uren")
+            ->assertDontSee("\n6,5 geplande uren");
 
         $this->actingAs($vakman)
             ->get(route('vakman.planning.day', '2026-09-21'))
@@ -1293,14 +1293,14 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'actual', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('8 geplande uren')
-            ->assertDontSee('10 geplande uren');
+            ->assertSee("\n8 geplande uren")
+            ->assertDontSee("\n10 geplande uren");
 
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('8 geplande uren')
-            ->assertDontSee('10 geplande uren');
+            ->assertSee("\n8 geplande uren")
+            ->assertDontSee("\n10 geplande uren");
     }
 
     public function test_manual_approved_hours_stay_saved_when_the_clock_still_totals_eight(): void
@@ -1443,14 +1443,14 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'actual', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('12 geplande uren')
-            ->assertDontSee('16 geplande uren');
+            ->assertSee("\n12 geplande uren")
+            ->assertDontSee("\n16 geplande uren");
 
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('12 geplande uren')
-            ->assertDontSee('16 geplande uren');
+            ->assertSee("\n12 geplande uren")
+            ->assertDontSee("\n16 geplande uren");
 
         $this->actingAs($vakman)
             ->get(route('vakman.hours.index', ['week' => '2026-09-21']))
@@ -1499,15 +1499,15 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'actual', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('0 geplande uren')
-            ->assertDontSee('4 geplande uren')
-            ->assertDontSee('8 geplande uren');
+            ->assertSee("\n0 geplande uren")
+            ->assertDontSee("\n4 geplande uren")
+            ->assertDontSee("\n8 geplande uren");
 
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]))
             ->assertOk()
-            ->assertSee('0 geplande uren')
-            ->assertDontSee('8 geplande uren');
+            ->assertSee("\n0 geplande uren")
+            ->assertDontSee("\n8 geplande uren");
     }
 
     public function test_submitting_the_same_visit_does_not_create_a_second_time_entry(): void
@@ -1793,25 +1793,25 @@ class TimeEntryTest extends TestCase
         $actual = route('planning', ['week' => '2026-09-21', 'hours_view' => 'actual', 'project_id' => $assignment->project_id]);
         $planned = route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $assignment->project_id]);
 
-        $this->actingAs($leader)->get($actual)->assertOk()->assertSee('0 geplande uren')->assertDontSee('10 geplande uren')->assertDontSee('8 geplande uren');
-        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('8 geplande uren')->assertDontSee('0 geplande uren');
+        $this->actingAs($leader)->get($actual)->assertOk()->assertSee("\n0 geplande uren")->assertDontSee("\n10 geplande uren")->assertDontSee("\n8 geplande uren");
+        $this->actingAs($leader)->get($planned)->assertOk()->assertSee("\n8 geplande uren")->assertDontSee("\n0 geplande uren");
         $this->assertPlanUntouched($assignment);
 
         $this->actingAs($leader)->post(route('personnel.hours.approve', $entry))->assertRedirect();
-        $this->actingAs($leader)->get($actual)->assertOk()->assertSee('10 geplande uren')->assertDontSee('8 geplande uren');
-        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('10 geplande uren')->assertDontSee('8 geplande uren');
+        $this->actingAs($leader)->get($actual)->assertOk()->assertSee("\n10 geplande uren")->assertDontSee("\n8 geplande uren");
+        $this->actingAs($leader)->get($planned)->assertOk()->assertSee("\n10 geplande uren")->assertDontSee("\n8 geplande uren");
         $this->assertSame(10.0, (float) WorkProgressEntry::query()->value('worked_hours'));
         $this->assertPlanUntouched($assignment);
 
         TimeEntry::query()->whereKey($entry->id)->update(['approved_hours' => null]);
-        $this->actingAs($leader)->get($actual)->assertOk()->assertSee('0 geplande uren')->assertDontSee('10 geplande uren');
+        $this->actingAs($leader)->get($actual)->assertOk()->assertSee("\n0 geplande uren")->assertDontSee("\n10 geplande uren");
 
         $this->actingAs($leader)->patch(route('personnel.hours.update', $entry), [
             'approved_hours' => '9',
             'review_note' => 'Na controle 9 uur',
         ])->assertRedirect();
-        $this->actingAs($leader)->get($actual)->assertOk()->assertSee('9 geplande uren')->assertDontSee('10 geplande uren');
-        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('9 geplande uren')->assertDontSee('8 geplande uren');
+        $this->actingAs($leader)->get($actual)->assertOk()->assertSee("\n9 geplande uren")->assertDontSee("\n10 geplande uren");
+        $this->actingAs($leader)->get($planned)->assertOk()->assertSee("\n9 geplande uren")->assertDontSee("\n8 geplande uren");
         $this->assertSame(9.0, (float) WorkProgressEntry::query()->value('worked_hours'));
         $this->assertSame(10.0, $entry->fresh()->submittedHoursValue());
 
@@ -1819,7 +1819,7 @@ class TimeEntryTest extends TestCase
             'approved_hours' => '8',
             'review_note' => 'Terug naar de planning',
         ])->assertRedirect();
-        $this->actingAs($leader)->get($actual)->assertOk()->assertSee('8 geplande uren')->assertDontSee('9 geplande uren');
+        $this->actingAs($leader)->get($actual)->assertOk()->assertSee("\n8 geplande uren")->assertDontSee("\n9 geplande uren");
         $this->actingAs($leader)->get(route('personnel.index', ['tab' => 'overzicht', 'week' => '2026-09-21']))
             ->assertOk()
             ->assertSee('Ingediend: 10u | Goedgekeurd: 8u | Verschil: -2u');
@@ -1832,8 +1832,8 @@ class TimeEntryTest extends TestCase
             'approved_hours' => '0',
             'review_note' => 'Geen uren',
         ])->assertRedirect();
-        $this->actingAs($leader)->get($actual)->assertOk()->assertSee('0 geplande uren')->assertDontSee('8 geplande uren');
-        $this->actingAs($leader)->get($planned)->assertOk()->assertSee('0 geplande uren')->assertDontSee('8 geplande uren');
+        $this->actingAs($leader)->get($actual)->assertOk()->assertSee("\n0 geplande uren")->assertDontSee("\n8 geplande uren");
+        $this->actingAs($leader)->get($planned)->assertOk()->assertSee("\n0 geplande uren")->assertDontSee("\n8 geplande uren");
         $this->assertSame(0.0, (float) WorkProgressEntry::query()->value('worked_hours'));
         $this->assertPlanUntouched($assignment);
 
@@ -1865,14 +1865,14 @@ class TimeEntryTest extends TestCase
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'actual']))
             ->assertOk()
-            ->assertSee('0 geplande uren')
-            ->assertSee('8 geplande uren');
+            ->assertSee("\n0 geplande uren")
+            ->assertSee("\n8 geplande uren");
 
         $this->actingAs($leader)
             ->get(route('planning', ['week' => '2026-09-21', 'hours_view' => 'planned', 'project_id' => $second->id]))
             ->assertOk()
-            ->assertSee('8 geplande uren')
-            ->assertDontSee('0 geplande uren');
+            ->assertSee("\n8 geplande uren")
+            ->assertDontSee("\n0 geplande uren");
 
         $this->assertSame(2, TimeEntry::query()->count());
         $this->assertSame(2, WorkerAssignment::query()->count());
@@ -1915,8 +1915,8 @@ class TimeEntryTest extends TestCase
                 'project_id' => $assignment->project_id,
             ]))
             ->assertOk()
-            ->assertSee('16 geplande uren')
-            ->assertDontSee('6 geplande uren');
+            ->assertSee("\n16 geplande uren")
+            ->assertDontSee("\n6 geplande uren");
     }
 
     public function test_two_overlapping_days_for_one_person_stay_within_sixteen_base_hours(): void
@@ -1970,9 +1970,9 @@ class TimeEntryTest extends TestCase
                 'project_id' => $primer->project_id,
             ]))
             ->assertOk()
-            ->assertSee('6 geplande uren')
-            ->assertSee('8 geplande uren')
-            ->assertDontSee('16 geplande uren');
+            ->assertSee("\n6 geplande uren")
+            ->assertSee("\n8 geplande uren")
+            ->assertDontSee("\n16 geplande uren");
         $this->assertSame(16.0, $second->fresh()->plannedHoursValue());
     }
 

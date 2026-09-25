@@ -266,8 +266,29 @@ class PlanningBoardService
                             $project->name,
                         );
                         if ($this->coversSeveralBoardLines($assignment, $project)) {
+                            $share = null;
+                            foreach ($items as $item) {
+                                $hours = $assignment->hoursForWorkItem((int) $item->id);
+                                if ($hours !== null) {
+                                    $share = $hours;
+                                    break;
+                                }
+                            }
                             for ($index = $before; $index < count($personBars); $index++) {
                                 $personBars[$index]['work_item_id'] = (int) $primary->id;
+                                if ($share === null) {
+                                    continue;
+                                }
+                                $personBars[$index]['label'] = $assignment->planningShareLabel($share);
+                                $personBars[$index]['label_short'] = $assignment->planningShareLabel($share, false);
+                                $slice = $this->shareSlice($assignment, (int) $primary->id);
+                                if ($slice === null) {
+                                    continue;
+                                }
+                                $personBars[$index]['bar']['start_offset'] = $slice['start'];
+                                $personBars[$index]['bar']['end_offset'] = $slice['end'];
+                                $personBars[$index]['start_time'] = $slice['start_time'];
+                                $personBars[$index]['end_time'] = $slice['end_time'];
                             }
                         }
                     }
@@ -443,7 +464,7 @@ class PlanningBoardService
         if ($doubleFilter['active']) {
             $internalRows = $this->filterRowsToAssignments($internalRows, $doubleFilter['assignment_ids']);
         }
-        $rows = [...$internalRows, ...$rows];
+        $rows = $this->withProjectDayCrew([...$internalRows, ...$rows], $days);
         $warnings = $doubleFilter['warnings'];
 
         $availabilityOverview = $scheduledWorkerId
@@ -460,6 +481,7 @@ class PlanningBoardService
             'nextWeek' => $requestedStart->copy()->addWeeks($this->weeks($request))->toDateString(),
             'thisWeek' => now()->startOfWeek(Carbon::MONDAY)->startOfDay()->toDateString(),
             'days' => $days,
+            'dayCrewTotals' => $this->dayCrewTotals($rows, $days),
             'dayCount' => $days->count(),
             'dayMin' => $days->count() === 1 ? 0 : ($weeks === 1 ? 180 : ($weeks <= 3 ? 120 : ($weeks <= 8 ? 96 : 56))),
             'rows' => $rows,
@@ -1351,6 +1373,155 @@ class PlanningBoardService
             ?? $items->sortBy(fn (WorkItem $item) => $item->phase()->sort())->first();
     }
 
+    /**
+     * Per projectregel: unieke vakmannen per kalenderdag, op basis van de zichtbare balken.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @param  Collection<int, Carbon>  $days
+     * @return list<array<string, mixed>>
+     */
+    private function withProjectDayCrew(array $rows, Collection $days): array
+    {
+        foreach ($rows as $index => $row) {
+            if (! in_array($row['type'] ?? '', ['project', 'small'], true)) {
+                continue;
+            }
+
+            $rows[$index]['day_crew'] = $this->dayCrewTotals([$row], $days);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Unique vakmannen per day. The same person on two jobs that day counts once.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @param  Collection<int, Carbon>  $days
+     * @return array<string, int>
+     */
+    private function dayCrewTotals(array $rows, Collection $days): array
+    {
+        $keys = [];
+        foreach ($days as $day) {
+            $keys[$day->toDateString()] = [];
+        }
+        $this->collectDayCrew($rows, $days->values(), $keys);
+
+        return array_map(fn (array $people): int => count($people), $keys);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<string, array<string, true>>  $keys
+     */
+    private function collectDayCrew(array $rows, Collection $days, array &$keys): void
+    {
+        foreach ($rows as $row) {
+            foreach ($row['person_bars'] ?? [] as $bar) {
+                if (($bar['is_internal'] ?? false) === true) {
+                    continue;
+                }
+                $segment = $bar['bar'] ?? [];
+                $start = (int) ($segment['start'] ?? 0);
+                $span = max(1, (int) ($segment['span'] ?? 1));
+                $people = $this->barPeopleKeys($bar);
+                for ($index = $start; $index < $start + $span; $index++) {
+                    $day = $days->get($index);
+                    if ($day === null) {
+                        continue;
+                    }
+                    foreach ($people as $key) {
+                        $keys[$day->toDateString()][$key] = true;
+                    }
+                }
+            }
+            if (($row['children'] ?? []) !== []) {
+                $this->collectDayCrew($row['children'], $days, $keys);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $bar
+     * @return list<string>
+     */
+    private function barPeopleKeys(array $bar): array
+    {
+        $crew = array_values(array_filter(
+            $bar['crew_ids'] ?? [],
+            fn (mixed $id): bool => (int) $id > 0,
+        ));
+        if ($crew !== []) {
+            return array_map(fn (mixed $id): string => 'c'.(int) $id, $crew);
+        }
+
+        $count = max(1, (int) ($bar['people_count'] ?? 1));
+        $worker = (int) ($bar['worker_id'] ?? 0);
+        $keys = [];
+        for ($slot = 0; $slot < $count; $slot++) {
+            $keys[] = 'w'.$worker.'#'.$slot;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @return array{start: float, end: float, start_time: string, end_time: string}|null
+     */
+    private function shareSlice(WorkerAssignment $assignment, int $workItemId): ?array
+    {
+        $assignment->loadMissing('workItems');
+        $budget = PlanningHours::hoursBetween($assignment->startTimeValue(), $assignment->endTimeValue());
+        if ($budget <= 0) {
+            $budget = (float) PlanningHours::WORKDAY_HOURS;
+        }
+        $cursor = 0.0;
+        foreach ($assignment->workItems as $item) {
+            if ($item->pivot?->planned_hours === null) {
+                continue;
+            }
+            $hours = (float) $item->pivot->planned_hours;
+            $start = $cursor / $budget;
+            $cursor += $hours;
+            if ((int) $item->id !== $workItemId) {
+                continue;
+            }
+
+            return [
+                'start' => round($start, 4),
+                'end' => round(min(1, $cursor / $budget), 4),
+                'start_time' => substr(PlanningHours::timeFromFraction($start), 0, 5),
+                'end_time' => substr(PlanningHours::timeFromFraction(min(1, $cursor / $budget)), 0, 5),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $bar
+     */
+    private function paintShareSlice(array &$bar, WorkerAssignment $assignment, int $workItemId): void
+    {
+        $hours = $assignment->hoursForWorkItem($workItemId);
+        if ($hours === null) {
+            return;
+        }
+        $bar['share_hours'] = $hours;
+        $bar['label'] = $assignment->planningShareLabel($hours);
+        $bar['label_short'] = $assignment->planningShareLabel($hours, false);
+        $slice = $this->shareSlice($assignment, $workItemId);
+        if ($slice === null) {
+            return;
+        }
+        $bar['bar']['start_offset'] = $slice['start'];
+        $bar['bar']['end_offset'] = $slice['end'];
+        $bar['start_time'] = $slice['start_time'];
+        $bar['end_time'] = $slice['end_time'];
+    }
+
     private function personBar(WorkerAssignment $assignment, array $bar, array $doubleBooked, Collection $days, string $workName, string $projectName = ''): array
     {
         $approvedHours = $assignment->getAttribute('approved_hours');
@@ -1387,6 +1558,9 @@ class PlanningBoardService
             'work_ticket_holder_id' => $assignment->work_ticket_crew_member_id,
             'label' => $label,
             'label_short' => $shortLabel,
+            'hours_label' => $assignment->isProvisional()
+                ? null
+                : PlanningHours::hoursLabel($assignment->plannedHoursValue()),
             'title' => filled($ticketLabel)
                 ? $assignment->planningHoverTitle($hoursOverride)."\n".$ticketLabel
                 : $assignment->planningHoverTitle($hoursOverride),
@@ -1579,23 +1753,7 @@ class PlanningBoardService
      */
     private function internalRows(Collection $assignments, Collection $days, array $doubleBooked): array
     {
-        $bars = [];
-        $used = [];
-        foreach ($assignments->sortBy([
-            fn (WorkerAssignment $assignment): int => $assignment->start_date->timestamp,
-            fn (WorkerAssignment $assignment): int => (int) $assignment->id,
-        ]) as $assignment) {
-            $unit = $assignment->business_unit?->label() ?? 'Ander bedrijfsonderdeel';
-            [$bars, $used] = $this->appendAssignmentPersonBars(
-                $bars,
-                $used,
-                $assignment,
-                $days,
-                $doubleBooked,
-                trim((string) $assignment->description),
-                $unit,
-            );
-        }
+        $bars = $this->internalDayBars($assignments, $days, $doubleBooked);
         if ($bars === []) {
             return [];
         }
@@ -1617,6 +1775,114 @@ class PlanningBoardService
             'end_marker' => null,
             'missing_craftsman' => false,
         ]];
+    }
+
+    /**
+     * One block per day. A stored range stays in the database and is only split on screen.
+     *
+     * @param  Collection<int, WorkerAssignment>  $assignments
+     * @param  Collection<int, Carbon>  $days
+     * @param  array<int, array<string, mixed>>  $doubleBooked
+     * @return list<array<string, mixed>>
+     */
+    private function internalDayBars(Collection $assignments, Collection $days, array $doubleBooked): array
+    {
+        $byDay = [];
+        foreach ($assignments as $assignment) {
+            foreach ($days->values() as $index => $day) {
+                if (! $assignment->coversDate($day)) {
+                    continue;
+                }
+                $byDay[$index][] = $assignment;
+            }
+        }
+        ksort($byDay);
+
+        $bars = [];
+        foreach ($byDay as $index => $dayAssignments) {
+            $day = $days->values()[$index];
+            $short = [];
+            $full = [];
+            $hourLines = [];
+            foreach ($dayAssignments as $assignment) {
+                foreach ($this->internalPeople($assignment) as $person) {
+                    $compact = WorkerAssignment::compactPersonName($person);
+                    $key = mb_strtolower($compact !== '' ? $compact : $person);
+                    if ($key === '' || isset($short[$key])) {
+                        continue;
+                    }
+                    $short[$key] = $compact !== '' ? $compact : $person;
+                    $full[$key] = $person;
+                }
+                $hours = $assignment->hoursOnDate($day);
+                if ($hours > 0) {
+                    $hourLines[] = PlanningHours::hourText($hours).' uur';
+                }
+            }
+            $shortNames = array_values($short);
+            $label = $shortNames === [] ? 'Intern' : implode(' · ', $shortNames);
+            $shortLabel = count($shortNames) > 2
+                ? $shortNames[0].' · '.$shortNames[1].' +'.(count($shortNames) - 2)
+                : $label;
+            $first = $dayAssignments[0];
+            $bar = $this->personBar($first, [
+                'start' => $index,
+                'span' => 1,
+                'start_offset' => $first->start_date->isSameDay($day)
+                    ? PlanningHours::fractionFromTime($first->startTimeValue())
+                    : 0.0,
+                'end_offset' => $first->end_date->isSameDay($day)
+                    ? PlanningHours::fractionFromTime($first->endTimeValue())
+                    : 1.0,
+            ], $doubleBooked, $days, 'Intern – inzet', '');
+            $bar['label'] = $label;
+            $bar['label_short'] = $shortLabel;
+            $bar['title'] = $this->internalDayTitle(array_values($full), $day, $hourLines, $first->internalTitle());
+            $bar['show_start_handle'] = false;
+            $bar['show_end_handle'] = false;
+            $bar['stack'] = 0;
+            $bar['start_date'] = $day->toDateString();
+            $bar['end_date'] = $day->toDateString();
+            $bars[] = $bar;
+        }
+
+        return $bars;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function internalPeople(WorkerAssignment $assignment): array
+    {
+        $names = $assignment->presentNames();
+        if ($names !== []) {
+            return $names;
+        }
+        $plan = trim((string) ($assignment->worker?->planName() ?? ''));
+        if ($plan === '' || preg_match('/^team\b/iu', $plan) === 1) {
+            return [];
+        }
+
+        return [$plan];
+    }
+
+    /**
+     * @param  list<string>  $names
+     * @param  list<string>  $hourLines
+     */
+    private function internalDayTitle(array $names, CarbonInterface $day, array $hourLines, string $detail = ''): string
+    {
+        $lines = $names === [] ? [] : $names;
+        $lines[] = 'Intern - inzet';
+        $lines[] = ucfirst($day->translatedFormat('l d-m-Y'));
+        foreach (array_values(array_unique($hourLines)) as $hours) {
+            $lines[] = $hours;
+        }
+        if ($detail !== '') {
+            $lines[] = $detail;
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -2054,6 +2320,18 @@ class PlanningBoardService
                 }
                 foreach ($bars as $index => $bar) {
                     $bars[$index]['work_item_id'] = (int) $child['id'];
+                    $assignment = $dedicated->first(fn (WorkerAssignment $row): bool => (int) $row->id === (int) ($bar['assignment_id'] ?? 0));
+                    if (! $assignment instanceof WorkerAssignment) {
+                        continue;
+                    }
+                    $matched = $assignment->workItems->first(function (WorkItem $item) use ($ids, $child): bool {
+                        return in_array((int) $item->id, $ids, true)
+                            || mb_strtolower((string) $item->name) === mb_strtolower((string) ($child['title'] ?? ''));
+                    });
+                    if ($assignment->workItems->filter(fn (WorkItem $item): bool => $item->pivot?->planned_hours !== null)->count() < 2) {
+                        continue;
+                    }
+                    $this->paintShareSlice($bars[$index], $assignment, (int) ($matched?->id ?? $child['id']));
                 }
                 $child['person_bars'] = $bars;
                 $child['bar_count'] = $this->stackedBarCount($bars);
@@ -2068,6 +2346,20 @@ class PlanningBoardService
             foreach ($bars as $index => $bar) {
                 $bars[$index]['work_item_id'] = (int) $child['id'];
                 $bars[$index]['work_item_ids'] = [(int) $child['id']];
+                $assignment = $projectAssignments->first(
+                    fn (WorkerAssignment $row): bool => (int) $row->id === (int) ($bar['assignment_id'] ?? 0),
+                );
+                if (! $assignment instanceof WorkerAssignment) {
+                    continue;
+                }
+                $matched = $assignment->workItems->first(function (WorkItem $item) use ($ids, $child): bool {
+                    return in_array((int) $item->id, $ids, true)
+                        || mb_strtolower((string) $item->name) === mb_strtolower((string) ($child['title'] ?? ''));
+                });
+                if ($assignment->workItems->filter(fn (WorkItem $item): bool => $item->pivot?->planned_hours !== null)->count() < 2) {
+                    continue;
+                }
+                $this->paintShareSlice($bars[$index], $assignment, (int) ($matched?->id ?? $child['id']));
             }
             $child['person_bars'] = $bars;
             $child['bar_count'] = $this->stackedBarCount($bars);

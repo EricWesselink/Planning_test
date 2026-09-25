@@ -198,7 +198,7 @@ class VakmanAccessTest extends TestCase
                 'active' => '1',
             ])
             ->assertRedirect(route('users.create'))
-            ->assertSessionHasErrors(['employment_type', 'people_count']);
+            ->assertSessionHasErrors(['employment_type']);
     }
 
     public function test_team_member_login_sees_the_same_scheduled_projects(): void
@@ -230,7 +230,8 @@ class VakmanAccessTest extends TestCase
             ->assertOk()
             ->assertSee('Vakman')
             ->assertSee('Eigen personeel of ZZP')
-            ->assertSee('Aantal personen')
+            ->assertSee('+ Persoon toevoegen')
+            ->assertDontSee('Aantal personen')
             ->assertSee('Vakkennis')
             ->assertSee('name="specialties[]"', false)
             ->assertSee('Bijzonderheden')

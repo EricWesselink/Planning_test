@@ -293,9 +293,13 @@ class WorkerController extends Controller
         } else {
             unset($data['unavailable']);
         }
-        $data['people_count'] = max(1, (int) ($data['people_count'] ?? 1));
+        $submittedMembers = $request->input('crew_members', []);
+        $submittedCount = is_array($submittedMembers) ? count($submittedMembers) : 0;
+        $data['people_count'] = $request->exists('crew_members') && ! $request->exists('people_count')
+            ? max(1, $submittedCount)
+            : max(1, (int) ($data['people_count'] ?? 1));
         $members = $request->exists('crew_members')
-            ? Worker::normalizeCrewMembers($request->input('crew_members', []), $data['people_count'])
+            ? Worker::normalizeCrewMembers(is_array($submittedMembers) ? $submittedMembers : [], $data['people_count'])
             : Worker::legacyCrewMembers(
                 (string) ($data['crew_names'] ?? ''),
                 (string) ($data['phone'] ?? ''),

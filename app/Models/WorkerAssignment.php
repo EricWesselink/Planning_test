@@ -76,6 +76,7 @@ class WorkerAssignment extends Model
     public function workItems(): BelongsToMany
     {
         return $this->belongsToMany(WorkItem::class, 'work_item_worker_assignment')
+            ->withPivot('planned_hours')
             ->withTimestamps()
             ->orderBy('work_items.sort_order')
             ->orderBy('work_items.id');
@@ -126,7 +127,11 @@ class WorkerAssignment extends Model
     /**
      * @param  list<int>  $ids
      */
-    public function syncLinkedWorkItems(array $ids): void
+    /**
+     * @param  list<int>  $ids
+     * @param  array<int, float|null>  $hoursById  Hours of this day budget for each work item.
+     */
+    public function syncLinkedWorkItems(array $ids, array $hoursById = []): void
     {
         $ids = array_values(array_unique(array_filter(
             array_map(static fn (mixed $id): int => (int) $id, $ids),
@@ -136,8 +141,60 @@ class WorkerAssignment extends Model
             array_unshift($ids, (int) $this->work_item_id);
         }
 
-        $this->workItems()->sync($ids);
+        $existing = [];
+        if ($this->exists && $hoursById === []) {
+            $existing = $this->workItems()
+                ->pluck('work_item_worker_assignment.planned_hours', 'work_items.id')
+                ->all();
+        }
+        $sync = [];
+        foreach ($ids as $id) {
+            if (array_key_exists($id, $hoursById) || array_key_exists((string) $id, $hoursById)) {
+                $hours = $hoursById[$id] ?? $hoursById[(string) $id];
+                $sync[$id] = ['planned_hours' => $hours === null ? null : round((float) $hours, 1)];
+
+                continue;
+            }
+            $sync[$id] = ['planned_hours' => $existing[$id] ?? $existing[(string) $id] ?? null];
+        }
+
+        $this->workItems()->sync($sync);
         $this->unsetRelation('workItems');
+    }
+
+    public function hoursForWorkItem(int $workItemId): ?float
+    {
+        $this->loadMissing('workItems');
+        $item = $this->workItems->firstWhere('id', $workItemId);
+        $hours = $item?->pivot?->planned_hours;
+
+        return $hours === null ? null : (float) $hours;
+    }
+
+    public function allocatedHoursPerDay(): ?float
+    {
+        $this->loadMissing('workItems');
+        $hours = $this->workItems
+            ->map(fn (WorkItem $item): mixed => $item->pivot?->planned_hours)
+            ->filter(fn (mixed $hours): bool => $hours !== null);
+        if ($hours->isEmpty()) {
+            return null;
+        }
+
+        return round((float) $hours->sum(), 2);
+    }
+
+    public function planningShareLabel(float $hours, bool $withTeam = true): string
+    {
+        $hoursLabel = PlanningHours::hourText($hours).'u';
+        $names = $this->planningPersonShortNames();
+        $who = $names !== [] ? implode(' · ', $names) : $this->planningTeamCode();
+        $team = $this->planningTeamCode();
+        if ($withTeam && $team !== '' && $team !== $who) {
+            return $team.' · '.$who.' · '.$hoursLabel;
+        }
+
+        return trim($who.' · '.$hoursLabel);
     }
 
     public function resolvedWorkItemId(?Collection $workOrders = null): ?int
@@ -187,18 +244,19 @@ class WorkerAssignment extends Model
         return $this->belongsToMany(CrewMember::class, 'crew_member_worker_assignment')
             ->withPivot(['start_time', 'end_time', 'planned_hours'])
             ->withTimestamps()
+            ->withTrashed()
             ->orderBy('crew_members.sort_order')
             ->orderBy('crew_members.id');
     }
 
     public function foreman(): BelongsTo
     {
-        return $this->belongsTo(CrewMember::class, 'foreman_crew_member_id');
+        return $this->belongsTo(CrewMember::class, 'foreman_crew_member_id')->withTrashed();
     }
 
     public function workTicketHolder(): BelongsTo
     {
-        return $this->belongsTo(CrewMember::class, 'work_ticket_crew_member_id');
+        return $this->belongsTo(CrewMember::class, 'work_ticket_crew_member_id')->withTrashed();
     }
 
     public function includesCrewMember(?int $crewMemberId): bool
@@ -339,6 +397,11 @@ class WorkerAssignment extends Model
             return 0.0;
         }
 
+        $allocated = $this->allocatedHoursPerDay();
+        if ($allocated !== null) {
+            return round($allocated * $this->plannedDayCount(), 2);
+        }
+
         return PlanningHours::totalHours(
             $this->start_date,
             $this->end_date,
@@ -347,6 +410,24 @@ class WorkerAssignment extends Model
             $this->includesSaturday(),
             $this->includesSunday(),
         );
+    }
+
+    private function plannedDayCount(): float
+    {
+        $perDay = PlanningHours::hoursBetween($this->startTimeValue(), $this->endTimeValue());
+        if ($perDay <= 0) {
+            $perDay = (float) PlanningHours::WORKDAY_HOURS;
+        }
+        $total = PlanningHours::totalHours(
+            $this->start_date,
+            $this->end_date,
+            $this->startTimeValue(),
+            $this->endTimeValue(),
+            $this->includesSaturday(),
+            $this->includesSunday(),
+        );
+
+        return $total <= 0 ? 0.0 : round($total / $perDay, 4);
     }
 
     public function plannedPersonHours(): float
@@ -400,8 +481,20 @@ class WorkerAssignment extends Model
             return $this->intervalOnDate($date);
         }
 
-        $startTime = $member->pivot->start_time ?: $this->startTimeValue();
-        $endTime = $member->pivot->end_time ?: $this->endTimeValue();
+        $assignmentStart = $this->startTimeValue();
+        $assignmentEnd = $this->endTimeValue();
+        $startTime = PlanningHours::normalizeTime($member->pivot->start_time, $assignmentStart);
+        $endTime = PlanningHours::normalizeTime($member->pivot->end_time, $assignmentEnd);
+        if (strcmp($startTime, $assignmentStart) < 0) {
+            $startTime = $assignmentStart;
+        }
+        if (strcmp($endTime, $assignmentEnd) > 0) {
+            $endTime = $assignmentEnd;
+        }
+        if (strcmp($startTime, $endTime) >= 0) {
+            $startTime = $assignmentStart;
+            $endTime = $assignmentEnd;
+        }
 
         return PlanningHours::intervalOnDate(
             $date,
@@ -513,8 +606,13 @@ class WorkerAssignment extends Model
 
     public function hoursOnDate(CarbonInterface $date): float
     {
-        if ($this->isProvisional()) {
+        if ($this->isProvisional() || ! $this->coversDate($date)) {
             return 0.0;
+        }
+
+        $allocated = $this->allocatedHoursPerDay();
+        if ($allocated !== null) {
+            return $allocated;
         }
 
         return PlanningHours::hoursOnDate(
@@ -750,7 +848,6 @@ class WorkerAssignment extends Model
         $parts = array_values(array_filter([
             $this->planningTeamCode(),
             ...($withNames ? $this->planningPersonShortNames() : []),
-            $this->planningManCountLabel(),
             $this->isProvisional() ? 'voorlopig' : null,
         ], fn (?string $part): bool => $part !== null && $part !== ''));
 
@@ -858,11 +955,6 @@ class WorkerAssignment extends Model
         }
 
         return $this->peopleCount();
-    }
-
-    private function planningManCountLabel(): string
-    {
-        return $this->planningHeadcount().' man';
     }
 
     public function detailTitle(string $workName, string $projectName = '', ?float $hoursOverride = null): string

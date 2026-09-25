@@ -161,40 +161,31 @@
         const list = projectAccess?.querySelector('[data-project-list]');
         const radios = [...(projectAccess?.querySelectorAll('input[name="project_access"]') ?? [])];
         const team = form.querySelector('[data-team-fields]');
-        const countInput = team?.querySelector('[data-crew-count]');
         const rows = team?.querySelector('[data-crew-rows]');
         const template = team?.querySelector('[data-crew-row-template]');
+        const total = team?.querySelector('[data-crew-total]');
         const syncProjects = () => {
             const selected = radios.find((radio) => radio.checked)?.value === 'selected';
             if (list) list.hidden = ! selected;
         };
-        const renderCrew = () => {
-            if (! countInput || ! rows || ! template) return;
-            let count = parseInt(countInput.value, 10);
-            if (! Number.isFinite(count) || count < 1) count = 1;
-            if (count > 50) count = 50;
-            const existing = Array.from(rows.querySelectorAll('[data-crew-row]')).map((row) => ({
-                id: row.querySelector('[data-crew-id]')?.value ?? '',
-                name: row.querySelector('[data-crew-name]')?.value ?? '',
-                email: row.querySelector('[data-crew-email]')?.value ?? '',
-            }));
-            rows.replaceChildren();
-            for (let index = 0; index < count; index++) {
-                const html = template.innerHTML
-                    .replaceAll('__INDEX__', String(index))
-                    .replaceAll('__NUMBER__', String(index + 1));
-                const wrap = document.createElement('div');
-                wrap.innerHTML = html.trim();
-                const row = wrap.firstElementChild;
-                if (! row) continue;
-                const nameInput = row.querySelector('[data-crew-name]');
-                const emailInput = row.querySelector('[data-crew-email]');
-                const idInput = row.querySelector('[data-crew-id]');
-                if (nameInput) nameInput.value = existing[index]?.name ?? '';
-                if (emailInput) emailInput.value = existing[index]?.email ?? '';
-                if (idInput) idInput.value = existing[index]?.id ?? '';
-                rows.append(row);
-            }
+        const refreshCrewTotal = () => {
+            if (! rows || ! total) return;
+            const count = rows.querySelectorAll('[data-crew-row]').length;
+            total.textContent = count === 1 ? '1 persoon' : `${count} personen`;
+        };
+        const addCrewRow = () => {
+            if (! rows || ! template) return;
+            const count = rows.querySelectorAll('[data-crew-row]').length;
+            if (count >= 50) return;
+            const html = template.innerHTML
+                .replaceAll('__INDEX__', String(count))
+                .replaceAll('__NUMBER__', String(count + 1));
+            const wrap = document.createElement('div');
+            wrap.innerHTML = html.trim();
+            const row = wrap.firstElementChild;
+            if (! row) return;
+            rows.append(row);
+            refreshCrewTotal();
         };
         const matrix = form.querySelector('[data-permission-matrix]');
         const boxes = () => [...(matrix?.querySelectorAll('input[data-permission]') ?? [])];
@@ -232,7 +223,6 @@
             });
             if (matrix) matrix.hidden = ! custom;
             radios.forEach((radio) => { radio.disabled = vakman; });
-            if (countInput) countInput.required = vakman;
             if (! vakman) syncProjects();
         };
         matrix?.querySelectorAll('[data-permission-preset]').forEach((button) => {
@@ -241,8 +231,7 @@
         boxes().forEach((box) => box.addEventListener('change', () => syncGroup(box.dataset.group)));
         radios.forEach((radio) => radio.addEventListener('change', syncProjects));
         role?.addEventListener('change', syncRole);
-        countInput?.addEventListener('input', renderCrew);
-        countInput?.addEventListener('change', renderCrew);
+        team?.querySelector('[data-crew-add]')?.addEventListener('click', addCrewRow);
         syncRole();
     })();
 </script>
